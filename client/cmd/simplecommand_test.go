@@ -1,21 +1,27 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/bep/simplecobra"
 	"github.com/spf13/cobra"
+
+	"github.com/mnestor/ssoossh/client/config"
 )
 
 func TestSimpleCommandRun(t *testing.T) {
 	tests := []struct {
-		name    string
-		initErr error
-		run     func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error
-		wantErr error
-		wantRan bool
+		name       string
+		initErr    error
+		configFree bool
+		run        func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error
+		wantErr    error
+		wantRan    bool
+		wantStderr string
 	}{
 		{
 			name:    "should surface root InitErr without calling run when init failed",
@@ -38,6 +44,34 @@ func TestSimpleCommandRun(t *testing.T) {
 			run:     nil,
 			wantErr: nil,
 		},
+		{
+			name:       "should call run when init failed and the command reads no configuration",
+			initErr:    errors.New("load config: broken"),
+			configFree: true,
+			run: func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error {
+				return nil
+			},
+			wantRan: true,
+		},
+		{
+			name:       "should warn on stderr when init failed and the command reads no configuration",
+			initErr:    errors.New("load config: broken"),
+			configFree: true,
+			run: func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error {
+				return nil
+			},
+			wantStderr: "Warning: load config: broken; continuing without the configuration\n",
+		},
+		{
+			name:       "should surface a broken --config file even when the command reads no configuration",
+			initErr:    fmt.Errorf("load config: %w", &config.ExplicitConfigError{Path: "x.yaml", Reason: "does not exist"}),
+			configFree: true,
+			run: func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error {
+				t.Fatal("run should not be called when the --config file is broken")
+				return nil
+			},
+			wantErr: errors.New(`load config: the config file "x.yaml" given with --config does not exist`),
+		},
 	}
 
 	for _, tt := range tests {
@@ -46,10 +80,28 @@ func TestSimpleCommandRun(t *testing.T) {
 			rootCd := &simplecobra.Commandeer{Command: root}
 			rootCd.Root = rootCd
 
-			c := &simpleCommand{name: "test", run: tt.run}
-			cd := &simplecobra.Commandeer{Command: c, Root: rootCd, CobraCommand: &cobra.Command{}}
+			ran := false
+			run := tt.run
+			if run != nil {
+				run = func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error {
+					ran = true
+					return tt.run(ctx, cd, root, args)
+				}
+			}
+			c := &simpleCommand{name: "test", run: run, configFree: tt.configFree}
+			var stderr bytes.Buffer
+			cobraCmd := &cobra.Command{}
+			cobraCmd.SetErr(&stderr)
+			cd := &simplecobra.Commandeer{Command: c, Root: rootCd, CobraCommand: cobraCmd}
 
 			err := c.Run(context.Background(), cd, nil)
+
+			if tt.wantRan && !ran {
+				t.Fatal("expected run to be called")
+			}
+			if tt.wantStderr != "" && stderr.String() != tt.wantStderr {
+				t.Fatalf("stderr = %q, want %q", stderr.String(), tt.wantStderr)
+			}
 
 			if tt.wantErr != nil {
 				if err == nil || err.Error() != tt.wantErr.Error() {
@@ -101,9 +153,9 @@ func TestSimpleCommandInit_ShouldNameThePositionalArgumentsInTheUsageLine(t *tes
 			wantUse: "test <account> [principal]",
 		},
 		{
-			name:    "should leave the default usage line alone when a command takes no arguments",
+			name:    "should name no arguments when a command takes none",
 			argSpec: "",
-			wantUse: "test [flags] [args]",
+			wantUse: "test",
 		},
 	}
 
@@ -122,19 +174,59 @@ func TestSimpleCommandInit_ShouldNameThePositionalArgumentsInTheUsageLine(t *tes
 	}
 }
 
-// The message for calling a command wrong is built from the same argSpec
-// the usage line uses, so the two cannot drift and neither hard-codes the
-// binary name.
-func TestSimpleCommandUsageError_ShouldMatchTheUsageLine(t *testing.T) {
-	c := &simpleCommand{name: "add", argSpec: "<account> <principal>"}
-	root := &cobra.Command{Use: "ssoossh"}
-	leaf := &cobra.Command{Use: "add"}
-	root.AddCommand(leaf)
-	cd := &simplecobra.Commandeer{CobraCommand: leaf}
+// TestSimpleCommandCheckArity pins the message for each way of passing the
+// wrong number of arguments. It is built from the same argSpec the usage
+// line uses, so the two cannot drift and neither hard-codes the binary name.
+func TestSimpleCommandCheckArity(t *testing.T) {
+	tests := []struct {
+		name    string
+		argSpec string
+		args    []string
+		want    string
+	}{
+		{name: "should accept the required arguments", argSpec: "<account> <principal>", args: []string{"deploy", "alice"}},
+		{name: "should accept a missing optional argument", argSpec: "<account> [principal]", args: []string{"deploy"}},
+		{name: "should name the first missing argument", argSpec: "<account> <principal>", args: []string{"deploy"}, want: "missing <principal>; usage: ssoossh add <account> <principal>"},
+		{name: "should name the first unexpected argument", argSpec: "<username>", args: []string{"alice", "bob"}, want: `unexpected argument "bob"; usage: ssoossh add <username>`},
+		{name: "should refuse any argument to a command that takes none", argSpec: "", args: []string{"extra"}, want: `ssoossh add takes no arguments, got "extra"`},
+		{name: "should accept any number after a variadic argument", argSpec: "<command> [args...]", args: []string{"nc", "-v", "host", "22"}},
+	}
 
-	err := c.usageError(cd)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &simpleCommand{name: "add", argSpec: tt.argSpec}
+			root := &cobra.Command{Use: "ssoossh"}
+			leaf := &cobra.Command{Use: "add"}
+			root.AddCommand(leaf)
 
-	if err == nil || err.Error() != "usage: ssoossh add <account> <principal>" {
-		t.Errorf("got %v, want the command path and the argument spec", err)
+			err := c.checkArity(leaf, tt.args)
+
+			got := ""
+			if err != nil {
+				got = err.Error()
+			}
+			if got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestArity(t *testing.T) {
+	tests := []struct {
+		spec             string
+		wantMin, wantMax int
+	}{
+		{spec: "", wantMin: 0, wantMax: 0},
+		{spec: "<username>", wantMin: 1, wantMax: 1},
+		{spec: "<account> [principal]", wantMin: 1, wantMax: 2},
+		{spec: "<command> [args...]", wantMin: 1, wantMax: -1},
+	}
+	for _, tt := range tests {
+		t.Run("should read "+tt.spec, func(t *testing.T) {
+			if gotMin, gotMax := arity(tt.spec); gotMin != tt.wantMin || gotMax != tt.wantMax {
+				t.Errorf("arity(%q) = %d, %d, want %d, %d", tt.spec, gotMin, gotMax, tt.wantMin, tt.wantMax)
+			}
+		})
 	}
 }

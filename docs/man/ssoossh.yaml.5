@@ -100,6 +100,17 @@ Default:
 .BR false .
 Intended for testing only.
 .TP
+.BI request_timeout: " duration"
+The longest one ordinary call to the server may take, from connect to the
+last byte of the answer, so a server that never answers cannot hang
+.BR ssh .
+Default:
+.BR 2m .
+Does not limit the wait for a browser approval. Raise it if the server's
+.B cert_options.client_timeout
+is above 20m, since a service certificate retrieval waits on signing for up
+to a tenth of that.
+.TP
 .B sshkey:
 Selects the algorithm and size of the keypair generated for each new
 certificate (a fresh keypair is generated every time one is needed, so this

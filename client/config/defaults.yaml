@@ -101,6 +101,14 @@ key_filename: id_ssoossh
 # always printed first, and a launch failure never fails the login.
 try_open_browser: false
 
+# The longest one ordinary call to the server may take, from connect to the
+# last byte of the answer, so a server that accepts the connection and never
+# answers cannot hang ssh. A service certificate retrieval waits on signing,
+# which the server bounds at a tenth of its cert_options.client_timeout, so
+# raise this if that server setting is above 20m. Does not limit the wait for
+# a browser approval.
+request_timeout: 2m
+
 # Reserved, and currently unused. It was intended to name a service account,
 # but that is chosen in the approval web UI instead — the client cannot
 # validate one, since enrollment requests are unauthenticated.

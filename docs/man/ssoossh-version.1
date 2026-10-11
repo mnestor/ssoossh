@@ -6,7 +6,7 @@ ssoossh-version - Print ssoossh version, commit, and build info.
 
 
 .SH SYNOPSIS
-\fBssoossh version [flags] [args]\fP
+\fBssoossh version [flags]\fP
 
 
 .SH DESCRIPTION
@@ -22,16 +22,16 @@ With --json, prints the same values as an object along with a list of the comman
 
 .PP
 \fB--json\fP[=false]
-	Print version and capability information as JSON.
+	print version and capability information as JSON
 
 
 .SH OPTIONS INHERITED FROM PARENT COMMANDS
 \fB-c\fP, \fB--config\fP=""
-	path to the ssoossh config file
+	path to an extra config file, merged after the standard locations
 
 .PP
 \fB--server\fP=""
-	server address including scheme (e.g. "https://example.com") assumes https if omited.
+	server address, e.g. https://ssh.example.com; https is assumed when no scheme is given
 
 .PP
 \fB-v\fP, \fB--verbose\fP[=0]

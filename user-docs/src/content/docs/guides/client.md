@@ -55,7 +55,7 @@ These are persistent flags: every subcommand accepts them.
 
 | Flag | Default | What it does |
 | --- | --- | --- |
-| `-c`, `--config <file>` | none | Path to the ssoossh config file. Merged after every search-path location. A file named here that is missing or unparseable is a startup error, unlike an absent search-path file. |
+| `-c`, `--config <file>` | none | Path to the ssoossh config file. Merged after every search-path location. A file named here that is missing or unparseable is a startup error for every command, `ssh config` and `host principals` included, unlike an absent search-path file. A search-path file that is there but will not parse is skipped with a warning on stderr. |
 | `--server <url>` | none | Server address including scheme, for example `https://example.com`. `https` is assumed if the scheme is omitted. Overrides `server` in the config file. |
 | `-v`, `-vv`, `-vvv` | off | Trace what the command is doing, to stderr. `-v` steps, `-vv` requests and files, `-vvv` bodies. |
 | `--debug` | off | Print the resolved configuration, its sources, and key storage to stderr. Hidden from `--help` but supported; implies `-v`. |
@@ -64,6 +64,17 @@ These are persistent flags: every subcommand accepts them.
 `-v` and `--debug` both have environment equivalents for invocations whose
 command line belongs to `ssh` or cron. See
 [Diagnostics](/ssoossh/guides/diagnostics/).
+
+## Exit status
+
+| Status | Meaning |
+| --- | --- |
+| `0` | Success, including the cases a command documents as succeeding without doing anything (a certificate still valid, nothing to remove). |
+| `1` | The command ran and failed: the server was unreachable, the request was denied, a file could not be written. |
+| `2` | The command was invoked wrongly: an unknown command or flag, a bad flag value, missing or extra arguments. The message ends with the `--help` command to run. |
+
+`Match exec` treats any non-zero status as "do not connect", so the
+distinction matters only to scripts.
 
 ## The commands
 
@@ -270,6 +281,7 @@ target account name.
 | Account found | Prints its principals in file order, then the account name if the file did not already list it, exit 0 |
 | Unknown account, or missing file | Prints the account name alone, exit 0 |
 | Unreadable or malformed file | Prints the account name alone, exit 0, and logs the failure to stderr |
+| Client configuration fails to load | Answers as above and warns on stderr, since it reads no setting; a `--config` file that is missing or malformed still fails it, exit 1 |
 
 A file that will not load is reported rather than refused. `pam_ssoossh` treats
 a map it cannot read as no map at all and falls back to the same rule, and one
@@ -414,17 +426,32 @@ Both service commands are covered in full, with worked examples, on
 
 ## `ssoossh version`
 
-Prints version, commit, and build info. Offline: it makes no network call.
+Prints version, commit, build info, and the platform (`linux/amd64`).
+Offline: it makes no network call. `ssoossh --version` prints the same line.
 
 ```bash
 ssoossh version
+ssoossh --version
 ssoossh version --json
 ```
 
-With `--json` it prints the same values as an object, plus the list of command
-paths this build implements. That list is the supported way for a deployment
-tool to tell releases apart: probing `--help` output breaks on wording no
-release promises to keep.
+With `--json` it prints the same values as an object (including `os` and
+`arch`), plus the list of command paths this build implements. That list is
+the supported way for a deployment tool to tell releases apart: probing
+`--help` output breaks on wording no release promises to keep.
+
+## Shell completion
+
+`ssoossh completion <shell>` prints a completion script for `bash`, `zsh`,
+`fish`, or `powershell`. `ssoossh completion <shell> --help` says where to put
+it. For example, for bash:
+
+```bash
+ssoossh completion bash | sudo tee /etc/bash_completion.d/ssoossh >/dev/null
+```
+
+The packages do not install a completion script, so this is a one-time step
+per machine.
 
 ## Where to go next
 

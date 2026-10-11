@@ -2,15 +2,15 @@
 .TH "SSOOSSH" "1" "Aug 2026" "ssoossh" ""
 
 .SH NAME
-ssoossh-ca - Retrieve the CA Public Key of the configured ssoossh server.
+ssoossh-ca - Print the CA public key of the configured ssoossh server.
 
 
 .SH SYNOPSIS
-\fBssoossh ca [flags] [args]\fP
+\fBssoossh ca [flags]\fP
 
 
 .SH DESCRIPTION
-Retrieve the CA Public Key of the configured ssoossh server.
+Prints the public key of the server's certificate authority in authorized_keys format, one key per line (two while a CA rotation is under way). Hosts that accept ssoossh certificates name this file in sshd's TrustedUserCAKeys.
 
 
 .SH OPTIONS
@@ -20,15 +20,23 @@ Retrieve the CA Public Key of the configured ssoossh server.
 
 .SH OPTIONS INHERITED FROM PARENT COMMANDS
 \fB-c\fP, \fB--config\fP=""
-	path to the ssoossh config file
+	path to an extra config file, merged after the standard locations
 
 .PP
 \fB--server\fP=""
-	server address including scheme (e.g. "https://example.com") assumes https if omited.
+	server address, e.g. https://ssh.example.com; https is assumed when no scheme is given
 
 .PP
 \fB-v\fP, \fB--verbose\fP[=0]
 	trace what the command is doing, to stderr; repeat for more (-v steps, -vv requests and files, -vvv bodies)
+
+
+.SH EXAMPLE
+.EX
+  # Trust ssoossh certificates on an sshd host
+  ssoossh ca | sudo tee /etc/ssh/ssoossh_ca.pub
+  # then, in sshd_config: TrustedUserCAKeys /etc/ssh/ssoossh_ca.pub
+.EE
 
 
 .SH SEE ALSO

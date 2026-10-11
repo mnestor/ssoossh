@@ -5,9 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
+	"runtime"
 
 	"github.com/bep/simplecobra"
+	"github.com/spf13/cobra"
 
 	"github.com/mnestor/ssoossh/internal/version"
 )
@@ -42,6 +43,14 @@ func (c *versionCommand) Offline() bool { return true }
 
 // Init implements simplecobra.Commander.
 func (c *versionCommand) Init(cd *simplecobra.Commandeer) error {
+	// Takes no arguments, like every leaf; see simpleCommand.checkArity.
+	cd.CobraCommand.Use = c.Name()
+	cd.CobraCommand.Args = func(cmd *cobra.Command, args []string) error {
+		if len(args) > 0 {
+			return &usageError{msg: fmt.Sprintf("%s takes no arguments, got %q", cmd.CommandPath(), args[0])}
+		}
+		return nil
+	}
 	cd.CobraCommand.Short = "Print ssoossh version, commit, and build info."
 	cd.CobraCommand.Long = "Print ssoossh version, commit, and build info.\n\n" +
 		"With --json, prints the same values as an object along with a list of the " +
@@ -49,7 +58,7 @@ func (c *versionCommand) Init(cd *simplecobra.Commandeer) error {
 		"deployment tool to tell releases apart: the command tree has changed shape " +
 		"across versions, and probing it by running --help and matching free text " +
 		"breaks on wording no release promises to keep."
-	cd.CobraCommand.Flags().BoolVar(&c.asJSON, "json", false, "Print version and capability information as JSON.")
+	cd.CobraCommand.Flags().BoolVar(&c.asJSON, "json", false, "print version and capability information as JSON")
 	return nil
 }
 
@@ -60,7 +69,7 @@ func (c *versionCommand) PreRun(this, runner *simplecobra.Commandeer) error { re
 
 // Run implements simplecobra.Commander.
 func (c *versionCommand) Run(ctx context.Context, cd *simplecobra.Commandeer, args []string) error {
-	return writeVersion(os.Stdout, c.asJSON)
+	return writeVersion(cd.CobraCommand.OutOrStdout(), c.asJSON)
 }
 
 // versionInfo is the object --json prints. The field names are a contract
@@ -72,15 +81,24 @@ type versionInfo struct {
 	Commit       string   `json:"commit"`
 	Date         string   `json:"date"`
 	BuiltBy      string   `json:"built_by"`
+	OS           string   `json:"os"`
+	Arch         string   `json:"arch"`
 	Capabilities []string `json:"capabilities"`
+}
+
+// versionLine is the plain version output, shared by `ssoossh version` and
+// `ssoossh --version`. It names the platform because a bug report's first
+// question is which build of the client is running.
+func versionLine() string {
+	return fmt.Sprintf("%s %s (commit %s, built %s by %s, %s/%s)",
+		version.Name, version.Version, version.Commit, version.Date, version.BuiltBy, runtime.GOOS, runtime.GOARCH)
 }
 
 // writeVersion renders either form to w. Split from Run so the output can
 // be asserted without capturing the process's stdout.
 func writeVersion(w io.Writer, asJSON bool) error {
 	if !asJSON {
-		_, err := fmt.Fprintf(w, "%s %s (commit %s, built %s by %s)\n",
-			version.Name, version.Version, version.Commit, version.Date, version.BuiltBy)
+		_, err := fmt.Fprintln(w, versionLine())
 		return err
 	}
 
@@ -92,6 +110,8 @@ func writeVersion(w io.Writer, asJSON bool) error {
 		Commit:       version.Commit,
 		Date:         version.Date,
 		BuiltBy:      version.BuiltBy,
+		OS:           runtime.GOOS,
+		Arch:         runtime.GOARCH,
 		Capabilities: capabilities(),
 	}); err != nil {
 		return fmt.Errorf("encode version: %w", err)

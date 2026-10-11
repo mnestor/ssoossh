@@ -108,7 +108,7 @@ What it does depends on `use_agent` and `fallback_file_agent`:
 
 | Settings | Behaviour |
 | --- | --- |
-| `use_agent: true`, `fallback_file_agent: true` (both defaults) | Probes the live agent. If that fails, probes file storage as a fallback. If file storage works, the login proceeds using files instead of the agent and prints "Agent storage check failed, falling back to file-based key storage." to stdout. If both fail, the login aborts before requesting a certificate |
+| `use_agent: true`, `fallback_file_agent: true` (both defaults) | Probes the live agent. If that fails, probes file storage as a fallback. If file storage works, the login proceeds using files instead of the agent and prints "Agent storage check failed, falling back to file-based key storage." to stderr. If both fail, the login aborts before requesting a certificate |
 | `use_agent: true`, `fallback_file_agent: false` | Probes the live agent. If that fails, the login aborts before requesting a certificate, with an error explaining that fallback is disabled |
 | `use_agent: false` | Probes file-based storage directly. If that fails, the login aborts before requesting a certificate |
 

@@ -6,7 +6,7 @@ ssoossh-ssh-config - Print the ssh_config lines that hook ssoossh into your exis
 
 
 .SH SYNOPSIS
-\fBssoossh ssh config [flags] [args]\fP
+\fBssoossh ssh config [flags]\fP
 
 
 .SH DESCRIPTION
@@ -52,7 +52,7 @@ than a browser login; \fBssoossh service enroll\fR prints that recipe, with the
 real paths filled in, at the end of a successful enrollment.
 
 .PP
-For what this machine actually resolved — the config files that were merged and what came of each, the settings that resulted, where the key files are and whether they exist — add --debug to the command you are actually running. That is the one place those are reported, so there is no second version of the truth to keep in step with this one.
+For what this machine actually resolved — the config files that were merged and what came of each, the settings that resulted, where the key files are and whether they exist — add --debug (or set SSOOSSH_DEBUG=1) to the command you are actually running. That is the one place those are reported, so there is no second version of the truth to keep in step with this one.
 
 
 .SH OPTIONS
@@ -62,15 +62,22 @@ For what this machine actually resolved — the config files that were merged an
 
 .SH OPTIONS INHERITED FROM PARENT COMMANDS
 \fB-c\fP, \fB--config\fP=""
-	path to the ssoossh config file
+	path to an extra config file, merged after the standard locations
 
 .PP
 \fB--server\fP=""
-	server address including scheme (e.g. "https://example.com") assumes https if omited.
+	server address, e.g. https://ssh.example.com; https is assumed when no scheme is given
 
 .PP
 \fB-v\fP, \fB--verbose\fP[=0]
 	trace what the command is doing, to stderr; repeat for more (-v steps, -vv requests and files, -vvv bodies)
+
+
+.SH EXAMPLE
+.EX
+  # Print the recipes, then paste the one you want into ~/.ssh/config
+  ssoossh ssh config
+.EE
 
 
 .SH SEE ALSO

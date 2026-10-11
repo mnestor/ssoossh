@@ -23,11 +23,21 @@ type ResponseError struct {
 }
 
 // Error implements the error interface.
+//
+// A response with no message did not come in ssoosshd's error envelope,
+// which every ssoosshd error carries, so it most likely came from something
+// else at that address: a proxy, a load balancer, or the wrong server.
 func (e *ResponseError) Error() string {
-	if e.Message == "" {
-		return fmt.Sprintf("ssoosshd returned status %d", e.StatusCode)
+	switch {
+	case e.Message != "":
+		return fmt.Sprintf("ssoosshd returned status %d: %s", e.StatusCode, e.Message)
+	case e.StatusCode == http.StatusNotFound:
+		return "the server answered 404 Not Found; check that the server address points at ssoosshd"
+	case e.StatusCode >= http.StatusInternalServerError:
+		return fmt.Sprintf("the server answered status %d with no explanation; ssoosshd, or a proxy in front of it, failed", e.StatusCode)
+	default:
+		return fmt.Sprintf("the server answered status %d with no explanation", e.StatusCode)
 	}
-	return fmt.Sprintf("ssoosshd returned status %d: %s", e.StatusCode, e.Message)
 }
 
 // IsNotFound reports whether this is a 404 not-found error.

@@ -75,7 +75,9 @@ func newContractServer(t *testing.T, certRequests service.CertRequestProvider) (
 
 	// Create a mock registry with a test key
 	mockReg := &mockCAKeyRegistry{
-		keys: []string{"ssh-ed25519 AAAA"},
+		// A real key: the client parses what /api/ca returns and refuses
+		// anything that is not one.
+		keys: []string{"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIP/7mq9cQq4DRbk0doDBs9CsbCTEmTI1bSk1z8s1AdWc contract-ca"},
 	}
 
 	caSvc, err := service.NewCAService(nil, mockReg)

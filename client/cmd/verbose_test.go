@@ -1,6 +1,9 @@
 package cmd
 
 import (
+	"bytes"
+	"log/slog"
+	"sync"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -68,5 +71,47 @@ func TestVerbosityFor_ShouldStillReadTheEnvironmentWithNoCommand(t *testing.T) {
 
 	if got := verbosityFor(nil); got != 2 {
 		t.Errorf("got %d, want 2", got)
+	}
+}
+
+// TestNoticeHandler pins how a warning or error reads at the default
+// verbosity: one line, like the "Error:" a failed command prints, not
+// logfmt.
+func TestNoticeHandler(t *testing.T) {
+	tests := []struct {
+		name string
+		log  func(l *slog.Logger)
+		want string
+	}{
+		{
+			name: "should prefix a warning and list its attributes",
+			log:  func(l *slog.Logger) { l.Warn("the server's CA key set was replaced", "path", "/tmp/ca.json") },
+			want: "Warning: the server's CA key set was replaced (path: /tmp/ca.json)\n",
+		},
+		{
+			name: "should prefix an error",
+			log:  func(l *slog.Logger) { l.Error("the principals map could not be loaded") },
+			want: "Error: the principals map could not be loaded\n",
+		},
+		{
+			name: "should include attributes added with With",
+			log:  func(l *slog.Logger) { l.With("account", "deploy").Warn("odd", "n", 2) },
+			want: "Warning: odd (account: deploy, n: 2)\n",
+		},
+		{
+			name: "should drop anything below a warning",
+			log:  func(l *slog.Logger) { l.Info("starting") },
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var out bytes.Buffer
+			tt.log(slog.New(&noticeHandler{out: &out, mu: &sync.Mutex{}}))
+			if out.String() != tt.want {
+				t.Errorf("got %q, want %q", out.String(), tt.want)
+			}
+		})
 	}
 }

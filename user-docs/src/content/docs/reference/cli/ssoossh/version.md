@@ -12,14 +12,14 @@ With --json, prints the same values as an object along with a list of the comman
 ## Synopsis
 
 ```
-ssoossh version [flags] [args]
+ssoossh version [flags]
 ```
 
 ## Options
 
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
-| `--json` | bool | `false` | Print version and capability information as JSON. |
+| `--json` | bool | `false` | print version and capability information as JSON |
 
 ## Global options
 
@@ -27,8 +27,8 @@ Inherited from [`ssoossh`](/ssoossh/reference/cli/ssoossh/) and its parents.
 
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
-| `-c`, `--config` | string |  | path to the ssoossh config file |
-| `--server` | string |  | server address including scheme (e.g. "https://example.com") assumes https if omited. |
+| `-c`, `--config` | string |  | path to an extra config file, merged after the standard locations |
+| `--server` | string |  | server address, e.g. https://ssh.example.com; https is assumed when no scheme is given |
 | `-v`, `--verbose` | count | `0` | trace what the command is doing, to stderr; repeat for more (-v steps, -vv requests and files, -vvv bodies) |
 
 ## See also

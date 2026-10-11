@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
+	"strings"
 
 	"github.com/bep/simplecobra"
+	"github.com/spf13/cobra"
 
 	"github.com/mnestor/ssoossh/internal/crypto/ssh/agent"
 	"github.com/mnestor/ssoossh/internal/version"
@@ -26,27 +28,62 @@ var execCommand = handOff
 var errProxyCommandRequiresArgs = errors.New("proxycommand requires a command to exec after it, e.g. \"" +
 	version.Name + " ssh proxycommand /usr/bin/nc ...\"")
 
+// errProxyCommandNeedsAgent is returned when keys would go to files: no
+// ssh-agent is reachable, or use_agent is off although one is. ssh reads key
+// files once, at startup, before ProxyCommand runs, so a certificate written
+// to disk here would never be used.
+var errProxyCommandNeedsAgent = errors.New("ssh proxycommand needs its key in an ssh-agent, " +
+	"because ssh reads key files only once at startup; run an agent (SSH_AUTH_SOCK) with use_agent " +
+	"left on, or use the Match exec recipe from '" + version.Name + " ssh config', which works with key files")
+
+// clientOnlyFlags are ssoossh flags no relay is likely to take. Seen after
+// the relay command, they were almost certainly meant for ssoossh. -c and
+// -v are left out on purpose: they are ordinary relay flags (nc -v, ssh -c),
+// and warning on them would print noise in front of every connection.
+var clientOnlyFlags = []string{"--server", "--config", "--debug"}
+
+// warnMisplacedClientFlags warns about each ssoossh flag that appears after
+// the relay command. Everything from args[0] on is handed to the relay
+// unparsed, so such a flag silently goes to the relay while ssoossh runs on
+// whatever the configuration says, which may be a different server.
+func warnMisplacedClientFlags(w io.Writer, args []string) {
+	for _, arg := range args[1:] {
+		for _, flag := range clientOnlyFlags {
+			if arg == flag || strings.HasPrefix(arg, flag+"=") {
+				fmt.Fprintf(w, "Warning: %s comes after the relay command, so %s receives it, not %s; "+
+					"put %s flags before %q\n", flag, args[0], version.Name, version.Name, args[0])
+			}
+		}
+	}
+}
+
 func newSSHProxyCommandCommand() simplecobra.Commander {
-	exe := filepath.Base(os.Args[0])
-	pc := "ProxyCommand /usr/bin/nc -X connect -x 192.0.2.0:8080 %h %p"
+	// The binary's name is written out rather than taken from os.Args[0]:
+	// the docs generators build this text too, and the shipped pages said
+	// "genclidocs ssh ProxyCommand".
+	relay := "/usr/bin/nc -X connect -x 192.0.2.0:8080 %h %p"
 	sc := &simpleCommand{
 		name:    "proxycommand",
 		argSpec: "<command> [args...]",
-		short:   "Ensure a valid certificate, then relay stdio to the target host over TCP.",
-		long: "For use as ssh_config's ProxyCommand. Arguments after ProxyCommand should " +
-			"mirror exactly as if you weren't calling ssoossh.\n\n" +
-			"from ssh_config man page\nBefore: " + pc + "\n" +
-			"After : ProxyCommand " + exe + " ssh " + pc + "\n\n" +
-			"NOTICE: Use of ssh key " +
-			"files will not work here as ssh only reads them once at start and will not see " +
-			"our changes to them.",
+		short:   "Ensure a valid certificate, then hand the connection to a relay command such as nc.",
+		long: "For use as ssh_config's ProxyCommand. Ensures a valid certificate is in your " +
+			"ssh-agent, then hands the connection to the relay command that follows it. Write " +
+			"the relay command exactly as you would without " + version.Name + ":\n\n" +
+			"    Before: ProxyCommand " + relay + "\n" +
+			"    After:  ProxyCommand " + version.Name + " ssh proxycommand " + relay + "\n\n" +
+			"Everything from the relay command on is passed to it unparsed, so put " +
+			version.Name + " flags such as --server, --config or -v before it.\n\n" +
+			"Requires an ssh-agent: ssh reads key files once, at startup, so a certificate " +
+			"written to disk afterwards would never be used. Without an agent, use the Match " +
+			"exec recipe from `" + version.Name + " ssh config`.",
 		run: func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error {
-			if root.ssh.Type() == agent.AgentTypeFile {
-				return errors.New("file based ssh keys are not supported for proxycommand")
-			}
 			if len(args) == 0 {
 				return errProxyCommandRequiresArgs
 			}
+			if root.ssh.Type() == agent.AgentTypeFile {
+				return errProxyCommandNeedsAgent
+			}
+			warnMisplacedClientFlags(cd.CobraCommand.ErrOrStderr(), args)
 
 			// Ensure there is a usable certificate before handing the process
 			// off — that is the entire reason this wraps the relay rather
@@ -97,6 +134,9 @@ func newSSHProxyCommandCommand() simplecobra.Commander {
 		// Everything after "proxycommand" is the command to exec, so cobra
 		// must not try to interpret any of it as flags of ours.
 		init: func(cd *simplecobra.Commandeer) error {
+			// Its own check in run gives a missing relay command a better
+			// message (with an example) than checkArity's.
+			cd.CobraCommand.Args = cobra.ArbitraryArgs
 			cd.CobraCommand.Flags().SetInterspersed(false)
 			return nil
 		},

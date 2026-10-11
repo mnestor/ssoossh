@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"slices"
+	"strings"
 
 	"github.com/bep/simplecobra"
 
@@ -32,8 +34,11 @@ func newHostMappingCommand(mappingFileFunc func() string) simplecobra.Commander 
 
 func newHostMappingListCommand(mappingFileFunc func() string) simplecobra.Commander {
 	return &simpleCommand{
-		name:    "list",
-		short:   "Print the current principal mapping.",
+		name:  "list",
+		short: "Print the current principal mapping.",
+		long: "Prints the mapping file named by --file as YAML, in the form it is stored in, so " +
+			"the output can be redirected back into a file. Prints nothing when the mapping is " +
+			"empty or the file does not exist yet.",
 		offline: true,
 		run: func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error {
 			return runHostMappingList(ctx, mappingFileFunc())
@@ -70,13 +75,16 @@ func newHostMappingAddCommand(mappingFileFunc func() string) simplecobra.Command
 			"principal allowed to assume it.",
 		offline: true,
 	}
+	// checkArity has already required exactly two arguments.
 	cmd.run = func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error {
-		if len(args) < 2 {
-			return cmd.usageError(cd)
-		}
 		account := args[0]
 		principal := args[1]
 
+		// An empty account was written to the file as `"":`, which no
+		// local account can ever match.
+		if strings.TrimSpace(account) == "" {
+			return &usageError{msg: "the account name must not be empty"}
+		}
 		if err := sshcrypto.ValidatePrincipal(principal); err != nil {
 			return fmt.Errorf("invalid principal: %w", err)
 		}
@@ -110,38 +118,47 @@ func newHostMappingRemoveCommand(mappingFileFunc func() string) simplecobra.Comm
 			"the account alone, removes the entire account mapping.",
 		offline: true,
 	}
+	// checkArity has already required one or two arguments.
 	cmd.run = func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error {
-		if len(args) < 1 {
-			return cmd.usageError(cd)
+		principal := ""
+		if len(args) == 2 {
+			principal = args[1]
 		}
-		account := args[0]
-
-		if len(args) == 1 {
-			return runHostMappingRemove(account, "", mappingFileFunc())
-		}
-		principal := args[1]
-		return runHostMappingRemove(account, principal, mappingFileFunc())
+		return runHostMappingRemove(cd.CobraCommand.ErrOrStderr(), args[0], principal, mappingFileFunc())
 	}
 	return cmd
 }
 
-func runHostMappingRemove(account, principal, mappingPath string) error {
+// runHostMappingRemove removes a principal from an account, or the whole
+// account when principal is empty. Removing something that is not there
+// succeeds, as before, but now says so on out rather than exiting 0 in
+// silence, and leaves the file untouched.
+func runHostMappingRemove(out io.Writer, account, principal, mappingPath string) error {
+	if mappingPath == "" {
+		return fmt.Errorf("no mapping file: --file is empty")
+	}
 	mapping, err := loadMapping(mappingPath)
 	if err != nil {
 		return err
+	}
+	principals, found := mapping[account]
+	if !found {
+		fmt.Fprintf(out, "Nothing to remove: account %q has no mapping in %s.\n", account, mappingPath)
+		return nil
 	}
 	if principal == "" {
 		// Remove the entire account mapping.
 		delete(mapping, account)
 	} else {
 		// Remove a specific principal from the account.
-		principals := mapping[account]
 		idx := slices.Index(principals, principal)
-		if idx >= 0 {
-			mapping[account] = slices.Delete(principals, idx, idx+1)
-			if len(mapping[account]) == 0 {
-				delete(mapping, account)
-			}
+		if idx < 0 {
+			fmt.Fprintf(out, "Nothing to remove: account %q does not list principal %q in %s.\n", account, principal, mappingPath)
+			return nil
+		}
+		mapping[account] = slices.Delete(principals, idx, idx+1)
+		if len(mapping[account]) == 0 {
+			delete(mapping, account)
 		}
 	}
 

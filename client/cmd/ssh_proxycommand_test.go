@@ -77,11 +77,60 @@ func TestProxyCommand_ShouldRefuseFileBasedKeys(t *testing.T) {
 	x := newProxyExec(t, &fakeAPIClient{}, &stubAgent{agentType: agent.AgentTypeFile})
 
 	_, err := x.Execute(context.Background(), []string{"ssh", "proxycommand", "/bin/true"})
-	if err == nil {
-		t.Fatal("expected file-based keys to be refused")
+	if !errors.Is(err, errProxyCommandNeedsAgent) {
+		t.Errorf("got %v, want %v", err, errProxyCommandNeedsAgent)
 	}
-	if !strings.Contains(err.Error(), "file based ssh keys") {
-		t.Errorf("got %q, want the file-agent limitation explained", err)
+}
+
+// A missing relay command is the more basic mistake, so it is reported
+// first even when no agent is reachable either.
+func TestProxyCommand_ShouldReportAMissingCommandBeforeAMissingAgent(t *testing.T) {
+	x := newProxyExec(t, &fakeAPIClient{}, &stubAgent{agentType: agent.AgentTypeFile})
+
+	_, err := x.Execute(context.Background(), []string{"ssh", "proxycommand"})
+	if !errors.Is(err, errProxyCommandRequiresArgs) {
+		t.Errorf("got %v, want %v", err, errProxyCommandRequiresArgs)
+	}
+}
+
+// TestWarnMisplacedClientFlags covers the trap that sent test traffic to the
+// wrong server: an ssoossh flag after the relay command goes to the relay.
+func TestWarnMisplacedClientFlags(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "should warn about --server after the relay command",
+			args: []string{"/usr/bin/nc", "%h", "%p", "--server", "http://127.0.0.1:9"},
+			want: "Warning: --server comes after the relay command, so /usr/bin/nc receives it, not ssoossh; put ssoossh flags before \"/usr/bin/nc\"\n",
+		},
+		{
+			name: "should warn about --config=value after the relay command",
+			args: []string{"/usr/bin/nc", "--config=/tmp/c.yaml"},
+			want: "Warning: --config comes after the relay command, so /usr/bin/nc receives it, not ssoossh; put ssoossh flags before \"/usr/bin/nc\"\n",
+		},
+		{
+			name: "should not warn about relay flags that ssoossh also has",
+			args: []string{"/usr/bin/nc", "-v", "-c", "host", "22"},
+			want: "",
+		},
+		{
+			name: "should not warn about the relay command itself",
+			args: []string{"--server"},
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var out strings.Builder
+			warnMisplacedClientFlags(&out, tt.args)
+			if out.String() != tt.want {
+				t.Errorf("got %q, want %q", out.String(), tt.want)
+			}
+		})
 	}
 }
 
@@ -166,5 +215,20 @@ func TestProxyCommand_ShouldReportAFailedHandOff(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "/usr/bin/nc") {
 		t.Errorf("got %q, want the command that failed to be named", err)
+	}
+}
+
+// The recipe in the help must be one a user can paste: the subcommand
+// spelled right and the binary named ssoossh, not whatever built the docs.
+func TestProxyCommandHelp_ShouldShowAWorkingRecipe(t *testing.T) {
+	root, err := CobraCommandForManpage()
+	if err != nil {
+		t.Fatalf("build tree: %v", err)
+	}
+	cmd := findCommand(root, "ssh", "proxycommand")
+
+	want := "After:  ProxyCommand ssoossh ssh proxycommand /usr/bin/nc -X connect -x 192.0.2.0:8080 %h %p"
+	if !strings.Contains(cmd.Long, want) {
+		t.Errorf("Long does not contain %q:\n%s", want, cmd.Long)
 	}
 }

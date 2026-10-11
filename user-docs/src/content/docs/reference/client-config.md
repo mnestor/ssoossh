@@ -21,6 +21,7 @@ content ships as the `ssoossh.yaml(5)` man page and as the annotated
 | [`server`](#server) | string | `empty` |
 | [`capubkey`](#capubkey) | string or list | `empty` |
 | [`insecure_skip_verify`](#insecure_skip_verify) | bool | `false` |
+| [`request_timeout`](#request_timeout) | duration | `2m` |
 
 ### `server`
 
@@ -100,6 +101,25 @@ against a self-signed certificate only; it defeats the point of pinning
 
 ```yaml
 insecure_skip_verify: false
+```
+
+### `request_timeout`
+
+`duration`, default `2m`
+
+The longest one ordinary call to the server may take, from connect to the
+last byte of the answer. Without it, a server that accepts the connection and
+never answers would hang the client, and under `Match exec` that hangs `ssh`.
+It does not limit the wait for a browser approval, which the server bounds
+with its own `cert_options.client_timeout`.
+
+A service certificate retrieval waits on signing, which the server bounds at
+a tenth of `cert_options.client_timeout` (30 seconds with the server's default
+of 5 minutes). Raise `request_timeout` if that server setting is above 20
+minutes. Zero and negative values are refused.
+
+```yaml
+request_timeout: 2m
 ```
 
 ## Key storage

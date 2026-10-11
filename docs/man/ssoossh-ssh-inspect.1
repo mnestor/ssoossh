@@ -6,7 +6,7 @@ ssoossh-ssh-inspect - Print details of the currently held ssoossh certificate(s)
 
 
 .SH SYNOPSIS
-\fBssoossh ssh inspect [flags] [args]\fP
+\fBssoossh ssh inspect [flags]\fP
 
 
 .SH DESCRIPTION
@@ -20,11 +20,11 @@ Shows what each certificate ssoossh is holding actually grants — who it is for
 
 .SH OPTIONS INHERITED FROM PARENT COMMANDS
 \fB-c\fP, \fB--config\fP=""
-	path to the ssoossh config file
+	path to an extra config file, merged after the standard locations
 
 .PP
 \fB--server\fP=""
-	server address including scheme (e.g. "https://example.com") assumes https if omited.
+	server address, e.g. https://ssh.example.com; https is assumed when no scheme is given
 
 .PP
 \fB-v\fP, \fB--verbose\fP[=0]

@@ -6,7 +6,7 @@ ssoossh-service-enroll - Enroll a service keypair for unattended certificate iss
 
 
 .SH SYNOPSIS
-\fBssoossh service enroll [flags] [args]\fP
+\fBssoossh service enroll [flags]\fP
 
 
 .SH DESCRIPTION
@@ -38,7 +38,7 @@ With --retrieve, the command immediately redeems the code once, writing the cert
 
 .PP
 \fB--key\fP=""
-	keypair path (relative or absolute); generates both if neither <name> nor <name>\&.pub exist, enrolls the existing <name>\&.pub otherwise
+	keypair path (relative or absolute; required); generates both if neither <name> nor <name>\&.pub exist, enrolls the existing <name>\&.pub otherwise
 
 .PP
 \fB--retrieve\fP[=false]
@@ -47,15 +47,25 @@ With --retrieve, the command immediately redeems the code once, writing the cert
 
 .SH OPTIONS INHERITED FROM PARENT COMMANDS
 \fB-c\fP, \fB--config\fP=""
-	path to the ssoossh config file
+	path to an extra config file, merged after the standard locations
 
 .PP
 \fB--server\fP=""
-	server address including scheme (e.g. "https://example.com") assumes https if omited.
+	server address, e.g. https://ssh.example.com; https is assumed when no scheme is given
 
 .PP
 \fB-v\fP, \fB--verbose\fP[=0]
 	trace what the command is doing, to stderr; repeat for more (-v steps, -vv requests and files, -vvv bodies)
+
+
+.SH EXAMPLE
+.EX
+  # Generate a keypair and enroll it; prints the enrollment code once
+  ssoossh service enroll --key /var/lib/deploy/.ssh/id_deploy
+
+  # Enroll and fetch the first certificate straight away
+  ssoossh service enroll --key ~/.ssh/id_deploy --retrieve
+.EE
 
 
 .SH SEE ALSO

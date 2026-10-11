@@ -8,6 +8,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -34,6 +35,10 @@ type RootCommand struct {
 	api     api.Client
 	ssh     agent.Agent
 	initErr error
+
+	// agentFallback is why the ssh-agent could not be used when key files
+	// were used instead, nil otherwise. ssh inspect reports it.
+	agentFallback error
 
 	// newConfig, newAPIClient, newSSHAgent, newFileAgent and caCachePath are
 	// overridable seams for PreRun, so tests can inject fakes instead of
@@ -71,20 +76,40 @@ func (r *RootCommand) Commands() []simplecobra.Commander { return r.commands }
 func (r *RootCommand) Init(cd *simplecobra.Commandeer) error {
 	cmd := cd.CobraCommand
 	r.cobraRoot = cmd
-	cmd.Short = "The ssoossh client — turns an OIDC login into a short-lived SSH certificate, from your ssh_config."
-	cmd.Long = "The ssoossh client wires SSO into your existing SSH workflow. Configured " +
-		"as a ProxyCommand or Match exec in ssh_config, it generates a fresh keypair, " +
-		"hands the public key to the ssoossh server, opens your browser for OIDC " +
-		"authentication, and loads the signed certificate into your ssh-agent — or writes " +
-		"key and certificate files when no agent is available. Private keys never leave " +
-		"the machine. Valid certificates are reused until they expire, so authenticating " +
-		"once could cover a workday rather than every connection. Runs on macOS, Linux, " +
-		"and Windows, and also handles local principal mapping for " +
-		"AuthorizedPrincipalsCommand and service-account certificates for unattended " +
-		"jobs."
+	// Runnable like every group, so unknown subcommands reach
+	// rejectUnknownSubcommand; usageTemplate keeps the usage to one line.
+	// Children inherit the template.
+	cmd.Use = r.Name() + " [command]"
+	cmd.Args = rejectUnknownSubcommand
+	cmd.SetUsageTemplate(usageTemplate)
+	cmd.SetHelpCommand(newHelpCommand())
+	cmd.SetFlagErrorFunc(describeFlagError)
 
-	cmd.PersistentFlags().StringP("config", "c", "", "path to the ssoossh config file")
-	cmd.PersistentFlags().String("server", "", "server address including scheme (e.g. \"https://example.com\") assumes https if omited.")
+	// --version, the flag nearly every CLI answers to, printing what
+	// `ssoossh version` prints. Declared here rather than left to cobra so
+	// it cannot claim -v, which is verbosity. Cobra answers it before
+	// PreRun, so it loads nothing.
+	cmd.Version = versionLine()
+	cmd.SetVersionTemplate("{{.Version}}\n")
+	cmd.Flags().Bool("version", false, "print the version and exit (the same as `ssoossh version`)")
+	cmd.Short = "The ssoossh client: turns a browser sign-in into a short-lived SSH certificate, from your ssh_config."
+	cmd.Long = "The ssoossh client turns a browser sign-in into a short-lived SSH certificate. " +
+		"ssh runs it for you, from ssh_config: it generates a fresh keypair, sends the public " +
+		"key to the ssoossh server, opens your browser so you can sign in and approve, and " +
+		"loads the signed certificate into your ssh-agent, or writes key files when there is " +
+		"no agent. Private keys never leave this machine, and a valid certificate is reused " +
+		"until it expires. It also answers sshd's AuthorizedPrincipalsCommand on hosts " +
+		"(`host`) and gets certificates for unattended jobs (`service`).\n\n" +
+		"Start with `ssoossh ssh config`, which prints the ssh_config lines to add.\n\n" +
+		"Configuration is read from /etc/ssoossh/ssoossh.yaml, then ~/.config/ssoossh.yaml, " +
+		"then the file named by --config (on Windows, %ProgramData%\\ssoossh\\ssoossh.yaml " +
+		"and %AppData%\\ssoossh\\ssoossh.yaml). Flags override the files, except for settings " +
+		"an administrator has locked. -v traces what a command does; --debug prints the " +
+		"resolved settings and where each one came from.\n\n" +
+		"Documentation: https://mnestor.github.io/ssoossh/"
+
+	cmd.PersistentFlags().StringP("config", "c", "", "path to an extra config file, merged after the standard locations")
+	cmd.PersistentFlags().String("server", "", "server address, e.g. https://ssh.example.com; https is assumed when no scheme is given")
 
 	// Hidden: a diagnostic aid, not part of the command's advertised
 	// surface. $SSOOSSH_DEBUG does the same thing for invocations whose
@@ -110,6 +135,13 @@ func (r *RootCommand) Init(cd *simplecobra.Commandeer) error {
 // instead of the root's; leaf commands check InitErr() before doing
 // anything that needs Config/API/Agent.
 func (r *RootCommand) PreRun(this, runner *simplecobra.Commandeer) error {
+	// A bare `ssoossh` only prints help. Loading config, fetching the CA
+	// and resolving the agent for that put network traffic and agent
+	// warnings in front of the help text.
+	if runner.Command == simplecobra.Commander(r) {
+		return nil
+	}
+
 	// runner, not this: PreRun is called once per ancestor while walking
 	// root -> leaf (see bep/simplecobra's Commandeer.init), and `this` is
 	// always root's own Commandeer here — it never carries a leaf's local
@@ -164,7 +196,7 @@ func (r *RootCommand) PreRun(this, runner *simplecobra.Commandeer) error {
 
 	apiClient, err := r.newAPIClient(cfg)
 	if err != nil {
-		r.initErr = fmt.Errorf("build API client: %w", err)
+		r.initErr = describeAPIClientError(err)
 		return nil
 	}
 	r.api = apiClient
@@ -193,6 +225,16 @@ func (r *RootCommand) PreRun(this, runner *simplecobra.Commandeer) error {
 	r.initErr = r.ssh.SetCA(cfg.CAPubkey...)
 
 	return nil
+}
+
+// describeAPIClientError says which setting to fix when the API client
+// cannot be built. "build API client: server URL is required" named an
+// internal step and no setting.
+func describeAPIClientError(err error) error {
+	if errors.Is(err, api.ErrNoServerURL) {
+		return errors.New("no server configured; set server in your ssoossh.yaml or pass --server")
+	}
+	return fmt.Errorf("%w; set it with --server or the server setting", err)
 }
 
 // caCacheFile returns where the CA key cache lives, or "" when no seam is
@@ -243,10 +285,15 @@ func (r *RootCommand) resolveAgent(cfg *config.Config) (agent.Agent, error) {
 		return nil, fmt.Errorf("connect to ssh-agent: %w", err)
 	}
 
-	slog.Warn("failed to connect to ssh-agent, falling back to file-based storage", "error", err)
+	// Info, not Warn: with fallback_file_agent on, key files are the
+	// configured answer to "no agent", and a warning on every invocation
+	// of ca or service retrieve under cron is noise. ssh login says where
+	// it stored the certificate, and ssh inspect says why it checked files.
+	slog.Info("no ssh-agent reachable; using key files", "error", err)
+	r.agentFallback = err
 	a, err = r.newFileAgent(cfg.Filename)
 	if err != nil {
-		return nil, fmt.Errorf("open ssh agent: %w", err)
+		return nil, fmt.Errorf("no ssh-agent, and key file storage failed too: %w", err)
 	}
 	return a, nil
 }
@@ -284,8 +331,9 @@ func (r *RootCommand) InitErr() error { return r.initErr }
 // to happen on this side).
 func newAPIClientFromConfig(cfg *config.Config) (api.Client, error) {
 	return api.NewClient(api.Config{
-		ServerURL:     cfg.Server,
-		SkipVerifySSL: cfg.SkipVerifySSL,
+		ServerURL:      cfg.Server,
+		SkipVerifySSL:  cfg.SkipVerifySSL,
+		RequestTimeout: cfg.RequestTimeout,
 		// The client is a terminal program, so its tracing belongs on the
 		// handler installed by installTracing. pam_ssoossh deliberately
 		// passes no logger — see api.Config.Logger.
@@ -321,9 +369,8 @@ func Execute() {
 		os.Exit(1)
 	}
 
-	if _, err := x.Execute(ctx, os.Args[1:]); err != nil {
-		fmt.Fprintln(os.Stderr, "Error:", err)
-		os.Exit(1)
+	if cd, err := x.Execute(ctx, os.Args[1:]); err != nil {
+		os.Exit(reportError(os.Stderr, cd, err))
 	}
 }
 

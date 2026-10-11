@@ -322,3 +322,29 @@ func TestRootCommand_ShouldPrintHelpWhenInvokedBare(t *testing.T) {
 		t.Errorf("expected help output naming the program, got:\n%s", out.String())
 	}
 }
+
+func TestDescribeAPIClientError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{
+			name: "should say how to configure a server when none is set",
+			err:  api.ErrNoServerURL,
+			want: "no server configured; set server in your ssoossh.yaml or pass --server",
+		},
+		{
+			name: "should point at the setting for an invalid server",
+			err:  errors.New(`invalid server "ftp://x": the scheme must be http or https`),
+			want: `invalid server "ftp://x": the scheme must be http or https; set it with --server or the server setting`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := describeAPIClientError(tt.err).Error(); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

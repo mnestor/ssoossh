@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"path/filepath"
@@ -35,6 +36,116 @@ func newTestExec(t *testing.T) *rootExecFixture {
 	return &rootExecFixture{root: root, exec: x}
 }
 
+// TestExecute_ShouldAnswerFromConfigFreeCommandsWhenConfigFailsToLoad pins
+// the two commands that must keep working when the configuration is broken:
+// `host principals`, because sshd calls it on every login and a refusal
+// denies certificate logins on the host, and `ssh config`, because it is what
+// someone reads while fixing the configuration.
+func TestExecute_ShouldAnswerFromConfigFreeCommandsWhenConfigFailsToLoad(t *testing.T) {
+	tests := []struct {
+		name       string
+		args       []string
+		wantStdout string
+	}{
+		{
+			name:       "should print the account name from host principals when config fails to load",
+			args:       []string{"host", "principals", "deploy", "--file", "MAPPING"},
+			wantStdout: "deploy\n",
+		},
+		{
+			name:       "should print the recipes from ssh config when config fails to load",
+			args:       []string{"ssh", "config"},
+			wantStdout: sshConfigGuidance,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newTestExec(t)
+			f.root.newConfig = func(cmd *cobra.Command) (*config.Config, error) {
+				return nil, errors.New("unsupported sshkey.type \"dsa\"")
+			}
+			var stdout, stderr bytes.Buffer
+			f.root.cobraRoot.SetOut(&stdout)
+			f.root.cobraRoot.SetErr(&stderr)
+			args := append([]string{}, tt.args...)
+			for i, a := range args {
+				if a == "MAPPING" {
+					args[i] = filepath.Join(t.TempDir(), "principals.yaml")
+				}
+			}
+
+			var err error
+			printed := captureStdout(t, func() { _, err = f.exec.Execute(context.Background(), args) })
+
+			if err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+			if got := printed + stdout.String(); got != tt.wantStdout {
+				t.Errorf("stdout = %q, want %q", got, tt.wantStdout)
+			}
+		})
+	}
+}
+
+// TestExecute_ShouldReportTheConfigFailureFromConfigFreeCommands checks the
+// other half: the failure is not swallowed, it moves to stderr.
+func TestExecute_ShouldReportTheConfigFailureFromConfigFreeCommands(t *testing.T) {
+	f := newTestExec(t)
+	f.root.newConfig = func(cmd *cobra.Command) (*config.Config, error) {
+		return nil, errors.New("unsupported sshkey.type \"dsa\"")
+	}
+	var stderr bytes.Buffer
+	f.root.cobraRoot.SetErr(&stderr)
+
+	captureStdout(t, func() {
+		_, _ = f.exec.Execute(context.Background(), []string{"host", "principals", "deploy", "--file", filepath.Join(t.TempDir(), "p.yaml")})
+	})
+
+	want := "Warning: load config: unsupported sshkey.type \"dsa\"; continuing without the configuration\n"
+	if stderr.String() != want {
+		t.Errorf("stderr = %q, want %q", stderr.String(), want)
+	}
+}
+
+// TestExecute_ShouldFailConfigFreeCommandsOnABrokenConfigFlagFile is the
+// limit of the leniency above: a file the person named with --config that is
+// missing or broken is a typo, so even these two commands exit non-zero.
+func TestExecute_ShouldFailConfigFreeCommandsOnABrokenConfigFlagFile(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "should fail host principals when the --config file is missing", args: []string{"host", "principals", "deploy", "--file", "MAPPING"}},
+		{name: "should fail ssh config when the --config file is missing", args: []string{"ssh", "config"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newTestExec(t)
+			f.root.newConfig = func(cmd *cobra.Command) (*config.Config, error) {
+				return nil, &config.ExplicitConfigError{Path: "missing.yaml", Reason: "does not exist"}
+			}
+			f.root.cobraRoot.SetOut(&bytes.Buffer{})
+			f.root.cobraRoot.SetErr(&bytes.Buffer{})
+			args := append([]string{}, tt.args...)
+			for i, a := range args {
+				if a == "MAPPING" {
+					args[i] = filepath.Join(t.TempDir(), "principals.yaml")
+				}
+			}
+
+			var err error
+			captureStdout(t, func() { _, err = f.exec.Execute(context.Background(), args) })
+
+			var explicit *config.ExplicitConfigError
+			if !errors.As(err, &explicit) {
+				t.Errorf("err = %v, want the --config failure", err)
+			}
+		})
+	}
+}
+
 type rootExecFixture struct {
 	root *RootCommand
 	exec *simplecobra.Exec
@@ -64,11 +175,12 @@ func TestExecuteEndToEnd(t *testing.T) {
 		{name: "ssh proxycommand with no command", args: []string{"ssh", "proxycommand"}, wantErr: errProxyCommandRequiresArgs},
 		{name: "ssh inspect", args: []string{"ssh", "inspect"}, wantNilErr: true},
 		{name: "ssh config", args: []string{"ssh", "config"}, wantNilErr: true},
-		{name: "host principals with no args", args: []string{"host", "principals"}, wantErr: errors.New("usage: ssoossh host principals <username>")},
+		{name: "host principals with no args", args: []string{"host", "principals"}, wantErr: errors.New("missing <username>; usage: ssoossh host principals <username>")},
 		{name: "host mapping list", args: []string{"host", "mapping", "list"}, wantNilErr: true},
-		{name: "service enroll with no key source", args: []string{"service", "enroll"}, wantErr: errors.New("--key is required")},
-		{name: "service retrieve with no code", args: []string{"service", "retrieve"}, wantErr: errors.New("--code is required")},
-		{name: "service retrieve with no key", args: []string{"service", "retrieve", "--code", "abc"}, wantErr: errors.New("--key is required")},
+		{name: "service enroll with no key source", args: []string{"service", "enroll"}, wantErr: errors.New("missing required flag --key")},
+		{name: "service retrieve with no code or key", args: []string{"service", "retrieve"}, wantErr: errors.New("missing required flags --code and --key")},
+		{name: "service retrieve with no key", args: []string{"service", "retrieve", "--code", "abc"}, wantErr: errors.New("missing required flag --key")},
+		{name: "service retrieve with an empty code", args: []string{"service", "retrieve", "--code", "", "--key", "k"}, wantErr: errors.New("--code must not be empty")},
 		{name: "version", args: []string{"version"}, wantNilErr: true},
 
 		// The arity guards live in the simplecobra wrappers rather than in
@@ -76,9 +188,13 @@ func TestExecuteEndToEnd(t *testing.T) {
 		// command wrong -- and the half these rows were missing. Both
 		// mapping constructors sat at 12.5% statement coverage while their
 		// run functions were near 90%.
-		{name: "host mapping add with no arguments", args: []string{"host", "mapping", "add"}, wantErr: errors.New("usage: ssoossh host mapping add <account> <principal>")},
-		{name: "host mapping add with only an account", args: []string{"host", "mapping", "add", "deploy"}, wantErr: errors.New("usage: ssoossh host mapping add <account> <principal>")},
-		{name: "host mapping remove with no arguments", args: []string{"host", "mapping", "remove"}, wantErr: errors.New("usage: ssoossh host mapping remove <account> [principal]")},
+		{name: "host mapping add with no arguments", args: []string{"host", "mapping", "add"}, wantErr: errors.New("missing <account>; usage: ssoossh host mapping add <account> <principal>")},
+		{name: "host mapping add with only an account", args: []string{"host", "mapping", "add", "deploy"}, wantErr: errors.New("missing <principal>; usage: ssoossh host mapping add <account> <principal>")},
+		{name: "host mapping remove with no arguments", args: []string{"host", "mapping", "remove"}, wantErr: errors.New("missing <account>; usage: ssoossh host mapping remove <account> [principal]")},
+		{name: "ca with an extra argument", args: []string{"ca", "extra"}, wantErr: errors.New(`ssoossh ca takes no arguments, got "extra"`)},
+		{name: "version with an extra argument", args: []string{"version", "extra"}, wantErr: errors.New(`ssoossh version takes no arguments, got "extra"`)},
+		{name: "host principals with two accounts", args: []string{"host", "principals", "alice", "bob"}, wantErr: errors.New(`unexpected argument "bob"; usage: ssoossh host principals <username>`)},
+		{name: "host mapping add with an empty account", args: []string{"host", "mapping", "add", "", "alice"}, useMappingFile: true, wantErr: errors.New("the account name must not be empty")},
 
 		// The success paths through the same wrappers, which need --file:
 		// the default mapping file is /etc/ssoossh/principals.yaml and a
@@ -107,7 +223,7 @@ func TestExecuteEndToEnd(t *testing.T) {
 					t.Fatalf("expected no error, got %v", err)
 				}
 			case tt.wantErr != nil:
-				if err == nil || err.Error() != tt.wantErr.Error() {
+				if err == nil || unwrapCommandError(err).Error() != tt.wantErr.Error() {
 					t.Fatalf("expected error %q, got %v", tt.wantErr, err)
 				}
 			default:

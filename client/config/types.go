@@ -1,6 +1,10 @@
 package config
 
-import "github.com/mnestor/ssoossh/internal/fipsmode"
+import (
+	"time"
+
+	"github.com/mnestor/ssoossh/internal/fipsmode"
+)
 
 type Config struct {
 	Server string `mapstructure:"server"`
@@ -58,6 +62,13 @@ type Config struct {
 
 	TryOpenBrowser bool `mapstructure:"try_open_browser"`
 
+	// RequestTimeout bounds each ordinary call to the server, from connect
+	// to the last byte of the response, so a server that accepts the
+	// connection and never answers cannot hang ssh's Match exec. It does
+	// not apply to the wait for approval, which is bounded by the server's
+	// own cert_options.client_timeout.
+	RequestTimeout time.Duration `mapstructure:"request_timeout"`
+
 	// FIPS steers key generation toward algorithms accepted by SSH
 	// implementations running in FIPS mode. When it's in effect, a
 	// non-approved sshkey.type is a hard error — see ResolveSSHKey. See
@@ -95,9 +106,10 @@ type Config struct {
 	CertificateExtensions CertificateExtensionOptions `mapstructure:"certificate_extensions"`
 
 	// ForbiddenCertificateExtensions names extensions that policy forbids.
-	// This is set only by platform-native policy (GPO registry on Windows,
-	// managed preferences on macOS, enforce file on Linux). It is not read
-	// from user config, not bound to flags, and not merged — it acts as an
+	// This is set only by the locked sources: the enforce file on every
+	// platform, plus platform-native policy (GPO registry on Windows,
+	// managed preferences on macOS), the two unioned. It is not read from
+	// user config, not bound to flags, and not merged — it acts as an
 	// unconditional floor that subtracts from any flag/config result.
 	ForbiddenCertificateExtensions []string `mapstructure:"-"`
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"time"
 
@@ -21,8 +22,9 @@ func newServiceRetrieveCommand() simplecobra.Commander {
 	var grace string
 
 	cmd := &simpleCommand{
-		name:  "retrieve",
-		short: "Retrieve a service certificate using a previously issued enrollment code.",
+		name:          "retrieve",
+		requiredFlags: []string{"code", "key"},
+		short:         "Retrieve a service certificate using a previously issued enrollment code.",
 		long: "Redeems an enrollment code from `service enroll`, writing the certificate to " +
 			"<key>-cert.pub and checking local disk to avoid unnecessary server calls.\n\n" +
 			"The certificate is skipped (exit 0) if one at <key>-cert.pub is valid beyond --grace " +
@@ -32,6 +34,10 @@ func newServiceRetrieveCommand() simplecobra.Commander {
 			"no readable, valid certificate does an error return a non-zero exit.\n\n" +
 			"The key files follow OpenSSH naming: the private key is <name>, the public key is " +
 			"<name>.pub, and the certificate is <name>-cert.pub.",
+		example: "  # From cron or a systemd timer: refresh only when the certificate is about to expire\n" +
+			"  ssoossh service retrieve --code \"$ENROLLMENT_CODE\" --key /var/lib/deploy/.ssh/id_deploy\n\n" +
+			"  # Fetch a new certificate even if the one on disk is still valid\n" +
+			"  ssoossh service retrieve --code \"$ENROLLMENT_CODE\" --key /var/lib/deploy/.ssh/id_deploy --force",
 		init: func(cd *simplecobra.Commandeer) error {
 			cd.CobraCommand.Flags().StringVar(&code, "code", "",
 				"enrollment code (required)")
@@ -40,12 +46,11 @@ func newServiceRetrieveCommand() simplecobra.Commander {
 			cd.CobraCommand.Flags().BoolVar(&force, "force", false,
 				"retrieve a new certificate even if a valid one exists on disk")
 			cd.CobraCommand.Flags().StringVar(&grace, "grace", "1m",
-				"duration of additional validity required before refreshing (default 1m); "+
-					"e.g. 30s, 5m, 1h")
+				"how much validity a certificate on disk must still have to be kept, e.g. 30s, 5m, 1h")
 			return nil
 		},
 		run: func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error {
-			return runServiceRetrieve(ctx, root, os.Stderr, code, keyPath, force, grace)
+			return runServiceRetrieve(ctx, root, cd.CobraCommand.ErrOrStderr(), code, keyPath, force, grace)
 		},
 	}
 	return cmd
@@ -57,16 +62,17 @@ func newServiceRetrieveCommand() simplecobra.Commander {
 // 3. degraded: retrieval failed but a valid certificate exists on disk; writes warning and returns nil
 // An error is returned only when retrieval fails AND there is no usable certificate on disk.
 func runServiceRetrieve(ctx context.Context, root *RootCommand, errOut io.Writer, code, keyPath string, force bool, graceStr string) error {
+	// checkArity has seen both flags given; these catch them given empty.
 	if code == "" {
-		return errors.New("--code is required")
+		return &usageError{msg: "--code must not be empty"}
 	}
 	if keyPath == "" {
-		return errors.New("--key is required")
+		return &usageError{msg: "--key must not be empty"}
 	}
 
-	graceDuration, err := time.ParseDuration(graceStr)
+	graceDuration, err := parseGrace(graceStr)
 	if err != nil {
-		return fmt.Errorf("invalid --grace duration: %w", err)
+		return err
 	}
 
 	certPath := certificatePathFor(keyPath)
@@ -84,16 +90,11 @@ func runServiceRetrieve(ctx context.Context, root *RootCommand, errOut io.Writer
 	certText, err := root.API().RetrieveServiceCertificate(ctx, code)
 	if err != nil {
 		// Retrieval failed. Check if we have a degraded certificate to fall back to.
-		respErr := &api.ResponseError{}
-		if errors.As(err, &respErr) {
-			err = errors.New("enrollment code not found or expired")
-		} else {
-			err = fmt.Errorf("retrieve certificate: %w", err)
-		}
+		err = describeRetrieveError(err)
 
 		// Check for a still-valid certificate on disk.
 		if cert := reusableCertificateFile(certPath, reuseGrace); cert != nil {
-			fmt.Fprintf(errOut, "WARNING: could not refresh certificate (%v), but %s is still valid %s\n",
+			fmt.Fprintf(errOut, "Warning: could not refresh certificate (%v), but %s is still valid %s\n",
 				err, certPath, expiryPhrase(cert))
 			return nil
 		}
@@ -135,4 +136,65 @@ func reusableCertificateFile(path string, within time.Duration) *ssh.Certificate
 	}
 
 	return nil
+}
+
+// retrieveError is a retrieval failure worded for the person or job running
+// `service retrieve`, with the underlying error kept for errors.As.
+type retrieveError struct {
+	msg string
+	err error
+}
+
+// Error implements error.
+func (e *retrieveError) Error() string { return e.msg }
+
+// Unwrap returns the underlying error.
+func (e *retrieveError) Unwrap() error { return e.err }
+
+// describeRetrieveError says what a failed retrieval means for the caller.
+// The HTTP status decides it: an unknown or expired code needs a new
+// enrollment, a refusal or rate limit needs a different response, and a
+// server failure is not the code's fault at all. Calling all of them "code
+// not found or expired" sent operators to re-enroll over a server outage.
+func describeRetrieveError(err error) error {
+	respErr := &api.ResponseError{}
+	if !errors.As(err, &respErr) {
+		return fmt.Errorf("retrieve certificate: %w", err)
+	}
+
+	detail := fmt.Sprintf("status %d", respErr.StatusCode)
+	if respErr.Message != "" {
+		detail += ": " + respErr.Message
+	}
+
+	var msg string
+	switch code := respErr.StatusCode; {
+	case code == http.StatusNotFound || code == http.StatusGone:
+		msg = "enrollment code not found or expired; run 'ssoossh service enroll' to get a new one"
+	case code == http.StatusUnauthorized || code == http.StatusForbidden:
+		msg = fmt.Sprintf("the server refused this enrollment code (%s)", detail)
+	case code == http.StatusTooManyRequests:
+		msg = "the server is rate limiting retrieval from this address; retry in a minute"
+	case code >= http.StatusInternalServerError:
+		msg = fmt.Sprintf("the server failed to issue the certificate (%s). This is a server problem, "+
+			"not your code; retry shortly or contact the ssoossh administrator", detail)
+	default:
+		msg = fmt.Sprintf("the server rejected the retrieval (%s)", detail)
+	}
+	return &retrieveError{msg: msg, err: err}
+}
+
+// parseGrace reads --grace. time.ParseDuration's own errors ("time: missing
+// unit in duration \"5\"") name the parser rather than the flag, and it
+// accepts a negative duration, which would make an expired certificate
+// count as fresh.
+func parseGrace(value string) (time.Duration, error) {
+	d, err := time.ParseDuration(value)
+	if err != nil {
+		return 0, &usageError{msg: fmt.Sprintf("invalid value %q for --grace: use a number with a unit, e.g. 30s, 5m or 1h", value)}
+	}
+	if d < 0 {
+		return 0, &usageError{msg: fmt.Sprintf("invalid value %q for --grace: it must not be negative", value)}
+	}
+	return d, nil
 }

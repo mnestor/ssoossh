@@ -261,7 +261,7 @@ func TestWaitForOutcome_ShouldNotRetryAConnectThatNeverReachedAServer(t *testing
 	if ctx.Err() != nil {
 		t.Error("expected the failure to be reported immediately, not retried until the deadline")
 	}
-	if !strings.Contains(err.Error(), "failed to connect") {
+	if !strings.Contains(err.Error(), "connect to the approval stream: cannot reach") {
 		t.Errorf("got %q, want an error naming the failed connect", err)
 	}
 }

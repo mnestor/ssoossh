@@ -245,15 +245,15 @@ func TestCheckOutcome(t *testing.T) {
 // worth naming: the certificate really was issued, they are never persisted,
 // and running the command again is the actual fix.
 func TestDescribeWaitError_ShouldAdviseRerunningOnGone(t *testing.T) {
-	err := describeWaitError(&api.ResponseError{StatusCode: http.StatusGone, Message: "certificate no longer available"})
-	if !strings.Contains(err.Error(), "run ssh login again") {
+	err := describeWaitError(&api.ResponseError{StatusCode: http.StatusGone, Message: "certificate no longer available"}, "ssoossh ssh login")
+	if !strings.Contains(err.Error(), "run 'ssoossh ssh login' again") {
 		t.Errorf("got %q, want advice to run the command again", err)
 	}
 }
 
 func TestDescribeWaitError_ShouldWrapOtherFailures(t *testing.T) {
 	cause := errors.New("connection refused")
-	err := describeWaitError(cause)
+	err := describeWaitError(cause, "ssoossh ssh login")
 	if !errors.Is(err, cause) {
 		t.Errorf("got %q, want the underlying error preserved for unwrapping", err)
 	}

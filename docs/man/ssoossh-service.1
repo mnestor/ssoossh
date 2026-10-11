@@ -2,7 +2,7 @@
 .TH "SSOOSSH" "1" "Aug 2026" "ssoossh" ""
 
 .SH NAME
-ssoossh-service - Manage service-account (non-interactive) certificate enrollment.
+ssoossh-service - Get certificates for unattended jobs, from an enrollment code.
 
 
 .SH SYNOPSIS
@@ -10,7 +10,7 @@ ssoossh-service - Manage service-account (non-interactive) certificate enrollmen
 
 
 .SH DESCRIPTION
-Manage service-account (non-interactive) certificate enrollment.
+Certificates for unattended jobs. A person runs \fBservice enroll\fR once and approves it in the browser, which produces an enrollment code. The job then runs \fBservice retrieve\fR with that code, with no browser, for as long as the enrollment lasts.
 
 
 .SH OPTIONS
@@ -20,11 +20,11 @@ Manage service-account (non-interactive) certificate enrollment.
 
 .SH OPTIONS INHERITED FROM PARENT COMMANDS
 \fB-c\fP, \fB--config\fP=""
-	path to the ssoossh config file
+	path to an extra config file, merged after the standard locations
 
 .PP
 \fB--server\fP=""
-	server address including scheme (e.g. "https://example.com") assumes https if omited.
+	server address, e.g. https://ssh.example.com; https is assumed when no scheme is given
 
 .PP
 \fB-v\fP, \fB--verbose\fP[=0]

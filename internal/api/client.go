@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -85,6 +86,12 @@ type Config struct {
 	// additional pinning.
 	SkipVerifySSL bool
 
+	// RequestTimeout bounds each ordinary (non-streaming) call, from
+	// connect to the last byte of the response. Zero means
+	// DefaultRequestTimeout. The events stream is not affected: ssoosshd
+	// sends no headers there until the request is decided.
+	RequestTimeout time.Duration
+
 	// Logger receives per-request tracing. Nil means none, and the caller
 	// that wants tracing has to say so: defaulting to slog.Default() would
 	// put this package's tracing on the host process's stderr by accident,
@@ -124,16 +131,28 @@ type HTTPClient struct {
 
 	userAgent string
 
+	// timeout is the http client's Timeout, kept to name it in the error
+	// a timed-out call returns.
+	timeout time.Duration
+
 	// log is Config.Logger, nil when the caller asked for no tracing.
 	log *slog.Logger
 }
 
 var _ Client = (*HTTPClient)(nil)
 
+// DefaultRequestTimeout is Config.RequestTimeout when none is given. Long
+// enough to cover a service retrieval's signing wait, which ssoosshd bounds
+// at a tenth of its cert_options.client_timeout (30s by default).
+const DefaultRequestTimeout = 2 * time.Minute
+
 // NewClient builds an HTTPClient talking to cfg.ServerURL.
 func NewClient(cfg Config) (*HTTPClient, error) {
-	if cfg.ServerURL == "" {
-		return nil, errors.New("server URL is required")
+	if strings.TrimSpace(cfg.ServerURL) == "" {
+		return nil, ErrNoServerURL
+	}
+	if err := validateServerURL(cfg.ServerURL); err != nil {
+		return nil, err
 	}
 
 	tlsConfig, err := buildTLSConfig(cfg)
@@ -144,12 +163,19 @@ func NewClient(cfg Config) (*HTTPClient, error) {
 		return nil, err
 	}
 
+	timeout := cfg.RequestTimeout
+	if timeout <= 0 {
+		timeout = DefaultRequestTimeout
+	}
+
 	return &HTTPClient{
-		// No Client.Timeout: it would apply to the whole request including
-		// the body, which is wrong for an events stream that legitimately
-		// stays open until a human approves. Every call here takes a
-		// context, and that is what bounds it.
-		http:      &http.Client{Transport: newTransport(tlsConfig)},
+		// A whole-request timeout is safe here because this client serves
+		// only doJSON's ordinary calls. The events stream, which stays open
+		// until a human decides, builds a client of its own (see sse.go).
+		// Without it a server that accepts the connection and never answers
+		// hangs the caller, which under ssh's Match exec means ssh itself.
+		http:      &http.Client{Transport: newTransport(tlsConfig), Timeout: timeout},
+		timeout:   timeout,
 		serverURL: normalizeServerURL(cfg.ServerURL),
 		tlsConfig: tlsConfig,
 		userAgent: fmt.Sprintf("%s/%s (%s)", version.Name, version.Version, version.Github),
@@ -209,7 +235,7 @@ func (c *HTTPClient) doJSON(ctx context.Context, method, path string, body, out 
 	start := time.Now()
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return err
+		return c.describeTransportError(err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -218,7 +244,7 @@ func (c *HTTPClient) doJSON(ctx context.Context, method, path string, body, out 
 	// body.
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("read response body: %w", err)
+		return fmt.Errorf("read response body: %w", c.describeTransportError(err))
 	}
 	c.traceResponse(ctx, resp, respBody, time.Since(start))
 
@@ -226,7 +252,7 @@ func (c *HTTPClient) doJSON(ctx context.Context, method, path string, body, out 
 		return decodeResponseError(resp.StatusCode, respBody)
 	}
 	if err := json.Unmarshal(respBody, out); err != nil {
-		return fmt.Errorf("decode response body: %w", err)
+		return &undecodableError{contentType: resp.Header.Get("Content-Type"), err: err}
 	}
 	return nil
 }
@@ -305,6 +331,30 @@ func logHeaders(ctx context.Context, log *slog.Logger, msg string, headers http.
 // promised ("assumes https if omitted"). Without this a bare "example.com"
 // produces requests that cannot be sent and an approval URL no browser can
 // open.
+// ErrNoServerURL is NewClient's error when Config.ServerURL is empty.
+var ErrNoServerURL = errors.New("server URL is required")
+
+// validateServerURL refuses a server address normalizeServerURL would turn
+// into a request to somewhere else. It used to accept anything: "ftp://x"
+// became https://ftp//x and failed with a DNS lookup of "ftp", and
+// "https://" became a request to a host named "https".
+func validateServerURL(raw string) error {
+	s := strings.TrimSpace(raw)
+	if scheme, rest, found := strings.Cut(s, "://"); found {
+		if scheme != "http" && scheme != "https" {
+			return fmt.Errorf("invalid server %q: the scheme must be http or https", raw)
+		}
+		if strings.Trim(rest, "/") == "" {
+			return fmt.Errorf("invalid server %q: it names no host", raw)
+		}
+	}
+	u, err := url.Parse(normalizeServerURL(s))
+	if err != nil || u.Hostname() == "" {
+		return fmt.Errorf("invalid server %q: not a valid URL", raw)
+	}
+	return nil
+}
+
 func normalizeServerURL(raw string) string {
 	trimmed := strings.TrimRight(strings.TrimSpace(raw), "/")
 	if trimmed == "" {

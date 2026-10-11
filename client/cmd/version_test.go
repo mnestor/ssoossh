@@ -2,10 +2,14 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/mnestor/ssoossh/client/config"
 
 	"github.com/spf13/cobra"
 
@@ -153,4 +157,36 @@ func decodeVersionJSON(t *testing.T) versionInfo {
 		t.Fatalf("output is not valid JSON: %v (output: %s)", err, out.String())
 	}
 	return got
+}
+
+// TestVersionLine_ShouldNameThePlatform covers the platform suffix a bug
+// report needs and the version line used to leave out.
+func TestVersionLine_ShouldNameThePlatform(t *testing.T) {
+	if want := runtime.GOOS + "/" + runtime.GOARCH + ")"; !strings.HasSuffix(versionLine(), want) {
+		t.Errorf("versionLine() = %q, want it to end with %q", versionLine(), want)
+	}
+}
+
+// TestExecute_VersionFlag covers `ssoossh --version`, which used to be an
+// unknown flag, and checks it prints what `ssoossh version` prints without
+// loading config.
+func TestExecute_VersionFlag(t *testing.T) {
+	f := newTestExec(t)
+	loaded := false
+	f.root.newConfig = func(cmd *cobra.Command) (*config.Config, error) {
+		loaded = true
+		return &config.Config{}, nil
+	}
+	var out bytes.Buffer
+	f.root.cobraRoot.SetOut(&out)
+
+	if _, err := f.exec.Execute(context.Background(), []string{"--version"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out.String() != versionLine()+"\n" {
+		t.Errorf("got %q, want %q", out.String(), versionLine()+"\n")
+	}
+	if loaded {
+		t.Error("expected --version to answer without loading config")
+	}
 }

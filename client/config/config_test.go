@@ -2,11 +2,14 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -841,5 +844,248 @@ func TestNewConfig_ShouldThreadTheCommandThroughToTheLoader(t *testing.T) {
 
 	if _, err := NewConfig(cmd); err == nil {
 		t.Error("NewConfig() error = nil, want an error for a --config file that does not exist")
+	}
+}
+
+// TestNewConfig_ForbiddenExtensionsFromLockedSources pins where
+// forbidden_certificate_extensions may come from: the enforce file (the only
+// locked source Linux has) and platform policy, unioned, and never a file the
+// user controls.
+func TestNewConfig_ForbiddenExtensionsFromLockedSources(t *testing.T) {
+	tests := []struct {
+		name       string
+		locked     string
+		userConfig string
+		policy     func() (map[string]any, error)
+		want       []string
+	}{
+		{
+			name:   "should read forbidden extensions from the enforce file",
+			locked: "forbidden_certificate_extensions:\n  - permit-port-forwarding\n",
+			policy: noPolicy,
+			want:   []string{"permit-port-forwarding"},
+		},
+		{
+			name:   "should union the enforce file and platform policy without duplicates",
+			locked: "forbidden_certificate_extensions:\n  - permit-port-forwarding\n  - permit-user-rc\n",
+			policy: func() (map[string]any, error) {
+				return map[string]any{"forbidden_certificate_extensions": []any{"permit-user-rc", "permit-pty"}}, nil
+			},
+			want: []string{"permit-port-forwarding", "permit-user-rc", "permit-pty"},
+		},
+		{
+			name:       "should ignore forbidden extensions set in a user file",
+			locked:     "use_agent: true\n",
+			userConfig: "forbidden_certificate_extensions:\n  - permit-pty\n",
+			policy:     noPolicy,
+			want:       nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sysDir := writeSystemConfig(t, map[string]string{
+				"ssoossh.yaml": "enforce: locked.yaml\n",
+				"locked.yaml":  tt.locked,
+			})
+			var args []string
+			if tt.userConfig != "" {
+				args = []string{"--config", writeConfig(t, tt.userConfig)}
+			}
+			cmd := newConfigCommand(t, args...)
+
+			cfg, err := newConfig(cmd, testPaths(sysDir), tt.policy)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !slices.Equal(cfg.ForbiddenCertificateExtensions, tt.want) {
+				t.Errorf("ForbiddenCertificateExtensions = %v, want %v", cfg.ForbiddenCertificateExtensions, tt.want)
+			}
+		})
+	}
+}
+
+// TestNewConfig_ShouldReadAnEnforceFileWithNoExtension covers an enforce
+// file named without a recognised extension: the main instance parses every
+// file as YAML, and the isolated read of the locked keys must agree rather
+// than fail with viper's "Unsupported Config Type".
+func TestNewConfig_ShouldReadAnEnforceFileWithNoExtension(t *testing.T) {
+	sysDir := writeSystemConfig(t, map[string]string{
+		"ssoossh.yaml":   "enforce: ssoossh-locked\n",
+		"ssoossh-locked": "insecure_skip_verify: false\n",
+	})
+	cmd := newConfigCommand(t)
+
+	if _, err := newConfig(cmd, testPaths(sysDir), noPolicy); err != nil {
+		t.Errorf("newConfig() error = %v, want an extensionless enforce file to load", err)
+	}
+}
+
+// TestNewConfig_RequestTimeout pins the request_timeout default and the
+// refusal of a value that would disable or invert it.
+func TestNewConfig_RequestTimeout(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  string
+		want    time.Duration
+		wantErr bool
+	}{
+		{name: "should default request_timeout to two minutes", config: "", want: 2 * time.Minute},
+		{name: "should read request_timeout from a config file", config: "request_timeout: 45s\n", want: 45 * time.Second},
+		{name: "should reject a zero request_timeout", config: "request_timeout: 0s\n", wantErr: true},
+		{name: "should reject a negative request_timeout", config: "request_timeout: -1s\n", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := newConfigCommand(t, "--config", writeConfig(t, tt.config))
+
+			cfg, err := newConfig(cmd, testPaths(t.TempDir()), noPolicy)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected an error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if cfg.RequestTimeout != tt.want {
+				t.Errorf("RequestTimeout = %s, want %s", cfg.RequestTimeout, tt.want)
+			}
+		})
+	}
+}
+
+// TestNewConfig_LoadFailureWording pins the messages for a --config file or
+// an enforce file that will not load, without viper's "While parsing
+// config:" prefix.
+func TestNewConfig_LoadFailureWording(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing.yaml")
+	malformed := writeConfig(t, "server: [unclosed\n")
+
+	tests := []struct {
+		name   string
+		sysDir string
+		args   []string
+		want   string
+	}{
+		{
+			name:   "should say a --config file does not exist",
+			sysDir: t.TempDir(),
+			args:   []string{"--config", missing},
+			want:   fmt.Sprintf("the config file %q given with --config does not exist", missing),
+		},
+		{
+			name:   "should give the YAML error for a malformed --config file",
+			sysDir: t.TempDir(),
+			args:   []string{"--config", malformed},
+			want:   fmt.Sprintf("the config file %q given with --config could not be read: yaml: line 1: did not find expected ',' or ']'", malformed),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := newConfig(newConfigCommand(t, tt.args...), testPaths(tt.sysDir), noPolicy)
+			if err == nil || err.Error() != tt.want {
+				t.Errorf("got %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
+// TestNewConfig_ShouldReturnAnExplicitConfigError pins the error type a
+// command that reads no setting uses to tell a broken --config file, which
+// must still fail it, from a broken host configuration, which must not.
+func TestNewConfig_ShouldReturnAnExplicitConfigError(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+	}{
+		{name: "should type the error for a missing --config file", path: filepath.Join(t.TempDir(), "missing.yaml")},
+		{name: "should type the error for a malformed --config file", path: writeConfig(t, "server: [unclosed\n")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := newConfig(newConfigCommand(t, "--config", tt.path), testPaths(t.TempDir()), noPolicy)
+
+			var explicit *ExplicitConfigError
+			if !errors.As(err, &explicit) || explicit.Path != tt.path {
+				t.Errorf("err = %v, want an *ExplicitConfigError for %s", err, tt.path)
+			}
+		})
+	}
+}
+
+// TestNewConfig_SearchPathParseWarnings covers a file at a search location
+// that is there but will not parse. It used to be skipped silently, so its
+// settings, and for the system file any enforce file it named, did not
+// apply with nothing said.
+func TestNewConfig_SearchPathParseWarnings(t *testing.T) {
+	const malformed = "server: [unclosed\n"
+	tests := []struct {
+		name    string
+		paths   func(t *testing.T) searchPaths
+		want    string
+		notWant string
+	}{
+		{
+			name: "should warn that a malformed user file does not apply",
+			paths: func(t *testing.T) searchPaths {
+				return searchPaths{systemDir: t.TempDir(), userFile: writeConfig(t, malformed)}
+			},
+			want: "the user file",
+		},
+		{
+			name: "should warn that a malformed system file leaves its enforce file unapplied",
+			paths: func(t *testing.T) searchPaths {
+				return searchPaths{systemDir: writeSystemConfig(t, map[string]string{"ssoossh.yaml": malformed})}
+			},
+			want: "no administrator lock from it is in effect",
+		},
+		{
+			name: "should not mention administrator locks for a malformed user file",
+			paths: func(t *testing.T) searchPaths {
+				return searchPaths{systemDir: t.TempDir(), userFile: writeConfig(t, malformed)}
+			},
+			notWant: "administrator lock",
+		},
+		{
+			name: "should stay silent about a user file that does not exist",
+			paths: func(t *testing.T) searchPaths {
+				return searchPaths{systemDir: t.TempDir(), userFile: filepath.Join(t.TempDir(), "missing.yaml")}
+			},
+			notWant: "could not be read",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			warnings := captureWarnings(t)
+
+			_, _ = newConfig(newConfigCommand(t), tt.paths(t), noPolicy)
+
+			got := warnings.String()
+			if tt.want != "" && !strings.Contains(got, tt.want) {
+				t.Errorf("warnings = %q, want them to contain %q", got, tt.want)
+			}
+			if tt.notWant != "" && strings.Contains(got, tt.notWant) {
+				t.Errorf("warnings = %q, want them not to contain %q", got, tt.notWant)
+			}
+		})
+	}
+}
+
+func TestNewConfig_ShouldSayLocksCannotBeAppliedWhenTheEnforceFileFails(t *testing.T) {
+	sysDir := writeSystemConfig(t, map[string]string{
+		"ssoossh.yaml": "enforce: locked.yaml\n",
+		"locked.yaml":  "server: [unclosed\n",
+	})
+
+	_, err := newConfig(newConfigCommand(t), testPaths(sysDir), noPolicy)
+
+	want := fmt.Sprintf("the enforce file %q could not be loaded, so the settings an administrator locked cannot be applied: yaml: line 1: did not find expected ',' or ']'",
+		filepath.Join(sysDir, "locked.yaml"))
+	if err == nil || err.Error() != want {
+		t.Errorf("got %v, want %q", err, want)
 	}
 }

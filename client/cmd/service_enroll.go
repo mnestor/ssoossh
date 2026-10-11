@@ -16,6 +16,7 @@ import (
 	"github.com/mnestor/ssoossh/client/config"
 	"github.com/mnestor/ssoossh/internal/api"
 	"github.com/mnestor/ssoossh/internal/crypto/ssh/keypair"
+	"github.com/mnestor/ssoossh/internal/version"
 )
 
 func newServiceEnrollCommand() simplecobra.Commander {
@@ -24,8 +25,9 @@ func newServiceEnrollCommand() simplecobra.Commander {
 	var extensions []string
 
 	cmd := &simpleCommand{
-		name:  "enroll",
-		short: "Enroll a service keypair for unattended certificate issuance.",
+		name:          "enroll",
+		requiredFlags: []string{"key"},
+		short:         "Enroll a service keypair for unattended certificate issuance.",
 		long: "Enrolls a keypair bound by the server to an enrollment code for later " +
 			"certificate retrieval. The keypair is either generated here or already " +
 			"present on disk.\n\n" +
@@ -47,9 +49,13 @@ func newServiceEnrollCommand() simplecobra.Commander {
 			"for is a request, not a grant — the approver sees it, can change it, and the " +
 			"server bounds the result by cert_options.service.extensions either way, so this " +
 			"flag cannot obtain anything the deployment has not permitted.",
+		example: "  # Generate a keypair and enroll it; prints the enrollment code once\n" +
+			"  ssoossh service enroll --key /var/lib/deploy/.ssh/id_deploy\n\n" +
+			"  # Enroll and fetch the first certificate straight away\n" +
+			"  ssoossh service enroll --key ~/.ssh/id_deploy --retrieve",
 		init: func(cd *simplecobra.Commandeer) error {
 			cd.CobraCommand.Flags().StringVar(&keyPath, "key", "",
-				"keypair path (relative or absolute); generates both if neither <name> nor <name>.pub "+
+				"keypair path (relative or absolute; required); generates both if neither <name> nor <name>.pub "+
 					"exist, enrolls the existing <name>.pub otherwise")
 			cd.CobraCommand.Flags().BoolVar(&retrieve, "retrieve", false,
 				"immediately redeem the code and write the certificate to <name>-cert.pub")
@@ -59,7 +65,7 @@ func newServiceEnrollCommand() simplecobra.Commander {
 			return nil
 		},
 		run: func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error {
-			return runServiceEnroll(ctx, root, os.Stdout, keyPath, retrieve, extensions)
+			return runServiceEnroll(ctx, root, cd.CobraCommand.OutOrStdout(), cd.CobraCommand.ErrOrStderr(), keyPath, retrieve, extensions)
 		},
 	}
 	return cmd
@@ -68,9 +74,14 @@ func newServiceEnrollCommand() simplecobra.Commander {
 // runServiceEnroll enrolls a public key and prints the resulting enrollment
 // code. See resolveServiceKey for how keyPath decides between generating a
 // keypair and enrolling one that is already there.
-func runServiceEnroll(ctx context.Context, root *RootCommand, out io.Writer, keyPath string, retrieve bool, extensions []string) error {
+//
+// The approval prompt goes to errOut and the result (the code and the
+// recipe) to out, so `service enroll ... > enrollment.txt` keeps the code
+// while the person still sees what to approve.
+func runServiceEnroll(ctx context.Context, root *RootCommand, out, errOut io.Writer, keyPath string, retrieve bool, extensions []string) error {
+	// checkArity has seen --key given; this catches it given empty.
 	if keyPath == "" {
-		return errors.New("--key is required")
+		return &usageError{msg: "--key must not be empty"}
 	}
 
 	cfg := root.Config()
@@ -92,16 +103,16 @@ func runServiceEnroll(ctx context.Context, root *RootCommand, out io.Writer, key
 		return fmt.Errorf("request enrollment: %w", err)
 	}
 
-	fmt.Fprintf(out, "This is for obtaining a code for automatic certificate issuance for a single account:\n\n")
-	fmt.Fprintf(out, "Approve this request in your browser:\n\n    %s\n\n", pending.ApprovalURL)
+	fmt.Fprintf(errOut, "This is for obtaining a code for automatic certificate issuance for a single account:\n\n")
+	fmt.Fprintf(errOut, "Approve this request in your browser:\n\n    %s\n\n", pending.ApprovalURL)
 	if cfg.TryOpenBrowser {
-		openBrowser(ctx, out, pending.ApprovalURL)
+		openBrowser(ctx, errOut, pending.ApprovalURL)
 	}
-	fmt.Fprintln(out, "Waiting…")
+	fmt.Fprintln(errOut, "Waiting…")
 
 	result, err := root.API().AwaitCertificate(ctx, pending)
 	if err != nil {
-		return describeWaitError(err)
+		return describeWaitError(err, version.Name+" service enroll")
 	}
 
 	enrolled, err := enrollmentOutcome(result)
@@ -327,7 +338,7 @@ func generateServiceKeypair(cfg *config.Config, privateKeyPath string) (string, 
 	publicKeyPath := publicKeyPathFor(privateKeyPath)
 	for _, path := range []string{privateKeyPath, publicKeyPath} {
 		if _, err := os.Stat(path); err == nil {
-			return "", fmt.Errorf("%s already exists; remove it or choose another path for --generate", path)
+			return "", fmt.Errorf("%s already exists; remove it or choose another path with --key", path)
 		} else if !errors.Is(err, os.ErrNotExist) {
 			return "", fmt.Errorf("check %s: %w", path, err)
 		}
@@ -400,7 +411,7 @@ func enrollmentOutcome(result *api.CertificateResult) (enrolledCode, error) {
 	switch result.Status {
 	case api.StatusEnrolled:
 		if result.Code == "" {
-			return enrolledCode{}, errors.New("the request was enrolled but no code was delivered; run service enroll again")
+			return enrolledCode{}, errors.New("the request was enrolled but no code was delivered; run 'ssoossh service enroll' again")
 		}
 		enrolled := enrolledCode{code: result.Code, serviceAccount: result.ServiceAccount}
 		if result.ExpiresAt != nil {
@@ -410,9 +421,9 @@ func enrollmentOutcome(result *api.CertificateResult) (enrolledCode, error) {
 	case api.StatusDenied:
 		return enrolledCode{}, errors.New("the request was denied, so no enrollment was created")
 	case api.StatusExpired:
-		return enrolledCode{}, errors.New("the request expired before anyone approved it; run service enroll again")
+		return enrolledCode{}, errors.New("the request expired before anyone approved it; run 'ssoossh service enroll' again")
 	case api.StatusFailed:
-		return enrolledCode{}, errors.New("ssoosshd could not create the enrollment; check the server logs, then run service enroll again")
+		return enrolledCode{}, errors.New("ssoosshd could not create the enrollment; check the server logs, then run 'ssoossh service enroll' again")
 	default:
 		return enrolledCode{}, fmt.Errorf("the server reported an unrecognized outcome %q", result.Status)
 	}

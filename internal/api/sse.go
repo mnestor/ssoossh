@@ -111,7 +111,7 @@ func waitForOutcome(ctx context.Context, tlsConfig *tls.Config, eventsURL string
 func readOutcome(ctx context.Context, client *http.Client, eventsURL string) (*CertificateResult, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, eventsURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to certificate request events stream: %w", err)
+		return nil, fmt.Errorf("connect to the approval stream: %w", err)
 	}
 	req.Header.Set("Accept", "text/event-stream")
 	// An intermediate cache holding an events stream would serve a stale
@@ -120,7 +120,7 @@ func readOutcome(ctx context.Context, client *http.Client, eventsURL string) (*C
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to certificate request events stream: %w", err)
+		return nil, fmt.Errorf("connect to the approval stream: %w", describeTransport(req.URL.Scheme+"://"+req.URL.Host, 0, err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 

@@ -6,7 +6,7 @@ ssoossh-service-retrieve - Retrieve a service certificate using a previously iss
 
 
 .SH SYNOPSIS
-\fBssoossh service retrieve [flags] [args]\fP
+\fBssoossh service retrieve [flags]\fP
 
 
 .SH DESCRIPTION
@@ -29,7 +29,7 @@ The key files follow OpenSSH naming: the private key is <name>, the public key i
 
 .PP
 \fB--grace\fP="1m"
-	duration of additional validity required before refreshing (default 1m); e.g. 30s, 5m, 1h
+	how much validity a certificate on disk must still have to be kept, e.g. 30s, 5m, 1h
 
 .PP
 \fB-h\fP, \fB--help\fP[=false]
@@ -42,15 +42,25 @@ The key files follow OpenSSH naming: the private key is <name>, the public key i
 
 .SH OPTIONS INHERITED FROM PARENT COMMANDS
 \fB-c\fP, \fB--config\fP=""
-	path to the ssoossh config file
+	path to an extra config file, merged after the standard locations
 
 .PP
 \fB--server\fP=""
-	server address including scheme (e.g. "https://example.com") assumes https if omited.
+	server address, e.g. https://ssh.example.com; https is assumed when no scheme is given
 
 .PP
 \fB-v\fP, \fB--verbose\fP[=0]
 	trace what the command is doing, to stderr; repeat for more (-v steps, -vv requests and files, -vvv bodies)
+
+
+.SH EXAMPLE
+.EX
+  # From cron or a systemd timer: refresh only when the certificate is about to expire
+  ssoossh service retrieve --code "$ENROLLMENT_CODE" --key /var/lib/deploy/.ssh/id_deploy
+
+  # Fetch a new certificate even if the one on disk is still valid
+  ssoossh service retrieve --code "$ENROLLMENT_CODE" --key /var/lib/deploy/.ssh/id_deploy --force
+.EE
 
 
 .SH SEE ALSO

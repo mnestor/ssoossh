@@ -20,6 +20,7 @@ import (
 	sshagent "github.com/mnestor/ssoossh/internal/crypto/ssh/agent"
 	"github.com/mnestor/ssoossh/internal/crypto/ssh/keypair"
 	"github.com/mnestor/ssoossh/internal/hostinfo"
+	"github.com/mnestor/ssoossh/internal/version"
 
 	"github.com/mnestor/ssoossh/client/config"
 )
@@ -32,10 +33,10 @@ import (
 // anything the deployment does not permit is simply trimmed.
 //
 // Users can opt out of extensions via config settings or CLI flags, and
-// administrators can forbid extensions via policy (Windows registry, macOS
-// managed preferences, or the enforce file on Linux). The effective set is
-// the default, minus config opt-outs, minus flag opt-outs, minus policy
-// forbidden — in that order. Asking for nothing is not an option: narrowing
+// administrators can forbid extensions via the enforce file on any platform
+// or platform policy (Windows registry, macOS managed preferences). The
+// effective set is the default, minus config opt-outs, minus flag opt-outs,
+// minus policy forbidden — in that order. Asking for nothing is not an option: narrowing
 // is an intersection, so an empty request yields a certificate carrying no
 // extensions at all, which cannot open an interactive session.
 var loginExtensions = []string{
@@ -104,23 +105,32 @@ func newSSHLoginCommand() simplecobra.Commander {
 
 	return &simpleCommand{
 		name:  "login",
-		short: "Authenticate via OIDC and load a signed SSH certificate into the agent (or files).",
+		short: "Sign in through the browser and load a signed SSH certificate into the agent (or files).",
 		long: "Generates a fresh keypair, sends the public key to the ssoossh server, opens " +
-			"the browser for OIDC approval, and waits over SSE for the signed certificate. " +
-			"Used from ssh_config's `Match exec`, or interactively before a session.\n\n" +
+			"your browser so you can sign in and approve, and waits for the server to deliver " +
+			"the signed certificate. Used from ssh_config's `Match exec`, or by hand before a " +
+			"session.\n\n" +
 			"A certificate that is already loaded and still valid is reused rather than " +
 			"replaced, so one approval covers every connection until it expires. Pass " +
 			"--force to replace it with a new one.",
+		example: "  # Get a certificate, or reuse the valid one already loaded\n" +
+			"  ssoossh ssh login\n\n" +
+			"  # Replace the loaded certificate with a new one\n" +
+			"  ssoossh ssh login --force\n\n" +
+			"  # An RSA key, and no agent forwarding on the certificate\n" +
+			"  ssoossh ssh login --key-type rsa --key-size 4096 --no-agent-forwarding",
 		init: func(cd *simplecobra.Commandeer) error {
 			cd.CobraCommand.Flags().BoolVar(&force, "force", false,
 				"request a new certificate even if a valid one is already loaded")
-			// --key-type/--key-size are local to ssh login: it's the only
-			// command that generates a keypair. Bound to sshkey.type/size
-			// in config.go's newConfig, same mechanism as --server.
+			// --key-type/--key-size are local to ssh login. Bound to
+			// sshkey.type/size in config.go's newConfig, same mechanism as
+			// --server. service enroll generates keypairs too, but from
+			// the config file's sshkey settings alone.
 			cd.CobraCommand.Flags().String("key-type", "",
-				"ssh key algorithm to generate: ed25519, ecdsa, or rsa (default depends on FIPS mode)")
+				"key algorithm to generate: ecdsa (the default), ed25519, or rsa")
 			cd.CobraCommand.Flags().Int("key-size", 0,
-				"ssh key size (bits for rsa, curve for ecdsa; ignored for ed25519)")
+				"key size: the curve for ecdsa (256, 384 or 521; default 384) or bits for rsa "+
+					"(at least 2048; default 3072); ignored for ed25519")
 			// Certificate extension flags: opt out of requested extensions.
 			// Bound to certificate_extensions.* in config.go's newConfig.
 			cd.CobraCommand.Flags().Bool("no-pty", false,
@@ -276,7 +286,8 @@ func runLoginPreflight(root *RootCommand, cfg *config.Config, out io.Writer) err
 
 	// If preflight failed and fallback is configured, try the file agent
 	if cfg.UseAgent && cfg.FallbackFileAgent {
-		slog.Warn("agent preflight failed, attempting fallback to file storage", "error", preflightErr)
+		// Info: the line printed below tells the person; this is the detail.
+		slog.Info("agent preflight failed, attempting fallback to file storage", "error", preflightErr)
 		fallbackErr := probeFileAgentPreflightWithPath(cfg.Filename)
 		if fallbackErr != nil {
 			return fmt.Errorf("agent storage check failed and fallback also failed: primary error: %w, fallback error: %w", preflightErr, fallbackErr)
@@ -379,7 +390,7 @@ func runLogin(ctx context.Context, root *RootCommand, out io.Writer, force bool)
 
 	result, err := root.API().AwaitCertificate(ctx, pending)
 	if err != nil {
-		return describeWaitError(err)
+		return describeWaitError(err, version.Name+" ssh login")
 	}
 
 	if err := checkOutcome(result); err != nil {
@@ -479,15 +490,15 @@ func checkOutcome(result *api.CertificateResult) error {
 	switch result.Status {
 	case api.StatusApproved:
 		if result.Certificate == "" {
-			return errors.New("the request was approved but no certificate was delivered; run ssh login again")
+			return errors.New("the request was approved but no certificate was delivered; run 'ssoossh ssh login' again")
 		}
 		return nil
 	case api.StatusDenied:
 		return errors.New("the request was denied, so no certificate was issued")
 	case api.StatusExpired:
-		return errors.New("the request expired before anyone approved it; run ssh login again")
+		return errors.New("the request expired before anyone approved it; run 'ssoossh ssh login' again")
 	case api.StatusFailed:
-		return errors.New("ssoosshd could not issue the certificate; check the server logs, then run ssh login again")
+		return errors.New("ssoosshd could not issue the certificate; check the server logs, then run 'ssoossh ssh login' again")
 	case api.StatusEnrolled:
 		// A user request cannot resolve this way — enrollment belongs to the
 		// service path — so seeing it means the server sent something this
@@ -499,13 +510,14 @@ func checkOutcome(result *api.CertificateResult) error {
 }
 
 // describeWaitError translates a failure while waiting into advice. The 410
-// is worth naming: the certificate really was issued, it is simply gone —
-// they are never persisted — and running the command again is the fix rather
-// than a workaround.
-func describeWaitError(err error) error {
+// is worth naming: the result really was issued, it is simply gone — it is
+// never persisted — and running the command again is the fix rather than a
+// workaround. rerun is that command; ssh login and service enroll share
+// this, and enroll used to be told to run ssh login.
+func describeWaitError(err error, rerun string) error {
 	var respErr *api.ResponseError
 	if errors.As(err, &respErr) && respErr.StatusCode == http.StatusGone {
-		return errors.New("the certificate was issued but is no longer available for collection; run ssh login again")
+		return fmt.Errorf("the request was approved but its result is no longer available for collection; run '%s' again", rerun)
 	}
 	return fmt.Errorf("wait for approval: %w", err)
 }

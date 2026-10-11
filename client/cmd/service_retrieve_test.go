@@ -14,6 +14,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/mnestor/ssoossh/client/config"
+	"github.com/mnestor/ssoossh/internal/api"
 	"github.com/mnestor/ssoossh/internal/crypto/ssh/keypair"
 )
 
@@ -142,8 +143,8 @@ func TestServiceRetrieve_MissingCode(t *testing.T) {
 
 	var out bytes.Buffer
 	err := runServiceRetrieve(context.Background(), nil, &out, "", "/tmp/key", false, "1m")
-	if err == nil || !strings.Contains(err.Error(), "--code is required") {
-		t.Errorf("runServiceRetrieve() error = %v, want containing '--code is required'", err)
+	if err == nil || !strings.Contains(err.Error(), "--code must not be empty") {
+		t.Errorf("runServiceRetrieve() error = %v, want containing '--code must not be empty'", err)
 	}
 }
 
@@ -153,19 +154,35 @@ func TestServiceRetrieve_MissingKey(t *testing.T) {
 
 	var out bytes.Buffer
 	err := runServiceRetrieve(context.Background(), nil, &out, "code", "", false, "1m")
-	if err == nil || !strings.Contains(err.Error(), "--key is required") {
-		t.Errorf("runServiceRetrieve() error = %v, want containing '--key is required'", err)
+	if err == nil || !strings.Contains(err.Error(), "--key must not be empty") {
+		t.Errorf("runServiceRetrieve() error = %v, want containing '--key must not be empty'", err)
 	}
 }
 
-// should reject invalid --grace duration.
+// should reject an unusable --grace as a usage error that says what the
+// flag takes.
 func TestServiceRetrieve_InvalidGrace(t *testing.T) {
 	t.Parallel()
 
-	var out bytes.Buffer
-	err := runServiceRetrieve(context.Background(), nil, &out, "code", "/tmp/key", false, "invalid")
-	if err == nil || !strings.Contains(err.Error(), "invalid --grace duration") {
-		t.Errorf("runServiceRetrieve() error = %v, want containing 'invalid --grace duration'", err)
+	tests := []struct {
+		name  string
+		grace string
+		want  string
+	}{
+		{name: "should reject a value that is not a duration", grace: "invalid", want: `invalid value "invalid" for --grace: use a number with a unit, e.g. 30s, 5m or 1h`},
+		{name: "should reject a number with no unit", grace: "5", want: `invalid value "5" for --grace: use a number with a unit, e.g. 30s, 5m or 1h`},
+		{name: "should reject a negative duration", grace: "-1s", want: `invalid value "-1s" for --grace: it must not be negative`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var out bytes.Buffer
+			err := runServiceRetrieve(context.Background(), nil, &out, "code", "/tmp/key", false, tt.grace)
+			var usage *usageError
+			if !errors.As(err, &usage) || usage.Error() != tt.want {
+				t.Errorf("got %v, want usage error %q", err, tt.want)
+			}
+		})
 	}
 }
 
@@ -343,5 +360,73 @@ func TestServiceRetrieve_ShouldWriteTheCertificateBesideTheKey(t *testing.T) {
 	}
 	if string(got) != fresh {
 		t.Error("expected the retrieved certificate to be written verbatim")
+	}
+}
+
+// TestDescribeRetrieveError pins the message for each class of retrieval
+// failure, so a server outage is no longer reported as an expired code.
+func TestDescribeRetrieveError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{
+			name: "should report an expired code when the server answers 404",
+			err:  &api.ResponseError{StatusCode: 404, Message: "unknown or expired enrollment code"},
+			want: "enrollment code not found or expired; run 'ssoossh service enroll' to get a new one",
+		},
+		{
+			name: "should report an expired code when the server answers 410",
+			err:  &api.ResponseError{StatusCode: 410},
+			want: "enrollment code not found or expired; run 'ssoossh service enroll' to get a new one",
+		},
+		{
+			name: "should pass on the server's reason when it refuses the code",
+			err:  &api.ResponseError{StatusCode: 403, Message: "source address not allowed"},
+			want: "the server refused this enrollment code (status 403: source address not allowed)",
+		},
+		{
+			name: "should say to retry later when the server rate limits",
+			err:  &api.ResponseError{StatusCode: 429},
+			want: "the server is rate limiting retrieval from this address; retry in a minute",
+		},
+		{
+			name: "should blame the server, not the code, when the server fails",
+			err:  &api.ResponseError{StatusCode: 500, Message: "signing timed out"},
+			want: "the server failed to issue the certificate (status 500: signing timed out). This is a server problem, not your code; retry shortly or contact the ssoossh administrator",
+		},
+		{
+			name: "should name the status for any other rejection",
+			err:  &api.ResponseError{StatusCode: 400},
+			want: "the server rejected the retrieval (status 400)",
+		},
+		{
+			name: "should prefix a transport failure with the action",
+			err:  errors.New("connection refused"),
+			want: "retrieve certificate: connection refused",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := describeRetrieveError(tt.err).Error(); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// The server's response must stay reachable through the reworded error, so
+// a caller can still branch on the status.
+func TestDescribeRetrieveError_ShouldKeepTheResponseErrorUnwrappable(t *testing.T) {
+	t.Parallel()
+
+	respErr := &api.ResponseError{StatusCode: 500}
+	if !errors.As(describeRetrieveError(respErr), &respErr) {
+		t.Error("expected errors.As to find the *api.ResponseError")
 	}
 }

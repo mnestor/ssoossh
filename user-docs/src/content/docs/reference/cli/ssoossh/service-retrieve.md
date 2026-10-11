@@ -14,7 +14,17 @@ The key files follow OpenSSH naming: the private key is &lt;name&gt;, the public
 ## Synopsis
 
 ```
-ssoossh service retrieve [flags] [args]
+ssoossh service retrieve [flags]
+```
+
+## Examples
+
+```bash
+# From cron or a systemd timer: refresh only when the certificate is about to expire
+  ssoossh service retrieve --code "$ENROLLMENT_CODE" --key /var/lib/deploy/.ssh/id_deploy
+
+  # Fetch a new certificate even if the one on disk is still valid
+  ssoossh service retrieve --code "$ENROLLMENT_CODE" --key /var/lib/deploy/.ssh/id_deploy --force
 ```
 
 ## Options
@@ -23,7 +33,7 @@ ssoossh service retrieve [flags] [args]
 | --- | --- | --- | --- |
 | `--code` | string |  | enrollment code (required) |
 | `--force` | bool | `false` | retrieve a new certificate even if a valid one exists on disk |
-| `--grace` | string | `1m` | duration of additional validity required before refreshing (default 1m); e.g. 30s, 5m, 1h |
+| `--grace` | string | `1m` | how much validity a certificate on disk must still have to be kept, e.g. 30s, 5m, 1h |
 | `--key` | string |  | keypair path (relative or absolute; required) |
 
 ## Global options
@@ -32,8 +42,8 @@ Inherited from [`ssoossh`](/ssoossh/reference/cli/ssoossh/) and its parents.
 
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
-| `-c`, `--config` | string |  | path to the ssoossh config file |
-| `--server` | string |  | server address including scheme (e.g. "https://example.com") assumes https if omited. |
+| `-c`, `--config` | string |  | path to an extra config file, merged after the standard locations |
+| `--server` | string |  | server address, e.g. https://ssh.example.com; https is assumed when no scheme is given |
 | `-v`, `--verbose` | count | `0` | trace what the command is doing, to stderr; repeat for more (-v steps, -vv requests and files, -vvv bodies) |
 
 ## See also

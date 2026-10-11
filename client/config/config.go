@@ -9,8 +9,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -74,10 +76,11 @@ func newConfig(cmd *cobra.Command, paths searchPaths, loadPolicy func() (map[str
 		return nil, err
 	}
 
-	enforceKeys, enforceSource, err := mergeEnforceFile(v, paths, enforce)
+	enforced, enforceSource, err := mergeEnforceFile(v, paths, enforce)
 	if err != nil {
 		return nil, err
 	}
+	enforceKeys := enforced.keys
 
 	// Merged after `enforce`, so a platform-native policy source (Windows
 	// GPO registry, macOS managed preferences) wins over even the enforce
@@ -102,7 +105,7 @@ func newConfig(cmd *cobra.Command, paths searchPaths, loadPolicy func() (map[str
 	// that wasn't passed contributes its empty default at the lowest
 	// priority and does not clobber a configured value. --key-type/
 	// --key-size and certificate extension flags are local to `ssh login`
-	// (the only command that generates a keypair and requests extensions),
+	// (service enroll also generates a keypair, but from sshkey.* alone),
 	// so Lookup returns nil and binding them no-ops for every other
 	// command's cmd.
 	locked := make(map[string]bool, len(enforceKeys)+len(policy.keys))
@@ -146,10 +149,12 @@ func newConfig(cmd *cobra.Command, paths searchPaths, loadPolicy func() (map[str
 		mapstructure.StringToTimeDurationHookFunc(),
 		mapstructure.StringToSliceHookFunc(","),
 	))); err != nil {
-		return nil, fmt.Errorf("failed to parse config: %w", err)
+		return nil, describeDecodeError(err)
 	}
 	c.FIPSEnforced = (enforceKeys["fips"] || policy.fipsSet) && c.FIPS != nil && *c.FIPS
-	c.ForbiddenCertificateExtensions = policy.forbiddenExtensions
+	// Both locked sources contribute, so an enforce file is enough on a
+	// platform (Linux) that has no native policy store.
+	c.ForbiddenCertificateExtensions = unionStrings(enforced.forbiddenExtensions, policy.forbiddenExtensions)
 	c.SetByFlag = setByFlag
 
 	// Resolve the key settings now so a bad combination is reported at
@@ -158,10 +163,16 @@ func newConfig(cmd *cobra.Command, paths searchPaths, loadPolicy func() (map[str
 	// for validation and for emitting the warnings exactly once.
 	_, _, warnings, err := c.ResolveSSHKey()
 	if err != nil {
-		return nil, fmt.Errorf("invalid ssh key configuration: %w", err)
+		// Unwrapped: ResolveSSHKey's messages name the flag and the
+		// setting already.
+		return nil, err
 	}
 	for _, w := range warnings {
 		slog.Warn(w)
+	}
+
+	if c.RequestTimeout <= 0 {
+		return nil, fmt.Errorf("request_timeout must be a positive duration such as 2m, got %s", c.RequestTimeout)
 	}
 
 	if err := c.ResolvePaths(); err != nil {
@@ -171,6 +182,20 @@ func newConfig(cmd *cobra.Command, paths searchPaths, loadPolicy func() (map[str
 	c.Sources = sources
 
 	return &c, nil
+}
+
+// ExplicitConfigError reports a file named with --config that does not
+// exist or will not parse. Callers never downgrade it to a warning, not even
+// for a command that reads no setting: the person asked for that file, and a
+// run that carries on without it would succeed on settings they did not pick.
+type ExplicitConfigError struct {
+	Path   string
+	Reason string
+}
+
+// Error implements error.
+func (e *ExplicitConfigError) Error() string {
+	return fmt.Sprintf("the config file %q given with --config %s", e.Path, e.Reason)
 }
 
 // mergeConfigFiles merges the file half of the configuration chain into v
@@ -212,7 +237,17 @@ func mergeConfigFiles(v *viper.Viper, paths searchPaths, configFile string) (enf
 		//
 		// Same reasoning `enforce` below already fails closed on.
 		if file.label == configFlagLabel && source.Status != SourceMerged {
-			return "", nil, fmt.Errorf("failed to load the config file %q given with --config: %s", file.path, source.describeFailure())
+			return "", nil, &ExplicitConfigError{Path: file.path, Reason: source.describeFailure()}
+		}
+		// A search-path file that is there but will not parse is not the
+		// normal absence above: its settings silently not applying is the
+		// same surprise, so it is reported even though the run continues.
+		if source.Status == SourceError {
+			msg := fmt.Sprintf("the %s %q could not be read, so none of its settings apply: %s", file.label, file.path, source.Err)
+			if i == 0 {
+				msg += "; that includes any enforce file it names, so no administrator lock from it is in effect"
+			}
+			slog.Warn(msg)
 		}
 	}
 	// Recorded after the loop so the chain reads in precedence order: an
@@ -230,9 +265,9 @@ func mergeConfigFiles(v *viper.Viper, paths searchPaths, configFile string) (enf
 // user-writable location — that is the whole point of `enforce`. A relative
 // target resolves inside the system directory, so naming one cannot reach a
 // file the user controls.
-func mergeEnforceFile(v *viper.Viper, paths searchPaths, enforce string) (map[string]bool, ConfigSource, error) {
+func mergeEnforceFile(v *viper.Viper, paths searchPaths, enforce string) (enforceFile, ConfigSource, error) {
 	if enforce == "" {
-		return nil, ConfigSource{Label: "enforce", Status: SourceNotGiven, AdminLock: true}, nil
+		return enforceFile{}, ConfigSource{Label: "enforce", Status: SourceNotGiven, AdminLock: true}, nil
 	}
 	if !filepath.IsAbs(enforce) {
 		enforce = filepath.Join(paths.systemDir, enforce)
@@ -245,13 +280,47 @@ func mergeEnforceFile(v *viper.Viper, paths searchPaths, enforce string) (map[st
 	// (which is exactly what the control exists to prevent).
 	v.SetConfigFile(enforce)
 	if err := v.MergeInConfig(); err != nil {
-		return nil, ConfigSource{}, fmt.Errorf("failed to load enforce file %q: %w", enforce, err)
+		return enforceFile{}, ConfigSource{}, enforceLoadError(enforce, err)
 	}
-	keys, err := enforceFileKeys(enforce)
+	found, err := readEnforceFile(enforce)
 	if err != nil {
-		return nil, ConfigSource{}, fmt.Errorf("failed to load enforce file %q: %w", enforce, err)
+		return enforceFile{}, ConfigSource{}, enforceLoadError(enforce, err)
 	}
-	return keys, ConfigSource{Label: "enforce", Path: enforce, Status: SourceMerged, AdminLock: true}, nil
+	warnUnknownSettings(enforce, slices.Sorted(maps.Keys(found.keys)), true)
+	return found, ConfigSource{Label: "enforce", Path: enforce, Status: SourceMerged, AdminLock: true}, nil
+}
+
+// enforceLoadError reports an enforce file that would not load. It says why
+// the command stops rather than carrying on: the locks in it cannot be
+// applied, and running without them is what the fail-closed rule forbids.
+func enforceLoadError(path string, err error) error {
+	return fmt.Errorf("the enforce file %q could not be loaded, so the settings an administrator "+
+		"locked cannot be applied: %s", path, parseErrorText(err))
+}
+
+// enforceFile is what readEnforceFile found in the enforce file.
+type enforceFile struct {
+	// keys are the settings it sets, flattened the way viper names them
+	// ("sshkey.type"). No command-line flag may override one.
+	keys map[string]bool
+	// forbiddenExtensions is its forbidden_certificate_extensions, the
+	// counterpart of platformPolicy.forbiddenExtensions. Config never
+	// decodes that key from the merged chain, so a user file cannot set it.
+	forbiddenExtensions []string
+}
+
+// unionStrings returns every string in a then b, in that order, once each.
+func unionStrings(a, b []string) []string {
+	var out []string
+	seen := make(map[string]bool, len(a)+len(b))
+	for _, s := range slices.Concat(a, b) {
+		if s == "" || seen[s] {
+			continue
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	return out
 }
 
 // flagsSource is the command-line flags' entry in the source chain: which
@@ -353,12 +422,24 @@ func mergeConfig(v *viper.Viper, label, f string) ConfigSource {
 	err := v.MergeInConfig()
 	switch {
 	case err == nil:
+		warnUnknownSettings(f, fileSettings(f), false)
 		return ConfigSource{Label: label, Path: f, Status: SourceMerged}
 	case isNotExist(err):
 		return ConfigSource{Label: label, Path: f, Status: SourceAbsent}
 	default:
-		return ConfigSource{Label: label, Path: f, Status: SourceError, Err: err.Error()}
+		return ConfigSource{Label: label, Path: f, Status: SourceError, Err: parseErrorText(err)}
 	}
+}
+
+// parseErrorText is err's message without viper's "While parsing config: "
+// prefix, which arrives capitalised in the middle of a sentence and adds
+// nothing the YAML parser's own "yaml: line 3: ..." does not say.
+func parseErrorText(err error) string {
+	var parseErr viper.ConfigParseError
+	if errors.As(err, &parseErr) && errors.Unwrap(parseErr) != nil {
+		return errors.Unwrap(parseErr).Error()
+	}
+	return err.Error()
 }
 
 // isNotExist reports whether err is viper's or the OS's "no such file". A
@@ -413,17 +494,27 @@ func bindFlags(v *viper.Viper, cmd *cobra.Command, flagToKey map[string]string, 
 	return changed, overridden, setByFlag, nil
 }
 
-// enforceFileKeys returns the settings the enforce file at path sets,
-// flattened the way viper names them ("sshkey.type"). Read in isolation
-// from the main viper instance, where the origin of a merged value is lost.
-// These are the settings no command-line flag may override, so a read that
-// fails is an error rather than an empty set: the caller has just merged
-// the same file, and an empty set here would quietly unlock all of them.
-func enforceFileKeys(path string) (map[string]bool, error) {
+// readEnforceFile returns the settings the enforce file at path sets,
+// flattened the way viper names them ("sshkey.type"), and the extensions it
+// forbids. Read in isolation from the main viper instance, where the origin
+// of a merged value is lost. These are the settings no command-line flag may
+// override, so a read that fails is an error rather than an empty set: the
+// caller has just merged the same file, and an empty set here would quietly
+// unlock all of them.
+//
+// Parsed as YAML whatever its extension, the same way the main instance
+// (SetConfigType("yaml") in newConfig) merged it a moment ago: an enforce
+// file named without a recognised extension would otherwise merge fine and
+// then fail here with viper's "Unsupported Config Type".
+func readEnforceFile(path string) (enforceFile, error) {
 	v := viper.New()
+	v.SetConfigType("yaml")
 	v.SetConfigFile(path)
 	if err := v.MergeInConfig(); err != nil {
-		return nil, err
+		return enforceFile{}, err
 	}
-	return keySet(v.AllKeys()), nil
+	return enforceFile{
+		keys:                keySet(v.AllKeys()),
+		forbiddenExtensions: v.GetStringSlice("forbidden_certificate_extensions"),
+	}, nil
 }
