@@ -56,9 +56,9 @@ func writeDebugReport(out io.Writer, cfg *config.Config, ssh agentDescriber, com
 	fmt.Fprintf(out, "%-20s %s %s (%s/%s)\n", "version", version.Name, version.Version, runtime.GOOS, runtime.GOARCH)
 	fmt.Fprintf(out, "%-20s %s\n", "command", commandPath)
 	if wd, err := os.Getwd(); err == nil {
-		// The working directory decides where the "local file" source below
-		// is looked for, so a surprising entry there usually has its
-		// explanation here.
+		// A relative --config path resolves against the working directory,
+		// so a surprising --config entry below usually has its explanation
+		// here.
 		fmt.Fprintf(out, "%-20s %s\n", "working dir", wd)
 	}
 

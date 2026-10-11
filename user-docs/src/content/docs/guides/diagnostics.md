@@ -55,8 +55,8 @@ gives both the report and the steps that followed it. The report has four
 parts:
 
 **Identity of the invocation.** The version, platform, the command path, and
-the working directory -- which is what decides where the local config file is
-looked for, so a surprising entry in the chain below usually has its
+the working directory -- which a relative `--config` path resolves against,
+so a surprising `--config` entry in the chain below usually has its
 explanation here.
 
 **The config sources, in the order they were applied**, each overriding the

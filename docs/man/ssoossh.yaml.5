@@ -10,7 +10,7 @@ which key algorithm to generate.
 .SH LOCATION AND MERGING
 Unless
 .BR "ssoossh --config " \fIfile\fR
-is given, up to four files are merged, each layered on top of the last so
+is given, up to three files are merged, each layered on top of the last so
 later ones override earlier ones on any key both set:
 .IP 1. 4
 Built-in defaults (compiled into the binary; not a file on disk).
@@ -26,9 +26,11 @@ on Linux and macOS, or
 .I %AppData%\essoossh\essoossh.yaml
 (the roaming profile) on Windows. Skipped if no home directory can be
 determined.
-.IP 4. 4
-.I ./ssoossh.yaml
-in the current working directory, for development.
+.PP
+No file in the working directory is read: ssh runs the client from wherever
+it was started, so one there could repoint the server for any connection made
+from that directory. Name any other file with
+.BR --config .
 .PP
 If
 .B --config

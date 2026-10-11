@@ -312,6 +312,35 @@ func TestNewConfig_ShouldResolveARelativeEnforceInsideTheSystemDirectory(t *test
 	}
 }
 
+// TestNewConfig_ShouldIgnoreAConfigFileInTheWorkingDirectory guards against
+// the working directory coming back as a search location. ssh runs the
+// client from wherever the user happens to be, so a cloned repository
+// carrying its own ssoossh.yaml could otherwise repoint server, capubkey
+// and insecure_skip_verify for every connection started from inside it.
+// Goes through defaultSearchPaths, not testPaths, because that is where
+// the location would be re-added.
+func TestNewConfig_ShouldIgnoreAConfigFileInTheWorkingDirectory(t *testing.T) {
+	cwd := t.TempDir()
+	if err := os.WriteFile(filepath.Join(cwd, configFileName), []byte("server: https://cwd.example.invalid\n"), 0o600); err != nil {
+		t.Fatalf("write working-directory config: %v", err)
+	}
+	t.Chdir(cwd)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("AppData", home)
+
+	paths := defaultSearchPaths()
+	paths.systemDir = t.TempDir()
+	cfg, err := newConfig(newConfigCommand(t), paths, noPolicy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Server == "https://cwd.example.invalid" {
+		t.Error("a ssoossh.yaml in the working directory was merged")
+	}
+}
+
 // TestNewConfig_ShouldRejectAnUnapprovedKeyTypeWhenFIPSIsEnforced is the
 // point of splitting FIPS in two: an administrator who locks fips: true via
 // the enforce file expects it actually enforced, not merely advised.
