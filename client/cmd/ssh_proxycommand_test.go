@@ -217,3 +217,18 @@ func TestProxyCommand_ShouldReportAFailedHandOff(t *testing.T) {
 		t.Errorf("got %q, want the command that failed to be named", err)
 	}
 }
+
+// The recipe in the help must be one a user can paste: the subcommand
+// spelled right and the binary named ssoossh, not whatever built the docs.
+func TestProxyCommandHelp_ShouldShowAWorkingRecipe(t *testing.T) {
+	root, err := CobraCommandForManpage()
+	if err != nil {
+		t.Fatalf("build tree: %v", err)
+	}
+	cmd := findCommand(root, "ssh", "proxycommand")
+
+	want := "After:  ProxyCommand ssoossh ssh proxycommand /usr/bin/nc -X connect -x 192.0.2.0:8080 %h %p"
+	if !strings.Contains(cmd.Long, want) {
+		t.Errorf("Long does not contain %q:\n%s", want, cmd.Long)
+	}
+}

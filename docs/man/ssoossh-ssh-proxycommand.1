@@ -2,7 +2,7 @@
 .TH "SSOOSSH" "1" "Aug 2026" "ssoossh" ""
 
 .SH NAME
-ssoossh-ssh-proxycommand - Ensure a valid certificate, then relay stdio to the target host over TCP.
+ssoossh-ssh-proxycommand - Ensure a valid certificate, then hand the connection to a relay command such as nc.
 
 
 .SH SYNOPSIS
@@ -10,15 +10,18 @@ ssoossh-ssh-proxycommand - Ensure a valid certificate, then relay stdio to the t
 
 
 .SH DESCRIPTION
-For use as ssh_config's ProxyCommand. Arguments after ProxyCommand should mirror exactly as if you weren't calling ssoossh.
+For use as ssh_config's ProxyCommand. Ensures a valid certificate is in your ssh-agent, then hands the connection to the relay command that follows it. Write the relay command exactly as you would without ssoossh:
 
-.PP
-from ssh_config man page
+.EX
 Before: ProxyCommand /usr/bin/nc -X connect -x 192.0.2.0:8080 %h %p
-After : ProxyCommand gendocs ssh ProxyCommand /usr/bin/nc -X connect -x 192.0.2.0:8080 %h %p
+After:  ProxyCommand ssoossh ssh proxycommand /usr/bin/nc -X connect -x 192.0.2.0:8080 %h %p
+.EE
 
 .PP
-NOTICE: Use of ssh key files will not work here as ssh only reads them once at start and will not see our changes to them.
+Everything from the relay command on is passed to it unparsed, so put ssoossh flags such as --server, --config or -v before it.
+
+.PP
+Requires an ssh-agent: ssh reads key files once, at startup, so a certificate written to disk afterwards would never be used. Without an agent, use the Match exec recipe from \fBssoossh ssh config\fR\&.
 
 
 .SH OPTIONS

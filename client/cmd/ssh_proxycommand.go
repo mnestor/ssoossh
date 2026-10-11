@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 
 	"github.com/bep/simplecobra"
@@ -57,19 +56,24 @@ func warnMisplacedClientFlags(w io.Writer, args []string) {
 }
 
 func newSSHProxyCommandCommand() simplecobra.Commander {
-	exe := filepath.Base(os.Args[0])
-	pc := "ProxyCommand /usr/bin/nc -X connect -x 192.0.2.0:8080 %h %p"
+	// The binary's name is written out rather than taken from os.Args[0]:
+	// the docs generators build this text too, and the shipped pages said
+	// "genclidocs ssh ProxyCommand".
+	relay := "/usr/bin/nc -X connect -x 192.0.2.0:8080 %h %p"
 	sc := &simpleCommand{
 		name:    "proxycommand",
 		argSpec: "<command> [args...]",
-		short:   "Ensure a valid certificate, then relay stdio to the target host over TCP.",
-		long: "For use as ssh_config's ProxyCommand. Arguments after ProxyCommand should " +
-			"mirror exactly as if you weren't calling ssoossh.\n\n" +
-			"from ssh_config man page\nBefore: " + pc + "\n" +
-			"After : ProxyCommand " + exe + " ssh " + pc + "\n\n" +
-			"NOTICE: Use of ssh key " +
-			"files will not work here as ssh only reads them once at start and will not see " +
-			"our changes to them.",
+		short:   "Ensure a valid certificate, then hand the connection to a relay command such as nc.",
+		long: "For use as ssh_config's ProxyCommand. Ensures a valid certificate is in your " +
+			"ssh-agent, then hands the connection to the relay command that follows it. Write " +
+			"the relay command exactly as you would without " + version.Name + ":\n\n" +
+			"    Before: ProxyCommand " + relay + "\n" +
+			"    After:  ProxyCommand " + version.Name + " ssh proxycommand " + relay + "\n\n" +
+			"Everything from the relay command on is passed to it unparsed, so put " +
+			version.Name + " flags such as --server, --config or -v before it.\n\n" +
+			"Requires an ssh-agent: ssh reads key files once, at startup, so a certificate " +
+			"written to disk afterwards would never be used. Without an agent, use the Match " +
+			"exec recipe from `" + version.Name + " ssh config`.",
 		run: func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error {
 			if len(args) == 0 {
 				return errProxyCommandRequiresArgs

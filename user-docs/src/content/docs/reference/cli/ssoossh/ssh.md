@@ -31,7 +31,7 @@ Inherited from [`ssoossh`](/ssoossh/reference/cli/ssoossh/) and its parents.
 | [`ssoossh ssh inspect`](/ssoossh/reference/cli/ssoossh/ssh-inspect/) | Print details of the currently held ssoossh certificate(s). |
 | [`ssoossh ssh login`](/ssoossh/reference/cli/ssoossh/ssh-login/) | Authenticate via OIDC and load a signed SSH certificate into the agent (or files). |
 | [`ssoossh ssh logout`](/ssoossh/reference/cli/ssoossh/ssh-logout/) | Remove ssoossh-managed keys and certificates from the agent (or files). |
-| [`ssoossh ssh proxycommand`](/ssoossh/reference/cli/ssoossh/ssh-proxycommand/) | Ensure a valid certificate, then relay stdio to the target host over TCP. |
+| [`ssoossh ssh proxycommand`](/ssoossh/reference/cli/ssoossh/ssh-proxycommand/) | Ensure a valid certificate, then hand the connection to a relay command such as nc. |
 
 ## See also
 
