@@ -464,3 +464,112 @@ describe('a trimmed critical option at the simplified level', () => {
 		expect(await screen.findByTestId('trimmed-critical-warning')).toBeInTheDocument();
 	});
 });
+
+describe('remembered principals', () => {
+	/** userRequest is a pending user-certificate request. */
+	function userRequest() {
+		return {
+			id: 'req-1',
+			type: 'user',
+			status: 'pending',
+			source_ip: '198.51.100.7',
+			public_key: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5',
+			principals: [],
+			valid_seconds: 28800,
+			requested: { extensions: [], no_touch_required: false },
+			granted: { extensions: [], no_touch_required: false },
+			created_at: '2026-08-14T09:00:00Z',
+			approval_url: '/approve/req-1',
+			is_owned_by_you: true,
+			already_closed: false
+		};
+	}
+
+	/** stubStorage installs a localStorage holding `seed`, and returns it. */
+	function stubStorage(seed: Record<string, string> = {}) {
+		const store = new Map(Object.entries(seed));
+		vi.stubGlobal('localStorage', {
+			getItem: (key: string) => store.get(key) ?? null,
+			setItem: (key: string, value: string) => void store.set(key, value)
+		});
+		return store;
+	}
+
+	/** pressed lists the picker's ticked chips, in render order. */
+	function pressed(): string[] {
+		const group = screen.getByRole('group', { name: 'Principals to include' });
+		return within(group)
+			.getAllByRole('button')
+			.filter((chip) => chip.getAttribute('aria-pressed') === 'true')
+			.map((chip) => chip.textContent?.trim() ?? '');
+	}
+
+	beforeEach(() => {
+		redirectIfUnauthenticated.mockReturnValue(false);
+		session.user = signedInAs({ other_accounts: ['alice-admin', 'alice-ops'] });
+	});
+
+	afterEach(() => {
+		session.user = null;
+	});
+
+	it('should pre-tick what the approver last approved with', async () => {
+		stubStorage({
+			'ssoossh:principals:alice': JSON.stringify({ user: ['alice-admin', 'alice-ops'] })
+		});
+		mockFetch(200, userRequest());
+		render(Page);
+		await settle();
+
+		expect(pressed()).toEqual(['alice-admin', 'alice-ops']);
+	});
+
+	it('should fall back to the username when nothing is remembered', async () => {
+		stubStorage();
+		mockFetch(200, userRequest());
+		render(Page);
+		await settle();
+
+		expect(pressed()).toEqual(['alice']);
+	});
+
+	it('should remember the selection when the request is approved', async () => {
+		const store = stubStorage();
+		mockFetch(200, userRequest());
+		render(Page);
+		await settle();
+
+		await userEvent.click(screen.getByRole('button', { name: 'alice-ops' }));
+		await userEvent.click(screen.getByTestId('approve-button'));
+		await settle();
+
+		expect(JSON.parse(store.get('ssoossh:principals:alice') ?? '{}')).toEqual({
+			user: ['alice', 'alice-ops']
+		});
+	});
+
+	// A denial says nothing about which accounts the approver wants next.
+	it('should remember nothing when the request is denied', async () => {
+		const store = stubStorage();
+		mockFetch(200, userRequest());
+		render(Page);
+		await settle();
+
+		await userEvent.click(screen.getByTestId('deny-button'));
+		await settle();
+
+		expect(store.has('ssoossh:principals:alice')).toBe(false);
+	});
+
+	// Seeded once: unticking every chip must not re-tick the remembered set.
+	it('should leave the picker empty once the approver unticks everything', async () => {
+		stubStorage();
+		mockFetch(200, userRequest());
+		render(Page);
+		await settle();
+
+		await userEvent.click(screen.getByRole('button', { name: 'alice' }));
+
+		expect(pressed()).toEqual([]);
+	});
+});

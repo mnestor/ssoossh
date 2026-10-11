@@ -12,6 +12,12 @@
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import PageShell from '#lib/components/PageShell.svelte';
 	import { coverWithDetail } from '#lib/detail.svelte.js';
+	import {
+		preselect,
+		rememberedPrincipals,
+		rememberPrincipals,
+		type PickerType
+	} from '#lib/principals.js';
 
 	// The page a client prints as approval_url. It is the only place a human
 	// authorizes certificate issuance, so it does two things and nothing
@@ -29,6 +35,10 @@
 	let outcome = $state<'approved' | 'denied' | null>(null);
 	let selectedServiceAccount = $state<string | null>(null);
 	let selectedPrincipals = $state<string[]>([]);
+	// Seeded once, like the extensions below, rather than whenever the
+	// selection empties: re-ticking a remembered set the moment its last
+	// chip was unticked would make the picker fight the approver.
+	let principalsSeeded = $state(false);
 	// Seeded from the request itself, never from the ceiling — see the
 	// $effect below.
 	let selectedExtensions = $state<string[]>([]);
@@ -61,20 +71,32 @@
 		return principals;
 	});
 
-	// Initialize selected principals on first load. For a PAM or console
-	// request that is the local account being acted as, when the approver
-	// holds it: the host matches the certificate's principals against that
-	// account, so it is the one the approver almost always means. Otherwise,
-	// and for a user request, it is the username. Either way the choice
-	// stays on the page.
+	// The request types whose approval offers the principal picker, and so
+	// the ones a remembered selection applies to.
+	function pickerType(type: string): PickerType | null {
+		return type === 'user' || type === 'pam' || type === 'console' ? type : null;
+	}
+
+	// Initialize selected principals on first load: the principals this
+	// approver last approved a request of this type with, where the request
+	// offers them (DESIGN.md, "Remembered principals"). With nothing
+	// remembered, the default: for a PAM or console request, the local
+	// account being acted as when the approver holds it, since the host
+	// matches the certificate's principals against that account; otherwise,
+	// and for a user request, the username. Either way the choice stays on
+	// the page, and a remembered selection only pre-fills it.
 	$effect(() => {
-		if (detail && !selectedPrincipals.length && session.user?.username) {
+		if (detail && !principalsSeeded && session.user?.username) {
 			const target = detail.target_account;
 			const actsLocally = detail.type === 'pam' || detail.type === 'console';
-			selectedPrincipals =
+			const fallback =
 				actsLocally && target && userPrincipals.includes(target)
 					? [target]
 					: [session.user.username];
+			const type = pickerType(detail.type);
+			const remembered = type ? rememberedPrincipals(session.user.username, type) : [];
+			selectedPrincipals = preselect(remembered, userPrincipals, fallback);
+			principalsSeeded = true;
 		}
 	});
 
@@ -110,6 +132,12 @@
 		failure = null;
 		outcome = null;
 		actionError = null;
+		// A different request starts its pickers afresh, so a selection
+		// made on one link is never carried silently onto the next.
+		selectedPrincipals = [];
+		principalsSeeded = false;
+		selectedExtensions = [];
+		extensionsSeeded = false;
 
 		getRequestDetail(requestID, controller.signal)
 			.then((loaded) => {
@@ -168,6 +196,14 @@
 					extensions: detail?.type === 'service' ? selectedExtensions : undefined,
 					notificationEmail: notificationEmail.trim() || undefined
 				});
+				// Written on Approve only, and only where the picker was
+				// offered: a denial says nothing about which accounts the
+				// approver wants next time.
+				const type = detail ? pickerType(detail.type) : null;
+				const username = session.user?.username;
+				if (type && username && userPrincipals.length > 0) {
+					rememberPrincipals(username, type, selectedPrincipals);
+				}
 			} else {
 				await denyRequest(id);
 			}

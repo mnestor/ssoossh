@@ -867,9 +867,12 @@ compares.
   Switch to Advanced for ids, fingerprints and policy detail."
 - **Remembered principals:** the principals an approver last approved with
   are stored per signed-in user in this browser (`ssoossh:principals:<user>`,
-  `src/lib/principals.svelte.ts`). The picker pre-ticks the stored ones the
-  request offers and ignores the rest; with nothing stored the existing
-  default applies. Chips stay visible and editable at both levels: a
+  `src/lib/principals.ts`), separately for user, PAM and console requests,
+  since a PAM or console certificate's principals are matched against the
+  host's local account. The picker pre-ticks the stored ones the request
+  offers, in the order it offers them, and ignores the rest; with none of
+  them on offer the existing default applies. The picker is seeded once per
+  request, so unticking every chip leaves it empty. Chips stay visible and editable at both levels: a
   remembered selection pre-fills, it never approves. Written on Approve only.
   Every principal is rememberable, break-glass ones included. There is no
   "forget" control: unticking a chip on the next approval is the way out.
@@ -1109,8 +1112,7 @@ No rulings are open.
 The tokens and this spec are ahead of the components. Remove a line when its
 change lands.
 
-- Remembered principals (`principals.svelte.ts`) and the Login shell
-  preference section are not built.
+- The Login shell preference section is not built.
 
 ## References
 
