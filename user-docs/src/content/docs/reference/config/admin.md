@@ -52,7 +52,7 @@ admin:
 
 `string`, default `empty`
 
-The email address shown on the account-disabled page so a disabled user can contact support. Empty disables the display (no mailto link on the page).
+Superseded by branding.support_email, which is the one setting for who to ask about this deployment and is shown on the account-disabled page along with the login page and the footer. It is still read, but only when branding.support_email is unset, so an existing configuration keeps its contact; the server logs a warning at startup while it is the one in use.
 
 ```yaml
 admin:
