@@ -5,6 +5,8 @@ import (
 	"encoding/base64"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/mnestor/ssoossh/server/secheaders"
 )
 
 // CspMiddleware sets a Content Security Policy header and, when possible,
@@ -33,15 +35,7 @@ func (m *CspMiddleware) Add() gin.HandlerFunc {
 		nonce := generateNonce()
 		c.Set("csp_nonce", nonce)
 
-		csp := "default-src 'self'; " +
-			"base-uri 'self'; " +
-			"object-src 'none'; " +
-			"frame-ancestors 'none'; " +
-			"form-action 'self'; " +
-			"img-src 'self'; " +
-			"font-src 'self'; " +
-			"style-src 'self' 'unsafe-inline'; " +
-			"script-src 'self' 'nonce-" + nonce + "'"
+		csp := secheaders.ContentSecurityPolicy(nonce)
 
 		c.Writer.Header().Set("Content-Security-Policy", csp)
 		c.Next()

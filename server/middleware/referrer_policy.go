@@ -1,6 +1,10 @@
 package middleware
 
-import "github.com/gin-gonic/gin"
+import (
+	"github.com/gin-gonic/gin"
+
+	"github.com/mnestor/ssoossh/server/secheaders"
+)
 
 // ReferrerPolicyMiddleware sets the Referrer-Policy header on responses,
 // controlling when the Referer header is sent to other origins. The
@@ -14,10 +18,10 @@ func NewReferrerPolicyMiddleware() *ReferrerPolicyMiddleware {
 }
 
 // Add returns a gin.HandlerFunc that sets the Referrer-Policy header to
-// strict-origin-when-cross-origin on each response.
+// secheaders.ReferrerPolicy on each response.
 func (m *ReferrerPolicyMiddleware) Add() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
+		c.Header("Referrer-Policy", secheaders.ReferrerPolicy)
 		c.Next()
 	}
 }

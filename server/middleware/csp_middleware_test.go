@@ -12,6 +12,8 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/mnestor/ssoossh/server/secheaders"
 )
 
 func TestCspMiddleware_ShouldSetContentSecurityPolicyHeader(t *testing.T) {
@@ -92,5 +94,23 @@ func TestGetCSPNonce_ShouldReturnEmptyStringWhenValueWrongType(t *testing.T) {
 
 	if got := GetCSPNonce(c); got != "" {
 		t.Errorf("got %q, want empty string when stored value isn't a string", got)
+	}
+}
+
+// TestCspMiddleware_ShouldSendTheSecheadersPolicyForItsNonce verifies the
+// header is exactly the policy secheaders builds for the request's nonce, so
+// the diagnostics grade the same string the middleware sends.
+func TestCspMiddleware_ShouldSendTheSecheadersPolicyForItsNonce(t *testing.T) {
+	t.Parallel()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+
+	NewCspMiddleware().Add()(c)
+
+	want := secheaders.ContentSecurityPolicy(GetCSPNonce(c))
+	if got := w.Header().Get("Content-Security-Policy"); got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 }

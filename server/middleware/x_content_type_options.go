@@ -1,6 +1,10 @@
 package middleware
 
-import "github.com/gin-gonic/gin"
+import (
+	"github.com/gin-gonic/gin"
+
+	"github.com/mnestor/ssoossh/server/secheaders"
+)
 
 // XContentTypeOptionsMiddleware sets the X-Content-Type-Options header on
 // responses, telling browsers not to MIME-sniff the content type and to use
@@ -17,7 +21,7 @@ func NewXContentTypeOptionsMiddleware() *XContentTypeOptionsMiddleware {
 // to nosniff on each response.
 func (m *XContentTypeOptionsMiddleware) Add() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.Header("X-Content-Type-Options", "nosniff")
+		c.Header("X-Content-Type-Options", secheaders.ContentTypeOptions)
 		c.Next()
 	}
 }

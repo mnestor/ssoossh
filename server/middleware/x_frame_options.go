@@ -1,6 +1,10 @@
 package middleware
 
-import "github.com/gin-gonic/gin"
+import (
+	"github.com/gin-gonic/gin"
+
+	"github.com/mnestor/ssoossh/server/secheaders"
+)
 
 // XFrameOptionsMiddleware sets the X-Frame-Options header on responses,
 // telling browsers not to display this page in a frame, iframe, object, or
@@ -16,7 +20,7 @@ func NewXFrameOptionsMiddleware() *XFrameOptionsMiddleware {
 // on each response.
 func (m *XFrameOptionsMiddleware) Add() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.Header("X-Frame-Options", "DENY")
+		c.Header("X-Frame-Options", secheaders.FrameOptions)
 		c.Next()
 	}
 }

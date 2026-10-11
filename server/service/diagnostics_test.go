@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/mnestor/ssoossh/server/config"
+	"github.com/mnestor/ssoossh/server/secheaders"
 )
 
 // Test methodology: the edge checks are driven by a fake httpDoer that
@@ -204,10 +205,11 @@ func TestDiagnostics_HeaderHygiene(t *testing.T) {
 	healthURL := origin + "/healthz"
 
 	good := http.Header{
-		"Strict-Transport-Security": {"max-age=63072000"},
+		"Strict-Transport-Security": {"max-age=31536000; includeSubDomains"},
 		"X-Content-Type-Options":    {"nosniff"},
 		"X-Frame-Options":           {"DENY"},
 		"Referrer-Policy":           {"strict-origin-when-cross-origin"},
+		"Content-Security-Policy":   {secheaders.ContentSecurityPolicy("abc")},
 	}
 
 	tests := []struct {
@@ -219,20 +221,20 @@ func TestDiagnostics_HeaderHygiene(t *testing.T) {
 		{
 			name: "should be ok when a CSP frame-ancestors stands in for X-Frame-Options",
 			hdr: http.Header{
-				"Strict-Transport-Security": {"max-age=1"}, "X-Content-Type-Options": {"nosniff"},
-				"Content-Security-Policy": {"default-src 'self'; frame-ancestors 'none'"}, "Referrer-Policy": {"x"},
+				"Strict-Transport-Security": {"max-age=31536000; includeSubDomains"}, "X-Content-Type-Options": {"nosniff"},
+				"Content-Security-Policy": {"default-src 'none'; frame-ancestors 'none'; script-src 'self' 'nonce-abc'"}, "Referrer-Policy": {"strict-origin-when-cross-origin"},
 			},
 			want: DiagnosticOK,
 		},
-		{name: "should warn when HSTS is missing", hdr: http.Header{"X-Content-Type-Options": {"nosniff"}, "X-Frame-Options": {"DENY"}, "Referrer-Policy": {"x"}}, want: DiagnosticWarn},
-		{name: "should warn when X-Content-Type-Options is not nosniff", hdr: http.Header{"Strict-Transport-Security": {"max-age=1"}, "X-Content-Type-Options": {"sniff"}, "X-Frame-Options": {"DENY"}, "Referrer-Policy": {"x"}}, want: DiagnosticWarn},
-		{name: "should warn when neither X-Frame-Options nor frame-ancestors is present", hdr: http.Header{"Strict-Transport-Security": {"max-age=1"}, "X-Content-Type-Options": {"nosniff"}, "Referrer-Policy": {"x"}}, want: DiagnosticWarn},
-		{name: "should warn when Referrer-Policy is missing", hdr: http.Header{"Strict-Transport-Security": {"max-age=1"}, "X-Content-Type-Options": {"nosniff"}, "X-Frame-Options": {"DENY"}}, want: DiagnosticWarn},
+		{name: "should warn when HSTS is missing", hdr: http.Header{"X-Content-Type-Options": {"nosniff"}, "X-Frame-Options": {"DENY"}, "Referrer-Policy": {"strict-origin-when-cross-origin"}}, want: DiagnosticWarn},
+		{name: "should warn when X-Content-Type-Options is not nosniff", hdr: http.Header{"Strict-Transport-Security": {"max-age=31536000; includeSubDomains"}, "X-Content-Type-Options": {"sniff"}, "X-Frame-Options": {"DENY"}, "Referrer-Policy": {"strict-origin-when-cross-origin"}}, want: DiagnosticWarn},
+		{name: "should warn when neither X-Frame-Options nor frame-ancestors is present", hdr: http.Header{"Strict-Transport-Security": {"max-age=31536000; includeSubDomains"}, "X-Content-Type-Options": {"nosniff"}, "Referrer-Policy": {"strict-origin-when-cross-origin"}}, want: DiagnosticWarn},
+		{name: "should warn when Referrer-Policy is missing", hdr: http.Header{"Strict-Transport-Security": {"max-age=31536000; includeSubDomains"}, "X-Content-Type-Options": {"nosniff"}, "X-Frame-Options": {"DENY"}}, want: DiagnosticWarn},
 		{
 			name: "should warn when a legacy X-XSS-Protection is present",
 			hdr: http.Header{
-				"Strict-Transport-Security": {"max-age=1"}, "X-Content-Type-Options": {"nosniff"},
-				"X-Frame-Options": {"DENY"}, "Referrer-Policy": {"x"}, "X-Xss-Protection": {"1; mode=block"},
+				"Strict-Transport-Security": {"max-age=31536000; includeSubDomains"}, "X-Content-Type-Options": {"nosniff"},
+				"X-Frame-Options": {"DENY"}, "Referrer-Policy": {"strict-origin-when-cross-origin"}, "X-Xss-Protection": {"1; mode=block"},
 			},
 			want: DiagnosticWarn,
 		},
@@ -289,8 +291,9 @@ func TestDiagnostics_ReachabilityWhoAnswered(t *testing.T) {
 	healthURL := origin + "/healthz"
 	corsURL := origin + "/.well-known/openid-configuration"
 	edgeHeaders := http.Header{
-		"Strict-Transport-Security": {"max-age=1"}, "X-Content-Type-Options": {"nosniff"},
-		"X-Frame-Options": {"DENY"}, "Referrer-Policy": {"x"},
+		"Strict-Transport-Security": {"max-age=31536000; includeSubDomains"}, "X-Content-Type-Options": {"nosniff"},
+		"X-Frame-Options": {"DENY"}, "Referrer-Policy": {"strict-origin-when-cross-origin"},
+		"Content-Security-Policy": {secheaders.ContentSecurityPolicy("abc")},
 	}
 
 	// The second and third cases are the edge answering /healthz itself: a
