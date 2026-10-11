@@ -518,8 +518,11 @@ func TestSync_ShouldOnlyClearItsOwnDisables(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name         string
-		source       *model.DisabledSource
+		name   string
+		source *model.DisabledSource
+		// byOperator names an operator in disabled_by_user_id, which only an
+		// admin or SOC disable writes.
+		byOperator   bool
 		wantReenable bool
 	}{
 		{name: "its own disable is cleared", source: ptr(model.DisabledSourceLDAPSync), wantReenable: true},
@@ -529,6 +532,14 @@ func TestSync_ShouldOnlyClearItsOwnDisables(t *testing.T) {
 		// which is the safe direction and why the migration backfills
 		// nothing.
 		{name: "a disable with no recorded source is left alone", source: nil, wantReenable: false},
+		// What the admin handlers used to leave behind: an operator's
+		// disable still carrying the source of an earlier automatic one.
+		{
+			name:         "an operator's disable carrying a stale ldap_sync source is left alone",
+			source:       ptr(model.DisabledSourceLDAPSync),
+			byOperator:   true,
+			wantReenable: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -543,12 +554,19 @@ func TestSync_ShouldOnlyClearItsOwnDisables(t *testing.T) {
 			userID := seedLDAPUser(t, db, "sub-alice", "alice")
 			svc.Enrich(context.Background(), &Identity{Subject: "sub-alice", Username: "alice"}, userID)
 
+			var disabledBy *string
+			if tt.byOperator {
+				operatorID := seedLDAPUser(t, db, "sub-soc", "soc")
+				disabledBy = &operatorID
+			}
+
 			disabledAt := time.Now()
 			if err := db.Model(&model.User{}).Where("id = ?", userID).
 				Updates(map[string]any{
-					"disabled_at":     disabledAt,
-					"disabled_source": tt.source,
-					"disabled_reason": "prior disable",
+					"disabled_at":         disabledAt,
+					"disabled_by_user_id": disabledBy,
+					"disabled_source":     tt.source,
+					"disabled_reason":     "prior disable",
 				}).Error; err != nil {
 				t.Fatalf("disable the user: %v", err)
 			}

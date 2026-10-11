@@ -201,10 +201,12 @@ columns are the present.
 
 `disabled_source` is what makes the LDAP sync's auto-disable safe to combine
 with a human one. The sync clears only disables whose source is exactly
-`ldap_sync`, so an admin or SOC disable is never undone automatically. An
-auto-disable is audited like any other containment action, as
-`user.auto_disabled`, with a generated reason and no actor. See
-[LDAP enrichment](/ssoossh/operations/ldap/).
+`ldap_sync`, so an admin or SOC disable is never undone automatically.
+Disabling an account the sync already disabled replaces its source with the
+operator's, so from then on only an admin can restore it, and a re-enable
+clears the source along with the rest. An auto-disable is audited like any
+other containment action, as `user.auto_disabled`, with a generated reason
+and no actor. See [LDAP enrichment](/ssoossh/operations/ldap/).
 
 ## Enrollments cannot be reassigned
 

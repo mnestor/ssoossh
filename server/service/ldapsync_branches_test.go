@@ -252,6 +252,71 @@ func TestMaybeReenable_ShouldYieldWhenTheSourceChanged(t *testing.T) {
 	}
 }
 
+// A disable that names an operator is theirs whatever its source says: the
+// guarded update refuses it even when the sync's read saw no operator.
+func TestMaybeReenable_ShouldYieldWhenTheRowNamesAnOperator(t *testing.T) {
+	t.Parallel()
+
+	dir := &fakeDirectory{}
+	svc, db := newLDAPTestService(t, ldapTestConfig(nil), dir)
+	userID := seedLDAPUser(t, db, "sub-alice", "alice")
+	operatorID := seedLDAPUser(t, db, "sub-soc", "soc")
+
+	// On disk: an operator's disable carrying a stale ldap_sync source. In
+	// the sync's stale read: the sync's own disable.
+	now := time.Now()
+	ldapSync := model.DisabledSourceLDAPSync
+	if err := db.Model(&model.User{}).Where("id = ?", userID).
+		Updates(map[string]any{
+			"disabled_at":         now,
+			"disabled_by_user_id": operatorID,
+			"disabled_source":     ldapSync,
+			"disabled_reason":     "operator disable",
+		}).Error; err != nil {
+		t.Fatalf("disable the user: %v", err)
+	}
+
+	stale := model.User{ID: userID, Username: "alice", DisabledAt: &now, DisabledSource: &ldapSync}
+	svc.maybeReenable(context.Background(), &stale, &model.LDAPSyncRun{}, SyncOptions{})
+
+	var user model.User
+	if err := db.First(&user, "id = ?", userID).Error; err != nil {
+		t.Fatalf("load user: %v", err)
+	}
+	if user.DisabledAt == nil {
+		t.Error("the operator's disable was cleared by the sync")
+	}
+}
+
+// The sync's disable never names an operator, even on a row where an
+// earlier re-enable left one behind.
+func TestAutoDisable_ShouldClearAStaleOperatorID(t *testing.T) {
+	t.Parallel()
+
+	dir := &fakeDirectory{}
+	svc, db := newLDAPTestService(t, ldapTestConfig(nil), dir)
+	userID := seedLDAPUser(t, db, "sub-alice", "alice")
+	operatorID := seedLDAPUser(t, db, "sub-soc", "soc")
+
+	if err := db.Model(&model.User{}).Where("id = ?", userID).
+		Update("disabled_by_user_id", operatorID).Error; err != nil {
+		t.Fatalf("leave a stale operator id: %v", err)
+	}
+
+	user := model.User{ID: userID, Username: "alice"}
+	if !svc.autoDisable(context.Background(), &user, 3, time.Now()) {
+		t.Fatal("autoDisable() = false, want the disable performed")
+	}
+
+	var stored model.User
+	if err := db.First(&stored, "id = ?", userID).Error; err != nil {
+		t.Fatalf("load user: %v", err)
+	}
+	if stored.DisabledByUserID != nil {
+		t.Errorf("disabled_by_user_id = %q, want NULL on the sync's own disable", *stored.DisabledByUserID)
+	}
+}
+
 // When the audit row cannot be written, the whole re-enable rolls back: an
 // unaudited containment change must not happen.
 func TestMaybeReenable_ShouldRollBackWhenTheAuditRowFails(t *testing.T) {
