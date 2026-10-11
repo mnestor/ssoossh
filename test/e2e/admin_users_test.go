@@ -96,9 +96,12 @@ func TestAdminUsers_DisabledUserSeesTheDisabledPage(t *testing.T) {
 	signIn(t, f, admin, "alice", []string{e2eAdminGroup})
 
 	// Find bob through the directory rather than by constructing his id: the
-	// point is that an admin can get from the list to the action.
+	// point is that an admin can get from the list to the action. By his
+	// name, not as the first row: the list is in id order and ids are random
+	// UUIDs, so the first row is alice -- the admin herself -- about half the
+	// time, and disabling her ends the session the rest of this test runs in.
 	admin.Navigate(t, f.Server.BaseURL+"/admin/users", `[data-testid="search-users"]`)
-	admin.Click(t, `a[href^="/admin/users/"]`)
+	admin.ClickTestIDWithText(t, "user-username-link", "bob")
 
 	// The confirmation has to name the consequence before it is accepted, so
 	// opening it is a distinct step from confirming it. The reason is
