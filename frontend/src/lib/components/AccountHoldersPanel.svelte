@@ -2,6 +2,7 @@
 	import { ApiError } from '#lib/api/client.js';
 	import { listEnrollmentHolders } from '#lib/api/endpoints.js';
 	import type { AccountHolder } from '#lib/api/types.js';
+	import Button from './Button.svelte';
 	import PageSection from './PageSection.svelte';
 	import LoadingBlock from './LoadingBlock.svelte';
 
@@ -30,8 +31,13 @@
 
 	let holders = $state<AccountHolder[] | null>(null);
 	let loadError = $state<string | null>(null);
+	// A refusal is final; anything else may answer a second time.
+	let retryable = $state(false);
+	// Bumped by Try again; the load below reads it, so a bump re-runs it.
+	let attempt = $state(0);
 
 	$effect(() => {
+		void attempt;
 		const controller = new AbortController();
 		const id = enrollmentId;
 		holders = null;
@@ -52,10 +58,11 @@
 				// A holder list that fails to load must not take the panel
 				// it sits in with it: everything else on the screen is still
 				// worth reading.
-				loadError =
-					cause instanceof ApiError && cause.status === 403
-						? 'You do not have permission to see who holds this account.'
-						: 'Could not load who holds this account.';
+				const refused = cause instanceof ApiError && cause.status === 403;
+				retryable = !refused;
+				loadError = refused
+					? 'You do not have permission to see who holds this account.'
+					: 'Could not load who holds this account.';
 			});
 
 		return () => controller.abort();
@@ -76,6 +83,13 @@
 
 	{#if loadError}
 		<p class="text-dense text-ink-muted" data-testid="account-holders-error">{loadError}</p>
+		{#if retryable}
+			<div class="mt-2">
+				<Button variant="ghost" onclick={() => (attempt += 1)} testid="account-holders-retry">
+					Try again
+				</Button>
+			</div>
+		{/if}
 	{:else if holders === null}
 		<LoadingBlock shape="lines" count={3} label="Loading account holders…" />
 	{:else if holders.length === 0}

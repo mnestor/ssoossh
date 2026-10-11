@@ -15,6 +15,7 @@
 	import ThemeToggle from '#lib/components/ThemeToggle.svelte';
 	import { isFocusRoute } from '#lib/nav.js';
 	import { rail } from '#lib/rail.svelte.js';
+	import { detail } from '#lib/detail.svelte.js';
 	import { session } from '#lib/session.svelte.js';
 	import { theme } from '#lib/theme.svelte.js';
 	import { loadVersion, getVersion } from '#lib/version.svelte.js';
@@ -50,6 +51,10 @@
 	// The rail width preference. Nothing reads it before paint, unlike the
 	// theme, so it runs here rather than in app.html.
 	$effect(() => rail.start());
+
+	// The detail level for the approval and information pages, read the same
+	// way: one frame of the default is accepted.
+	$effect(() => detail.start());
 
 	const branding = $derived(getBranding());
 	const version = $derived(getVersion());
@@ -224,7 +229,7 @@
 					type="button"
 					onclick={() => rail.closeDrawer()}
 					aria-label="Close navigation menu"
-					class="absolute top-3 right-2 flex h-8 w-8 items-center justify-center rounded-md text-ink-muted transition hover:bg-surface-muted hover:text-ink"
+					class="absolute top-2 right-2 flex size-target items-center justify-center rounded-md text-ink-muted transition hover:bg-surface-muted hover:text-ink"
 				>
 					<Icon name="x" size="sm" />
 				</button>
@@ -237,9 +242,7 @@
 			     it back. Everything else — theme, identity, sign out — is
 			     inside the drawer, where it is one tap away and cannot
 			     drift out of step with the desktop copy. -->
-			<header
-				class="flex items-center gap-3 border-b border-border-subtle bg-surface px-4 py-3 lg:hidden"
-			>
+			<header class="flex items-center gap-3 bg-surface px-4 py-3 lg:hidden">
 				<!-- One name, not two. This label used to flip to "Close
 				     navigation menu" while the drawer was up, from when this
 				     really was the only way back — but the scrim covers it at
@@ -256,7 +259,7 @@
 					aria-expanded={rail.drawerOpen}
 					aria-controls="app-rail-drawer"
 					aria-label="Open navigation menu"
-					class="-ml-1 flex shrink-0 p-1 text-ink-muted transition hover:text-ink"
+					class="-ml-2 flex size-target shrink-0 items-center justify-center rounded-md text-ink-muted transition hover:text-ink"
 				>
 					<Icon name="menu-2" size="md" />
 				</button>
@@ -266,7 +269,7 @@
 					<span>ssoossh</span>
 					{#if branding.org_name}
 						<span
-							class="ml-0.5 max-w-[8rem] truncate border-l border-border-subtle pl-2 text-xs font-normal text-ink-muted"
+							class="ml-0.5 max-w-32 truncate border-l border-border-subtle pl-2 text-xs font-normal text-ink-muted"
 						>
 							{branding.org_name}
 						</span>
@@ -285,14 +288,14 @@
 	<!-- No rail: a signed-out visitor, or one of the single-task screens.
 	     The header carries only what such a screen can act on. -->
 	<div class="flex min-h-screen flex-col">
-		<header class="border-b border-border-subtle bg-surface">
+		<header class="bg-surface">
 			<div class="flex items-center gap-3 px-4 py-4 sm:gap-4 sm:px-8">
 				<a href={resolve('/')} class="flex min-w-0 items-center gap-2 font-semibold">
 					<BrandMark size={22} />
 					<span>ssoossh</span>
 					{#if branding.org_name}
 						<span
-							class="ml-0.5 max-w-[8rem] truncate border-l border-border-subtle pl-2 text-xs font-normal text-ink-muted"
+							class="ml-0.5 max-w-32 truncate border-l border-border-subtle pl-2 text-xs font-normal text-ink-muted"
 						>
 							{branding.org_name}
 						</span>

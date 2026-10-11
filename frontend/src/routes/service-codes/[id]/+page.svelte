@@ -9,9 +9,15 @@
 	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
 	import ExpireCodeAction from '#lib/components/ExpireCodeAction.svelte';
 	import PageHeading from '#lib/components/PageHeading.svelte';
+	import DetailToggle from '#lib/components/DetailToggle.svelte';
+	import SimplifiedHint from '#lib/components/SimplifiedHint.svelte';
+	import { coverWithDetail } from '#lib/detail.svelte.js';
 	import PageShell from '#lib/components/PageShell.svelte';
 	import ServiceCodeDetail from '#lib/components/ServiceCodeDetail.svelte';
 	import { isExpired } from '#lib/format.js';
+
+	// One of the pages the detail level covers (DESIGN.md, "Detail levels").
+	coverWithDetail();
 
 	// One service enrollment code, at its own address. This used to be a
 	// dialog over the list, which meant a code could not be linked to,
@@ -112,14 +118,17 @@
 		back={{ href: backHref, label: backLabel, testid: 'service-code-back' }}
 	>
 		{#snippet action()}
-			{#if enrollment && !expired}
-				{@const enrollmentId = enrollment.id}
-				<ExpireCodeAction
-					testid="expire-code"
-					expire={(reason) => expireOwnEnrollment(enrollmentId, reason)}
-					onexpired={afterExpired}
-				/>
-			{/if}
+			<div class="flex flex-wrap items-center justify-end gap-2">
+				<DetailToggle />
+				{#if enrollment && !expired}
+					{@const enrollmentId = enrollment.id}
+					<ExpireCodeAction
+						testid="expire-code"
+						expire={(reason) => expireOwnEnrollment(enrollmentId, reason)}
+						onexpired={afterExpired}
+					/>
+				{/if}
+			</div>
 		{/snippet}
 	</PageHeading>
 
@@ -143,5 +152,8 @@
 		</Alert>
 	{:else}
 		<ServiceCodeDetail {enrollment} {now} />
+	{/if}
+	{#if enrollment && !loadError}
+		<SimplifiedHint />
 	{/if}
 </PageShell>

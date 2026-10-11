@@ -21,6 +21,7 @@ import ConfirmModal from './ConfirmModal.svelte';
 import CopyableId from './CopyableId.svelte';
 import DeniedRow from './DeniedRow.svelte';
 import DetailRow from './DetailRow.svelte';
+import DetailToggle from './DetailToggle.svelte';
 import EmptyState from './EmptyState.svelte';
 import ExpireCodeAction from './ExpireCodeAction.svelte';
 import FilterChip from './FilterChip.svelte';
@@ -45,6 +46,7 @@ import ServiceAccountRow from './ServiceAccountRow.svelte';
 import ServiceCodeDetail from './ServiceCodeDetail.svelte';
 import ServiceCodeFacts from './ServiceCodeFacts.svelte';
 import ServiceCodeRow from './ServiceCodeRow.svelte';
+import SimplifiedHint from './SimplifiedHint.svelte';
 import StatusBadge from './StatusBadge.svelte';
 import ThemeToggle from './ThemeToggle.svelte';
 import TypeBadge from './TypeBadge.svelte';
@@ -158,6 +160,7 @@ const cases: [string, any, Record<string, unknown>][] = [
 	['Alert (info)', Alert, { children: text('Loading request…') }],
 	['Alert (warning)', Alert, { variant: 'warning', title: 'Certificate verification is off' }],
 	['Alert (error)', Alert, { variant: 'error', title: 'That did not go through' }],
+	['Alert (error, retry)', Alert, { variant: 'error', title: 'Could not load', onretry: vi.fn() }],
 	['AppRail', AppRail, { onsignout: vi.fn() }],
 	['AppRail (collapsed)', AppRail, { collapsed: true, onsignout: vi.fn() }],
 	['AuditTimeline', AuditTimeline, { events: [] }],
@@ -178,7 +181,21 @@ const cases: [string, any, Record<string, unknown>][] = [
 			children: text('The code stops working immediately.')
 		}
 	],
+	[
+		'ConfirmModal (reasonless)',
+		ConfirmModal,
+		{
+			title: 'Run a live sync now?',
+			reasonless: true,
+			confirmLabel: 'Sync now',
+			busyLabel: 'Running…',
+			onconfirm: vi.fn(),
+			oncancel: vi.fn(),
+			children: text('A live pass can disable an account.')
+		}
+	],
 	['CopyableId', CopyableId, { value: 'cert-1', label: 'Request' }],
+	['DetailToggle', DetailToggle, {}],
 	['EmptyState', EmptyState, { icon: 'certificate-off', title: 'No certificates yet' }],
 	[
 		'EmptyState (with action)',
@@ -263,6 +280,7 @@ const cases: [string, any, Record<string, unknown>][] = [
 		ServiceCodeRow,
 		{ enrollment: enrollment(), now, href: '/service-codes/enr-1' }
 	],
+	['SimplifiedHint', SimplifiedHint, {}],
 	['StatusBadge (pending)', StatusBadge, { status: 'pending' }],
 	['StatusBadge (denied)', StatusBadge, { status: 'denied' }],
 	['ThemeToggle (icon)', ThemeToggle, {}],

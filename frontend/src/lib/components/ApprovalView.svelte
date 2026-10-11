@@ -11,6 +11,9 @@
 	import Button from '#lib/components/Button.svelte';
 	import CopyableId from '#lib/components/CopyableId.svelte';
 	import DetailRow from '#lib/components/DetailRow.svelte';
+	import DetailToggle from '#lib/components/DetailToggle.svelte';
+	import SimplifiedHint from '#lib/components/SimplifiedHint.svelte';
+	import { detail as detailLevel, inDetailScope } from '#lib/detail.svelte.js';
 	import Icon from '#lib/components/Icon.svelte';
 	import MonoChip from '#lib/components/MonoChip.svelte';
 	import OptionDiffList from '#lib/components/OptionDiffList.svelte';
@@ -18,7 +21,13 @@
 	import SectionLabel from '#lib/components/SectionLabel.svelte';
 	import StatusBadge from '#lib/components/StatusBadge.svelte';
 	import TypeChip from '#lib/components/TypeChip.svelte';
-	import { clockSkewLabel, expiryLabel, formatDateTime, formatDuration } from '#lib/format.js';
+	import {
+		clockSkewLabel,
+		expiryLabel,
+		formatCountdown,
+		formatDateTime,
+		formatDuration
+	} from '#lib/format.js';
 
 	// Everything this component shows arrives as props, and both decisions
 	// leave as callbacks. Fetching and posting stay in +page.svelte so this
@@ -102,10 +111,31 @@
 	// budget is deliberately the shortest of the four, and a countdown that
 	// lags by half a minute against a two-minute window is worse than none.
 	let now = $state(new Date());
+
+	// Seconds left to approve, against that clock. Null when the server
+	// sent no deadline.
+	const secondsLeft = $derived(
+		detail.expires_at
+			? Math.floor((new Date(detail.expires_at).getTime() - now.getTime()) / 1000)
+			: null
+	);
+	// Every second in the last minute and a little before it, so the
+	// simplified page's countdown reads as one; every ten seconds otherwise.
+	const lastMinute = $derived(secondsLeft !== null && secondsLeft <= 70);
+
 	$effect(() => {
-		const timer = setInterval(() => (now = new Date()), 10_000);
+		const timer = setInterval(() => (now = new Date()), lastMinute ? 1_000 : 10_000);
 		return () => clearInterval(timer);
 	});
+
+	// The approval page is one of the pages the detail level covers. At the
+	// simplified level it opens with a one-line account of the request and
+	// keeps what an approver needs to decide; what an expert compares
+	// (ids, keys, process ids, timestamps, the decision record) is
+	// advanced-only (DESIGN.md, "Detail levels"). It never changes what is
+	// decided: the principal chips stay visible and editable.
+	const covered = inDetailScope();
+	const simplified = $derived(covered && detailLevel.simplified);
 
 	const extensions = $derived(extensionDiff(detail.requested, detail.granted));
 	const criticalOptions = $derived(criticalOptionDiff(detail.requested, detail.granted));
@@ -343,6 +373,49 @@
 		return rows;
 	});
 
+	// The simplified page's opening line: who asked, running what, on which
+	// machine, as three tiles in place of the description and the Account,
+	// Command, Host and Requested-from rows. A tile with nothing to say is
+	// left out rather than shown empty.
+	const requestLine = $derived.by(() => {
+		const account = detail.target_account || detail.local_username;
+		const host = detail.hostname || detail.local_hostname;
+		return [
+			{
+				key: 'who',
+				label: 'Who',
+				value: account ? `${account}@${detail.source_ip}` : detail.source_ip
+			},
+			{ key: 'runs', label: 'Runs', value: detail.process ?? '' },
+			{ key: 'on', label: 'On', value: host ?? '' }
+		].filter((tile) => tile.value);
+	});
+
+	// The claimed-context rows a simplified reader keeps (R1). Account,
+	// command and host are in the request line; the platform, the client
+	// and the process ids are diagnostics.
+	const simplifiedContextKeys = new Set(['invoked-by', 'service', 'terminal', 'remote-host']);
+	const shownContext = $derived(
+		simplified ? claimedContext.filter((row) => simplifiedContextKeys.has(row.key)) : claimedContext
+	);
+
+	// What a simplified reader is told about the options. Trimmed extensions
+	// and the narrowed warning are advanced-only, since the reader still sees
+	// exactly what is issued; a trimmed critical option is never hidden and
+	// gets a line of its own.
+	const grantedExtensions = $derived(extensions.filter((entry) => entry.status !== 'trimmed'));
+	const trimmedCriticalOptions = $derived(
+		criticalOptions.filter((entry) => entry.status === 'trimmed')
+	);
+
+	// An expired request has its own notice at the simplified level, both
+	// when the server already says so and when the deadline passes with the
+	// page open.
+	const expired = $derived(
+		detail.status === 'expired' ||
+			(detail.status === 'pending' && secondsLeft !== null && secondsLeft <= 0)
+	);
+
 	// How far the host's own clock (client_time) has drifted from when the
 	// server received the request — worth a note past a small tolerance,
 	// since ordinary drift is not, but a clock that is minutes off might mean
@@ -370,16 +443,15 @@
      approval page moved to the app's own width. The controls inside still
      cap themselves — a select or an email field a thousand pixels wide
      looks like a bug. -->
-<div class="flex w-full flex-col gap-4">
-	<PageHeading title={pageCopy.title} />
+<div class="flex w-full flex-col gap-8">
+	<PageHeading title={pageCopy.title}>
+		{#snippet action()}<DetailToggle />{/snippet}
+	</PageHeading>
 
 	<!-- One card, not six. An approval is a single decision read straight
 	     through, so the frame goes round the whole of it and the groups
 	     inside are labels rather than panels. -->
-	<div
-		data-testid="approval-view"
-		class="flex flex-col rounded-lg border border-border-subtle bg-surface-muted p-4"
-	>
+	<div data-testid="approval-view" class="flex flex-col rounded-lg bg-surface p-5">
 		<!-- Live region for screen reader announcements of action outcomes. -->
 		<div aria-live="polite" aria-atomic="true" class="sr-only">{liveMessage}</div>
 
@@ -390,10 +462,30 @@
 				<StatusBadge status={detail.status} />
 				<TypeChip type={detail.type} />
 			</div>
-			<CopyableId value={detail.id} label="Request" testid="request-id" />
+			{#if !simplified}
+				<CopyableId value={detail.id} label="Request" testid="request-id" />
+			{/if}
 		</div>
 
-		<p class="pb-4 text-dense text-ink-muted">{pageCopy.description}</p>
+		{#if simplified && requestLine.length > 0}
+			<div class="pb-4" data-testid="request-line">
+				<div class="flex flex-wrap gap-2">
+					{#each requestLine as tile (tile.key)}
+						<div class="min-w-0 flex-1 basis-48 rounded-md bg-surface-muted px-3 py-2">
+							<div class="text-meta font-semibold tracking-label text-ink-muted uppercase">
+								{tile.label}
+							</div>
+							<div class="font-mono text-base break-all text-ink">{tile.value}</div>
+						</div>
+					{/each}
+				</div>
+				<p class="mt-2 text-dense text-ink-muted">
+					Reported by the client and never verified. Approve only if you just ran it.
+				</p>
+			</div>
+		{:else}
+			<p class="pb-4 text-dense text-ink-muted">{pageCopy.description}</p>
+		{/if}
 
 		<dl class="divide-y divide-border-subtle">
 			<DetailRow label="Principals">
@@ -414,15 +506,15 @@
 								onclick={() => togglePrincipal(principal)}
 								aria-pressed={pressed}
 								disabled={busy || outcome !== null}
-								class="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-xs break-all transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-default"
-								class:border-accent={pressed}
-								class:bg-accent={pressed}
-								class:text-accent-ink={pressed}
+								class="inline-flex min-h-target items-center gap-1 rounded border px-3 font-mono text-xs break-all transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-default"
+								class:border-ink={pressed}
+								class:bg-ink={pressed}
+								class:text-surface={pressed}
 								class:border-border-control={!pressed}
 								class:text-ink-muted={!pressed}
 								class:hover:bg-surface-muted={!pressed && !busy && outcome === null}
 							>
-								{#if pressed}<Icon name="check" size="sm" />{/if}
+								{#if pressed}<Icon name="check" size="xs" />{/if}
 								{principal}
 							</button>
 						{/each}
@@ -447,7 +539,7 @@
 			     presenting any of it as fact. Their value is that they let a
 			     human notice "I am at my desk, why is there a console login on
 			     rack07" — not that they authorize anything. -->
-			{#each claimedContext as row (row.key)}
+			{#each shownContext as row (row.key)}
 				<DetailRow label={row.label} mono={row.mono}>
 					<span class="flex flex-col gap-0.5">
 						<span class="flex flex-wrap items-center gap-1.5">
@@ -464,7 +556,7 @@
 					</span>
 				</DetailRow>
 			{/each}
-			{#if isLocalAuth && detail.client_time}
+			{#if isLocalAuth && detail.client_time && (!simplified || hostClockSkew)}
 				<DetailRow label="Host clock">
 					<span class="flex flex-wrap items-center gap-1.5">
 						<span>{formatDateTime(detail.client_time)}</span>
@@ -475,7 +567,7 @@
 					</span>
 				</DetailRow>
 			{/if}
-			{#if isLocalAuth && (detail.trusted_ca_fingerprints ?? []).length > 0}
+			{#if isLocalAuth && (detail.trusted_ca_fingerprints ?? []).length > 0 && !simplified}
 				<DetailRow label="Host trusts">
 					<span class="flex flex-col items-start gap-1.5">
 						{#each detail.trusted_ca_fingerprints ?? [] as fingerprint, index (index)}
@@ -485,20 +577,22 @@
 				</DetailRow>
 			{/if}
 			<DetailRow label="Valid for">{formatDuration(detail.valid_seconds)}</DetailRow>
-			<DetailRow label="Requested from">
-				<MonoChip>{detail.source_ip}</MonoChip>
-			</DetailRow>
+			{#if !simplified}
+				<DetailRow label="Requested from">
+					<MonoChip>{detail.source_ip}</MonoChip>
+				</DetailRow>
+			{/if}
 			<!-- Suppressed once the claimed-context block is showing: that
 			     block names the same account and machine as its own rows, and
 			     carries a Client row of its own for the reporting binary. -->
-			{#if (detail.local_username || detail.local_hostname) && claimedContext.length === 0}
+			{#if (detail.local_username || detail.local_hostname) && claimedContext.length === 0 && !simplified}
 				<DetailRow label="Client" mono>
 					{detail.local_username}{detail.local_username && detail.local_hostname
 						? '@'
 						: ''}{detail.local_hostname}
 				</DetailRow>
 			{/if}
-			{#if (detail.requested.source_addresses ?? []).length > 0}
+			{#if (detail.requested.source_addresses ?? []).length > 0 && !simplified}
 				<DetailRow label="Registered IPs">
 					<span class="flex flex-wrap gap-1.5">
 						{#each detail.requested.source_addresses ?? [] as address, index (index)}
@@ -507,8 +601,10 @@
 					</span>
 				</DetailRow>
 			{/if}
-			<DetailRow label="Requested at">{formatDateTime(detail.created_at)}</DetailRow>
-			{#if detail.expires_at && !detail.already_closed}
+			{#if !simplified}
+				<DetailRow label="Requested at">{formatDateTime(detail.created_at)}</DetailRow>
+			{/if}
+			{#if detail.expires_at && !detail.already_closed && !simplified}
 				<!-- The server's deadline, not a guess: a request is approvable
 				     for its own type's budget and is refused after it. Shown so a
 				     slow sign-in is distinguishable from a request that has
@@ -518,7 +614,7 @@
 					{formatDateTime(detail.expires_at)} ({expiryLabel(detail.expires_at, now)})
 				</DetailRow>
 			{/if}
-			{#if !isLocalAuth}
+			{#if !isLocalAuth && !simplified}
 				<DetailRow label="Public key" mono>{detail.public_key}</DetailRow>
 			{/if}
 		</dl>
@@ -566,15 +662,15 @@
 									onclick={() => toggleExtension(extension)}
 									aria-pressed={pressed}
 									disabled={busy || outcome !== null}
-									class="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-xs break-all transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-default"
-									class:border-accent={pressed}
-									class:bg-accent={pressed}
-									class:text-accent-ink={pressed}
+									class="inline-flex min-h-target items-center gap-1 rounded border px-3 font-mono text-xs break-all transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-default"
+									class:border-ink={pressed}
+									class:bg-ink={pressed}
+									class:text-surface={pressed}
 									class:border-border-control={!pressed}
 									class:text-ink-muted={!pressed}
 									class:hover:bg-surface-muted={!pressed && !busy && outcome === null}
 								>
-									{#if pressed}<Icon name="check" size="sm" />{/if}
+									{#if pressed}<Icon name="check" size="xs" />{/if}
 									{extension}
 								</button>
 							{/each}
@@ -583,14 +679,30 @@
 							</span>
 						</span>
 					{:else}
-						<OptionDiffList entries={extensions} emptyLabel="No extensions requested." />
+						<OptionDiffList
+							entries={simplified ? grantedExtensions : extensions}
+							emptyLabel={simplified ? 'None.' : 'No extensions requested.'}
+						/>
 					{/if}
 				</div>
 
-				<div>
-					<SectionLabel>Critical options</SectionLabel>
-					<OptionDiffList entries={criticalOptions} emptyLabel="No critical options requested." />
-				</div>
+				{#if !simplified}
+					<div>
+						<SectionLabel>Critical options</SectionLabel>
+						<OptionDiffList entries={criticalOptions} emptyLabel="No critical options requested." />
+					</div>
+				{:else if trimmedCriticalOptions.length > 0}
+					<!-- Never hidden: a critical option the server will not
+					     grant changes what the certificate does, so a
+					     simplified reader is told in one line. -->
+					<Alert variant="warning" testid="trimmed-critical-warning">
+						Not permitted, so not in the certificate:
+						{#each trimmedCriticalOptions as option, i (option.label)}<code class="font-mono"
+								>{option.label}</code
+							>{#if i < trimmedCriticalOptions.length - 1},
+							{/if}{/each}.
+					</Alert>
+				{/if}
 			{/if}
 
 			{#if remoteHostSuspicious}
@@ -616,14 +728,16 @@
 				</p>
 			{/if}
 
-			{#if narrowed && !isLocalAuth}
+			{#if narrowed && !isLocalAuth && !simplified}
 				<Alert variant="warning" title="Less than was requested" testid="narrowed-warning">
 					This server does not permit everything the client asked for. The struck-through entries
 					above will not be in the certificate.
 				</Alert>
 			{/if}
 
-			{#if hasDecisionRecord}
+			<!-- Advanced only (R3): who decided is history, and the
+			     certificate page keeps it at both levels. -->
+			{#if hasDecisionRecord && !simplified}
 				<div>
 					<SectionLabel>Decision record</SectionLabel>
 					<dl class="divide-y divide-border-subtle">
@@ -647,7 +761,7 @@
 
 		<div class="mt-6 border-t border-border-subtle pt-5">
 			{#if outcome === 'approved'}
-				<Alert variant="info" title="Approved" testid="outcome-approved">
+				<Alert variant="info" inset title="Approved" testid="outcome-approved">
 					The certificate is being signed and will reach the waiting client on its own connection —
 					you can close this page.
 				</Alert>
@@ -655,12 +769,20 @@
 				<Alert variant="warning" title="Denied" testid="outcome-denied">
 					The waiting client has been told, and no certificate was issued.
 				</Alert>
+			{:else if simplified && expired}
+				<Alert variant="warning" testid="expired-notice">
+					This request expired before it was approved. Run the client again.
+				</Alert>
 			{:else if isServiceRequest && !hasServiceAccounts}
 				<Alert variant="warning" testid="blocked-no-service-accounts">
 					{blockedText['no-service-accounts']}
 				</Alert>
 			{:else if blocked}
-				<Alert variant={blocked === 'in-progress' ? 'info' : 'warning'} testid="blocked-{blocked}">
+				<Alert
+					variant={blocked === 'in-progress' ? 'info' : 'warning'}
+					inset
+					testid="blocked-{blocked}"
+				>
 					{blockedText[blocked]}
 				</Alert>
 			{:else}
@@ -675,7 +797,7 @@
 										bind:value={selectedServiceAccount}
 										aria-label="Service account to approve for"
 										data-testid="service-account-select"
-										class="rounded border border-border-control bg-surface px-3 py-2 text-dense text-ink hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+										class="rounded-md border border-border-control bg-surface px-3 py-2 text-dense text-ink hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 									>
 										<option value="">Select an account...</option>
 										<!-- Grouped only when there is something to
@@ -739,7 +861,7 @@
 										data-testid="notification-email-input"
 										placeholder="deploys@example.com"
 										aria-describedby="notification-email-help"
-										class="rounded border border-border-control bg-surface px-3 py-2 text-dense text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+										class="rounded-md border border-border-control bg-surface px-3 py-2 text-dense text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 									/>
 									<span id="notification-email-help" class="text-meta text-ink-muted">
 										Where notifications about this enrollment go — redemptions, the expiry reminder,
@@ -756,7 +878,17 @@
 					<!-- Deny first, Approve last: the affirming action sits where the
 					     eye finishes, and the destructive one is not the button a
 					     hurried hand lands on by default. -->
-					<div class="flex flex-wrap justify-end gap-2.5">
+					<div class="flex flex-wrap items-center justify-end gap-2.5">
+						<!-- "Approvable until" is advanced-only, except in its last
+						     minute, when the time left sits beside the buttons it
+						     is a deadline for. -->
+						{#if simplified && secondsLeft !== null && secondsLeft > 0 && secondsLeft <= 60}
+							<span
+								class="mr-auto text-dense text-trimmed tabular-nums"
+								role="timer"
+								data-testid="approval-countdown">Expires in {formatCountdown(secondsLeft)}</span
+							>
+						{/if}
 						<Button testid="deny-button" variant="ghost" {busy} onclick={ondeny}>
 							<Icon name="x" size="sm" />
 							Deny
@@ -776,6 +908,8 @@
 			{/if}
 		</div>
 	</div>
+
+	<SimplifiedHint />
 
 	<p class="text-center text-meta text-ink-muted">
 		Requests are logged. See the audit trail for details.

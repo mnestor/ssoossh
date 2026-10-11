@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
 	import Alert from '#lib/components/Alert.svelte';
+	import Icon from '#lib/components/Icon.svelte';
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import EmptyState from '#lib/components/EmptyState.svelte';
 	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
@@ -29,23 +30,40 @@
 	let status: StatusFilter = $state('all');
 	let offset = $state(0);
 
+	// Which load is allowed to write to the page. Nothing cancels a request
+	// in flight and the search box stays live while one runs, so two can
+	// overlap and answer in whatever order the network settles on; without
+	// this, fast typing could land an older answer last. The certificate
+	// list arbitrates its reads the same way. Not $state: nothing renders
+	// from it.
+	let latestLoad = 0;
+
 	async function loadUsers() {
+		const load = ++latestLoad;
 		busy = true;
 		error = null;
 		try {
 			// 'all' is sent as no parameter rather than as a value: the
 			// server's filter is "active", "disabled", or absent, and an
 			// unrecognized value is a 400 rather than a silent widening.
-			users = await getAdminUsers({
+			const result = await getAdminUsers({
 				q: searchQuery,
 				limit: 25,
 				offset,
 				status: status === 'all' ? undefined : status
 			});
+			if (load === latestLoad) {
+				users = result;
+			}
 		} catch (cause) {
-			error = cause instanceof Error ? cause.message : 'Failed to load users';
+			if (load === latestLoad) {
+				error = cause instanceof Error ? cause.message : 'Failed to load users';
+			}
 		} finally {
-			busy = false;
+			// Only the newest load owns the busy state.
+			if (load === latestLoad) {
+				busy = false;
+			}
 		}
 	}
 
@@ -104,7 +122,7 @@
 	<ListStatus message={listStatus} />
 
 	<div class="flex flex-wrap items-end justify-between gap-4">
-		<div class="min-w-[240px] flex-1">
+		<div class="min-w-60 flex-1">
 			<SearchInput
 				label="Search users"
 				placeholder="name, username, email, or subject..."
@@ -118,7 +136,7 @@
 		     view am I looking at" has to be answerable without opening
 		     anything. -->
 		<div
-			class="inline-flex overflow-hidden rounded-lg border border-border-control"
+			class="inline-flex overflow-hidden rounded-md border border-border-control"
 			role="group"
 			aria-label="Filter by account state"
 			data-testid="status-filter"
@@ -129,12 +147,13 @@
 					onclick={() => selectStatus(filter.value)}
 					aria-pressed={status === filter.value}
 					data-testid="status-filter-{filter.value}"
-					class="px-3 py-2 text-sm transition focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
-					class:bg-accent={status === filter.value}
-					class:text-accent-ink={status === filter.value}
+					class="inline-flex min-h-target items-center gap-1.5 px-3 text-sm transition focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
+					class:bg-ink={status === filter.value}
+					class:text-surface={status === filter.value}
 					class:text-ink-muted={status !== filter.value}
 					class:hover:bg-surface-muted={status !== filter.value}
 				>
+					{#if status === filter.value}<Icon name="check" size="xs" />{/if}
 					{filter.label}
 				</button>
 			{/each}
@@ -142,7 +161,14 @@
 	</div>
 
 	{#if error}
-		<Alert variant="error" title="Could not load the user list">{error}</Alert>
+		<Alert
+			variant="error"
+			title="Could not load the user list"
+			onretry={loadUsers}
+			testid="users-error"
+		>
+			{error}
+		</Alert>
 		<!--
 		Length, not the array itself: an empty array is truthy, so testing
 		`users?.users` renders a table of headers with no rows for a search
@@ -150,7 +176,7 @@
 		be reached on a successful response.
 	-->
 	{:else if users?.users?.length}
-		<div class="overflow-x-auto">
+		<div class="overflow-x-auto rounded-lg bg-surface">
 			<table class="data-table">
 				<thead>
 					<tr>

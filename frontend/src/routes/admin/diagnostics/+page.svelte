@@ -97,16 +97,16 @@
 			     ran it: a masonry grid reordered it by height, and a reader
 			     comparing this run to the last one had to find each check
 			     again rather than read down the same list. -->
-			<div data-testid="diagnostics-results" class="flex flex-col gap-4">
+			<div data-testid="diagnostics-results" class="flex flex-col gap-8">
 				{#each report.checks as check (check.id)}
-					<section class="rounded-lg border border-border-subtle bg-surface-muted p-4">
+					<section class="rounded-lg bg-surface p-5">
 						<div class="flex items-start justify-between gap-4">
 							<div>
 								<h2 class="text-base font-semibold text-ink">{check.title}</h2>
 								<p class="mt-1 text-sm text-ink-muted">{check.summary}</p>
 							</div>
 							<span
-								class="rounded-full px-2.5 py-1 text-xs font-semibold whitespace-nowrap {badge(
+								class="rounded px-2.5 py-1 text-xs font-semibold whitespace-nowrap {badge(
 									check.status
 								).class}"
 							>

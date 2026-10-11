@@ -117,7 +117,7 @@
 			data-testid="rail-user-menu"
 			in:scale={{ start: 0.96, opacity: 0, duration: enterMs(), easing: easeEnter }}
 			out:scale={{ start: 0.96, opacity: 0, duration: exitMs(), easing: easeExit }}
-			class="absolute z-50 rounded-lg border border-border-subtle bg-surface p-1.5 shadow-lg"
+			class="absolute z-50 rounded-lg bg-surface p-1.5 shadow-overlay"
 			class:right-0={!collapsed}
 			class:left-0={!collapsed}
 			class:bottom-full={!collapsed}
@@ -138,7 +138,7 @@
 					aria-current={onAccount ? 'page' : undefined}
 					onclick={navigated}
 					data-testid="rail-user-account"
-					class="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 transition {onAccount
+					class="flex min-h-target w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 transition {onAccount
 						? 'bg-accent-wash text-accent'
 						: 'text-ink hover:bg-surface-muted'}"
 				>

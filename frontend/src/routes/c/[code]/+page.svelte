@@ -70,10 +70,7 @@
 		<!-- Bound once: a snippet is its own closure, so the `failure` the
 		     branch narrowed does not reach inside one. -->
 		{@const loadFailure = failure}
-		<div
-			data-testid="console-link-failure-{failure.kind}"
-			class="rounded-lg border border-border-subtle bg-surface-muted p-4"
-		>
+		<div data-testid="console-link-failure-{failure.kind}" class="rounded-lg bg-surface p-5">
 			<PageHeading title={loadFailure.title}>
 				{#snippet sub()}{loadFailure.message}{/snippet}
 			</PageHeading>

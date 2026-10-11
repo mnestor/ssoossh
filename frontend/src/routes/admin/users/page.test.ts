@@ -263,3 +263,42 @@ describe('Admin users status filter', () => {
 		});
 	});
 });
+
+describe('when a slow request finishes after a newer one', () => {
+	// Nothing cancels a request in flight and the search box stays live, so
+	// an older answer could land last and replace the list with results for
+	// a term the reader had already moved off.
+	it('should keep the newest result rather than the last to arrive', async () => {
+		const resolvers: ((response: Response) => void)[] = [];
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(() => new Promise<Response>((resolve) => resolvers.push(resolve)))
+		);
+		/** answer completes the nth request with one user. */
+		const answer = (index: number, username: string) =>
+			resolvers[index](
+				new Response(
+					JSON.stringify({
+						data: {
+							users: [user({ id: username, username })],
+							meta: { total: 1, limit: 25, offset: 0, page: 1, page_count: 1 }
+						},
+						error: null
+					}),
+					{ status: 200, headers: { 'Content-Type': 'application/json' } }
+				)
+			);
+
+		render(Page);
+		await waitFor(() => expect(resolvers.length).toBe(1));
+		await userEvent.type(screen.getByRole('searchbox'), 'beta{Enter}');
+		await waitFor(() => expect(resolvers.length).toBe(2));
+
+		answer(1, 'newest-result');
+		await screen.findByText('newest-result');
+		answer(0, 'stale-result');
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		expect(screen.queryByText('stale-result')).not.toBeInTheDocument();
+	});
+});

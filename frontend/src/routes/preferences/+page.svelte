@@ -5,6 +5,7 @@
 	import Alert from '#lib/components/Alert.svelte';
 	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
 	import Button from '#lib/components/Button.svelte';
+	import DetailToggle from '#lib/components/DetailToggle.svelte';
 	import MonoChip from '#lib/components/MonoChip.svelte';
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import PageSection from '#lib/components/PageSection.svelte';
@@ -16,6 +17,8 @@
 	let preferences = $state<NotificationPreferences | null>(null);
 	let loadError = $state<string | null>(null);
 	let hasLoaded = $state(false);
+	// Bumped by Try again; the load below reads it, so a bump re-runs it.
+	let attempt = $state(0);
 
 	// pending holds only the toggles the user has actually moved. Sending
 	// just those is what stops a tab loaded before an upgrade from resetting
@@ -27,7 +30,16 @@
 
 	const hasChanges = $derived(Object.keys(pending).length > 0);
 
+	// The way out of a failed load: back to the loading shape, then the
+	// same request again.
+	function retry() {
+		loadError = null;
+		hasLoaded = false;
+		attempt += 1;
+	}
+
 	$effect(() => {
+		void attempt;
 		const controller = new AbortController();
 
 		getNotificationPreferences(controller.signal)
@@ -98,10 +110,19 @@
 <svelte:head><title>Preferences · ssoossh</title></svelte:head>
 
 <PageShell width="wide">
-	<PageHeading title="Notification preferences" />
+	<!-- "Preferences", not "Notification preferences": the page now holds
+	     the display level as well, and will hold the login shell. -->
+	<PageHeading title="Preferences" />
 
 	{#if loadError}
-		<Alert variant="error" title="Could not load your preferences">{loadError}</Alert>
+		<Alert
+			variant="error"
+			title="Could not load your preferences"
+			onretry={retry}
+			testid="preferences-error"
+		>
+			{loadError}
+		</Alert>
 	{:else if !hasLoaded}
 		<LoadingBlock
 			shape="lines"
@@ -138,13 +159,13 @@
 				{/if}
 
 				{#each preferences.kinds as kind (kind.kind)}
-					<label class="flex cursor-pointer items-start gap-3">
+					<label class="flex min-h-target cursor-pointer items-start gap-3">
 						<input
 							type="checkbox"
 							checked={enabledFor(kind.kind, kind.enabled)}
 							onchange={() => toggle(kind.kind, kind.enabled)}
 							data-testid={`notification-${kind.kind}`}
-							class="mt-0.5 h-4 w-4 shrink-0 rounded border-border-subtle text-accent"
+							class="mt-0.5 size-4 shrink-0"
 						/>
 						<span class="flex flex-col gap-0.5">
 							<span class="text-sm font-medium text-ink">{kind.title}</span>
@@ -169,8 +190,36 @@
 
 		<div class="flex justify-end">
 			<Button onclick={save} disabled={!hasChanges} busy={saving} testid="save-preferences">
-				{saving ? 'Saving…' : 'Save'}
+				{saving ? 'Saving…' : 'Save notifications'}
 			</Button>
 		</div>
 	{/if}
+
+	<!-- Outside the notification load: it lives in this browser, not on the
+	     server, so a failed read of the notification settings must not take
+	     it with it. It applies at once, unlike the notifications above, and
+	     says so, since the Save button belongs to those alone. -->
+	<PageSection
+		title="Display"
+		description="How much the approval, certificate and service code pages show. Takes effect at once, in this browser."
+		testid="display-preferences"
+	>
+		<div class="flex max-w-[70ch] flex-col gap-3">
+			<DetailToggle testid="display-detail" />
+			<dl class="flex flex-col gap-1 text-dense">
+				<div>
+					<dt class="inline font-medium text-ink">Simplified</dt>
+					<dd class="inline text-ink-muted">
+						keeps what you need to decide or to understand the result.
+					</dd>
+				</div>
+				<div>
+					<dt class="inline font-medium text-ink">Advanced</dt>
+					<dd class="inline text-ink-muted">
+						adds the ids, fingerprints and policy detail an expert compares.
+					</dd>
+				</div>
+			</dl>
+		</div>
+	</PageSection>
 </PageShell>

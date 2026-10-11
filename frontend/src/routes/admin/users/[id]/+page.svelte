@@ -20,7 +20,6 @@
 
 	let user: AdminUserDetail | null = $state(null);
 	let error: string | null = $state(null);
-	let busy = $state(false);
 	let actionBusy = $state(false);
 	let showDisableConfirm = $state(false);
 	let disableConsequences: DisableUserConsequences | null = $state(null);
@@ -31,6 +30,14 @@
 	let actionError: string | null = $state(null);
 	let auditEvents: AuditEvent[] = $state([]);
 	let auditError: string | null = $state(null);
+	// False until the first timeline read answers, so the section shows the
+	// loading shape rather than an empty timeline while it is out.
+	let auditLoaded = $state(false);
+	// What the last disable or re-enable did, said where it happened.
+	let actionNotice: string | null = $state(null);
+	// A refresh after an action that failed. The action itself went
+	// through, so this must not read as "could not load this account".
+	let refreshError: string | null = $state(null);
 
 	// $derived, not a plain const: on a client-side navigation the component
 	// initialises before the router has populated params, so capturing the
@@ -152,20 +159,18 @@
 		return Array.isArray(value) ? value : [value];
 	}
 
+	// loadUser is the first load and its retry. Until it answers there is
+	// no account, so the page shows the loading shape under the heading.
 	async function loadUser() {
-		busy = true;
 		error = null;
 		if (!userId) {
 			error = 'No user ID provided';
-			busy = false;
 			return;
 		}
 		try {
 			user = await getAdminUser(userId);
 		} catch (cause) {
 			error = cause instanceof Error ? cause.message : 'Failed to load user';
-		} finally {
-			busy = false;
 		}
 	}
 
@@ -178,34 +183,52 @@
 		showDisableConfirm = true;
 	}
 
+	// refreshUser re-reads the account in place after an action. Unlike
+	// loadUser it never swaps the page for the loading shape: that unmounted
+	// the open dialog and dropped focus onto <body>.
+	async function refreshUser() {
+		try {
+			user = await getAdminUser(userId);
+			refreshError = null;
+		} catch (cause) {
+			refreshError = cause instanceof Error ? cause.message : 'Failed to load user';
+		}
+	}
+
 	async function handleDisable(reason: string) {
 		actionBusy = true;
 		actionError = null;
+		actionNotice = null;
 		try {
 			await disableUser(userId, { reason });
-			await loadUser();
-			await loadAudit();
-			closeDisableConfirm();
 		} catch (cause) {
 			actionError = cause instanceof Error ? cause.message : 'Failed to disable user';
-		} finally {
 			actionBusy = false;
+			return;
 		}
+		// Closed before the refresh, so focus returns to the heading's
+		// action button, which stays the same element as its label changes.
+		closeDisableConfirm();
+		await Promise.all([refreshUser(), loadAudit()]);
+		actionNotice = 'This account was disabled.';
+		actionBusy = false;
 	}
 
 	async function handleEnable(reason: string) {
 		actionBusy = true;
 		actionError = null;
+		actionNotice = null;
 		try {
 			await enableUser(userId, { reason });
-			await loadUser();
-			await loadAudit();
-			closeEnableConfirm();
 		} catch (cause) {
 			actionError = cause instanceof Error ? cause.message : 'Failed to enable user';
-		} finally {
 			actionBusy = false;
+			return;
 		}
+		closeEnableConfirm();
+		await Promise.all([refreshUser(), loadAudit()]);
+		actionNotice = 'This account was re-enabled.';
+		actionBusy = false;
 	}
 
 	function closeDisableConfirm() {
@@ -222,13 +245,22 @@
 	// The timeline is a separate, auditor-scoped read, so its failure is
 	// reported beside it rather than replacing the whole page with an error.
 	async function loadAudit() {
+		auditError = null;
 		try {
 			const page = await getUserAudit(userId, { limit: 25 });
 			auditEvents = page.events;
-			auditError = null;
 		} catch (cause) {
 			auditError = cause instanceof Error ? cause.message : 'Failed to load the audit timeline';
+		} finally {
+			auditLoaded = true;
 		}
+	}
+
+	// The timeline's way out of a failed read: the loading shape, then the
+	// same read again.
+	function retryAudit() {
+		auditLoaded = false;
+		void loadAudit();
 	}
 
 	onMount(() => {
@@ -239,56 +271,72 @@
 
 <svelte:head><title>User · ssoossh</title></svelte:head>
 
+<!-- The address alone. The username used to lead this line whenever the
+     title was a display name, which restated the "Username" field in the
+     OIDC record immediately below it; the address is the one identifier
+     not stated anywhere else on the page. -->
+{#snippet userSub()}{user?.email || 'No email'}{/snippet}
+
+<!-- One button whose label and variant follow the account, not two
+     swapped by an {#if}: the dialog returns focus to whatever opened it,
+     and an element replaced while the dialog was open would leave the
+     caret on <body>. -->
+{#snippet userAction()}
+	<Button
+		variant={user?.disabled_at ? 'primary' : 'danger'}
+		testid={user?.disabled_at ? 'enable-user' : 'disable-user'}
+		disabled={actionBusy}
+		onclick={user?.disabled_at ? () => (showEnableConfirm = true) : openDisableConfirm}
+	>
+		{user?.disabled_at ? 'Re-enable' : 'Disable'}
+	</Button>
+{/snippet}
+
 <PageShell width="full">
-	{#if busy}
-		<LoadingBlock shape="lines" count={5} label="Loading this account…" testid="user-loading" />
-	{:else if error}
-		<Alert variant="error" title="Could not load this account">{error}</Alert>
-	{:else if user}
-		<!-- A snippet is its own closure, so the `user` narrowed by the
-		     branch above does not reach inside one. Bind it once here and
-		     the heading's two snippets can read it without each re-testing
-		     a value the branch has already settled. -->
-		{@const account = user}
-		<!-- The chip is where the "Admin" eyebrow used to be, and says
-		     something the eyebrow could not: this page has a list behind it,
-		     and that is the way back to it. -->
-		<PageHeading
-			title={account.name || account.username}
-			back={{
-				href: resolve('admin/users'),
-				label: 'All users',
-				testid: 'admin-user-back'
-			}}
+	<!-- The heading and its back chip stand in every state (DESIGN.md,
+	     "States"), so a failed load still has a way back to the list. The
+	     chip is where the "Admin" eyebrow used to be, and says something the
+	     eyebrow could not: this page has a list behind it. -->
+	<PageHeading
+		title={user ? user.name || user.username : 'User'}
+		back={{
+			href: resolve('admin/users'),
+			label: 'All users',
+			testid: 'admin-user-back'
+		}}
+		sub={user ? userSub : undefined}
+		action={user ? userAction : undefined}
+	/>
+
+	{#if error}
+		<Alert
+			variant="error"
+			title="Could not load this account"
+			onretry={loadUser}
+			testid="user-error"
 		>
-			<!-- The address alone. The username used to lead this line
-			     whenever the title was a display name, which restated the
-			     "Username" field in the OIDC record immediately below it;
-			     the address is the one identifier not stated anywhere else
-			     on the page. -->
-			{#snippet sub()}{account.email || 'No email'}{/snippet}
-			{#snippet action()}
-				<div class="flex gap-2">
-					{#if account.disabled_at}
-						<Button
-							variant="primary"
-							testid="enable-user"
-							disabled={actionBusy}
-							onclick={() => (showEnableConfirm = true)}>Re-enable</Button
-						>
-					{:else}
-						<Button
-							variant="danger"
-							testid="disable-user"
-							disabled={actionBusy}
-							onclick={openDisableConfirm}
-						>
-							{actionBusy ? 'Disabling...' : 'Disable'}
-						</Button>
-					{/if}
-				</div>
-			{/snippet}
-		</PageHeading>
+			{error}
+		</Alert>
+	{:else if !user}
+		<LoadingBlock shape="lines" count={5} label="Loading this account…" testid="user-loading" />
+	{:else}
+		<!-- Bound once for the dialogs below, which read the account the
+		     branch has already settled. -->
+		{@const account = user}
+
+		{#if actionNotice}
+			<Alert variant="info" testid="user-action-notice">{actionNotice}</Alert>
+		{/if}
+		{#if refreshError}
+			<Alert
+				variant="error"
+				title="The change went through, but this page could not refresh"
+				onretry={refreshUser}
+				testid="user-refresh-error"
+			>
+				{refreshError}
+			</Alert>
+		{/if}
 
 		<!-- The OIDC record: exactly what the ID token carried at the last
 		     login, as stored on the users row. Deliberately not the merged
@@ -317,7 +365,7 @@
 					<p class="text-xs font-semibold text-ink-muted">Name</p>
 					<p>{user.name || 'Not captured'}</p>
 					{#if overrides.name}
-						<p class="mt-0.5 text-xs text-accent" data-testid="user-name-overridden">
+						<p class="mt-0.5 text-xs text-ink-muted" data-testid="user-name-overridden">
 							{oidcConfigured('name') ? 'Overridden by LDAP' : 'Supplied by LDAP'}: {overrides.name.effective.join(
 								', '
 							) || 'none'}
@@ -371,7 +419,7 @@
 						<p class="text-xs font-semibold text-ink-muted">{block.label}</p>
 						{#if block.source}
 							<span
-								class="rounded bg-surface px-2 py-0.5 text-micro text-ink-muted uppercase"
+								class="rounded bg-surface-muted px-2 py-0.5 text-micro text-ink-muted uppercase"
 								data-testid="user-account-source-{block.field}">{block.source}</span
 							>
 						{/if}
@@ -380,7 +428,7 @@
 					{#if block.values.length > 0}
 						<div class="mt-1 flex flex-wrap gap-2">
 							{#each block.values as acct (acct)}
-								<span class="rounded bg-surface px-2 py-1 text-sm">{acct}</span>
+								<span class="rounded bg-surface-muted px-2 py-1 font-mono text-sm">{acct}</span>
 							{/each}
 						</div>
 					{:else if block.unconfigured}
@@ -421,11 +469,11 @@
 						{#each Object.entries(user.extra_fields) as [key, value] (key)}
 							<div class="flex items-start gap-2">
 								<span
-									class="flex-shrink-0 rounded bg-surface px-2 py-1 font-mono text-sm text-ink-muted"
+									class="flex-shrink-0 rounded bg-surface-muted px-2 py-1 font-mono text-sm text-ink-muted"
 									>{key}</span
 								>
 								<span
-									class="flex-grow rounded bg-surface px-2 py-1 text-sm"
+									class="flex-grow rounded bg-surface-muted px-2 py-1 text-sm"
 									class:line-through={overrides[key]}
 									class:text-ink-muted={overrides[key]}
 								>
@@ -433,7 +481,7 @@
 								</span>
 							</div>
 							{#if overrides[key]}
-								<p class="pl-2 text-xs text-accent" data-testid="user-override-{key}">
+								<p class="pl-2 text-xs text-ink-muted" data-testid="user-override-{key}">
 									{oidcConfigured(key) ? 'Overridden by LDAP' : 'Supplied by LDAP'}: {overrides[
 										key
 									].effective.join(', ') || 'none'}
@@ -446,13 +494,13 @@
 						{#each ldapOnlyExtras as override (override.field)}
 							<div class="flex items-start gap-2" data-testid="user-override-{override.field}">
 								<span
-									class="flex-shrink-0 rounded bg-surface px-2 py-1 font-mono text-sm text-ink-muted"
+									class="flex-shrink-0 rounded bg-surface-muted px-2 py-1 font-mono text-sm text-ink-muted"
 									>{override.field}</span
 								>
 
-								<span class="flex-grow rounded bg-surface px-2 py-1 text-sm">
+								<span class="flex-grow rounded bg-surface-muted px-2 py-1 text-sm">
 									{override.effective.join(', ') || '—'}
-									<span class="text-xs text-accent">— from LDAP only, no OIDC claim</span>
+									<span class="text-xs text-ink-muted">— from LDAP only, no OIDC claim</span>
 								</span>
 							</div>
 						{/each}
@@ -495,7 +543,7 @@
 				<div class="overflow-x-auto">
 					<table class="data-table" data-testid="user-groups-table">
 						<thead>
-							<tr class="border-b border-border-subtle text-left text-xs text-ink-muted">
+							<tr>
 								<th scope="col">Group</th>
 								<th scope="col">Source</th>
 								<th scope="col">First seen</th>
@@ -504,10 +552,10 @@
 						</thead>
 						<tbody>
 							{#each user.groups as group (group.source + '/' + group.name)}
-								<tr class="border-b border-border-subtle last:border-0">
+								<tr>
 									<td class="font-mono">{group.name}</td>
 									<td class="pr-4">
-										<span class="rounded bg-surface px-2 py-0.5 text-xs uppercase"
+										<span class="rounded bg-surface-muted px-2 py-0.5 text-xs uppercase"
 											>{group.source}</span
 										>
 									</td>
@@ -569,7 +617,7 @@
 
 				{#if user.directory.first_missing_at}
 					<div
-						class="mt-4 rounded border-l-2 border-danger bg-surface p-3 text-sm"
+						class="mt-4 rounded-lg bg-danger-surface p-3 text-sm"
 						data-testid="user-directory-missing"
 					>
 						<p class="font-semibold text-danger">Entry is currently missing</p>
@@ -589,10 +637,12 @@
 							{#each Object.entries(user.directory.attributes) as [field, values] (field)}
 								<div class="flex items-start gap-2">
 									<span
-										class="flex-shrink-0 rounded bg-surface px-2 py-1 font-mono text-sm text-ink-muted"
+										class="flex-shrink-0 rounded bg-surface-muted px-2 py-1 font-mono text-sm text-ink-muted"
 										>{field}</span
 									>
-									<span class="flex-grow rounded bg-surface px-2 py-1 font-mono text-sm break-all">
+									<span
+										class="flex-grow rounded bg-surface-muted px-2 py-1 font-mono text-sm break-all"
+									>
 										{values.length > 0 ? values.join(', ') : '—'}
 									</span>
 								</div>
@@ -625,7 +675,7 @@
 				<div class="overflow-x-auto">
 					<table class="data-table" data-testid="user-notification-table">
 						<thead>
-							<tr class="border-b border-border-subtle text-left text-xs text-ink-muted">
+							<tr>
 								<th scope="col">Notification</th>
 								<th scope="col">Kind</th>
 								<th scope="col">Sends</th>
@@ -634,10 +684,7 @@
 						</thead>
 						<tbody>
 							{#each user.notification_preferences as pref (pref.kind)}
-								<tr
-									class="border-b border-border-subtle last:border-0"
-									data-testid="user-notification-{pref.kind}"
-								>
+								<tr data-testid="user-notification-{pref.kind}">
 									<td class="pr-4">
 										{pref.title || pref.kind}
 										{#if !pref.registered}
@@ -680,11 +727,11 @@
 			<div class="grid gap-4 sm:grid-cols-2">
 				<div>
 					<p class="text-xs font-semibold text-ink-muted">Certificates</p>
-					<p class="text-2xl font-bold text-accent">{user.certificate_count}</p>
+					<p class="text-2xl font-semibold text-ink">{user.certificate_count}</p>
 				</div>
 				<div>
 					<p class="text-xs font-semibold text-ink-muted">Active service enrollments</p>
-					<p class="text-2xl font-bold text-accent">{user.service_enrollment_count}</p>
+					<p class="text-2xl font-semibold text-ink">{user.service_enrollment_count}</p>
 				</div>
 			</div>
 		</PageSection>
@@ -756,7 +803,21 @@
 		     to it, from the same rows. -->
 		<PageSection title="Audit timeline">
 			{#if auditError}
-				<p class="text-sm text-danger">{auditError}</p>
+				<Alert
+					variant="error"
+					title="Could not load the audit timeline"
+					onretry={retryAudit}
+					testid="user-audit-error"
+				>
+					{auditError}
+				</Alert>
+			{:else if !auditLoaded}
+				<LoadingBlock
+					shape="lines"
+					count={3}
+					label="Loading the audit timeline…"
+					testid="user-audit-loading"
+				/>
 			{:else}
 				<AuditTimeline events={auditEvents} subjectUserId={userId} />
 			{/if}

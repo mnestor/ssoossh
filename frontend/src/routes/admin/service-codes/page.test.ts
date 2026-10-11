@@ -69,6 +69,17 @@ describe('admin service codes page', () => {
 		expect(screen.getByText('svc-backup')).toBeInTheDocument();
 	});
 
+	// A reader who cannot see the rows change is told what the list became
+	// (WCAG 4.1.3), as the other admin lists already do.
+	it('should announce how many codes were found', async () => {
+		stubList([adminEnrollment('enr-1', 'svc-deploy'), adminEnrollment('enr-2', 'svc-backup')]);
+
+		render(Page);
+
+		await screen.findAllByTestId('enrollment-row');
+		expect(screen.getByTestId('list-status')).toHaveTextContent('2 service codes found.');
+	});
+
 	it('should say so when no codes exist', async () => {
 		stubList([]);
 

@@ -27,7 +27,7 @@
 </script>
 
 <span
-	class="inline-flex w-fit flex-shrink-0 items-center gap-1 rounded border border-border-subtle px-2 py-0.5 text-micro font-semibold tracking-label text-ink-muted uppercase"
+	class="inline-flex w-fit flex-shrink-0 items-center gap-1 rounded bg-surface-muted px-2 py-0.5 text-micro font-semibold tracking-label text-ink-muted uppercase"
 >
 	<Icon name={icons[type] ?? 'help-circle'} size="xs" />
 	{labels[type] ?? type}

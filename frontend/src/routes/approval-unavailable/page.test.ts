@@ -38,6 +38,13 @@ describe('Approval unavailable page', () => {
 		expect(screen.getByText(/Run the client again/)).toBeInTheDocument();
 	});
 
+	// Nothing on this page can be retried, so it leads back into the app
+	// rather than leave the reader on a dead end.
+	it('should lead back to the dashboard', () => {
+		render(Page);
+		expect(screen.getByTestId('claim-dashboard')).toBeInTheDocument();
+	});
+
 	it('should show the cookie explanation when reason=cookies', () => {
 		pageState.url = new URL('http://localhost/approval-unavailable?reason=cookies');
 		render(Page);

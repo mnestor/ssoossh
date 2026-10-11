@@ -14,8 +14,14 @@
 	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
 	import ExpireCodeAction from '#lib/components/ExpireCodeAction.svelte';
 	import PageHeading from '#lib/components/PageHeading.svelte';
+	import DetailToggle from '#lib/components/DetailToggle.svelte';
+	import SimplifiedHint from '#lib/components/SimplifiedHint.svelte';
+	import { coverWithDetail } from '#lib/detail.svelte.js';
 	import PageShell from '#lib/components/PageShell.svelte';
 	import { isExpired } from '#lib/format.js';
+
+	// One of the pages the detail level covers (DESIGN.md, "Detail levels").
+	coverWithDetail();
 
 	// One enrollment, addressed by id. This is where an operator lands from
 	// the list, and where they land with an id copied out of a notification
@@ -89,14 +95,17 @@
 		back={{ href: listHref, label: 'All service codes', testid: 'admin-service-code-back' }}
 	>
 		{#snippet action()}
-			{#if detail && !expired}
-				{@const enrollmentId = detail.enrollment.id}
-				<ExpireCodeAction
-					testid="admin-expire-code"
-					expire={(reason) => expireEnrollment(enrollmentId, reason)}
-					onexpired={() => goto(listHref)}
-				/>
-			{/if}
+			<div class="flex flex-wrap items-center justify-end gap-2">
+				<DetailToggle />
+				{#if detail && !expired}
+					{@const enrollmentId = detail.enrollment.id}
+					<ExpireCodeAction
+						testid="admin-expire-code"
+						expire={(reason) => expireEnrollment(enrollmentId, reason)}
+						onexpired={() => goto(listHref)}
+					/>
+				{/if}
+			</div>
 		{/snippet}
 	</PageHeading>
 
@@ -114,5 +123,8 @@
 		     endpoint is audited, so a second read would write two
 		     admin.enrollment_viewed events for one look. -->
 		<AdminServiceCodeDetail {detail} />
+	{/if}
+	{#if detail && !loadError}
+		<SimplifiedHint />
 	{/if}
 </PageShell>

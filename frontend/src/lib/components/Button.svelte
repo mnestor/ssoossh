@@ -12,6 +12,8 @@
 		full?: boolean;
 		/** Indicates the button is processing an action. Disables the button and sets aria-busy. */
 		busy?: boolean;
+		/** For a disclosure: whether what it opens is open (aria-expanded). */
+		expanded?: boolean;
 		onclick?: () => void;
 		/** Stable selector for the e2e browser tier — see test/e2e/README.md. */
 		testid?: string;
@@ -24,6 +26,7 @@
 		disabled = false,
 		full = false,
 		busy = false,
+		expanded,
 		onclick,
 		testid,
 		children
@@ -46,8 +49,9 @@
 	disabled={disabled || busy}
 	{onclick}
 	aria-busy={busy}
+	aria-expanded={expanded}
 	data-testid={testid}
-	class="inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition duration-100 active:scale-98 disabled:opacity-50 {full
+	class="inline-flex min-h-target items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition duration-100 active:scale-98 disabled:opacity-50 {full
 		? 'w-full'
 		: ''} {variants[variant]}"
 >

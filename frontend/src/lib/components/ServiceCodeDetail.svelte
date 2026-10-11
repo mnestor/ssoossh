@@ -4,9 +4,11 @@
 	import type { EnrollmentRetrievalsResponse, ServiceEnrollment } from '#lib/api/types.js';
 	import { errorMessage } from '#lib/auth.js';
 	import { session } from '#lib/session.svelte.js';
+	import { detail, inDetailScope } from '#lib/detail.svelte.js';
 	import AccountHoldersPanel from './AccountHoldersPanel.svelte';
 	import Alert from './Alert.svelte';
 	import Button from './Button.svelte';
+	import LoadingBlock from './LoadingBlock.svelte';
 	import PageSection from './PageSection.svelte';
 	import RedemptionHistory from './RedemptionHistory.svelte';
 	import ServiceCodeFacts from './ServiceCodeFacts.svelte';
@@ -35,6 +37,15 @@
 	let { enrollment, now = new Date() }: Props = $props();
 
 	let retrievals = $state<EnrollmentRetrievalsResponse | null>(null);
+	// Scoped like every piece of a covered page: off one, it is always full.
+	const covered = inDetailScope();
+	const simplified = $derived(covered && detail.simplified);
+	// The log's own states, apart from the page's: it is one section of a
+	// detail that stands without it.
+	let retrievalsLoading = $state(false);
+	let retrievalsFailed = $state(false);
+	// Bumped by Try again; the log load reads it, so a bump re-runs it.
+	let retrievalsAttempt = $state(0);
 
 	// The address form's own state. emailDraft is reset from the enrollment
 	// whenever a different code is shown, so a draft abandoned on one code
@@ -82,7 +93,9 @@
 	// is the detail behind them — when, from where, and whether a certificate
 	// actually came out.
 	$effect(() => {
+		void retrievalsAttempt;
 		retrievals = null;
+		retrievalsFailed = false;
 
 		const requestID = enrollment.certificate_request_id;
 		if (!requestID) {
@@ -90,22 +103,28 @@
 		}
 
 		const controller = new AbortController();
+		retrievalsLoading = true;
 
 		listRetrievals(requestID, controller.signal)
 			.then((result) => {
 				retrievals = result;
+				retrievalsLoading = false;
 			})
 			.catch((cause) => {
 				if (controller.signal.aborted) {
 					return;
 				}
+				retrievalsLoading = false;
 				// A 404 (no enrollment for that request) or 403 (someone else's)
-				// is not an error worth a banner: the summary counts on the row
-				// stand on their own, and the rest of the page is unaffected.
-				if (!(cause instanceof ApiError)) {
-					return;
+				// is an answer, not a failure: the summary counts on the row
+				// stand on their own, so the log is simply omitted. Anything
+				// else, a network failure (the client's ApiError with status
+				// 0) above all, used to look the same and is not, so it says
+				// so and offers the read again.
+				const refused = cause instanceof ApiError && (cause.isNotFound || cause.isForbidden);
+				if (!refused) {
+					retrievalsFailed = true;
 				}
-				retrievals = null;
 			});
 
 		return () => controller.abort();
@@ -120,18 +139,20 @@
 	);
 </script>
 
-<div class="flex flex-col gap-5" data-testid="service-code-detail">
+<div class="flex flex-col gap-8" data-testid="service-code-detail">
 	<ServiceCodeFacts {enrollment} {now} approvedBy={enrollment.approved_by_username ?? ''} />
 
 	<!-- Immediately above the notification address, because the two answer
 	     the same question from opposite ends: this is who the code reaches by
 	     default, and the field below is how to send it somewhere else
 	     instead. -->
-	<AccountHoldersPanel
-		enrollmentId={enrollment.id}
-		serviceAccount={enrollment.service_account}
-		viewerUsername={session.user?.username ?? ''}
-	/>
+	{#if !simplified}
+		<AccountHoldersPanel
+			enrollmentId={enrollment.id}
+			serviceAccount={enrollment.service_account}
+			viewerUsername={session.user?.username ?? ''}
+		/>
+	{/if}
 
 	<!-- The only editable thing here. It exists for the cases fan-out cannot
 	     serve: an account whose holders have never logged in reaches nobody,
@@ -148,8 +169,8 @@
 				<span class="font-mono">{subject}</span>. Set an address to send them to one place instead.
 			{/if}
 		</p>
-		<div class="flex max-w-[560px] flex-wrap items-start gap-2">
-			<label class="flex min-w-[220px] flex-1 flex-col gap-1">
+		<div class="flex max-w-140 flex-wrap items-start gap-2">
+			<label class="flex min-w-55 flex-1 flex-col gap-1">
 				<span class="sr-only">Notification address</span>
 				<input
 					type="email"
@@ -157,7 +178,7 @@
 					data-testid="notification-email-input"
 					placeholder="deploys@example.com"
 					disabled={savingEmail}
-					class="rounded border border-border-control bg-surface px-3 py-2 text-dense text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+					class="rounded-md border border-border-control bg-surface px-3 py-2 text-dense text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 				/>
 			</label>
 			<Button
@@ -187,7 +208,31 @@
 	     retire it should not have to scroll past a year of cron redemptions
 	     to reach either. Absent entirely when the log did not load — a 404 or
 	     someone else's request — because the facts above stand without it. -->
-	{#if retrievals}
+	<!-- The holders list and the redemption history are advanced-only; the
+	     facts above carry the redemption count in their place. -->
+	{#if simplified}
+		<!-- nothing: see the count in the facts above -->
+	{:else if retrievals}
 		<RedemptionHistory retrievals={retrievals.retrievals} total={retrievals.total} />
+	{:else if retrievalsLoading}
+		<PageSection title="Redemption history">
+			<LoadingBlock
+				shape="lines"
+				count={3}
+				label="Loading the redemption history…"
+				testid="redemption-loading"
+			/>
+		</PageSection>
+	{:else if retrievalsFailed}
+		<PageSection title="Redemption history">
+			<Alert
+				variant="error"
+				title="Could not load the redemption history"
+				onretry={() => (retrievalsAttempt += 1)}
+				testid="redemption-error"
+			>
+				The rest of this code's details are current.
+			</Alert>
+		</PageSection>
 	{/if}
 </div>

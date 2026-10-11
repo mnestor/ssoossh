@@ -10,6 +10,8 @@
 	import Alert from '#lib/components/Alert.svelte';
 	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
 	import Button from '#lib/components/Button.svelte';
+	import ConfirmModal from '#lib/components/ConfirmModal.svelte';
+	import Icon from '#lib/components/Icon.svelte';
 	import MonoChip from '#lib/components/MonoChip.svelte';
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import PageSection from '#lib/components/PageSection.svelte';
@@ -20,6 +22,8 @@
 	let status = $state<LDAPStatusResponse | null>(null);
 	let statusError = $state<string | null>(null);
 	let statusLoaded = $state(false);
+	// Bumped by Try again; the status load reads it, so a bump re-runs it.
+	let attempt = $state(0);
 
 	// Sync state. The run record is the answer whatever happened, including
 	// a pass that could not reach the directory, so it is rendered rather
@@ -28,6 +32,9 @@
 	let lastRun = $state<LDAPSyncRunResponse | null>(null);
 	let syncError = $state<string | null>(null);
 	let dryRun = $state(true);
+	// A live pass can disable accounts, so it confirms first (DESIGN.md,
+	// "Destructive actions"); a dry run changes nothing and runs at once.
+	let showSyncConfirm = $state(false);
 
 	// Probe form. There is deliberately no connection here: the probe uses
 	// the running url, bind credentials and base DN, and cannot be
@@ -40,30 +47,31 @@
 	let bindEmail = $state('');
 	let bindSubject = $state('');
 
-	/**
-	 * modeButton is the class for one option in a segmented control.
-	 *
-	 * A pressed option is filled, not merely tinted, and that is the point:
-	 * both of these rows used to mark their selection with the accent hue
-	 * alone. Matches FilterChip, which is the shape the rest of the app's
-	 * two-state controls already take.
-	 */
-	function modeButton(pressed: boolean): string {
-		const base =
-			'rounded border px-3 py-1 text-xs font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent';
-		return pressed
-			? `${base} border-accent bg-accent text-accent-ink`
-			: `${base} border-border-control text-ink-muted hover:bg-surface-muted`;
-	}
-
 	let probing = $state(false);
 	let probeResult = $state<LDAPProbeResponse | null>(null);
 	let probeError = $state<string | null>(null);
-	let tab = $state<'entry' | 'fields' | 'merge'>('entry');
+	let view = $state<'entry' | 'fields' | 'merge'>('entry');
+
+	// The probe result's three views, in the order a reader works through
+	// them: what came back, what each field made of it, what was kept.
+	const views = [
+		{ id: 'entry', label: 'Entry as returned' },
+		{ id: 'fields', label: 'Field mapping' },
+		{ id: 'merge', label: 'Merge and allowlist' }
+	] as const;
 
 	const isAdmin = $derived(session.user?.is_admin ?? false);
 
+	// The way out of a failed status load: back to the loading shape, then
+	// the same request again.
+	function retryStatus() {
+		statusError = null;
+		statusLoaded = false;
+		attempt += 1;
+	}
+
 	$effect(() => {
+		void attempt;
 		const controller = new AbortController();
 		getLDAPStatus(controller.signal)
 			.then((result) => {
@@ -88,17 +96,41 @@
 		}
 	}
 
-	async function handleSync() {
+	/** runSync runs one pass and reports whether it ran. */
+	async function runSync(): Promise<boolean> {
 		syncing = true;
 		syncError = null;
 		try {
 			lastRun = await runLDAPSync({ dry_run: dryRun });
 			await refreshStatus();
+			return true;
 		} catch (cause) {
 			syncError = errorMessage(cause);
+			return false;
 		} finally {
 			syncing = false;
 		}
+	}
+
+	function handleSync() {
+		if (dryRun) {
+			void runSync();
+			return;
+		}
+		syncError = null;
+		showSyncConfirm = true;
+	}
+
+	// A failure stays in the dialog, beside the button that caused it.
+	async function confirmLiveSync() {
+		if (await runSync()) {
+			showSyncConfirm = false;
+		}
+	}
+
+	function cancelLiveSync() {
+		showSyncConfirm = false;
+		syncError = null;
 	}
 
 	async function handleProbe() {
@@ -120,7 +152,7 @@
 				};
 			}
 			probeResult = await probeLDAP(body);
-			tab = 'entry';
+			view = 'entry';
 		} catch (cause) {
 			probeError = errorMessage(cause);
 		} finally {
@@ -156,6 +188,25 @@
 
 <svelte:head><title>Directory · ssoossh</title></svelte:head>
 
+<!-- One option of a segmented control. Selected is an ink fill with the
+     check glyph and aria-pressed, never cobalt (DESIGN.md, "Selected,
+     current and status"): these rows used to mark their choice with the
+     accent hue alone. -->
+{#snippet toggle(label: string, pressed: boolean, testid: string, onclick: () => void)}
+	<button
+		type="button"
+		class="inline-flex min-h-target items-center gap-1.5 rounded-md border px-3 text-xs font-medium transition {pressed
+			? 'border-ink bg-ink text-surface'
+			: 'border-border-control text-ink-muted hover:bg-surface-muted'}"
+		aria-pressed={pressed}
+		data-testid={testid}
+		{onclick}
+	>
+		{#if pressed}<Icon name="check" size="xs" />{/if}
+		{label}
+	</button>
+{/snippet}
+
 <PageShell width="wide">
 	<PageHeading title="Directory">
 		{#snippet sub()}
@@ -164,7 +215,14 @@
 	</PageHeading>
 
 	{#if statusError}
-		<Alert variant="error" title="Could not load the directory status">{statusError}</Alert>
+		<Alert
+			variant="error"
+			title="Could not load the directory status"
+			onretry={retryStatus}
+			testid="directory-error"
+		>
+			{statusError}
+		</Alert>
 	{:else if !statusLoaded}
 		<LoadingBlock
 			shape="lines"
@@ -264,7 +322,7 @@
 
 				{#if isAdmin}
 					<div class="flex flex-col gap-3 border-t border-border-subtle pt-4">
-						<label class="flex items-start gap-2 text-sm">
+						<label class="flex min-h-target items-start gap-2 text-sm">
 							<input
 								type="checkbox"
 								bind:checked={dryRun}
@@ -294,10 +352,29 @@
 							</p>
 						{/if}
 
-						{#if syncError}
+						{#if syncError && !showSyncConfirm}
 							<Alert variant="error" title="The sync did not run" testid="ldap-sync-error">
 								{syncError}
 							</Alert>
+						{/if}
+
+						{#if showSyncConfirm}
+							<ConfirmModal
+								title="Run a live sync now?"
+								reasonless
+								confirmLabel="Sync now"
+								busyLabel="Running…"
+								busy={syncing}
+								error={syncError}
+								errorTitle="The sync did not run"
+								confirmTestid="confirm-live-sync"
+								onconfirm={confirmLiveSync}
+								oncancel={cancelLiveSync}
+							>
+								A live pass can disable an account whose directory entry has been missing longer
+								than {formatDuration(status.disable_after_seconds)}. It runs on this instance and
+								behaves exactly like the scheduled one.
+							</ConfirmModal>
 						{/if}
 					</div>
 				{/if}
@@ -350,20 +427,18 @@
 							     nothing else — invisible to a screen reader, and to
 							     anyone who cannot separate teal from grey. -->
 							<div class="mb-2 flex gap-1" role="group" aria-label="Filter mode">
-								<button
-									type="button"
-									class={modeButton(mode === 'template')}
-									aria-pressed={mode === 'template'}
-									data-testid="ldap-mode-template"
-									onclick={() => (mode = 'template')}>Template</button
-								>
-								<button
-									type="button"
-									class={modeButton(mode === 'literal')}
-									aria-pressed={mode === 'literal'}
-									data-testid="ldap-mode-literal"
-									onclick={() => (mode = 'literal')}>Literal</button
-								>
+								{@render toggle(
+									'Template',
+									mode === 'template',
+									'ldap-mode-template',
+									() => (mode = 'template')
+								)}
+								{@render toggle(
+									'Literal',
+									mode === 'literal',
+									'ldap-mode-literal',
+									() => (mode = 'literal')
+								)}
 							</div>
 							<input
 								id="ldap-filter"
@@ -374,7 +449,7 @@
 								placeholder={mode === 'template'
 									? status.user_filter
 									: '(&(objectClass=person)(uid=mnestor))'}
-								class="w-full rounded border border-border-control bg-surface px-3 py-2 font-mono text-sm"
+								class="w-full rounded-md border border-border-control bg-surface px-3 py-2 font-mono text-sm"
 							/>
 							<p id="ldap-filter-help" class="mt-1 text-dense text-ink-muted">
 								{#if mode === 'template'}
@@ -396,11 +471,11 @@
 								data-testid="ldap-attributes"
 								aria-describedby="ldap-attributes-help"
 								placeholder="* (every user attribute)"
-								class="w-full rounded border border-border-control bg-surface px-3 py-2 font-mono text-sm"
+								class="w-full rounded-md border border-border-control bg-surface px-3 py-2 font-mono text-sm"
 							/>
 							<p id="ldap-attributes-help" class="mt-1 text-dense text-ink-muted">
-								Empty asks for everything. Attributes the configuration reads are highlighted in the
-								result.
+								Empty asks for everything. Attributes the configuration reads are marked "mapped" in
+								the result.
 							</p>
 						</div>
 					</div>
@@ -409,20 +484,18 @@
 						<div>
 							<SectionLabel>Bindings</SectionLabel>
 							<div class="mb-2 flex gap-1" role="group" aria-label="Binding source">
-								<button
-									type="button"
-									class={modeButton(bindingSource === 'self')}
-									aria-pressed={bindingSource === 'self'}
-									data-testid="ldap-binding-self"
-									onclick={() => (bindingSource = 'self')}>My session</button
-								>
-								<button
-									type="button"
-									class={modeButton(bindingSource === 'custom')}
-									aria-pressed={bindingSource === 'custom'}
-									data-testid="ldap-binding-custom"
-									onclick={() => (bindingSource = 'custom')}>Typed values</button
-								>
+								{@render toggle(
+									'My session',
+									bindingSource === 'self',
+									'ldap-binding-self',
+									() => (bindingSource = 'self')
+								)}
+								{@render toggle(
+									'Typed values',
+									bindingSource === 'custom',
+									'ldap-binding-custom',
+									() => (bindingSource = 'custom')
+								)}
 							</div>
 							{#if bindingSource === 'custom'}
 								<!-- Three fields that differ only in what they hold, so
@@ -439,7 +512,7 @@
 											bind:value={bindUsername}
 											placeholder="alice"
 											data-testid="ldap-bind-username"
-											class="rounded border border-border-control bg-surface px-3 py-2 font-mono text-sm"
+											class="rounded-md border border-border-control bg-surface px-3 py-2 font-mono text-sm"
 										/>
 									</label>
 									<label class="flex flex-col gap-1">
@@ -449,7 +522,7 @@
 											bind:value={bindEmail}
 											placeholder="alice@example.com"
 											data-testid="ldap-bind-email"
-											class="rounded border border-border-control bg-surface px-3 py-2 font-mono text-sm"
+											class="rounded-md border border-border-control bg-surface px-3 py-2 font-mono text-sm"
 										/>
 									</label>
 									<label class="flex flex-col gap-1">
@@ -459,7 +532,7 @@
 											bind:value={bindSubject}
 											placeholder="0f8c…"
 											data-testid="ldap-bind-subject"
-											class="rounded border border-border-control bg-surface px-3 py-2 font-mono text-sm"
+											class="rounded-md border border-border-control bg-surface px-3 py-2 font-mono text-sm"
 										/>
 									</label>
 								</div>
@@ -484,11 +557,11 @@
 					{/if}
 
 					{#if probeResult}
-						<div class="rounded-md border border-border-subtle" data-testid="ldap-probe-result">
-							<div class="border-b border-border-subtle bg-surface-muted px-4 py-3">
+						<div class="rounded-lg bg-surface-muted" data-testid="ldap-probe-result">
+							<div class="border-b border-border-subtle px-4 py-3">
 								<div class="flex flex-wrap items-baseline justify-between gap-2">
 									<code class="text-sm break-all">{probeResult.filter_sent}</code>
-									<span class="text-xs font-semibold tracking-wide text-accent uppercase">
+									<span class="text-xs font-semibold tracking-wide text-ink-muted uppercase">
 										Never writes
 									</span>
 								</div>
@@ -526,22 +599,26 @@
 									a failure: this is exactly what a login would see.
 								</p>
 							{:else}
-								<div class="flex overflow-x-auto border-b border-border-subtle bg-surface-muted">
-									{#each [['entry', 'Entry as returned'], ['fields', 'Field mapping'], ['merge', 'Merge and allowlist']] as [id, label] (id)}
-										<button
-											type="button"
-											class="border-b-2 px-4 py-2 text-dense font-medium whitespace-nowrap"
-											class:border-accent={tab === id}
-											class:text-accent={tab === id}
-											class:border-transparent={tab !== id}
-											class:text-ink-muted={tab !== id}
-											data-testid="ldap-tab-{id}"
-											onclick={() => (tab = id as typeof tab)}>{label}</button
-										>
+								<!-- A group of toggles, not tabs (DESIGN.md, "Accessibility"):
+								     the underline that marked the open view had no
+								     aria-selected behind it, so a screen reader could not
+								     tell which one was showing. -->
+								<div
+									class="flex flex-wrap gap-1 border-b border-border-subtle px-4 py-3"
+									role="group"
+									aria-label="Probe result view"
+								>
+									{#each views as v (v.id)}
+										{@render toggle(
+											v.label,
+											view === v.id,
+											`ldap-tab-${v.id}`,
+											() => (view = v.id)
+										)}
 									{/each}
 								</div>
 
-								{#if tab === 'entry' && probeResult.entry}
+								{#if view === 'entry' && probeResult.entry}
 									<div data-testid="ldap-panel-entry">
 										<div
 											class="border-b border-border-subtle px-4 py-2 font-mono text-dense break-all"
@@ -551,10 +628,17 @@
 										{#each probeResult.entry.attributes as attr (attr.name)}
 											<div
 												class="grid grid-cols-[minmax(9rem,14rem)_1fr] gap-4 border-b border-border-subtle px-4 py-2 text-dense last:border-0"
-												class:bg-granted-surface={attr.configured}
 											>
-												<span class="font-mono break-all" class:text-granted={attr.configured}>
-													{attr.name}
+												<!-- Said in words, not a green row: colour alone
+												     reached nobody who cannot see it, and green
+												     means "granted", which this is not. -->
+												<span class="flex flex-wrap items-baseline gap-x-2">
+													<span class="font-mono break-all">{attr.name}</span>
+													{#if attr.configured}
+														<span class="text-xs text-ink-muted" data-testid="ldap-attr-mapped"
+															>mapped</span
+														>
+													{/if}
 												</span>
 												<span class="flex flex-col gap-0.5 font-mono break-all">
 													{#each attr.values as value, i (i)}
@@ -569,7 +653,7 @@
 											</div>
 										{/each}
 									</div>
-								{:else if tab === 'fields'}
+								{:else if view === 'fields'}
 									<div data-testid="ldap-panel-fields">
 										{#each probeResult.fields ?? [] as field (field.name)}
 											<div class="border-b border-border-subtle px-4 py-3 text-dense last:border-0">
@@ -606,7 +690,7 @@
 											</div>
 										{/each}
 									</div>
-								{:else if tab === 'merge'}
+								{:else if view === 'merge'}
 									<div data-testid="ldap-panel-merge">
 										{#each probeResult.merge ?? [] as merge (merge.name)}
 											<div class="border-b border-border-subtle px-4 py-3 text-dense last:border-0">

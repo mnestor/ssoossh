@@ -29,6 +29,8 @@
 	let heldAccounts = $state<string[]>([]);
 	let loadError = $state<string | null>(null);
 	let hasLoaded = $state(false);
+	// Bumped by Try again; the load below reads it, so a bump re-runs it.
+	let attempt = $state(0);
 
 	// Rows say how long ago something was and how long a code has left, so
 	// they need a clock that moves.
@@ -128,7 +130,16 @@
 
 	const closeAccountView = () => openAccountView(null);
 
+	// The way out of a failed load: back to the loading shape, then the
+	// same request again.
+	function retry() {
+		loadError = null;
+		hasLoaded = false;
+		attempt += 1;
+	}
+
 	$effect(() => {
+		void attempt;
 		const controller = new AbortController();
 
 		// The held accounts come from the session rather than from the codes,
@@ -187,7 +198,14 @@
 	{/if}
 
 	{#if loadError}
-		<Alert variant="error" title="Could not load your service codes">{loadError}</Alert>
+		<Alert
+			variant="error"
+			title="Could not load your service codes"
+			onretry={retry}
+			testid="service-codes-error"
+		>
+			{loadError}
+		</Alert>
 	{:else if !hasLoaded}
 		<LoadingBlock shape="rows" count={3} testid="service-codes-loading" />
 	{:else if openAccount}
@@ -198,7 +216,7 @@
 			</EmptyState>
 		{:else}
 			{#if live.length > 0}
-				<div class="flex flex-col gap-2.5">
+				<div class="flex flex-col gap-2">
 					{#each live as enrollment (enrollment.id)}
 						<ServiceCodeRow
 							{enrollment}
@@ -212,7 +230,7 @@
 			{/if}
 
 			{#if dead.length > 0}
-				<div class="flex flex-col gap-2.5">
+				<div class="flex flex-col gap-2">
 					<SectionLabel>Expired codes</SectionLabel>
 					{#each dead as enrollment (enrollment.id)}
 						<ServiceCodeRow
@@ -227,12 +245,12 @@
 			{/if}
 		{/if}
 	{:else if accounts.length === 0}
-		<p class="text-sm text-ink-muted">
+		<EmptyState icon="key" title="No service accounts" testid="service-accounts-empty">
 			You do not have access to any service accounts. Service enrollment codes are approved for an
 			account, and this page lists the accounts your identity carries.
-		</p>
+		</EmptyState>
 	{:else}
-		<div class="flex flex-col gap-2.5">
+		<div class="flex flex-col gap-2">
 			{#each accounts as entry (entry.account)}
 				<ServiceAccountRow
 					testid="service-account-row"

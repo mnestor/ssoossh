@@ -18,6 +18,8 @@
 	let user = $state<CurrentUser | null>(null);
 	let loadError = $state<string | null>(null);
 	let hasLoaded = $state(false);
+	// Bumped by Try again; the load below reads it, so a bump re-runs it.
+	let attempt = $state(0);
 
 	// Every access level this session holds, widest first. The roles nest —
 	// an admin holds SOC and auditor too — and the page names all of them
@@ -31,7 +33,16 @@
 		].filter((role): role is string => role !== null)
 	);
 
+	// The way out of a failed load: back to the loading shape, then the
+	// same request again.
+	function retry() {
+		loadError = null;
+		hasLoaded = false;
+		attempt += 1;
+	}
+
 	$effect(() => {
+		void attempt;
 		const controller = new AbortController();
 
 		getCurrentUser(controller.signal)
@@ -57,7 +68,14 @@
 	<PageHeading title="Your account" />
 
 	{#if loadError}
-		<Alert variant="error" title="Could not load your account">{loadError}</Alert>
+		<Alert
+			variant="error"
+			title="Could not load your account"
+			onretry={retry}
+			testid="account-error"
+		>
+			{loadError}
+		</Alert>
 	{:else if !hasLoaded}
 		<LoadingBlock shape="lines" count={4} label="Loading your account…" testid="account-loading" />
 	{:else if user}
@@ -104,7 +122,7 @@
 						<span class="flex flex-wrap gap-1.5" data-testid="access-roles">
 							{#each roles as role (role)}
 								<span
-									class="inline-flex items-center gap-1.5 rounded-full bg-granted-surface px-2.5 py-1 text-xs font-semibold text-granted"
+									class="inline-flex items-center gap-1.5 rounded bg-granted-surface px-2.5 py-1 text-xs font-semibold text-granted"
 								>
 									{role}
 								</span>

@@ -1,9 +1,14 @@
-@import '@fontsource/public-sans/400.css';
-@import '@fontsource/public-sans/500.css';
-@import '@fontsource/public-sans/600.css';
-@import '@fontsource/public-sans/700.css';
-@import '@fontsource/fira-code/400.css';
-@import '@fontsource/fira-code/500.css';
+/* IBM Plex: an engineered superfamily, so the sans and the mono share
+   proportions while differing in class. The mono is the app's voice -- page
+   headings and every key, fingerprint and principal -- and the sans carries
+   everything a reader reads rather than compares. See "Character" in
+   DESIGN.md. Self-hosted: no CDN, no Google Fonts. */
+@import '@fontsource/ibm-plex-sans/400.css';
+@import '@fontsource/ibm-plex-sans/500.css';
+@import '@fontsource/ibm-plex-sans/600.css';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+@import '@fontsource/ibm-plex-mono/600.css';
 
 @import 'tailwindcss';
 
@@ -12,10 +17,17 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
+	/* Three planes, no frames. `ground` is the page; `surface` is a panel on
+	   it (a section, a row, the rail, a dialog); `surface-muted` is a tint
+	   inside a panel (a hover, an identity strip, a code well). Surfaces are
+	   told apart by plane alone, so a panel carries no border. Neutrals are
+	   warm stone (hue 70-75), set against a cool cobalt signature. */
+	--color-ground: oklch(95.5% 0.006 75);
 	--color-surface: #ffffff;
-	--color-surface-muted: oklch(97% 0.002 200);
-	--color-border-subtle: oklch(88% 0.003 200);
-	--color-border: oklch(88% 0.003 200);
+	--color-surface-muted: oklch(97.2% 0.005 75);
+	/* A hairline between rows inside a panel. Never the edge of a panel. */
+	--color-border-subtle: oklch(90% 0.006 75);
+	--color-border: oklch(90% 0.006 75);
 	/* The edge of something a reader operates: a field, a textarea, a ghost
 	   button, a pager control, an unselected chip.
 
@@ -25,26 +37,28 @@
 	   measures 1.43:1 against the surface, which is what it is for. But
 	   1.4.11 requires 3:1 of whatever draws a control's boundary, and
 	   `subtle` was drawing every one of them. This value clears it: 3.35:1
-	   against surface, 3.08:1 against surface-muted. Both matter — a field
-	   sits on `surface` on a page and on `surface-muted` inside a modal. */
-	--color-border-control: oklch(64% 0.006 200);
-	--color-ink: oklch(20% 0.005 200);
-	--color-ink-muted: oklch(45% 0.005 200);
+	   against surface, 3.36:1 against surface-muted, 3.20:1 against ground. */
+	--color-border-control: oklch(62% 0.01 70);
+	--color-ink: oklch(22% 0.01 60);
+	--color-ink-muted: oklch(46% 0.012 65);
 
-	--color-accent: oklch(45% 0.06 200);
-	--color-accent-hover: oklch(38% 0.07 200);
+	/* Cobalt: the one signature colour. Primary actions, links, focus and
+	   the current item; nowhere else. 6.26:1 against surface, and white
+	   labels on it clear 6.26:1 too. */
+	--color-accent: oklch(50% 0.19 264);
+	--color-accent-hover: oklch(43% 0.19 264);
 	--color-accent-ink: #ffffff;
 	/* A tint of the accent, for the ground under a selected rail item. Dark
 	   enough to read as chosen against the surface, light enough that the
 	   accent-coloured label on top of it keeps its contrast. */
-	--color-accent-wash: oklch(95% 0.018 200);
+	--color-accent-wash: oklch(94% 0.03 264);
 
-	--color-granted: oklch(46% 0.08 155);
-	--color-granted-surface: oklch(95% 0.02 155);
-	--color-trimmed: oklch(52% 0.08 75);
-	--color-trimmed-surface: oklch(95% 0.02 75);
-	--color-danger: oklch(48% 0.13 25);
-	--color-danger-surface: oklch(95% 0.03 25);
+	--color-granted: oklch(45% 0.11 150);
+	--color-granted-surface: oklch(95% 0.03 150);
+	--color-trimmed: oklch(50% 0.11 70);
+	--color-trimmed-surface: oklch(95% 0.035 80);
+	--color-danger: oklch(50% 0.18 27);
+	--color-danger-surface: oklch(95% 0.03 27);
 
 	/* The dim behind anything that takes over the screen. One value, so the
 	   navigation drawer and a modal backdrop do not disagree about how dark
@@ -54,14 +68,19 @@
 	   a grey that reads as another surface. */
 	--color-scrim: rgb(0 0 0 / 0.55);
 
+	/* The one shadow in the system, for a layer that floats over a panel of
+	   the same plane: a popover or menu. Panels never take it; a dialog does
+	   not need it, because the scrim already separates it. */
+	--shadow-overlay: 0 1px 2px rgb(0 0 0 / 0.08), 0 8px 24px -8px rgb(0 0 0 / 0.28);
+
 	/* --font-* and not --font-family-*, because --font-* is Tailwind v4's
 	   font namespace and the longer names are not. Under the old names the
 	   theme emitted no font utilities, so `font-mono` fell through to
 	   Tailwind's built-in ui-monospace stack and Fira Code rendered nowhere
 	   except the one rule below that reads the variable directly -- while
 	   still being downloaded and shipped on every page load. */
-	--font-sans: 'Public Sans', system-ui, sans-serif;
-	--font-mono: 'Fira Code', ui-monospace, monospace;
+	--font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+	--font-mono: 'IBM Plex Mono', ui-monospace, monospace;
 
 	/* --text-* and --leading-*, for the same reason --font-* is spelled that
 	   way above: those two are the v4 font-size and line-height namespaces,
@@ -91,9 +110,10 @@
 	--text-lg--line-height: calc(1.75 / 1.125);
 	--text-xl: 1.25rem;
 	--text-xl--line-height: calc(1.75 / 1.25);
-	/* The page heading above `sm`. Larger than --text-2xl by a step the
-	   built-in scale skips, and the only size in the app over 24px. */
-	--text-display: 1.625rem;
+	/* The page heading above `sm`, set in the mono at 600: twice the body
+	   size and a change of family, which is where the type contrast lives.
+	   The only size in the app over 24px. */
+	--text-display: 1.75rem;
 
 	--leading-tight: 1.25;
 	--leading-snug: 1.375;
@@ -117,13 +137,42 @@
 	--duration-enter: 220ms;
 	--duration-exit: 130ms;
 
-	--tracking-heading: -0.01em;
+	--tracking-heading: -0.02em;
 	--tracking-label: 0.06em;
 
 	--font-weight-normal: 400;
 	--font-weight-medium: 500;
 	--font-weight-semibold: 600;
 	--font-weight-bold: 700;
+
+	/* Radii, sharper than Tailwind's defaults: a technical finish. Panels and
+	   dialogs take `lg`/`xl`, controls `md`, chips the bare `rounded`. */
+	--radius: 0.1875rem;
+	--radius-sm: 0.1875rem;
+	--radius-md: 0.25rem;
+	--radius-lg: 0.375rem;
+	--radius-xl: 0.5rem;
+
+	/* The size of every standalone control, so no control states its own
+	   height: 36px with a mouse, raised to 44px on a touch screen below.
+	   Emits `min-h-target`, `min-w-target` and `size-target`. */
+	--spacing-target: 2.25rem;
+
+	/* The blur on a form that cannot be used yet (the sign-in form behind
+	   the consent notice): enough to say "not now", little enough that the
+	   form is still recognisable as what accepting leads to. */
+	--blur-inert: 2px;
+}
+
+@layer base {
+	/* Approvals happen in a desktop browser; a phone (a console login, say)
+	   is the exception, and gets the touch-sized target from the same
+	   token. Base comes after the theme layer, so this wins. */
+	@media (pointer: coarse) {
+		:root {
+			--spacing-target: 2.75rem;
+		}
+	}
 }
 
 @layer base {
@@ -140,32 +189,34 @@
 	.dark {
 		color-scheme: dark;
 
-		--color-surface: oklch(21% 0.004 200);
-		--color-surface-muted: oklch(17% 0.004 200);
-		--color-border-subtle: oklch(30% 0.006 200);
-		--color-border: oklch(30% 0.006 200);
-		/* 3.23:1 against surface, 3.48:1 against surface-muted. Lighter than
-		   the light theme's control border is dark, because the dark surface
-		   it has to separate from is nearer the middle of the range. */
-		--color-border-control: oklch(52% 0.008 200);
-		--color-ink: oklch(92% 0.004 200);
-		--color-ink-muted: oklch(68% 0.006 200);
+		/* Panels rise from the ground by lightness, as in the light theme;
+		   1.16:1 between them, the most a dark plane can carry before it
+		   reads as grey. */
+		--color-ground: oklch(14.5% 0.006 70);
+		--color-surface: oklch(22.5% 0.008 70);
+		--color-surface-muted: oklch(26.5% 0.008 70);
+		--color-border-subtle: oklch(31% 0.008 70);
+		--color-border: oklch(31% 0.008 70);
+		/* 3.67:1 against surface, 3.29:1 against surface-muted. */
+		--color-border-control: oklch(56% 0.01 70);
+		--color-ink: oklch(93% 0.006 75);
+		--color-ink-muted: oklch(71% 0.01 70);
 
-		--color-accent: oklch(72% 0.08 200);
-		--color-accent-hover: oklch(78% 0.07 200);
-		--color-accent-ink: oklch(18% 0.01 200);
-		--color-accent-wash: oklch(27% 0.03 200);
+		--color-accent: oklch(74% 0.13 264);
+		--color-accent-hover: oklch(80% 0.11 264);
+		--color-accent-ink: oklch(17% 0.03 264);
+		--color-accent-wash: oklch(29% 0.05 264);
 
-		--color-granted: oklch(74% 0.1 155);
-		--color-granted-surface: oklch(27% 0.03 155);
-		--color-trimmed: oklch(76% 0.1 75);
-		--color-trimmed-surface: oklch(27% 0.03 75);
-		--color-danger: oklch(74% 0.13 25);
-		--color-danger-surface: oklch(29% 0.04 25);
+		--color-granted: oklch(76% 0.13 150);
+		--color-granted-surface: oklch(28% 0.04 150);
+		--color-trimmed: oklch(80% 0.12 80);
+		--color-trimmed-surface: oklch(28% 0.04 80);
+		--color-danger: oklch(74% 0.15 27);
+		--color-danger-surface: oklch(29% 0.05 27);
 	}
 
 	body {
-		background-color: var(--color-surface-muted);
+		background-color: var(--color-ground);
 		color: var(--color-ink);
 	}
 
@@ -253,9 +304,8 @@
 	.data-table thead th {
 		padding: 0.5rem 0.75rem;
 		text-align: left;
-		font-family: var(--font-mono);
-		font-size: var(--text-micro);
-		font-weight: var(--font-weight-medium);
+		font-size: var(--text-meta);
+		font-weight: var(--font-weight-semibold);
 		letter-spacing: var(--tracking-widest);
 		text-transform: uppercase;
 		white-space: nowrap;

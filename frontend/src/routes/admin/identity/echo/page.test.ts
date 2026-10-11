@@ -126,6 +126,56 @@ describe('Claims echo page', () => {
 			expect(await screen.findByText('fields.subject')).toBeInTheDocument();
 		});
 
+		// A comma list made a group named "eng, ops" read as two groups.
+		it('should show each item of a list on its own line', async () => {
+			withFragment(echoPayload({ claims: { groups: ['eng, ops', 'sre'] } }));
+			render(Page);
+
+			expect(await screen.findByText('eng, ops')).toBeInTheDocument();
+		});
+
+		it('should tell an empty string from null', async () => {
+			withFragment(echoPayload({ claims: { nickname: '', locale: null } }));
+			render(Page);
+
+			expect(await screen.findByText('(empty string)')).toBeInTheDocument();
+		});
+
+		it('should show null as null', async () => {
+			withFragment(echoPayload({ claims: { nickname: '', locale: null } }));
+			render(Page);
+
+			expect(await screen.findByText('null')).toBeInTheDocument();
+		});
+
+		// A long group list used to be one wall of text; it now shows the
+		// first ten and opens the rest in place.
+		it('should hold back a long list behind Show all', async () => {
+			const groups = Array.from({ length: 25 }, (_, i) => `group-${i}`);
+			withFragment(echoPayload({ claims: { groups } }));
+			render(Page);
+
+			await screen.findByText('group-9');
+			expect(screen.queryByText('group-10')).not.toBeInTheDocument();
+		});
+
+		it('should open a long list in place when Show all is pressed', async () => {
+			const groups = Array.from({ length: 25 }, (_, i) => `group-${i}`);
+			withFragment(echoPayload({ claims: { groups } }));
+			render(Page);
+
+			await userEvent.click(await screen.findByRole('button', { name: 'Show all 25' }));
+
+			expect(screen.getByText('group-24')).toBeInTheDocument();
+		});
+
+		it('should state how many claims the token carried', async () => {
+			withFragment(echoPayload());
+			render(Page);
+
+			expect(await screen.findByTestId('echo-result')).toHaveTextContent('4 claims');
+		});
+
 		it('should mark a claim nothing reads as unmapped', async () => {
 			withFragment(echoPayload());
 			render(Page);

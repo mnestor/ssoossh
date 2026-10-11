@@ -38,7 +38,7 @@
 </script>
 
 <span
-	class="inline-flex h-[26px] w-[26px] flex-shrink-0 items-center justify-center rounded-md border border-border-subtle text-ink-muted"
+	class="inline-flex size-6.5 flex-shrink-0 items-center justify-center rounded bg-surface-muted text-ink-muted"
 >
 	<Icon name={(type && icons[type]) || 'help-circle'} size="xs" />
 	<!-- The name in the document rather than an `aria-label` on the span.

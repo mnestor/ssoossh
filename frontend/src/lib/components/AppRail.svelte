@@ -76,7 +76,7 @@
 <nav
 	aria-label="Main"
 	data-testid="app-rail"
-	class="flex h-full flex-col border-r border-border-subtle bg-surface transition-[width]"
+	class="flex h-full flex-col bg-surface transition-[width]"
 	class:w-[244px]={!collapsed}
 	class:w-[60px]={collapsed}
 >
@@ -120,7 +120,7 @@
 					     the wordmark out of its own row. -->
 					{#if orgName}
 						<span
-							class="max-w-[6.5rem] truncate border-l border-border-subtle pl-2 text-xs font-normal text-ink-muted"
+							class="max-w-26 truncate border-l border-border-subtle pl-2 text-xs font-normal text-ink-muted"
 						>
 							{orgName}
 						</span>
@@ -141,7 +141,7 @@
 				aria-label={collapseLabel}
 				title={collapseLabel}
 				data-testid="rail-collapse"
-				class="mr-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-ink-muted transition hover:bg-surface-muted hover:text-ink max-lg:hidden"
+				class="mr-2 flex size-target shrink-0 items-center justify-center rounded-md text-ink-muted transition hover:bg-surface-muted hover:text-ink max-lg:hidden"
 			>
 				<Icon name="layout-sidebar" size="sm" />
 			</button>

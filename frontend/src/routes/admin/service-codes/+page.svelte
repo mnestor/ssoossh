@@ -1,21 +1,25 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { listAdminEnrollments } from '#lib/api/endpoints.js';
-	import type { AdminEnrollment } from '#lib/api/types.js';
+	import type { AdminEnrollment, PageMeta } from '#lib/api/types.js';
 	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
 	import Alert from '#lib/components/Alert.svelte';
 	import EmptyState from '#lib/components/EmptyState.svelte';
+	import ListStatus from '#lib/components/ListStatus.svelte';
 	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import PageShell from '#lib/components/PageShell.svelte';
 	import Pager from '#lib/components/Pager.svelte';
 	import SearchInput from '#lib/components/SearchInput.svelte';
 	import ServiceCodeRow from '#lib/components/ServiceCodeRow.svelte';
+	import { describeList } from '#lib/listStatus.js';
 
 	let enrollments = $state<AdminEnrollment[]>([]);
 	let loadError = $state<string | null>(null);
 	let hasLoaded = $state(false);
-	let meta = $state<any>(null);
+	// Bumped by Try again; the load below reads it, so a bump re-runs it.
+	let attempt = $state(0);
+	let meta = $state<PageMeta | null>(null);
 	let searchQuery = $state('');
 	let currentOffset = $state(0);
 	const pageSize = 25;
@@ -28,6 +32,7 @@
 
 	// Load enrollments when search or offset changes
 	$effect(() => {
+		void attempt;
 		const controller = new AbortController();
 		hasLoaded = false;
 		loadError = null;
@@ -49,6 +54,11 @@
 		return () => controller.abort();
 	});
 
+	// The way out of a failed load: the same page of the same search again.
+	function retry() {
+		attempt += 1;
+	}
+
 	function onSearch(query: string) {
 		searchQuery = query;
 		currentOffset = 0; // Reset to first page on new search
@@ -57,6 +67,20 @@
 	function onPageChange(offset: number) {
 		currentOffset = offset;
 	}
+
+	// What the list just became, for a reader who cannot see the rows
+	// change under a search or a page turn (WCAG 4.1.3). See #lib/listStatus.
+	const status = $derived(
+		describeList({
+			noun: 'service code',
+			total: meta?.total ?? 0,
+			loading: !hasLoaded,
+			ready: meta !== null,
+			page: meta?.page,
+			pageCount: meta?.page_count,
+			query: searchQuery
+		})
+	);
 </script>
 
 <svelte:head>
@@ -83,8 +107,17 @@
 		testid="search-enrollments"
 	/>
 
+	<ListStatus message={status} />
+
 	{#if loadError}
-		<Alert variant="error" title="Could not load service codes">{loadError}</Alert>
+		<Alert
+			variant="error"
+			title="Could not load service codes"
+			onretry={retry}
+			testid="service-codes-error"
+		>
+			{loadError}
+		</Alert>
 	{:else if !hasLoaded}
 		<LoadingBlock shape="rows" count={4} testid="enrollments-loading" />
 	{:else if enrollments.length === 0 && searchQuery}
@@ -97,7 +130,7 @@
 			None has been yet.
 		</EmptyState>
 	{:else}
-		<div class="flex flex-col gap-2.5">
+		<div class="flex flex-col gap-2">
 			{#each enrollments as enrollment (enrollment.id)}
 				<ServiceCodeRow
 					{enrollment}

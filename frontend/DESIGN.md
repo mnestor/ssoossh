@@ -1,1159 +1,1123 @@
-# Frontend Design System
-
-This document describes the design tokens, typography, iconography, and component patterns that maintain visual and interaction consistency across the ssoossh frontend.
-
-## Color Tokens
-
-The app uses a curated set of CSS custom properties defined in `src/app.css`. All colors are specified in [OKLch color space](https://oklch.com/) for perceptually uniform results. The palette is the same in light and dark modes; the mode switch inverts lightness while preserving hue and chroma.
-
-### Light Mode (default)
-
-- `--color-surface`: `#ffffff` — main background
-- `--color-surface-muted`: `oklch(97% 0.002 200)` — the ground of every `PageSection`, the identity strip, light hover states
-- `--color-border-subtle`: `oklch(88% 0.003 200)` — borders, dividers
-- `--color-ink`: `oklch(20% 0.005 200)` — primary text
-- `--color-ink-muted`: `oklch(45% 0.005 200)` — secondary text, placeholders, hints
-- `--color-accent`: `oklch(45% 0.06 200)` — primary interactive element (teal)
-- `--color-accent-hover`: `oklch(38% 0.07 200)` — accent pressed state
-- `--color-accent-ink`: `#ffffff` — text on accent backgrounds
-- `--color-accent-wash`: `oklch(95% 0.018 200)` — the ground under the selected rail item; a tint of the accent light enough to keep an accent-coloured label legible on it
-- `--color-granted`: `oklch(46% 0.08 155)` — success/approved status (green)
-- `--color-granted-surface`: `oklch(95% 0.02 155)` — granted/success backgrounds
-- `--color-trimmed`: `oklch(52% 0.08 75)` — warning/restricted status (yellow)
-- `--color-trimmed-surface`: `oklch(95% 0.02 75)` — trimmed/warning backgrounds
-- `--color-danger`: `oklch(48% 0.13 25)` — error/denied status (red)
-- `--color-danger-surface`: `oklch(95% 0.03 25)` — danger/error backgrounds
-- `--color-scrim`: `rgb(0 0 0 / 0.55)` — the dim behind anything that takes over the screen
-
-`--color-scrim` is the one token that is not restated for dark mode. A scrim
-is an absence of light in both themes, and lightening it would leave the panel
-on top floating on a grey that reads as another surface. It is used by the
-`.modal-dialog::backdrop` rule and by the navigation drawer, which disagreed
-about the value (0.55 against 0.40) until they were given one name.
-
-### Motion
-
-Two durations, two curves, one rule: **everything that appears has to
-disappear on purpose.** An element that animates in and then vanishes on the
-frame it is removed reads as a glitch rather than as a dismissal.
-
-- `--duration-enter`: `220ms` — anything arriving. Slow enough to be
-  followed, short enough not to be waited on.
-- `--duration-exit`: `130ms` — anything leaving. About 40% faster, because a
-  reader who has dismissed something has already stopped looking at it.
-- Entrances ease **out** (`cubicOut`): a thing that has come to rest
-  decelerates into place.
-- Exits ease **in** (`cubicIn`): a thing that is gone accelerates away.
-- `linear` is for a spinner and for the skeleton shimmer, and for nothing
-  that starts or stops.
-
-The same two numbers live in two places and have to agree, because there is
-no way to read one from the other:
-
-- `--duration-enter` / `--duration-exit` in `app.css`, for what CSS animates
-  (the modal backdrop).
-- `ENTER_MS` / `EXIT_MS` in `#lib/motion.js`, for what a Svelte transition
-  animates (the navigation drawer, the identity popover, both dialogs).
-
-`#lib/motion` also exports `enterMs()` and `exitMs()`, which return **zero**
-when the reader has asked their system for reduced motion. Use those rather
-than the constants: a Svelte transition runs from JavaScript, so the
-`prefers-reduced-motion` block in `app.css` cannot reach it.
-
-```svelte
-{#if open}
-	<div
-		in:scale={{ start: 0.96, opacity: 0, duration: enterMs(), easing: easeEnter }}
-		out:scale={{ start: 0.96, opacity: 0, duration: exitMs(), easing: easeExit }}
-	>
-```
-
-### What is animated
-
-| Surface                               | Entrance                                | Exit                                     |
-| ------------------------------------- | --------------------------------------- | ---------------------------------------- |
-| Navigation drawer (below `lg`)        | fly in from `-260px` + scrim fade       | the same, reversed, at the exit duration |
-| Rail identity popover                 | scale from `0.96` + fade                | the same, reversed                       |
-| `ConfirmModal` / `ConsentModal` panel | scale from `0.96` + fade                | the same, reversed                       |
-| `.modal-dialog::backdrop`             | `@starting-style` fade from transparent | **not animated** — see below             |
-| `Button` press                        | `active:scale-98` at `100ms`            | released at the same speed               |
-| `StatusBadge` signing spinner         | `motion-safe:animate-spin`, continuous  | n/a                                      |
-| `.skeleton` shimmer                   | continuous `linear` sweep               | n/a                                      |
-
-The modal backdrop arrives but does not leave. Every caller dismisses a
-dialog by unmounting the component rather than by calling `close()`, so the
-element and its backdrop leave the DOM together and there is nothing left to
-transition. Giving the backdrop an exit means giving the dialog control over
-when its own removal happens, which is a change to the contract it has with
-its callers rather than a change to how it looks. The panel inside does
-animate out, which is what the eye is following.
-
-`RailGroup` still expands with no transition at all, deliberately: a group
-that animated its height would fight the rail's own width transition on a
-collapse, and the two together read as the whole panel wobbling. The caret is
-the only thing that moves.
-
-### Reduced motion
-
-Two halves, because there are two animation engines:
-
-- CSS: one block in `app.css` turns every `animation-duration` and
-  `transition-duration` down to `0.01ms` under
-  `prefers-reduced-motion: reduce`. Near-zero rather than `animation: none`,
-  so an animation still starts and still ends and a component listening for
-  `animationend` keeps working. `::backdrop` is named explicitly, because `*`
-  does not match a pseudo-element.
-- JavaScript: `enterMs()` and `exitMs()` return zero under the same query.
-
-The one exception is `.skeleton`, whose sweep stops outright. Nothing listens
-for an `animationend` it will never fire, and a near-zero infinite loop is a
-strobe.
-
-## Dark Mode
-
-The `.dark` class on `<html>` inverts all tokens while keeping the semantic meaning intact, and flips `color-scheme` with them. See the `.dark` block in `src/app.css`.
-
-`color-scheme` is stated per theme (`light` on `:root`, `dark` on `.dark`) rather than as `light dark`, because exactly one theme is active at a time and the class is what selects it. Advertising both would let the browser paint its own defaults — a `<dialog>`'s `CanvasText`, form controls — from the OS preference while the tokens said otherwise.
-
-## Typography
-
-### Typefaces
-
-- **UI (sans-serif)**: Public Sans 400, 500, 600, 700 weights (self-hosted via `@fontsource/public-sans`)
-- **Monospace**: Fira Code 400, 500 weights (self-hosted via `@fontsource/fira-code`)
-
-Both fonts are imported in `src/app.css` and serve the entire app; no fallback to Google Fonts or CDNs. Public Sans is a highly legible, geometric UI typeface suitable for a security product. Fira Code is used for SSH keys, fingerprints, principal names, and other cryptographic data where monospace clarity is essential.
-
-### Font Sizes
-
-All sizes use CSS custom properties (the `--text-*` block in `app.css`), and
-every one of them has a utility: `text-micro`, `text-meta`, `text-dense` and
-`text-display` alongside Tailwind's own `text-xs` through `text-2xl`.
-
-- `--text-micro`: `0.625rem` (10px) — uppercase micro-labels inside a chip
-- `--text-meta`: `0.6875rem` (11px) — eyebrow labels, timestamps, secondary meta
-- `--text-xs`: `0.75rem` (12px) — auxiliary labels, helper text
-- `--text-dense`: `0.8125rem` (13px) — the body size of a dense row or detail value
-- `--text-sm`: `0.875rem` (14px) — body text, table data, secondary text
-- `--text-base`: `1rem` (16px) — default base size
-- `--text-lg`: `1.125rem` (18px) — subheadings, prominent labels
-- `--text-xl`: `1.25rem` (20px) — main headings, and the page heading below `sm`
-- `--text-display`: `1.625rem` (26px) — the page heading above `sm`, the largest size in the app
-
-The names matter as much as the values. `--font-size-*` and `--line-height-*`
-are not Tailwind v4 namespaces — `--text-*` and `--leading-*` are — so under
-the old spelling this block emitted no utilities and every `text-sm` in the
-app was falling through to a built-in default that happened to agree. Same
-trap the `--font-family-*` note in `app.css` describes. If you add a size,
-add it as `--text-<name>` or it will not exist.
-
-`micro`, `meta` and `dense` are the three steps Tailwind's scale skips, and
-they were written 87 times as bracketed pixel values before they were named.
-They deliberately carry no paired line height, because a bracketed font size
-did not either: the line height keeps coming from whatever the row set.
-
-### Line Heights, Tracking & Weights
-
-- `--leading-tight`: `1.25` — headings, dense content
-- `--leading-snug`: `1.375` — small text blocks
-- `--leading-normal`: `1.5` — body text (default)
-- `--leading-relaxed`: `1.625` — spacious, accessible reading
-- `--tracking-heading`: `-0.01em` — the two display headings (`PageHeading`, the login splash)
-- `--tracking-label`: `0.06em` — small uppercase labels and chips
-- `tracking-widest`: `0.1em` (Tailwind's own) — the widest uppercase eyebrow: rail group heads, `.data-table` column heads
-- `--font-weight-normal`: `400`
-- `--font-weight-medium`: `500`
-- `--font-weight-semibold`: `600`
-- `--font-weight-bold`: `700`
-
-Two tracking values, not six. The tree carried 0.04, 0.05 and 0.06em on small
-uppercase labels and 0.09 and 0.1em on the widest of them, which is drift
-rather than a scale. The one deliberate exception is the console pairing-code
-input, which spaces its characters at `0.2em` so a code can be read back a
-character at a time; that is letter-spacing doing a different job.
-
-## Iconography
-
-Icons come from [@tabler/icons-svelte](https://tabler.io/icons), wrapped in
-the `Icon.svelte` component for consistent sizing and labeling. The component
-accepts a size token and an optional `aria-label` for semantic/meaningful
-icons (decorative icons hide from screen readers via `aria-hidden`).
-
-Tabler draws on the same 24-unit grid at the same 2px stroke the app was
-already built around, so nothing else in the interface had to be re-tuned
-when it replaced Lucide. What it adds is the vocabulary this product is
-actually about: a certificate, a certificate that no longer counts, a
-signature, a history.
-
-### The rule: noun, then state
-
-**Every glyph does exactly one job, and a state is a modifier on a noun
-rather than a different noun.**
-
-`certificate` and `certificate-off` are one drawing in two conditions, not
-two unrelated glyphs; the same holds for `clock` / `clock-cancel` and
-`filter` / `filter-off`. A reader who learns the noun gets every state of it
-for free, and a state the app has not needed yet already has a glyph
-waiting.
-
-Two corollaries, both of which the previous set broke:
-
-- **Severity walks the road-sign ladder** — `info-circle`, then
-  `alert-triangle`, then `alert-octagon`. A triangle asks the reader to act
-  now; it is not the glyph for a settled fact like an expired certificate.
-- **No glyph appears in two semantic domains.** The set before this one had
-  `monitor` doing three jobs, `clock` three, and `alert-triangle` four, and
-  the `cog` / `key-round` split existed only to dodge a duplicate in the
-  collapsed rail.
-
-When adding an icon, find the noun already in the map and take its modifier.
-Add a new noun only when the app genuinely gained a new object.
-
-### Supported Icons
-
-The `iconComponents` map in `src/lib/components/Icon.svelte` is the whole
-vocabulary. Nothing outside this list is available, and an unmapped name
-renders a visible red `?` rather than nothing.
-
-**Certificate types** (`TypeBadge`, `TypeChip`, `typeFilters`) — four
-rectilinear objects, so the family reads as one group before any single
-glyph is recognised:
-
-- `id-badge` — user certificates
-- `terminal-2` — PAM certificates
-- `server-cog` — service certificates
-- `device-desktop` — console certificates
-
-**Request status** (`StatusBadge`) — seven states, seven glyphs:
-
-- `hourglass-high` — pending, waiting on a human
-- `loader-2` — signing; the only animated icon in the app, spun with
-  `motion-safe:animate-spin` so a transient state does not read as stuck
-- `circle-check` — approved: a certificate exists
-- `circle-key` — enrolled: a code exists that nothing has redeemed yet
-- `circle-x` — denied: a person refused
-- `clock-cancel` — expired: nobody answered before the window closed. The
-  clock face is a circle, so this stays in the status family while saying
-  the thing a slashed circle cannot
-- `alert-octagon` — failed: the signer could not produce a certificate,
-  which is a fault to retry, not a decision to appeal
-
-**Certificate validity** (`CertRow`, `statusFilters`):
-
-- `certificate` — still valid
-- `certificate-off` — expired, the same drawing struck through
-
-**Alert severity** (`Alert`):
-
-- `info-circle` — information
-- `alert-triangle` — warning
-- `alert-octagon` — error
-
-Info and error drew the same circle before this and let colour carry the
-whole difference, which is an accessibility failure, not a style choice.
-
-**Filters** (`filters.ts`):
-
-- `filter-off` — the "All" / "Any" / "Both" chip. It states "nothing is
-  filtered" outright; a destination glyph in a filter row reads as a link.
-
-**Rail destinations** — each entry carries an icon, because a collapsed
-rail is icons only. They are chosen to be distinguishable at 16px:
-
-- `layout-dashboard` — Dashboard
-- `history` — History
-- `key` — Service codes (the caller's own)
-- `keyboard` — Console login: the machine with no browser, where somebody
-  types a code
-- `shield-lock` — the Admin group head
-- `users` — Users
-- `file-certificate` — Certificates: the records, distinct from the
-  `certificate` an individual row carries
-- `circle-key` — Service codes (admin): the same noun as the caller's own
-  view in a different enclosure. `RailGroup.svelte` drops the group's indent
-  and rule when the rail collapses, so an admin row has no visual parent at
-  that width and the two scopes cannot share one glyph
-- `adjustments-horizontal` — Config
-- `address-book` — Directory
-- `braces` — Claims echo
-- `logs` — Audit log
-- `activity-heartbeat` — Diagnostics
-- `user-cog` — Preferences, in the rail's footer
-
-**Account, theme and chrome:**
-
-- `user-circle` — the signed-in identity
-- `logout` — end the session
-- `sun`, `moon`, `device-laptop` — the light, dark, and follow-the-system
-  theme states. The system state takes a laptop because a monitor is what a
-  console certificate is
-- `menu-2` — the drawer trigger below `lg`
-- `layout-sidebar` — collapse or expand the rail
-- `chevron-down`, `chevron-left`, `chevron-right`, `chevron-up` —
-  directional indicators
-- `arrow-right` — forward movement in a primary action (the login button)
-- `search` — the search box on a paged list
-- `x` — clear the search
-- `copy` and `check` — the two states of a `CopyableId`
-
-**Detail rows** (`DetailRow`):
-
-- `user` — a person
-- `clock` — a span of time
-
-**Fallback:**
-
-- `help-circle` — a certificate type outside the four the schema allows.
-  It cannot reach the browser, so this marks a contract break rather than
-  decorating one.
-
-### Size Scale
-
-The `sizeMap` in `Icon.svelte` defines pixel dimensions:
-
-- `xs`: 12px
-- `sm`: 16px
-- `md`: 20px
-- `lg`: 24px
-- `xl`: 32px
-
-Icon utilities (`.icon-xs` through `.icon-xl`) are defined in `src/app.css` (the `.icon-*` block) for manual sizing if needed outside the `Icon` component.
-
-## Component Patterns
-
-### Test ids: the prop is `testid`, not `data-testid`
-
-Components that the e2e browser tier selects on (`Button`, `PageSection`,
-`Alert`, `Pager`, `SearchInput`, `CertRow`, `PageHeading`, `ServiceCodeRow`)
-each declare a `testid` prop and render `data-testid={testid}` on their root
-element themselves:
-
-```svelte
-<PageSection testid="account-identity-card">   <!-- right -->
-<PageSection data-testid="account-identity-card">  <!-- wrong: silently dropped -->
-```
-
-`data-testid` on a component is an unknown prop. Svelte drops it at runtime
-with no error and no console output — the attribute never reaches the DOM and
-every e2e selector for it fails, which presents as a selector bug rather than
-as a dropped prop. Plain HTML elements take `data-testid=` normally, which is
-what makes this easy to miss two lines away.
-
-`make frontend-check` catches it (`'"data-testid"' does not exist in type
-'Props'`) because the `Props` interfaces are typed, and it is a blocking merge
-gate. If an e2e selector is not matching, run `make frontend-check` before
-concluding the selector is wrong.
-
-Do not "fix" this by spreading rest props onto the root element: that makes
-`data-testid` a legal prop again and removes the typecheck that currently
-catches the mistake.
-
-### Variant Objects
-
-Variant-bearing components (`Button`, `Alert`, `StatusBadge`, `OptionDiffList`) encode their variant→Tailwind-class mapping as a local `const variants` object literal inside the component file. This is deliberately not abstracted into a shared helper to avoid creating a dependency on a component library; the pattern is readable, self-contained, and requires no wrapper.
-
-Example from `Button.svelte`:
-
-```ts
-const variants = {
-	primary: 'bg-accent text-accent-ink hover:bg-accent-hover',
-	danger: 'bg-danger-surface text-danger brightness-95',
-	ghost: 'border border-border-subtle text-ink hover:bg-surface-muted'
-};
-```
-
-When adding a new variant:
-
-1. Add the variant name to the `variant?: ...` union in Props.
-2. Add the `variant: { className: ... }` entry to the `variants` object.
-3. Include the Tailwind classes in the element using `{variants[variant]}`.
-
-All classes should reference CSS custom properties (e.g., `bg-accent`) rather than hardcoded colors or sizes.
-
-### The app shell
-
-The app has one navigation surface: a left rail, rendered by
-`AppRail.svelte` and owned by the root layout. Above `lg` (1024px) it is the
-chrome — there is no header at all — and it holds the brand, every
-destination, the theme control, the identity and sign-out. Below `lg` the
-same component becomes an off-canvas drawer behind a slim bar carrying only
-the trigger, so the two can never come to disagree about what the app
-contains.
-
-The rail is 244px expanded and 60px collapsed. Collapsing hides the labels
-visually but leaves them in the DOM, so the accessible name stays the words
-at either width and a collapsed rail is still navigable rather than a column
-of glyphs. The preference is kept in `localStorage` under
-`ssoossh:rail-collapsed` by `lib/rail.svelte.ts`, which also holds the
-drawer's open state — deliberately a separate field, and never persisted: a
-phone visitor's open drawer is not a desktop preference.
-
-The width control sits in the brand row, right-aligned beside the wordmark.
-It is the one control in the rail that acts on the rail rather than on the
-app, and the head of a column is where a control for that column is looked
-for. Expanded, it is a `panel-left` button hidden below `lg` — a drawer has
-nothing to collapse. Collapsed, the brand mark itself is the button: at 60px
-that row has one slot and it has to do both jobs.
-
-The rail's bottom edge is one row — the identity — and everything done to
-the session hangs off it in a drop-up (`RailUserMenu.svelte`): account,
-preferences, the theme control, sign out. It is a disclosure, not a
-`role="menu"`: the contents are ordinary links and buttons, and declaring
-the menu role would promise arrow-key roving these rows do not implement.
-The popover opens upward over the rail when there is width for labels and
-flies out to the right when the rail is collapsed, where a 60px-wide popover
-would truncate every row it exists to spell out. Escape is handled on the
-popover's own wrapper rather than on the document, so the key closes the
-popover first and the drawer underneath only once the popover has gone. With
-those rows behind a shut popover, the trigger carries the selected state for
-every page they lead to — otherwise standing on `/preferences` would leave
-the rail with nothing marked.
-
-Admin is a group inside the same rail, gated on `is_auditor`. It is open by
-default and remembers being shut (`ssoossh:rail-admin-open`), and an
-`/admin` route forces it open whatever was last chosen — arriving in the
-admin area with the section list hidden is the one case where the stored
-preference cannot be what the viewer meant. It started shut everywhere but
-`/admin` at first, which read as the admin menu having gone missing. It
-replaced a horizontal tab strip in the admin layout that was reachable only
-from a line inside the account dropdown.
-
-The collapsed width is a separate key, and the drawer overrides it: the
-control that expands the rail is hidden below `lg`, so a drawer inheriting a
-desktop collapse would be a strip of unlabelled icons with no way back.
-
-Four routes render with no rail at all — sign-in, an approval, a console
-code, the approval-unavailable notice — as does any screen for a signed-out
-visitor. `isFocusRoute` in `lib/nav.ts` decides. These are single-task
-screens where a column of destinations either cannot be followed or invites
-the reader to wander off mid-decision. The match is on a path boundary, so
-`/console` is not treated as the `/c` console-code screen.
-
-`lib/nav.ts` holds the whole model. The admin entries are plain `href`s
-rather than `resolve()`: the model names every admin section, but the
-sections land on separate feature branches, and `resolve()` is typed against
-the routes present in the tree it is compiled in — using it would force a
-placeholder page for every absent route, and a placeholder sharing a path
-with another branch's real page is a merge waiting to resolve the wrong way.
-The lint rule that wants `resolve()` fires where the href reaches the DOM,
-so the exemption lives in `RailItem.svelte`.
-
-### Page Structure
-
-Every page is a `PageShell`. It owns the container, so no page spells out
-its own `max-w-`, and it names three widths rather than the nine that had
-accumulated across twenty-two hand-rolled containers:
-
-| Width   | Cap      | Used by                                      |
-| ------- | -------- | -------------------------------------------- |
-| `focus` | `560px`  | sign-in, a console code, the error page      |
-| `wide`  | `1120px` | every page inside the app — the default      |
-| `full`  | none     | the admin tables — users, user detail, audit |
-
-`wide` is the default because it is what the app is: every screen the rail
-navigates between, every list, and every page a list opens. `focus` is not a
-narrower version of that — it is for the screens outside the app entirely,
-reached without an identity or before one is established.
-
-The approval page moved off `focus` and onto `wide`, and out of the rail's
-focus-route list with it. Reaching it means signing in, so its reader is
-inside the app by the time they see it, and a 560px card floating in an
-otherwise empty window read as a different site rather than as a focused
-screen of this one. The argument for keeping it bare was that a navigation
-column invites wandering off mid-decision; nothing is lost by wandering,
-since the link still works on return and the decision is recorded on the
-server rather than in the page. `ApprovalView` dropped its own 560px cap for
-this — a component inside `PageShell` does not get a second opinion about
-width — and the select and email field inside it grew caps of their own,
-because a form control a thousand pixels wide looks like a bug. `full` is not a
-fourth number: it opts out of the cap, for the screens where a horizontal
-scrollbar inside a centred column is worse than using the glass.
-
-There was a fourth, `default`, at 760px. By the end only `/account` and
-`/preferences` were still on it, which made them 360px narrower than
-everything else the rail reaches: the content column jumped inward on the way
-to them and back out on the way to anything else, and both are reached from
-the user menu, so that happened on every visit. They are `wide` now, and the
-width is gone rather than left unused — an unused width is how a fifth one
-gets added.
-
-Width is not a licence to stretch prose. A `DetailRow`'s value starts after
-its 140px label column and wraps where it wraps, but a paragraph or a form
-caps itself at a readable measure: the notification toggles on `/preferences`
-sit in a `70ch` column inside a full-width card, because a sentence set
-1100px wide is one the eye loses its place in on the way back to the left.
-
-`PageShell` also takes an optional `aside` snippet — a secondary column that
-sits beside the main one above `xl` and stacks under it below — and a
-`center` flag. Only sign-in sets `center`: it is one short column with
-nothing above or below it, and every other page starts at the top so it does
-not move as content loads.
-
-Every page opens with a `PageHeading`, and the whole of the opening lives in
-it: an optional back chip naming where the page was opened from, the page's
-`h1`, an optional `sub` line, and an optional right-aligned `action`. There is
-exactly one `h1` per page, and at most one line above it.
-
-**One line of naming above the title, not two.** There used to be a small
-accent eyebrow between the chip and the `h1`, naming the area. On most pages
-it said the title again in fewer words — "Account" over "Your account",
-"History" over "Certificate history", "Service" over "Service enrollment
-codes" — and on a detail page it stacked a third level of naming above the
-content: "All codes for svc-deploy", then "Service code", then `svc-deploy`
-again as the `h1`. A page can only be in one place, the rail already marks
-which section that is, and the chip already says what this page was opened
-from. So the eyebrow went, and what it was genuinely carrying moved into the
-titles:
-
-- `/admin/certificates` and `/admin/service-codes` were titled exactly like
-  their non-admin counterparts, told apart only by an "Admin" eyebrow. They
-  are "All certificates" and "All service codes" now, which names the
-  difference that matters: everyone's records rather than yours.
-- `/certs/<id>` was titled "Details" under a "Certificate" eyebrow. It is
-  "Certificate details".
-- `/preferences` was "Notifications" under a "Preferences" eyebrow, one word
-  short of matching its rail entry. It is "Notification preferences".
-- `/service-codes/<id>` titled itself with the account name, directly under a
-  chip reading "All codes for `<account>`". It is "Service code": the chip
-  carries the account, the title names the thing.
-- `/admin/users/<id>` had an "Admin" eyebrow and no way back to the list. It
-  has the chip instead, which is what a detail page's top line is for.
-- The error page's `Error 404` was never a name, it was a fact about what
-  went wrong, and it reads as the first half of the sub line now.
-
-A title has to stand on its own, because nothing above it explains it.
-
-The docs site (`user-docs/`) mirrored this pattern with a Starlight
-`PageTitle` override and an `eyebrow` frontmatter field, and it went the same
-way and for the same reason: the value was the sidebar group's own label on
-every one of the 113 pages that set one. Its two collisions came out in the
-same pass — `concepts/index` was "Overview" beside a "Hosts overview" and a
-"Deployment overview", and two different pages were both called "Console
-login".
-
-The parts that remain are in the component because both had been rebuilt by
-hand somewhere, and the copies had drifted:
-
-- The **back chip** was the same nine-class string on `/certs/<id>`,
-  `/service-codes/<id>` and `/admin/service-codes/<id>` as an `<a>`, and on
-  `/service-codes` as a `<button>` — each with a `-mb-2` cancelling
-  `PageShell`'s gap. It is now `back={{ href, label, testid }}`, or
-  `back={{ onclick, ... }}` for the one list that opens an account without
-  changing route.
-- The **sub line** existed in four shapes: the `sub` snippet, a `-mt-2
-text-sm` paragraph after the heading, a `-mt-2 text-[13px]` one, and a
-  `text-sm` one with no pull at all. The snippet is the only one now, so
-  every subtitle is the same size at the same distance from its title.
-- The **`sub` line is a sentence about the screen, never a field lifted out
-  of it.** `/service-codes/<id>` briefly put the key ID there, which is a
-  labelled row in "What it hands out" a few lines below, and
-  `/admin/users/<id>` led its line with the username whenever the title was
-  a display name, restating the "Username" field in the OIDC record directly
-  under it. A heading that pre-announces a field the page is about to state
-  properly is saying it twice and labelling it neither time. The one
-  identifier a sub line may carry is one stated nowhere else — the user
-  page's email address.
-- The **`h1`** was written out with its four classes on five pages — the
-  error page, both approval-unavailable states, and the two load-failure
-  screens. A change to the heading scale would have moved most of the app and
-  left those behind. They all go through the component now.
-
-The `h1` is 26px above `sm` and 20px below it. 26px is a desktop size: on a
-phone, a title of any length runs to two or three lines and pushes the page's
-first real content under the fold, and an `h1` only has to be the largest
-thing on the page to read as one.
-
-Sign-in is the one screen that does not use `PageHeading`, and deliberately:
-it is a centred 380px column with the `BrandMark` above a 22px `h1`,
-addressed to somebody who is not signed in and has no rail and no page to go
-back to. A left-aligned 26px title would break the lockup rather than unify
-it.
+# Design System: ssoossh
+
+Character: an instrument for handing keys to machines. Precise, quiet, and
+unambiguous about the one thing to press.
+
+Rewritten 2026-10-10 from that day's Character decisions, the token layer in
+`src/app.css`, and the August and September notes this file used to carry.
+Where they disagreed, the Character decisions won. The product owner's
+rulings from the 2026-10-10 review are written into the sections they govern;
+"Settled questions" lists the ones a later audit would otherwise raise again.
+"Not yet in code" lists where the components still trail this spec.
+
+**Using this file**
+
+- Every colour, size, space, radius, shadow and duration in the UI comes from
+  a token named here, and every token named here exists under the same name
+  in `src/app.css` (or, where marked, in Tailwind's default theme).
+- A value outside the system is either an **extension** (add it here with its
+  reason, in the same commit that uses it) or **off-system** (flag it in the
+  change and use the nearest token). Never invent a value silently.
+- A new component variant is an extension too: add it to Components in the
+  same change.
+- Precedence: an explicit instruction from the product owner, then this
+  file, then the UX Engine defaults.
+- This file is versioned with the code. When a token changes, list the
+  screens it affects in the commit.
+
+## 1. Character
+
+One decision per axis. Every later section applies these four.
+
+| Axis   | Decision                                                                                                                                                                                                                 | Why                                                                                                                                   |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Type   | The contrast is a change of family. IBM Plex Sans carries prose and controls; IBM Plex Mono is the voice, used for the page heading and for every identifier a reader compares. The heading is 28px against a 14px body. | One superfamily, so the two share proportions while differing in class. Mono then means one thing: "this page" or "this exact value". |
+| Colour | One cool signature, cobalt, on warm stone neutrals. Cobalt marks the primary action, links, the focus ring and the current rail item, and nothing else.                                                                  | The signature is the only cool thing on the page, so the thing to press is found before anything is read.                             |
+| Space  | Compressed inside, released between. Rows inside a panel sit tight with hairlines between them; panels stand `gap-8` apart.                                                                                              | The release between panels is what makes the density inside them read as intended rather than cramped.                                |
+| Finish | Planes, not frames. Three planes: `ground`, `surface`, `surface-muted`. A panel is told apart by plane alone, with no border and no shadow. Radii are sharp.                                                             | A border, a shadow and a tint on one box say the same thing three times. The plane says it once.                                      |
+
+## 2. Colour
+
+All colours are OKLCH custom properties in the `@theme` block of
+`src/app.css`, restated for dark mode in the `.dark` block. Dark mode keeps
+each token's job and hue and moves its lightness.
+
+### Tokens
+
+| Token                          | Light                                         | Dark                                          | Job and why                                                                                                                                                   |
+| ------------------------------ | --------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--color-ground`               | `oklch(95.5% 0.006 75)`                       | `oklch(14.5% 0.006 70)`                       | The page, behind every panel. Warm stone so the cobalt is the only cool thing on screen.                                                                      |
+| `--color-surface`              | `#ffffff`                                     | `oklch(22.5% 0.008 70)`                       | A panel on the ground: a section, a row, the rail, a dialog, an identity strip, a page-level alert.                                                           |
+| `--color-surface-muted`        | `oklch(97.2% 0.005 75)`                       | `oklch(26.5% 0.008 70)`                       | A tint inside a panel: hover, code wells, request-line tiles, chip fills. Never on the ground.                                                                |
+| `--color-border-subtle`        | `oklch(90% 0.006 75)`                         | `oklch(31% 0.008 70)`                         | Hairlines between rows inside a panel and the edge of a value chip. Decoration only.                                                                          |
+| `--color-border-control`       | `oklch(62% 0.01 70)`                          | `oklch(56% 0.01 70)`                          | The edge of something a reader operates. Held to WCAG 1.4.11 (3:1) on every plane.                                                                            |
+| `--color-ink`                  | `oklch(22% 0.01 60)`                          | `oklch(93% 0.006 75)`                         | Primary text, and the fill of a selected toggle.                                                                                                              |
+| `--color-ink-muted`            | `oklch(46% 0.012 65)`                         | `oklch(71% 0.01 70)`                          | Secondary text, labels, placeholders, hints.                                                                                                                  |
+| `--color-accent`               | `oklch(50% 0.19 264)`                         | `oklch(74% 0.13 264)`                         | Cobalt, the signature. See "Where cobalt appears".                                                                                                            |
+| `--color-accent-hover`         | `oklch(43% 0.19 264)`                         | `oklch(80% 0.11 264)`                         | Cobalt pressed or hovered.                                                                                                                                    |
+| `--color-accent-ink`           | `#ffffff`                                     | `oklch(17% 0.03 264)`                         | Text on a cobalt fill.                                                                                                                                        |
+| `--color-accent-wash`          | `oklch(94% 0.03 264)`                         | `oklch(29% 0.05 264)`                         | The ground under the current rail item, light enough that a cobalt label stays legible on it.                                                                 |
+| `--color-granted` / `-surface` | `oklch(45% 0.11 150)` / `oklch(95% 0.03 150)` | `oklch(76% 0.13 150)` / `oklch(28% 0.04 150)` | Success: approved, valid, granted.                                                                                                                            |
+| `--color-trimmed` / `-surface` | `oklch(50% 0.11 70)` / `oklch(95% 0.035 80)`  | `oklch(80% 0.12 80)` / `oklch(28% 0.04 80)`   | Warning: trimmed, narrowed, restricted, a live action's consequence.                                                                                          |
+| `--color-danger` / `-surface`  | `oklch(50% 0.18 27)` / `oklch(95% 0.03 27)`   | `oklch(74% 0.15 27)` / `oklch(29% 0.05 27)`   | Error, denial, destruction.                                                                                                                                   |
+| `--color-scrim`                | `rgb(0 0 0 / 0.55)`                           | same                                          | The dim behind a dialog or the drawer. Not restated for dark: a scrim is an absence of light in both themes, and a lighter one would read as another surface. |
+| `--color-border`               | alias of `border-subtle`                      | alias                                         | No users. Do not use it; remove it the next time the token layer changes.                                                                                     |
+
+### Measured contrast
+
+Computed from the OKLCH values (WCAG 2.x relative luminance), not eyeballed.
+Run a check against both themes before adding or moving a colour.
+
+| Pair                             | Light | Dark  | Needs                          |
+| -------------------------------- | ----- | ----- | ------------------------------ |
+| ink on surface                   | 17.34 | 13.92 | 4.5                            |
+| ink on ground                    | 15.20 | 16.10 | 4.5                            |
+| ink-muted on surface             | 7.14  | 6.64  | 4.5                            |
+| ink-muted on surface-muted       | 6.59  | 5.94  | 4.5                            |
+| ink-muted on ground              | 6.26  | 7.68  | 4.5                            |
+| accent on surface                | 6.26  | 7.35  | 4.5                            |
+| accent on ground                 | 5.49  | 8.50  | 4.5                            |
+| accent on accent-wash            | 5.24  | 6.08  | 4.5 (the narrowest text pair)  |
+| accent-ink on accent             | 6.26  | 8.21  | 4.5                            |
+| surface on ink (selected toggle) | 17.34 | 13.92 | 4.5                            |
+| granted on granted-surface       | 6.17  | 7.05  | 4.5                            |
+| trimmed on trimmed-surface       | 5.31  | 7.75  | 4.5                            |
+| danger on danger-surface         | 5.60  | 5.86  | 4.5                            |
+| border-control on surface        | 3.65  | 3.67  | 3.0                            |
+| border-control on surface-muted  | 3.36  | 3.29  | 3.0                            |
+| border-control on ground         | 3.20  | 4.25  | 3.0                            |
+| border-subtle on surface         | 1.35  | 1.30  | decoration                     |
+| surface on ground                | 1.14  | 1.16  | plane separation               |
+| surface-muted on surface         | 1.08  | 1.12  | tint inside a panel            |
+| surface-muted on ground          | 1.05  | 1.29  | never used: too close in light |
+
+### Where cobalt appears
+
+Exactly four jobs:
+
+1. The primary action: a `primary` Button, one per screen region.
+2. Links: text links and the back chip in `PageHeading`.
+3. The focus ring.
+4. The current rail item: cobalt label on `accent-wash`, with
+   `aria-current="page"`.
+
+Nowhere else: not on icons, labels, stats, selected chips, the current page
+in a pager, tabs, checkboxes or decorative marks. The one exception is
+`BrandMark`, which draws the product's own mark in cobalt.
+
+### Selected, current and status
+
+- **Selected** (a toggle: a pressed principal chip, a selected FilterChip, a
+  DetailToggle segment, a segmented filter): ink fill (`bg-ink
+text-surface`), the `check` glyph before the label, and `aria-pressed`.
+  Never cobalt.
+- **Current** (where the reader is): the rail item as above. The current page
+  in a `Pager` is an ink fill with `aria-current="page"` and no glyph: it is
+  a location, not a choice.
+- **Status** colours are semantic only. `granted` means approved, valid or
+  granted; `trimmed` means narrowed, restricted or a warning; `danger` means
+  an error, a denial or destruction. They never mark "configured", "came from
+  LDAP", "overridden" or emphasis; those are `ink-muted` text, or a label.
+- Every state also carries a glyph or a word. Colour is never the only
+  signal (WCAG 1.4.1).
+
+## 3. Typography
+
+### Families
+
+- **IBM Plex Sans** 400, 500, 600 (`@fontsource/ibm-plex-sans`), token
+  `--font-sans`. Prose, labels and controls.
+- **IBM Plex Mono** 400, 500, 600 (`@fontsource/ibm-plex-mono`), token
+  `--font-mono`. The voice.
+
+Both are self-hosted and imported at the top of `src/app.css`, with
+`system-ui` and `ui-monospace` fallbacks. No CDN, no Google Fonts.
+
+### Where the mono goes (decided 2026-10-10)
+
+Mono marks "this page" or "this exact value", and nothing else.
+
+- **Mono:** the `PageHeading` `h1`; the sign-in heading; and every value a
+  reader compares character by character or copies into a terminal or a
+  config file: principals, usernames and account names, key ids, serials,
+  fingerprints, public keys, request, certificate and enrollment ids, IP
+  addresses, hostnames, commands, config keys, claim names, LDAP DNs and
+  attribute names, extension and option names.
+- **Sans:** everything else, including section titles, `SectionLabel`,
+  `.data-table` column heads, rail group heads, buttons, chips that carry
+  words, status badges, timestamps, durations, counts, display names and
+  email addresses.
+
+Timestamps and durations are sans with `tabular-nums`: they are read, not
+copied, and `formatGoDuration` already turns `8h0m0s` into `8h`.
+
+### Scale
+
+Every size is a `--text-*` token with a utility of the same name.
+`--text-*` and `--leading-*` are Tailwind v4's own namespaces; a size added
+under any other name emits no utility.
+
+| Token            | Size | Use                                                                                       |
+| ---------------- | ---- | ----------------------------------------------------------------------------------------- |
+| `--text-micro`   | 10px | Uppercase micro-labels inside a chip.                                                     |
+| `--text-meta`    | 11px | Section titles, `SectionLabel`, table column heads, rail group heads, eyebrow-sized meta. |
+| `--text-xs`      | 12px | Helper text, chip labels, footer.                                                         |
+| `--text-dense`   | 13px | The body of a dense row, detail values, table cells.                                      |
+| `--text-sm`      | 14px | Body text. The size everything else is measured from.                                     |
+| `--text-base`    | 16px | Simplified-level facts and request-line values; inputs on touch.                          |
+| `--text-lg`      | 18px | Prominent labels; rarely needed.                                                          |
+| `--text-xl`      | 20px | The page heading below `sm`.                                                              |
+| `--text-2xl`     | 24px | The sign-in heading. Tailwind's default, not restated in `app.css`.                       |
+| `--text-display` | 28px | The page heading above `sm`. The largest size in the app.                                 |
+
+`micro`, `meta` and `dense` carry no paired line height; the row sets it.
+
+### Weights, leading, tracking
+
+- Weights: 400 body; 500 buttons and row titles; 600 headings, section
+  titles, labels and table heads. `--font-weight-bold` (700) has no use; a
+  heading is 600.
+- Leading: `--leading-tight` 1.25 for headings and dense rows,
+  `--leading-snug` 1.375 for small blocks, `--leading-normal` 1.5 for body,
+  `--leading-relaxed` 1.625 for long notices.
+- Tracking, two values and one exception:
+  - `--tracking-heading` -0.02em: the two display headings, in the mono.
+  - `--tracking-label` 0.06em: small uppercase labels and chips.
+  - `tracking-widest` (Tailwind's 0.1em): the widest uppercase labels,
+    `.data-table` column heads and rail group heads.
+  - The console pairing-code input spaces its characters at 0.2em so a code
+    can be read back one character at a time. Letter-spacing doing a
+    different job, not a fourth step.
+
+## 4. Spacing and layout
+
+Base unit 4px, Tailwind's spacing scale.
+
+### Rhythm
+
+| Where                                 | Value                                                                  | Why                                                           |
+| ------------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Inside a control or chip              | `gap-1.5` to `gap-2`                                                   | Glyph and label read as one thing.                            |
+| Rows inside a panel                   | `gap-2` / `gap-3`, or `divide-y divide-border-subtle` with `py-2` rows | Compressed: a panel is one group.                             |
+| Rows inside a panel, simplified level | `gap-4`, facts at `text-base`                                          | Fewer facts, so each gets more room.                          |
+| A list of row panels                  | `gap-2`                                                                | Each row is one event among several.                          |
+| Section panel padding                 | `p-5`                                                                  | One value for every `PageSection`.                            |
+| Row panel padding                     | `px-4 py-3`                                                            | One value for every row; the certificate rows already use it. |
+| Between panels                        | `gap-8`, set by `PageShell`                                            | Released: the contrast with the inside is the rhythm.         |
+
+### Layout constants
+
+The only values allowed as bracketed utilities. Anything else bracketed is
+off-system.
+
+| Constant               | Value                                                    | Where                                           |
+| ---------------------- | -------------------------------------------------------- | ----------------------------------------------- |
+| Rail width             | 244px expanded, 60px collapsed                           | `AppRail`                                       |
+| Shell `focus`          | 560px                                                    | sign-in, console code, error page               |
+| Shell `wide`           | 1120px                                                   | every page inside the app (default)             |
+| Shell `full`           | no cap                                                   | admin tables: users, user detail, audit         |
+| Aside column           | 280px above `xl`                                         | `PageShell` `aside`                             |
+| DetailRow label column | 140px (`8.75rem`)                                        | `DetailRow` above `sm`                          |
+| Prose measure          | `70ch`                                                   | paragraphs and form columns inside a wide panel |
+| Sign-in column         | 380px                                                    | `/login`                                        |
+| Dialog panel           | `max-w-md` (ConfirmModal), 520px (ConsentModal)          | dialogs                                         |
+| Field cap              | 420px                                                    | the select and email field in `ApprovalView`    |
+| Row grid               | `minmax(0,1fr) minmax(0,1.1fr) minmax(0,1fr)` above `xl` | `CertRow`, `DeniedRow`                          |
+| Timeline grid          | `auto minmax(0,1fr)`                                     | `AuditTimeline` details                         |
+| Probe attribute grid   | `minmax(9rem,14rem) 1fr`                                 | the directory probe's entry view                |
 
 ### Breakpoints
 
-Three, and they mean specific things:
+- `sm` 640px: phone to tablet, inside a component.
+- `lg` 1024px: the rail becomes a column instead of a drawer.
+- `xl` 1280px: a certificate row's fields become aligned columns. The fold is
+  at `xl`, not `lg`, because the rail takes 244px: 1280px is where the page
+  column reaches about 980px.
 
-- `sm` (640px) — phone to tablet, inside a component
-- `lg` (1024px) — the rail becomes a persistent column instead of a drawer
-- `xl` (1280px) — a cert row's fields become aligned columns. The fold is at
-  `xl` rather than `lg` because the rail takes 244px off the front: 1280px is
-  where the page column reaches about 980px and a row has space to lay its
-  fields out side by side.
+## 5. Shape and elevation
 
-### Sections are subtle cards
+### Planes
 
-Two frames, meaning two different things.
+| Plane           | What sits on it                                                                                                                                                                                                                                               | Why                                                                     |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `ground`        | Only `surface` panels.                                                                                                                                                                                                                                        | The page.                                                               |
+| `surface`       | Section panels (`PageSection`), row panels (`CertRow`, `DeniedRow`, `ServiceCodeRow`, `ServiceAccountRow`), `EmptyState`, `LoadingBlock` row shapes, tables, identity strips, page-level `info` alerts, the rail, the narrow-viewport bar, dialogs, popovers. | One device for "this is a thing on the page".                           |
+| `surface-muted` | Hover states, code wells, request-line tiles, chip fills, the directory probe box, `info` alerts inside a panel.                                                                                                                                              | A tint inside a panel. On the ground it measures 1.05:1 and disappears. |
 
-A **row card** — 1px border, 10px radius, `surface` (white) background — says
-"this is one discrete thing among several". `CertRow`, `ServiceCodeRow` and
-`ServiceAccountRow` are each one event standing beside others of the same
-kind, and a list of them is a list of things that happened.
+Rule: anything that sits directly on the ground is `bg-surface`; anything
+tinted is inside a surface panel. A card inside a card says the inner thing is
+separate from the page, which is the one thing it is not, so nothing inside a
+panel gets a frame: a `dl` uses `divide-y divide-border-subtle`, a
+`SectionLabel` opens a sub-group.
 
-A **section card** — 1px border, `rounded-lg`, `bg-surface-muted`, `p-4`, no
-shadow — says "this is one group of fields within this page". That is
-`PageSection`, and it is what every screen's own content sits in. It replaced
-`Card`, which was a white panel with a shadow and a ruled-off header: that
-read as a component floating over the page rather than as a region of it, and
-stacking a border, a shadow, a tint and a header divider said the same thing
-four times. The tint alone says it once.
+### Borders: three jobs
 
-Inside a section, nothing gets a frame of its own. A card inside a card says
-the inner thing is separate from the page, which is the one thing it is not.
-So a `dl` uses `divide-y divide-border-subtle` for its rows, a `SectionLabel`
-opens a sub-group, and the hairline is the only rule needed below the section
-level. Two consequences worth naming: the approval screen is one card with
-labelled groups inside it, not six cards, because an approval is a single
-decision read straight through; and the "Last pass" block on
-`/admin/directory` is flat, because the Sync section it sits in is already
-the card.
+1. A hairline between rows inside a panel: `border-subtle`.
+2. The edge of a control a reader operates (a field, a ghost button, a pager
+   control, an unselected chip): `border-control`, 3:1 or better on every
+   plane.
+3. The edge of a value chip (`MonoChip`): `border-subtle`. A set of
+   principals has to show where one value ends; a fill alone is 1.08:1.
 
-Above the section level, `PageShell` puts `gap-5` between sections and
-nothing else. There is no card grid: `/admin/config` and `/admin/diagnostics`
-used to balance boxes two abreast by weight, which reordered content by
-height. A configuration is read in the order the file is written and a
-diagnostics run in the order the checks ran, so both are one column of
-sections.
+Nothing else takes a border: no panel edges, no rail edge, no header or
+footer rule, no alert outline, no side stripe.
 
-The identity strip a certificate or service-code page opens with — type
-chip, status badge, full id — keeps the same tint and border as a section
-but carries no heading, which is what marks it as the page's subject rather
-than a part of it.
+### Radii
 
-### The two certificate lists are one design
+| Utility                  | Token                      | Value | For                                                       |
+| ------------------------ | -------------------------- | ----- | --------------------------------------------------------- |
+| `rounded` / `rounded-sm` | `--radius` / `--radius-sm` | 3px   | Chips, badges, `TypeBadge`, `StatusBadge`                 |
+| `rounded-md`             | `--radius-md`              | 4px   | Controls: buttons, fields, segmented controls, pager      |
+| `rounded-lg`             | `--radius-lg`              | 6px   | Panels: sections, rows, strips, alerts, tables            |
+| `rounded-xl`             | `--radius-xl`              | 8px   | Dialogs                                                   |
+| `rounded-full`           |                            |       | Only a circular glyph container: `EmptyState`'s icon disc |
 
-`/logs/me` and `/admin/certificates` show the same rows, and they had grown
-their own answers to the same questions: different filter labels, different
-icons, different orders, the admin filters on two lines, and a search box on
-one page and not the other. `#lib/filters.js` states the vocabulary once —
-`typeFilters`, `statusFilters`, `outcomeFilters` — and both pages open the
-same way: search, then the filter groups on one line, then the rows, then
-the pager.
+Sharper than Tailwind's defaults on purpose: a technical finish.
 
-The only group that differs is Outcome, and only because the data does: a
-denial issues no certificate, and the admin list reads the certificates
-table. It sits last on the line, after Type and Status: the groups are
-ordered by how often a reader reaches for one, and the outcome is the last
-thing they would change — the list is what somebody holds, and asking for
-refusals is a separate errand. That also puts the two groups both lists
-share first and in the same order, so they open identically as far as they
-go. Everything else is the same chips in the same order with the same
-glyphs, and the Status pair is the one `CertRow`'s validity indicator uses,
-so a reader filtering on "expired" sees the icon they filtered on.
+### Shadow
 
-Both filter server-side, under the same parameter names. `/api/certs` and
-`/api/decisions/denied` take `q`, `type` and `status` exactly as the admin
-history does, so narrowing asks the server rather than sieving whatever has
-been loaded — which used to mean a filter could empty a page that had
-matches further down. An unrecognised value is dropped rather than refused:
-answering a typo with a 400 tells somebody their own history is broken,
-where an unfiltered list tells them their filter did nothing, which is what
-happened.
+One token, `--shadow-overlay`, for a layer that floats over a panel of the
+same plane: the rail's identity drop-up and any future menu or popover.
+Panels never take it. A dialog does not need it: the scrim separates it.
 
-The outcome group does more than narrow: it decides which endpoint is read.
-Approved reads certificates alone, Denied reads decisions alone, Both reads
-each. And a validity filter returns no denials at all — a denial issued
-nothing that could still be working, so asking for "live" is asking for
-certificates.
+## 6. Motion
 
-Below `sm` there is no outcome group at all, and `/logs/me` is approvals
-only. That is a row decision rather than a filter-row one: a phone-width row
-has space for the subject, the detail line and one indicator, and dropping
-the per-row outcome mark is only honest while every row on screen is an
-approval. Above `sm` both come back together — the group and the mark, since
-that is the width at which the list mixes the two. So the selection is pinned rather than merely hidden — a reader who
-chose "Denied" on a wide window and then narrowed it is moved back to
-approvals, not left looking at refusals no longer labelled as such.
-`#lib/viewport` states that width once (`NARROW_QUERY`, watched by
-`watchNarrow`), so a page that hides a control at one width and pins its
-value at another cannot end up describing two different layouts.
+Two durations, two curves, one rule: **everything that appears has to
+disappear on purpose.**
 
-The two lists still page differently, because their endpoints do: the admin
-one by offset with a `Pager`, the caller's own by cursor with "load more"
-and a page-of-ten over what has arrived.
+- `--duration-enter` 220ms, eased out (`cubicOut`): slow enough to follow,
+  short enough not to wait on.
+- `--duration-exit` 130ms, eased in (`cubicIn`): about 40% faster, because a
+  reader who dismissed something has stopped looking at it.
+- `linear` only for a spinner and the skeleton shimmer.
 
-### Destructive actions: the heading, then a dialog
+The same two numbers live in `app.css` (for CSS) and as `ENTER_MS` /
+`EXIT_MS` in `#lib/motion` (for Svelte transitions), and must agree. Use
+`enterMs()` / `exitMs()` from `#lib/motion`, which return 0 under reduced
+motion, rather than the constants.
 
-An action that ends something lives in `PageHeading`'s `action` slot, in the
-page's top right, and opens a `ConfirmModal`. Disabling an account,
-re-enabling one, and retiring a service code are all the same shape: a
-button where the eye starts, a modal over the page naming the consequence, a
-required reason, and Cancel beside the confirming button.
+| Surface                               | Entrance                        | Exit                                                             |
+| ------------------------------------- | ------------------------------- | ---------------------------------------------------------------- |
+| Navigation drawer (below `lg`)        | fly from -260px plus scrim fade | the same, reversed                                               |
+| Rail identity drop-up                 | scale from 0.96 plus fade       | the same, reversed                                               |
+| `ConfirmModal` / `ConsentModal` panel | scale from 0.96 plus fade       | the same, reversed                                               |
+| `.modal-dialog::backdrop`             | `@starting-style` fade          | none: callers unmount the dialog, so the backdrop leaves with it |
+| `Button` press                        | `active:scale-98` at 100ms      | released at the same speed                                       |
+| `StatusBadge` signing spinner         | `motion-safe:animate-spin`      | n/a                                                              |
+| `.skeleton` shimmer                   | `linear` sweep                  | n/a                                                              |
 
-The alternative, which two of these used, was a panel that expanded inline
-partway down the page. That put the control that ends a service code
-wherever the sections above it happened to finish, and left the reason field
-competing with the page behind it while it was being typed. It also meant a
-reader had to scroll to discover the page had an action at all.
+`RailGroup` expands with no transition: a height animation would fight the
+rail's width transition on collapse. Only its caret moves.
 
-Every one of these reasons is server-validated (`enrollment.expired`,
-`user.disabled`, `user.enabled`), so `ConfirmModal` keeps the confirming
-button disabled until a non-empty one is typed. A button whose only possible
-outcome is a 400 is not a button.
+**Reduced motion** has two halves because there are two engines. A block in
+`app.css` sets every animation and transition duration to `0.01ms` (near zero
+rather than none, so `animationend` still fires; `::backdrop` is named
+because `*` does not match it). `enterMs()` and `exitMs()` cover Svelte.
+`.skeleton` is the exception: its sweep stops outright, because a near-zero
+infinite loop is a strobe.
 
-`ConfirmModal` is a native `<dialog>` opened with `showModal()`, which is
-what gives top-layer stacking, a `::backdrop` and a focus trap; Escape fires
-`cancel` and is routed to the same handler as the Cancel button. The two
-hand-rolled `fixed inset-0` overlays it replaced on `/admin/users/<id>` had
-none of that.
+## 7. Interaction
 
-### Common Components
+- **Targets: 36px with a mouse, 44px on touch.** One token,
+  `--spacing-target`: 2.25rem, raised to 2.75rem under
+  `@media (pointer: coarse)` in `app.css`. Every standalone control takes
+  it: buttons, every chip a reader presses (filter, principal, extension),
+  segmented controls, pager controls, icon buttons (`size-target`), rail
+  rows, menu rows, checkbox and radio rows (the whole label is the target),
+  the copy button and the back chip. Use `min-h-target` (and
+  `min-w-target` where the control is narrow); no control states its own
+  height. The glyph inside stays at its size; the target grows around it.
+  Inline links inside a sentence are exempt. Why: approvals happen in a
+  desktop browser, where 36px keeps rows dense and clears WCAG 2.2's 24px
+  minimum; the rare phone (a console login) gets the touch size from the
+  same token, on every control at once.
+- **Focus:** the base layer's `:focus-visible` outline (2px cobalt, 2px
+  offset) is the focus ring. Never cancel it with `focus:outline-none`:
+  utilities are emitted in a later layer and silently win.
+- **Hover:** a surface panel or control tints to `surface-muted`. A primary
+  button moves to `accent-hover`.
+- **Press:** `Button` scales to 98% for 100ms.
+- **Disabled:** `opacity-50` and a default cursor. Disabled controls are
+  exempt from text contrast, but a disabled control is never the only
+  explanation: the reason sits beside it.
+- **Busy:** `Button busy` swaps the label for its busy wording and blocks a
+  second press. `ConfirmModal` takes `busy` and `busyLabel`.
+- **Selected and current:** see Colour.
 
-- **Button**: Variants: `primary` (accent blue), `danger` (red), `ghost` (outline). Always includes `disabled` state via `opacity-50`. Lays its children out as a centered `inline-flex` row with a gap, so a label plus a trailing icon needs no wrapper. `full` stretches it to the container width, for a screen whose single primary action should span the column (the login button).
-- **BrandMark**: The deployment logo slot — the mark left of the "ssoossh" wordmark in the header and above the login heading. Renders `branding.logo_url` when a deployment sets one (height-constrained, width free, since most organisation logos are wide wordmarks) and ssoossh's own mark otherwise, so the slot is never empty. Takes `size` in pixels and `strokeWidth` (1.75 by default, lighter on the 40px login mark); corner rounding follows the size.
+## 8. Iconography
 
-  The mark is a shell prompt and a key inside a cloud — single sign-on and an SSH session in one glyph — drawn to the same rules as the rail's icons: a 24x24 box, stroke only, round caps and joins, one colour from `--color-accent`. It replaced a check-in-circle, which was the same glyph the `check-circle` status icon uses for an approved request; a brand mark that doubles as a status icon teaches the wrong thing twice. `static/favicon.svg` carries the identical geometry knocked out of a filled accent tile, so the tab icon reads on a light or a dark tab strip without an internal `prefers-color-scheme` rule.
+Icons come from `@tabler/icons-svelte` through `Icon.svelte`, which maps
+names to components and sizes. The `iconComponents` map is the whole
+vocabulary; an unmapped name renders a visible red `?`.
 
-- **AppRail**: The app's one navigation surface — brand, the rail's own width control, destinations, the admin group, and the identity drop-up. See The app shell.
-- **RailItem**: One destination in the rail. Keeps its label in the DOM when the rail is collapsed, so the accessible name never becomes an unlabelled icon.
-- **RailGroup**: A named, collapsible band of rail items. The head is a button, not a link: the group has no page of its own, and giving it one would mean inventing an admin landing screen whose only content is the list already on show.
-- **RailUserMenu**: The rail's bottom row — the identity — and the drop-up behind it holding account, preferences, theme and sign out. A disclosure rather than a `role="menu"`; see The app shell.
-- **PageShell**: The container every page sits in. Three named widths, an optional `aside` column, and the `center` flag sign-in uses. See Page Structure.
-- **PageSection**: One group of fields as a subtle card — `rounded-lg border border-border-subtle bg-surface-muted p-4` — opening with a quiet uppercase `h2` and an optional line of copy. What replaced `Card`; see Sections are subtle cards. A real heading rather than a styled `div`, because a section is a landmark a screen reader navigates by and it was the card's header, not its border, that said so. Never nested inside another.
-- **Footer**: The bar closing every page — the running build's version, a link to the release it was cut from, and links back to the project on GitHub. Presentational: the build identity arrives as a prop, so the fetch happens once in the layout. Renders nothing at all while the version is unknown.
-- **Alert**: Variants: `error`, `warning`, `info`. Each includes an icon and a color from the token set.
-- **LoadingBlock**: What a surface shows while its content is on the way, in three shapes: `rows` for the card lists, `table` for the admin tables, `lines` for a detail panel. Replaced fourteen hand-written `<p>Loading…</p>` paragraphs — half of them spelled with three dots, one of them centred — which told a reader that a request was out and nothing about what was coming back. A shape that matches the answer stops the page jumping when the rows land.
+### Rules
 
-  Nothing renders for the first 300ms, because below that a load is quicker than a reader registers a change and a placeholder that appears and vanishes inside a third of a second reads as a flicker rather than as progress. The gate re-arms on every mount, so a filter chip or a page turn earns its own 300ms of silence.
+- **Noun, then state.** A state is a modifier on a noun, not a different
+  noun: `certificate` / `certificate-off`, `clock` / `clock-cancel`,
+  `filter` / `filter-off`, `copy` / `copy-check`. Learn the noun, get every
+  state of it.
+- **One glyph, one job.** No glyph appears in two semantic domains. When
+  adding an icon, find the noun in the map and take its modifier; add a new
+  noun only when the app gained a new object.
+- **Severity walks the road-sign ladder:** `info-circle`, `alert-triangle`,
+  `alert-octagon`. A triangle asks the reader to act; it is not for a settled
+  fact like an expired certificate.
+- Decorative icons are `aria-hidden`. A meaningful one gets its words in the
+  document (`sr-only`), not an `aria-label` on a bare `span`, which browsers
+  drop.
 
-  The bars are `aria-hidden`: none of it is content. The `label` prop adds an `sr-only` `role="status"` sentence and is **empty by default**, which is deliberate. The lists carry `ListStatus`, which stays silent until a request settles precisely so a debounced search does not announce "Loading" once per keystroke; announcing here as well would put back the noise that component exists to keep out. A detail page that loads once has no such problem and passes a label.
+### Vocabulary
 
-- **EmptyState**: A list with nothing in it, said properly — an icon, a short title, the sentence that says what would fill it, and optionally one real control. The screens that had an empty state wrote a single muted line ("No users found"), which leaves a reader unable to tell apart the two cases that matter: a list empty because nothing has happened yet, and a list empty because the filters on screen exclude everything in it. The first says what would fill it; the second offers a way back to the full set. `/admin/certificates` and `/admin/service-codes` now branch on exactly that, and the filtered branch carries a Clear filters button.
+- **Certificate types** (`TypeBadge`, `TypeChip`, type filters): `id-badge`
+  user, `terminal-2` PAM, `server-cog` service, `device-desktop` console.
+- **Request status** (`StatusBadge`): `hourglass-high` pending, `loader-2`
+  signing (the only animated icon), `circle-check` approved, `circle-key`
+  enrolled, `circle-x` denied, `clock-cancel` expired, `alert-octagon`
+  failed.
+- **Certificate validity** (`CertRow`, status filters): `certificate` valid,
+  `certificate-off` expired.
+- **Alert severity:** `info-circle`, `alert-triangle`, `alert-octagon`.
+- **Filters:** `filter-off` for the "All" / "Any" / "Both" chip.
+- **Selected toggle:** `check`. It means "chosen" and nothing else.
+- **Copy** (`CopyableId`): `copy`, then `copy-check` once copied.
+- **Rail destinations:** `layout-dashboard` Dashboard, `history` History,
+  `key` Service codes (own), `keyboard` Console login, `shield-lock` the
+  Admin group, `users` Users, `file-certificate` Certificates, `circle-key`
+  Service codes (admin, a different enclosure of the same noun, because a
+  collapsed admin row has no visual parent), `adjustments-horizontal`
+  Config, `address-book` Directory, `braces` Claims echo, `logs` Audit log,
+  `activity-heartbeat` Diagnostics, `user-cog` Preferences.
+- **Account, theme and chrome:** `user-circle` identity, `logout`, `sun` /
+  `moon` / `device-laptop` theme states (a laptop, because a monitor is what
+  a console certificate is), `menu-2` drawer trigger, `layout-sidebar` rail
+  width, `chevron-down/left/right/up`, `arrow-right` forward in a primary
+  action, `search`, `x` clear.
+- **Detail rows:** `user` a person, `clock` a span of time.
+- **Fallback:** `help-circle` for a certificate type outside the four. It
+  marks a contract break.
 
-  The icon is decoration and hidden from assistive technology: the title says the same thing in words.
+### Sizes
 
-- **ConfirmModal**: The one shape a confirmation takes — a native `<dialog>` holding the consequence, a required reason, Cancel and the confirming button. Callers supply the wording and the endpoint and nothing else. See Destructive actions.
-- **ExpireCodeAction**: The retire-this-code button and its `ConfirmModal`, for a page heading's `action` slot. One component for both sides of a code — an admin on `/admin/service-codes/<id>` and a holder on `/service-codes/<id>` — because the two differ only in which endpoint they call, and the reason field, the confirmation and the error wording are what is worth keeping identical.
-- **Lifetime policy rows** (certificate detail page): the policy engine records its ceiling and result by calling `String()` on a Go `time.Duration`, so they arrive as `8h0m0s`. `formatGoDuration` in `#lib/format` parses that and hands it to `formatDuration`, so a policy ceiling reads the way every other lifetime on the site does — `8h`, `1h 30m`, `7d`. Parsed on the client rather than fixed on the wire because the explanation document is stored on the decision: every certificate already issued carries the old spelling. A value that does not parse is passed through as it arrived, and so is anything under a second, which `formatDuration` would round to `0s`. The rows lost their `mono` for it: they are a length of time now, not a token to copy.
+`sizeMap` in `Icon.svelte`: `xs` 12px, `sm` 16px, `md` 20px, `lg` 24px,
+`xl` 32px. Matching `.icon-*` utilities live in `app.css` for use outside the
+component.
 
-- **StatusBadge**: Maps request/certificate statuses (pending, approved, denied, etc.) to colored pills with status-appropriate icons. Rendered capitalised — the wire value is lowercase, the label is not.
-- **DetailRow**: A label–value pair for metadata lists, with optional icon and monospace rendering. A 140px label column at 13px, stacking on narrow viewports.
-- **PageHeading**: The whole of a page's opening — back chip, `h1`, `sub` line, and a right-aligned `action` where a page's destructive control goes (see Destructive actions). `sub` is a snippet rather than a string because two lists put a `<code>` in theirs. See Page Structure for why these parts live here, and for why there is no eyebrow above the `h1`.
-- **SectionLabel**: The same small muted uppercase label as `PageSection`'s heading, but as a plain `div` with no frame, for a group _inside_ a section — a form group, the lifetime-policy block within a certificate's decision, the three groups inside the approval card. Not a heading, and must not become one: nesting `h2`s under each other would flatten the page's real structure. It is the app's only small uppercase label now that `PageHeading`'s accent eyebrow is gone, and it stays muted: it names a section within a card, not the page.
-- **DeniedRow**: One refusal in a decision history, laid out to line up with the `CertRow` beside it — including the outcome mark, the same icon in the same column, because a pill on one kind of row and an icon on the other reads as two lists that happen to be adjacent — and deliberately not a link: a denial issues nothing, so there is no certificate page to open. Its own component rather than a mode of `CertRow` because a denial genuinely has none of what a certificate row shows — no serial, no key id, no fingerprint, no principals granted, no validity window — and feeding empty strings into `CertRow` would render a row that reads like a certificate whose details nobody can find. `/logs/me` reads two endpoints for this: `/api/certs` is the certificates table and a denial never writes a row there, so `/api/decisions/denied` serves the other half and the page interleaves the two by time. Where a certificate row lists the principals it granted, a denial's third column says what the request claimed it was doing — the PAM service, terminal and remote host, or the reporting client for a user request, which has no session behind it. Claims throughout, self-reported and unverified, which is why the column is labelled "claimed". It is copied onto the decision row at decision time, so unlike the request's own columns it cannot go blank later.
+## 9. App shell and page structure
 
-  The page opens on approvals. It has always been the list of certificates somebody holds, and opening it on a mixture would change what an existing reader gets without their asking; a refusal is a thing you go looking for, so it is one click away on the outcome filter instead. That filter's third option is "Both" rather than "All", because the type tabs beside it already have an "All" and two adjacent controls offering the same word are ambiguous to read and worse to announce.
+### The shell
 
-- **FilterGroup**: One named group of chips — "Type: [All][User][PAM]…". The name is not decoration: below `sm` a chip is its icon alone, so without a word in front of the row there is nothing on screen saying what a tick or a shield selects; above `sm` it is what keeps two or three groups on one line from reading as one long row of unrelated buttons. Every group carries its own "any" option rather than clearing by pressing the selected chip again, which looked identical to selecting it.
-- **FilterChip**: One choice in a filter row — icon, label, pressed state. Every filter on every list is this chip: `/logs/me` filters by outcome and by type, `/admin/certificates` by type and by validity, and before this they were four controls in three styles (pill chips with icons and no focus ring, a joined segmented control with one, and `rounded-md` buttons with neither a focus ring nor `aria-pressed`). Two controls answering two questions about one list should not look like two kinds of thing; a rule between the groups is what separates them instead. Every chip is named from `sm` up and an icon below it: eight chips carrying their words wrap a filter row onto three lines on a phone, and each chip's glyph is the one the rows it selects already carry. The label stays as `sr-only` rather than `hidden`, so a chip never announces as a bare icon. That is the component's decision rather than a prop, because "which of these collapse" is not something one filter row should get to answer differently from the next.
-- **CertRow**: One certificate as a standalone, clickable card — type badge, subject, what happened and when, principals, a still-valid/expired icon, and optionally a mark for how the request was decided. The decision used to be a `StatusBadge` pill on every row of every list, and it said "approved" on nearly all of them: a certificate exists only because a request was approved, and a denial never writes to the certificates table these lists read. A word repeated down a page is not information, and a pill costs a word's width plus its padding to answer a yes or a no. So it is an icon now — `circle-check` or `circle-x`, `StatusBadge`'s own glyphs, which are also the ones the outcome filter chips carry, so the mark on a row is the chip that selected it — and it is opt-in via `showOutcome`. Only `/logs/me` sets it, and only above `sm`: that is the one list that interleaves refusals (see `DeniedRow`), so it is the one list where the mark distinguishes anything. The dashboard and `/admin/certificates` read the certificates table alone and would carry the same green tick down every row; at phone width the history is pinned to approvals precisely so the row can spend that space on the subject and the detail line. What is left on every row is the question a reader actually brings to one, "can I still use this". It is a state rather than a record, so it is the one thing on the row that moves with the clock the list is rendered against: `certificate` and `certificate-off`, one drawing in two conditions, and `/admin/certificates`'s Live/Expired filter takes the same pair, so a reader filtering on "expired" sees the glyph they filtered on. Expired is deliberately not a warning triangle — that asks the reader to act, and a certificate past its validity is a settled fact. Stacked below `xl`, aligned columns above it: a list of rows is the same fields over and over, and stretching a stacked row only pushes the last field further from the first.
-- **ServiceCodeRow**: One approved service enrollment as the same kind of card — the account the code mints for, when it was approved and what it hands out, how often it has been redeemed, and an active/expired pill. Never the code.
-- **ServiceCodeDetail**: The enrollment in full, the body of `/service-codes/<id>`: what a redemption grants, the options fixed at approval, the code's own dates, its redemption log, who else holds the account, and where notifications go. Retiring the code is not here — that is the route's own action, in the heading. The server caps that log at its newest 100 rows and reports the true total, so the page says what it is showing a slice of rather than letting the last row read as the first redemption. Structurally unable to show a code.
-- **AdminServiceCodeDetail**: The same enrollment as an operator sees it, the body of `/admin/service-codes/<id>` — the approver's name and address as well, and the notification address an operator can set. Expiring the code is the route's action, in the heading. The detail is handed in as a prop rather than fetched here: `GET /api/admin/enrollments/:id` is audited, and a component that fetched on mount would write a second `admin.enrollment_viewed` event for the one look the route already recorded.
-- **TypeBadge**: The certificate type as a fixed 26×26 square. Fixed rather than content-sized so rows align vertically whatever the type is called, and always shown: on a row the type is the primary identifier, not decoration.
-- **TypeChip**: The labelled form of `TypeBadge`, for detail views with room to name the type.
-- **CopyableId**: The identifier a detail page is about, in full and one click onto the clipboard. Every identity strip carries one in the same position, top right. The five-character prefix survives only as the sub-`sm` fallback — a 36-character UUID needs about 260px at this size, which a phone does not have to spare beside the badges — and both forms are rendered with CSS choosing between them, since "does this row have room" is a question CSS answers before the first paint and script only answers after it. `/certs/<id>` used to print the raw value with no way to copy it, and the approval screen a five-character stub with the rest in a `title` tooltip, which is unreachable from a keyboard and invisible on a touch screen.
-- **MonoChip**: One monospace value as a bordered chip — a principal, an IP. Chips rather than a comma-separated string so set boundaries are unambiguous.
-- **ThemeToggle**: One button cycling system → light → dark, in two shapes. `rail` is a full-width row matching every other row in the rail; `icon` is the square button the signed-out header uses. See Dark Mode.
-- **OptionDiffList**: Shows granted vs. trimmed options (extensions, critical options) with strike-through for trimmed items.
-- **ApprovalView**: Composite component rendering a full certificate-request approval form.
-- **Rows are links, not buttons**: every `CertRow` and `ServiceCodeRow` is an `<a>` carrying an href its list resolved. Opening one is a navigation to the thing's own page, so middle-click, ctrl-click and "copy link address" all work, and the browser's own Back leaves it. Both used to open a `<dialog>` over the list through shallow routing (`page.state` plus a `?modal=<id>` fallback), which could not be reloaded, linked to, or dismissed with Back, and which had to hold a screenful of fields inside a scrolling dialog.
-- **Certificate Detail Page**: The only view of a single certificate, at `/certs/<id>`. Accessible to the user who approved the underlying request and to auditors/admins. Opens with an identity strip — type chip and full id. No outcome pill: this page exists because a request was approved, so a badge saying so answered a question nobody arrived with. What a reader does open it for — whether the certificate still works — is on the "Valid period" row instead, as the `certificate`/`certificate-off` glyph a history row carries, in the same green-or-muted pair. That row is also where issued, expires and the lifetime between them collapsed into one line, the way the service code page states its window: both ends and a parenthetical for what is left of it. Three rows made a reader subtract one date from another to answer "does this still work?", and the granted lifetime is the distance between two dates the row already prints. The decision section states who and when as one row — "approver@example.com at 24 Aug 2024, 09:59", the time muted because the name is what the row is for — since they are one event, and a row apiece made a reader carry a name down the list to the timestamp that belongs to it. Below the strip are three sections: the certificate itself, the decision audit record (who approved or denied it, when, from where, and the approver's groups), and what the requesting host claimed about itself. A service certificate adds a fourth for the redemption that produced it and the link back to its service code.
+One navigation surface: the left rail, `AppRail.svelte`, owned by the root
+layout.
 
-  Extensions and critical options are rows in the certificate section rather than a section of their own. They are two more things signed into this certificate, exactly like the key id and the validity window above them, and splitting them off made a reader cross a heading to finish reading one certificate. They stay one addressable block (`cert-grants`) because the whole pair is dropped for a PAM or console certificate that carries neither — stated as "None" when empty rather than omitted, for every certificate that could carry them. Returns 404 (uniformly for both "not found" and "not authorized") to prevent existence leakage.
+- **Above `lg`** the rail is the chrome; there is no header. It holds the
+  brand, every destination, the admin group and the identity.
+- **Below `lg`** the same component is an off-canvas drawer behind a slim
+  `surface` bar carrying only the trigger, then the brand. The trigger names
+  the state it moves to, so `aria-expanded` and its name agree. The scrim
+  dismisses the drawer with a pointer and is `aria-hidden`; Escape is the
+  keyboard path.
+- **Width:** 244px expanded, 60px collapsed. Collapsing hides labels
+  visually but keeps them in the DOM, so a collapsed rail is still named.
+  The preference is `ssoossh:rail-collapsed` in `lib/rail.svelte.ts`; the
+  drawer's open state is a separate, unpersisted field, and the drawer
+  ignores a desktop collapse because the expand control is hidden there.
+- **Width control:** in the brand row. Expanded, a `layout-sidebar` button at
+  the row's end (hidden below `lg`). Collapsed, the brand mark itself is the
+  button, and home gives up its link: Dashboard is the next row down.
+- **Identity:** the rail's bottom row opens a drop-up (`RailUserMenu`)
+  holding account, preferences, the theme control and sign out. It is a
+  disclosure, not `role="menu"`, because it does not implement arrow-key
+  roving. It opens upward when expanded and flies out to the right when
+  collapsed. Escape is handled on its own wrapper so it closes before the
+  drawer does. The trigger carries the current state for every page behind
+  it.
+- **Admin group:** gated on `is_auditor`, open by default, remembered shut
+  (`ssoossh:rail-admin-open`), forced open on any `/admin` route.
+- **Focus routes** render with no rail: `/login`, `/c` (a console code) and
+  `/approval-unavailable`, plus any screen for a signed-out visitor.
+  `isFocusRoute` in `lib/nav.ts` decides, matching on a path boundary so
+  `/console` is not `/c`. The approval page is inside the app: reaching it
+  means signing in.
+- **Model:** `lib/nav.ts` holds every destination. Admin entries are plain
+  `href`s rather than `resolve()`, because admin sections land on separate
+  branches and `resolve()` is typed against the routes in the tree it is
+  built in; the lint exemption lives in `RailItem.svelte`.
 
-  It is `wide`, the width of the lists that open it, rather than the narrower reading width: both are centred in the same space, so a detail page 360px narrower moves the left edge inward on every click and opens a gap beside it. It opens with a back chip naming the list the reader came from, chosen by a `from` search parameter the linking list writes — `history`, `dashboard` or `admin`. The parameter is only ever looked up in that table: it is a hint from our own links, not a destination to follow because a URL said so. A certificate reached from a notification or an audit line carries no `from` and falls back to the reader's own history.
+### Page structure
 
-  `DetailRow` carries vertical padding only, on the assumption that its horizontal padding comes from the container. That container is `PageSection`'s `p-4`: a bare `dl` inside a bordered box would put every label and value flush against the border.
+- **`PageShell`** is every page's container and owns its width: `focus`,
+  `wide` (default) or `full` (see Layout constants). No page spells out its
+  own `max-w-`. Optional `aside` column beside the main one above `xl`.
+  `center` is for sign-in only; every other page starts at the top so it
+  does not move as content loads. `PageShell` puts `gap-8` between panels.
+- **`PageHeading`** is the whole opening: an optional back chip, the `h1`, an
+  optional `sub` line and an optional right-aligned `action`.
+  - Exactly one `h1` per page, and at most one line above it (the back
+    chip). No eyebrow.
+  - The `h1` is IBM Plex Mono 600, `text-xl` below `sm` and `text-display`
+    above, `tracking-heading`, `leading-tight`.
+  - The title stands on its own: "All certificates", "Certificate details",
+    "Service code".
+  - The back chip names where the page was opened from: `back={{ href,
+label, testid }}`, or `back={{ onclick, ... }}` for the one list that
+    opens an account without changing route.
+  - The `sub` line is a sentence about the screen, never a field lifted out
+    of it. The one identifier it may carry is one stated nowhere else (the
+    user page's email address). It is a snippet because two lists put a
+    `<code>` in theirs.
+  - `action` holds the page's destructive control (see Patterns).
+- **Width is not a licence to stretch prose.** A `DetailRow` value wraps
+  where it wraps; a paragraph or a form caps itself at `70ch`.
+- **Sign-in** is the one page without `PageHeading`: a centred 380px column,
+  `BrandMark` above a `text-2xl` mono 600 heading, addressed to someone with
+  no rail and no page to go back to.
 
-  The two option columns are decoded server-side (`setIssuedOptionsOnCertificate` in `server/controller/responses.go`) and reach the browser as an array and an object, not as strings of JSON. Only the detail endpoint fills them — a list row does not show them, and a hundred-row page should not carry them. `CertificateService.GetByID` has to name both columns in its `Select` for any of that to happen: it builds `model.Certificate` from an explicit column list rather than the whole row, so a column left out of the query arrives empty however faithfully it was written.
+## 10. Components
+
+Each component below states its target. "Not yet in code" lists the ones
+that still trail it.
+
+### Foundations
+
+- **Button**: variants in a local `const variants` object.
+  - `primary`: `bg-accent text-accent-ink hover:bg-accent-hover`. One per
+    region.
+  - `ghost`: `border border-border-control text-ink hover:bg-surface-muted`.
+  - `danger`: `bg-danger-surface text-danger`, for the confirming button of
+    a destructive dialog.
+  - All: `inline-flex` row with a gap, `rounded-md`, `min-h-target px-4`,
+    `text-sm font-medium`, `active:scale-98`, `disabled:opacity-50`. `full`
+    stretches it to the column (the sign-in button). `busy` shows the busy
+    wording. `expanded` sets `aria-expanded` when the button opens something
+    in place.
+- **Icon**: see Iconography.
+- **PageShell**, **PageHeading**: see Page structure.
+- **PageSection**: one group of fields as a panel, `rounded-lg bg-surface
+p-5`, no border, opening with an `h2` (`text-meta font-semibold
+tracking-label uppercase text-ink-muted`, sans) and an optional line of
+  copy. A real heading, because a section is a landmark. Never nested.
+- **SectionLabel**: the same small label as `PageSection`'s heading, as a
+  plain `div` (or a `label` when `for` names one control), for a group
+  inside a section. Not a heading: nesting `h2`s would flatten the page's
+  real structure.
+- **DetailRow**: a label and value, 140px label column at `text-dense`
+  above `sm`, stacked below it, vertical padding only (the panel gives the
+  horizontal). `mono` for identifiers. Optional leading icon (`user`,
+  `clock`).
+- **Alert**: `error` (`alert-octagon`, `bg-danger-surface text-danger`,
+  `role="alert"`), `warning` (`alert-triangle`, `bg-trimmed-surface
+text-trimmed`, `role="status"`), `info` (`info-circle`, `bg-surface` on the
+  ground or, with `inset`, `bg-surface-muted` inside a panel,
+  `role="status"`).
+  `rounded-lg`, no border. An error Alert for a failed load carries its way
+  out (see States): `onretry` adds the one "Try again" ghost button, with
+  the test id `<testid>-retry`.
+
+### Rows and lists
+
+- **Row panel**: `rounded-lg bg-surface px-4 py-3`, no border, hover
+  `bg-surface-muted`, stacked `gap-2`. A row is one thing among several.
+- **Rows are links**: every `CertRow` and `ServiceCodeRow` is an `<a>` with
+  an href its list resolved, so middle-click, copy-link and Back all work.
+- **CertRow**: one certificate as a clickable row: `TypeBadge`, subject,
+  what happened and when, principals, and the validity glyph
+  (`certificate` in `granted` or `certificate-off` in `ink-muted`), the one
+  field that moves with the clock. Stacked below `xl`, aligned columns above.
+  `showOutcome` adds the outcome glyph (`circle-check` / `circle-x`), set
+  only by `/logs/me` above `sm`, the one list that mixes approvals and
+  denials. Expired is not a warning triangle: it is a settled fact.
+- **DeniedRow**: one refusal, aligned to `CertRow` with the outcome glyph in
+  the same column, and not a link (a denial issued nothing). Its third column
+  is what the request **claimed** (PAM service, terminal, remote host, or the
+  reporting client), labelled "claimed" because it is self-reported. It is
+  copied onto the decision at decision time, so it cannot go blank later.
+- **ServiceCodeRow**: one approved enrollment: the account it mints for,
+  when it was approved, what it hands out, how often it was redeemed, and an
+  Active/Expired chip. Never the code.
+- **ServiceAccountRow**: one service account a reader holds, opening that
+  account's codes.
+- **EmptyState**: a surface panel with an icon disc (`rounded-full
+bg-surface-muted`, decorative), a short title, the sentence that says what
+  would fill the list, and optionally one control. Two cases, always told
+  apart: nothing has happened yet (say what fills it) and the filters exclude
+  everything (offer Clear filters).
+- **LoadingBlock**: shapes `rows`, `table`, `lines`, matching what is coming
+  so the page does not jump. Nothing renders for the first 300ms (a flash
+  shorter than that reads as flicker); the gate re-arms on every mount. Bars
+  are `aria-hidden`; `label` adds an `sr-only` `role="status"` sentence and
+  is empty by default, because lists announce through `ListStatus` instead.
+- **ListStatus** (with `describeList`): announces what a list became after a
+  search, filter or page turn, silent until the request settles so a
+  debounced search does not announce on every keystroke (WCAG 4.1.3). Every
+  searchable or paged list carries one.
+- **Pager**: offset pagination for the admin lists from the server's
+  `PageMeta`. Renders nothing when one page holds everything; keeps first and
+  last reachable behind an ellipsis; current page is an ink fill with
+  `aria-current="page"`. Plain buttons with per-page names (`Page 3`), each
+  `min-h-target min-w-target rounded-md`, unselected edge `border-control`.
+- **SearchInput**: debounced search reporting the trimmed term once typing
+  settles and only when it changed. Enter reports immediately; the clear
+  button (`x`, `size-target`) reports an empty term at once. `value` seeds the
+  box and is not watched; remount with a key to reset.
+- **FilterGroup**: one named group of chips ("Type: All User PAM ..."). The
+  name is not decoration: below `sm` a chip is its icon alone. Every group
+  has its own "any" chip (`filter-off`) rather than clearing by pressing the
+  selected chip again.
+- **FilterChip**: glyph, label, pressed state. `rounded`, `min-h-target`,
+  unselected `border-control text-ink-muted`, selected ink fill plus `check`
+  plus `aria-pressed`. Named from `sm` up; below `sm` the label is `sr-only`,
+  never `hidden`. Collapsing is the component's decision, not a prop.
+- **AuditTimeline**: the audit feed as sentences: who did what to whom. Each
+  row holds the sentence and, pinned together as one muted group on the
+  right, the action name and timestamp. Rows are ruled. Details render as an
+  aligned two-column list. Unknown actions fall back to the raw name.
+  Timestamps go through `formatDateTime`.
+
+### Identifiers and badges
+
+- **CopyableId**: the identifier a detail page is about, in full, one press
+  onto the clipboard, top right of every identity strip. A `min-h-target` button
+  with the value in mono and the `copy` glyph, `copy-check` once copied. The
+  five-character prefix is the sub-`sm` fallback, both forms rendered and
+  chosen by CSS. A rejected copy says so and repeats the value as
+  selectable text beside the button ("Copy failed. Select it here: …"),
+  since text inside a button cannot be drag-selected.
+- **MonoChip**: one mono value in a set (a principal, an IP), `rounded`,
+  `bg-surface-muted`, hairline `border-subtle`, `text-xs`.
+  Chips rather than a comma list so set boundaries are unambiguous.
+- **TypeBadge**: the certificate type as a fixed 26px square, `rounded`,
+  `bg-surface-muted`, glyph only, type in `sr-only` words. Fixed so rows
+  align whatever the type is called.
+- **TypeChip**: the labelled form of `TypeBadge` for detail views.
+- **StatusBadge**: request or certificate status as a chip: glyph plus
+  capitalised word, `rounded`, `text-xs font-semibold`, coloured by status.
+  The signing spinner is the only animated glyph.
+- **OptionDiffList**: granted against trimmed options, trimmed struck
+  through.
+
+### Overlays
+
+- **`.modal-dialog`** (in `app.css`): the box every dialog uses. It undoes
+  the UA `<dialog>` sizing (`fit-content`, `margin: auto`), sets the text
+  colour from a token (the UA stylesheet's `CanvasText` beats inheritance),
+  centres the panel and draws the scrim on `::backdrop`.
+- **ConfirmModal**: the one shape a confirmation takes. A native `<dialog>`
+  opened with `showModal()` (top layer, focus trap, Escape routed to Cancel)
+  whose panel is `rounded-xl bg-surface p-6`, no border, no shadow: the
+  consequence, a reason field, Cancel and the confirming button.
+  - The reason is required whenever the server records one (every current
+    caller), and the confirming button stays disabled until it is non-empty.
+  - A `reasonless` mode, with no field and the button enabled, for an action
+    the server takes no reason for (the live LDAP sync).
+  - It captures `document.activeElement` before opening and restores it on
+    teardown, because callers dismiss it by unmounting and the caret would
+    otherwise land on `<body>`.
+- **ConsentModal**: the blocking sign-in notice, typically a government
+  system-use warning that a reader must accept before anything works. No
+  visible title (the notice is the deployment's own approved wording; the
+  heading is `sr-only` and names the dialog). A long notice scrolls inside a keyboard-reachable
+  region so "I Accept" is never pushed off screen. Escape is blocked.
+- **ExpireCodeAction**: the retire-this-code button and its `ConfirmModal`
+  for a page heading's `action` slot, shared by the holder's and the
+  operator's service code pages, which differ only in endpoint.
+- **RailUserMenu** drop-up: `rounded-lg bg-surface p-1.5 shadow-overlay`,
+  rows `min-h-target`.
+
+### Chrome
+
+- **AppRail**, **RailItem**, **RailGroup**: see The shell. Rail rows are
+  `min-h-target rounded-md`; the current row is cobalt on `accent-wash`. A
+  `RailGroup` head is a button (the group has no page of its own) labelled in
+  sans `text-meta font-semibold tracking-widest uppercase text-ink-muted`.
+- **BrandMark**: the deployment's `branding.logo_url` when set
+  (height-constrained, width free), ssoossh's own mark otherwise, so the slot
+  is never empty. The mark is a shell prompt and a key inside a cloud, drawn
+  to the rail's icon rules (24px box, stroke only, round caps) in cobalt.
+  `static/favicon.svg` carries the same geometry knocked out of a cobalt
+  tile.
+- **ThemeToggle**: one button cycling system, light, dark. `rail` shape is a
+  full-width row; `icon` shape is a `size-target` square for the signed-out
+  header. Its name says where it is and where pressing goes.
+- **Footer**: closes every page with the running version, a link to its
+  release and links to the project, on the ground with no rule. Renders
+  nothing while the version is unknown. Links are `min-h-target` targets.
+- **DetailToggle** (to build): a two-segment control, "Simplified" and
+  "Advanced", in the heading row of each covered page. Selected segment per
+  Colour; writes the same preference as `/preferences`.
+
+### Composites
+
+- **ApprovalView**: the approval page body. One panel with labelled groups
+  inside it, not a stack of cards: an approval is one decision read straight
+  through. Principal and extension chips are toggles (`min-h-target`,
+  selected per Colour). Approve and Deny act on one press, with no
+  confirmation: the page itself is the review step (see Settled questions). The select and email field cap at 420px. See Detail levels.
+- **ServiceCodeFacts**: the identity strip and facts shared by both service
+  code pages: type, status, id, principal, certificate life, key id, bound
+  key, validity, approver, options.
+- **ServiceCodeDetail**: the body of `/service-codes/<id>`: what a
+  redemption grants, the options fixed at approval, the code's dates, its
+  redemption log, the other holders and the notification address. Never the
+  code. The server caps the log at the newest 100 rows and reports the true
+  total, so the page says it shows a slice.
+- **AdminServiceCodeDetail**: the same enrollment as an operator sees it,
+  with the approver's name and address and an editable notification address.
+  The detail arrives as a prop: the admin endpoint is audited, and fetching
+  again on mount would write a second view event.
+- **AccountHoldersPanel**: who else holds a service account.
+- **RedemptionHistory**: the redemption log rows, with the "showing N of
+  total" note.
+
+### Component classes in `app.css`
+
+Component styles rather than utilities, because their rules reach
+descendants. A page can still override one property with a utility.
+
+- **`.data-table`**: the admin tables. Column heads are sans `text-meta`, 600,
+  `tracking-widest`, uppercase, `ink-muted`, with a hairline under them;
+  cells are `text-dense`, `px-3 py-2`, hairlines between rows and none after
+  the last, `tabular-nums`. Headers are `<th scope="col">`. The table sits
+  in a surface panel; it has no frame of its own.
+- **`.skeleton`**: one loading bar in `border-subtle`, with a `linear` sweep
+  that stops outright under reduced motion.
+- **`.modal-dialog`**: see Overlays.
+- **`.skip-link`**: brings the skip link into view on focus.
+- **`.icon-xs` to `.icon-xl`**: icon sizes outside `Icon`.
+
+## 11. Patterns
+
+### States
+
+Every surface that fetches or submits handles its states explicitly.
+
+- **Loading:** a `LoadingBlock` in the shape of what is coming.
+- **Empty:** an `EmptyState`, telling "nothing yet" from "filtered out".
+- **Error:** an error `Alert` saying what failed, with a way out.
+  - A failed load carries "Try again", which re-runs the load.
+  - A detail page keeps its `PageHeading` and back chip in every state.
+  - A page that a retry cannot fix (an expired or claimed approval) links to
+    the dashboard.
+  - The empty state never renders under a load error.
+  - A load clears the previous error when it starts.
+- **Partial:** say what is missing. The redemption log is omitted for a 404
+  or 403 (the facts stand without it); a network failure says the log could
+  not load.
+- **Stale:** a list guards against out-of-order responses (a load counter),
+  so fast typing never lands an older answer last.
+- **Refresh after an action:** refresh the data in place. Do not swap the
+  page for a loading state, which would unmount an open dialog and drop
+  focus.
+- **Success:** say what happened in the place it happened ("Saved",
+  announced through `role="status"`).
+
+### Destructive actions
+
+An action that ends something (disabling an account, re-enabling one,
+retiring a service code) lives in `PageHeading`'s `action` slot and opens a
+`ConfirmModal`: the consequence, a required reason, Cancel beside the
+confirming button. A button where the eye starts is found without scrolling,
+and the dialog keeps the reason field from competing with the page.
+
+A live LDAP sync is not an ending: it stays in the directory page's Sync
+section, defaults to dry run, shows the live-pass warning when dry run is
+off, and confirms through a reasonless `ConfirmModal`.
+
+### Lists
+
+- **The two certificate lists are one design.** `/logs/me` and
+  `/admin/certificates` open the same way: search, then the filter groups on
+  one line, then rows, then paging. `#lib/filters` states the vocabulary once
+  (`typeFilters`, `statusFilters`, `outcomeFilters`). Groups are ordered by
+  how often a reader reaches for them: Type, Status, then Outcome (history
+  only, because a denial writes no certificate). Outcome's third option is
+  "Both", because the type group already has an "All".
+- **Filtering is server-side**, under the same parameter names (`q`, `type`,
+  `status`), so narrowing asks the server rather than sieving loaded rows.
+  An unrecognised value is dropped, not refused.
+- **The outcome group picks the endpoint:** Approved reads certificates,
+  Denied reads decisions, Both reads each and interleaves by time. A validity
+  filter returns no denials.
+- **Narrow screens:** below `sm` there is no outcome group and `/logs/me` is
+  pinned to approvals, so a row never carries an unlabelled outcome. The
+  width is stated once in `#lib/viewport` (`NARROW_QUERY`, `watchNarrow`).
+- **Paging:** the admin lists page by offset with `Pager`; the caller's own
+  history by cursor with "Load more".
+- **Service codes:** live codes first, expired ones under their own label
+  rather than dropped, because a job that stopped working is explained by the
+  code beneath it. Opening an account filters the same list by shallow
+  routing (`page.state.accountName`, `?account=` as the pasted-link
+  fallback); opening a code navigates to `/service-codes/<id>`.
+
+### Detail pages
+
+- **Identity strip:** the first panel, `bg-surface`, carrying
+  the type chip, the status and the full id (`CopyableId`, top right), and no
+  heading: it is the page's subject, not a part of it.
+- **Width:** `wide`, the width of the list that opened it, so the left edge
+  does not move on every click.
+- **Back chip:** names the list the reader came from, chosen from a `from`
+  search parameter that is only ever looked up in a fixed table (`history`,
+  `dashboard`, `admin`), never followed as a destination. No `from` falls
+  back to the reader's own history.
+- **Certificate details** (`/certs/<id>`): readable by the approver of the
+  underlying request and by auditors and admins; "not found" and "not
+  allowed" both return 404, so existence does not leak. Sections:
+  - The certificate: principals, key id, serial, fingerprint, the valid
+    period as one row (both ends plus what is left, with the validity
+    glyph), and extensions and critical options as rows (stated "None"
+    when empty, the whole pair dropped for PAM and console certificates).
+  - The decision: who and when as one row ("approver at time", time
+    muted), source address, approver groups, options granted, lifetime
+    policy.
+  - What the requesting host claimed about itself, marked as reported by
+    the client.
+  - For a service certificate, the redemption that produced it and a link
+    to its code.
+- **Lifetime policy rows:** the server records Go `time.Duration` strings
+  (`8h0m0s`); `formatGoDuration` renders them like every other lifetime
+  (`8h`, `1h 30m`, `7d`). Unparseable or sub-second values pass through.
+- **Option columns** arrive decoded (an array and an object), filled only by
+  the detail endpoint; `CertificateService.GetByID` must name both columns in
+  its `Select`.
+- **Service code pages** resolve the id from the caller's own enrollment
+  list, so one message covers "absent" and "not yours".
 
 ### Timestamps and serials
 
-`formatDateTime` names the timezone it rendered in, and the client's `expiryPhrase` names its own. These are audit timestamps read against something outside the browser — `ssh-keygen -L`, a client's "valid until 06:24", a log line on the host — and the machine printing that other line is routinely in a different zone. Without the zone on both, the two disagree and the reader cannot tell an offset from a wrong timestamp. Naming it costs four characters. (`timeZoneName` cannot be combined with `dateStyle`/`timeStyle`, which is why `formatDateTime` spells its components out.)
-
-Certificate serials cross the wire as decimal strings, never JSON numbers. They are 63 bits of randomness, so all but a vanishing fraction exceed `Number.MAX_SAFE_INTEGER` and a browser parsing one as a number rounds it silently: `3260700569889958163` reads back as `3260700569889958400`, which matches no certificate and cannot be searched for. The Go side carries both `json:",string"` and `tstype:"string"` — the first decides what is written, the second what tygo tells the browser to expect.
-
-- **ConsentModal**: Blocking login consent notice, shown above the login form until accepted.
-- **AuditTimeline**: The audit feed as a list of sentences — who did what, to whom. Each row puts the sentence on the line and pins the action name and the timestamp together as one muted group to its right, so a long sentence pushes the pair onto its own line intact rather than stranding the time on whichever line it happened to reach. Rows are separated by a rule, not only by space: an event is a sentence, a reason and a field list, and two of them stacked with nothing between read as one paragraph that changed subject halfway down. Details render as an aligned two-column field list, so a long request id wraps under the value column rather than under whatever pair preceded it. Unknown actions fall back to the raw namespaced name: the taxonomy grows without a wire change, and a client that rendered only the actions it knew would silently drop the new ones. Timestamps go through `formatDateTime`, zone named, for the reason every audit timestamp does.
-- **Pager**: Offset pagination for the paged admin and auditor lists. The server sends the window it served (`webtypes.PageMeta`) and the pager asks for another one by offset, so neither side re-derives page arithmetic per list. Renders nothing when one page holds everything, keeps the first and last page reachable behind an ellipsis on long runs, and marks the current page with `aria-current`. Built from plain buttons rather than `Button`, which carries neither `aria-current` nor a per-page accessible name.
-- **SearchInput**: The debounced search box those lists are filtered with. Reports the trimmed term once the typing settles, and only when it settled on something new, so a stray space does not re-run a query. Enter reports immediately; the clear button reports an empty term without waiting out the debounce. `value` seeds the box and is not watched afterwards — a page that needs to reset the term remounts it with a key.
-
-### The admin area
-
-`src/routes/admin/+layout.svelte` gates the whole area on auditor access and
-does nothing else. The gate is display-only — the server re-checks every
-read — and a signed-in identity without auditor access is told so rather
-than bounced to a login it has already satisfied.
-
-It used to own two things it had no business owning. It carried a horizontal
-tab row naming the eight sections, which the rail now carries alongside every
-other destination in the app; and it pinned `1100px` on pages that then
-re-declared `680px` or `max-w-full` inside it, so an admin page's width was
-settled in two files that disagreed. Both are gone. Each admin page states
-its own width through `PageShell`, the same way every other page does, and
-the section it belongs to is marked in the rail — for its own path and for
-anything beneath it, so `/admin/users/<id>` keeps `Users` marked while
-`/admin/certificates-archive` does not light up `Certificates`.
-
-The eight sections, and what each screen is. Three of them have their own
-subsection below; the rest in brief:
-
-- **Users** (`/admin/users`, `full` width) — the directory of every account
-  with search and the disable/enable controls; **one user**
-  (`/admin/users/<id>`) shows everything the server stores about them: the
-  OIDC record as the ID token last carried it, with each field a configured
-  `ldap.fields` entry overrides struck through beside the value actually
-  used and an `oidc`/`ldap` source badge per row; group membership with
-  source and first/last seen; the directory record, with a
-  `directory_enabled` flag separating "never enriched" from "the directory
-  is off"; changed notification preferences; and what disabled the account.
-- **Certificates** and **Config** — see the subsections below.
-- **Service codes** (`/admin/service-codes`, and one code at
-  `/admin/service-codes/<id>`) — see "The service codes screen" below; the
-  detail is a page, shared with the holder-facing view through
-  `AdminServiceCodeDetail`/`ServiceCodeDetail`, carrying the Expire control
-  for SOC.
-- **Directory** (`/admin/directory`) — the LDAP console: sync status and the
-  last pass's counts for any auditor; _Sync now_ (with a dry-run option) and
-  the read-only _Probe_ for admins only, since both make the server reach
-  out to the directory.
-- **Claims echo** (`/admin/identity/echo`, admin-only) — re-authenticates
-  against the provider with `prompt=login` and renders the decoded ID token,
-  each claim annotated by the field that consumes it, plus the
-  `fields.extra` block that would capture the unread ones. Nothing is
-  stored; the token arrives in the URL fragment and the page clears it.
-- **Audit log** (`/admin/audit`, `full` width) — the bounded table copy of
-  the audit stream, with a "load more" pager. `AuditTimeline` is unboxed
-  here: it already rules between rows and bars the side of each, so a frame
-  around it would be a border around a border.
-- **Diagnostics** (`/admin/diagnostics`, admin-only) — four read-only
-  deployment self-checks run on demand (public URL reachability, proxy
-  trust and client IP, security header hygiene, CORS/edge header
-  attribution), one card per check in a single column, each with an OK /
-  Warning / Critical / Skipped badge and a remediation note. Skipped is
-  deliberately not a pass.
-
-### The effective configuration screen
-
-`src/routes/admin/config/+page.svelte` renders every configuration key in
-effect on the server, grouped into the sections of the config file, filtered
-by key or by value.
-
-It names no key of its own. The server builds the answer by reflecting over
-its own config struct (`server/config/effective.go`), so the page renders
-whatever arrives: a screen that lists fields by hand is wrong the moment a
-key is added and nobody remembers to add it here, and an operator reading it
-cannot tell an unset key from an unlisted one.
-
-Two rules make the volume readable. Keys sitting at their defaults are hidden
-until "Show unset keys" is checked, because a wall of them buries the handful
-someone actually set. A typed filter overrides that entirely — asking for a
-key by name is asking whether it is set, and answering "no match" to a key
-that exists would be a lie.
-
-Secrets are redacted at their declaration in Go (`secret:"true"`), never by
-this page. A redacted key still reports whether a value is set: "is the
-client secret configured" is an operational question that discloses nothing.
-
-### The admin certificate issuance list
-
-`src/routes/admin/certificates/+page.svelte` lists all issued certificates
-across all users, searchable and filterable by certificate type, expiration
-status, and any of: key ID, principals, serial number, fingerprint, owner
-username, or owner email. Offset-paginated using `Pager` and filtered with
-`SearchInput`, drawing data from `/api/admin/certificates/history`.
-
-Each `CertRow` is clickable and navigates to the canonical certificate detail
-page at `/certs/<id>`. Orphaned certificates (whose owner was deleted) still
-appear in the list via LEFT JOIN, so an auditor can track them.
-
-### The service codes screen
-
-`src/routes/service-codes/+page.svelte` lists the enrollments the signed-in
-identity has approved, and never the codes themselves — the server has no
-endpoint that returns one, by design (see
-`webtypes.ServiceEnrollmentResponse`).
-
-It has two levels and a route. The page lists the service accounts the
-identity holds; opening one filters the page down to that account's codes,
-which is shallow-routed (`page.state.accountName`, with `?account=<name>` as
-the fallback a pasted link arrives with) because it is this same list,
-filtered, against codes already loaded. Opening a code is a navigation to
-`/service-codes/<id>`.
-
-A row carries what someone scanning the list is looking for: the account the
-code mints for, when it was approved, what a redemption hands out, how often
-anything has redeemed it, and whether it still works. `ServiceCodeDetail`
-behind it adds the key ID, the bound key's fingerprint, the options fixed at
-approval, the code's dates, and the full redemption log fetched from
-`/api/certs/requests/{id}/retrievals`.
-
-`/service-codes/<id>` resolves the id out of the caller's own enrollment
-list rather than from an endpoint of its own: there is no per-id route for a
-holder, and `GET /api/certs/service/enrollments` is already scoped to the
-accounts the identity holds, so a code absent from that answer is a code this
-reader may not see — one message covers both, since telling them apart would
-report the existence of codes they have no access to. It opens with a back
-chip to the account's own codes, the same shape as the account view's chip
-back to the account list.
-
-Live codes come first and expired ones follow under their own section label
-rather than dropping off the page: a job that stopped working is explained by
-the code beneath it, and hiding the row hides the explanation.
-
-## Dark Mode
-
-Three states, not two: **system** (the default, follows the OS live), **light**, and **dark**. "Follow my OS" is a real choice rather than the absence of one — someone who has never picked should track their OS when it changes, and someone who picked light on a dark machine should stay on light.
-
-`src/lib/theme.svelte.ts` owns the preference, persists it to `localStorage` under `ssoossh:theme`, and tracks `prefers-color-scheme` with a live `matchMedia` listener so a system theme change takes effect without a reload. The root layout starts it and applies the resolved theme to `<html>`.
-
-`ThemeToggle` — inside the rail's identity drop-up (`RailUserMenu`) for a signed-in visitor, in the slim header on the signed-out screens — steps system → light → dark → system. One cycling button rather than a switch, because a switch has nowhere to put the third state. Its accessible name states both where it is and where pressing it goes.
-
-**Avoiding the flash:** an inline script in `src/app.html` resolves the theme and sets the class _before first paint_, so the page never shows light on its way to dark. It duplicates the resolution rule deliberately — it cannot import the store, because it has to run before any module does. If you change the storage key or the resolution rule in `theme.svelte.ts`, change it there too. ssoosshd injects a CSP nonce into every script tag it serves (`server/frontend/frontend_included.go`), so the inline script is allowed.
-
-Storage access is wrapped everywhere: a browser with site data blocked throws on read rather than returning null, and a theme preference is not worth failing a page load over. That case follows the OS, same as a first visit.
-
-All components respond automatically — no per-component dark-mode logic, because colors are tokenized. Test by switching your OS theme with the toggle on "system", and by picking each explicit state.
-
-One caveat tokenization does not cover: a `<dialog>` is given `color: CanvasText` by the UA stylesheet, which **beats inheritance** from `body`. The shared `.modal-dialog` class sets `color` from a token for exactly this reason; any new dialog should use that class rather than assembling its box from utilities.
-
-### The `.data-table` class
-
-The three admin tables had each invented their own: `px-3 py-2` cells with
-bold sentence-case headers in one, `pr-4` and no horizontal padding in
-another, and a header treatment that matched nothing else in the app. One
-component style in `src/app.css` now states it — mono uppercase headers,
-consistent cell padding, hairline row rules, and `tabular-nums` so dates and
-counts line up down a column.
-
-It is a component style rather than utilities because the rules reach
-descendants: every `th` and `td` of a table, without a class on each of a few
-hundred generated cells. Sitting in the components layer means a page can
-still override one property on one cell with a utility.
-
-### The `.skeleton` class
-
-One bar of a loading placeholder, used by `LoadingBlock`. Drawn in
-`--color-border-subtle` rather than in a surface tint because the app has two
-grounds — a card sits on `surface`, a `PageSection` sits on `surface-muted` —
-and a bar tinted for one of them disappears on the other.
-
-The sweep across it is the only infinite animation in the app and the only
-place `linear` easing is right: a shimmer is a marquee, and easing it makes
-the highlight hesitate at each end as though the wait had stalled.
-
-Under `prefers-reduced-motion` the sweep stops outright rather than collapsing
-to a near-zero duration, which is the answer everywhere else in the app.
-Nothing listens for an `animationend` that never comes, and a near-zero
-infinite loop is a strobe. The bar stays, so the shape of what is coming is
-still on screen.
-
-### The `.modal-dialog` class
-
-Dialogs get their box from a single component class in `app.css`, not from utilities. The UA stylesheet gives `<dialog>` `width: fit-content`, `height: fit-content` and `margin: auto`, which `inset-0` does not undo — the box sizes to its content and lands wherever the over-constrained position resolves rather than centred. `.modal-dialog` overrides every one of those explicitly, along with the border, background, text color, and backdrop.
-
-## Branding & Configuration
-
-### Runtime Branding Endpoint
-
-Deployment branding (org name, logo URL, login consent notice) is fetched at app startup via an unauthenticated API call to `/api/branding`. The fetch is non-blocking and fails closed — any error (404, network failure, timeout) treats it as "no branding configured," so the UI works standalone against a server that has set nothing.
-
-The `branding.svelte.ts` store handles this:
-
-```ts
-export async function loadBranding(): Promise<void>;
-export function getBranding(): BrandingConfig;
-```
-
-The response shape (`BrandingResponse` in `server/webtypes`, from which the TypeScript type is generated):
-
-```ts
-interface BrandingConfig {
-	org_name?: string; // Shown in header as a tag next to "ssoossh"
-	logo_url?: string; // Image URL, rendered as <img> before "ssoossh"
-	login_notice?: string; // Full-text consent notice, blocks login form
-}
-```
-
-### Runtime Version Endpoint
-
-The footer's build identity is fetched the same way, from an unauthenticated `/api/version`, and for the same reason: the frontend is prerendered once and served by whatever binary is running, so the version cannot be baked in at build time. It comes from the Go build stamp (`internal/version`), which goreleaser and the Makefile set via ldflags.
-
-The `version.svelte.ts` store handles this:
-
-```ts
-export async function loadVersion(): Promise<void>;
-export function getVersion(): VersionResponse | null;
-```
-
-It fails closed like branding, but to `null` rather than an empty object: the repository URL is served rather than hardcoded, so with no response there is nothing honest to render and the footer is omitted entirely.
-
-A tagged build shows `v1.1.3` linked to its GitHub release. An untagged one has no release to point at, so it shows `development (7a3f9c1)` — the short commit is what identifies that build.
-
-What the endpoint reveals is the operator's choice, through `version.mode`
-(`server/config/types_version.go`). `show`, the default, is the above.
-`hide` returns every field empty, and the footer then renders no build
-identity at all. Any other string is served _as_ the version, with no
-commit, repository, or release link that would give the real build away —
-so `show` and `hide` are reserved words that cannot be used as a fake
-version. The endpoint is unauthenticated and its exact version plus full
-commit is enough to match a deployment against known issues, which is the
-disclosure this trades away.
-
-**Brand placement** (`AppRail.svelte`, `src/routes/+layout.svelte`):
-
-- The logo image (if `logo_url` is set) appears before the "ssoossh"
-  wordmark, at the top of the rail and, on the screens that have no rail, at
-  the leading edge of the header.
-- The org name (if `org_name` is set) appears as a small tag to the right of
-  "ssoossh", capped and truncated — `6.5rem` in the rail, `8rem` in the
-  header. A deployment that set a name wants it at every width, but an
-  unbounded one would push the wordmark out of its own row.
-- Both are absent by default, keeping the brand minimal when a deployment
-  sets no branding.
-- Expanded, the brand is a link home and the rail's width control sits at
-  the far end of the same row.
-- Collapsed, the wordmark and org tag drop and the mark stands alone —
-  dropping the mark too would leave the column starting mid-list. At 60px
-  there is one slot in that row and it has to do both jobs, so the mark
-  becomes the button that brings the rail back and home gives up its link:
-  Dashboard is the row directly below, and stranding someone at icon width
-  costs more than one redundant path to `/`.
-
-**The narrow-viewport bar** (`src/routes/+layout.svelte`):
-
-Below `lg` the chrome shrinks to the one control that brings the rail back:
-a trigger, then the brand. Everything else — theme, identity, sign out — is
-inside the drawer, one tap away and unable to drift out of step with the
-desktop copy. The trigger sits ahead of the brand because that is where a
-navigation control is looked for.
-
-The trigger names the state it will move to rather than the one it is in, so
-`aria-expanded` and the accessible name agree. The scrim behind an open
-drawer dismisses it with a pointer but is `aria-hidden`, so only one element
-in the accessibility tree offers to close the drawer; Escape is the keyboard
-path, handled in the layout.
-
-**Login Consent** (`src/routes/login/+page.svelte`):
-
-- If `login_notice` is set, a `ConsentModal` overlays the login form with a backdrop.
-- The form stays inert — blurred, dimmed, and `pointer-events-none` — until the user clicks "I Accept", and the sign-in button is `disabled` for as long as it is.
-- This is a blocking modal, not a dismissible banner. Escape is blocked so it cannot be dismissed unaccepted.
-- The modal carries no visible title: the notice is each deployment's own approved wording, shown in full and never summarized, so a generic "Notice" heading would only compete with it. The heading stays in the accessibility tree (`sr-only` + `aria-labelledby`) to name the dialog, and a long notice scrolls inside a keyboard-reachable region rather than pushing "I Accept" off screen.
-- The notice can only gate a sign-in it stands in front of, so every "you need to sign in" path lands on `/login` first: `auth.goToLogin` is what a 401 and the header's sign-in button call, carrying a `return_to`. `auth.startLogin` — the jump to the identity provider — is called from `/login` alone, downstream of acceptance. This matters most on `/approve/<id>`: a certificate request URL is how most people reach the app at all, and they arrive signed out.
-
-### Environment Variables
-
-The frontend build accepts only a few Vite build-time env vars (for development server settings). These do NOT include branding; branding is always runtime-fetched. The one that matters is `DEVELOPMENT_BACKEND_URL`, read from `.env` / `.env.local` by `vite.config.ts` (see `frontend/README.md`).
-
-## Accessibility (WCAG 2.1 Level AA / Section 508)
-
-WCAG 2.1 Level AA is a hard requirement, and `make a11y` is what holds it.
-The list below is what the rules mean here; the sweep is what stops the list
-from drifting away from the code. It has drifted before: this section used to
-promise six things while the app broke four of them, because nothing checked.
-
-- **A bypass**: the layout's first focusable element is a skip link to
-  `#main-content`, on every screen. Without it a keyboard user walks the
-  rail's fifteen controls again on every navigation. `.skip-link` in
-  `app.css` is what brings it back into view when it takes focus — an
-  invisible bypass is one a sighted keyboard user cannot trust.
-- **Accessible names**: every form control has one from a real `<label>`,
-  a wrapping `<label>`, or `aria-label`. A `placeholder` is not a name: it
-  disappears the moment anything is typed. `SectionLabel` takes a `for` when
-  it names one control, and stays a `div` when it heads a group.
-- **Contrast**: all text meets AA (4.5:1 body, 3:1 large), measured from the
-  OKLch token values rather than eyeballed. The narrowest passing pair is
-  `trimmed` on `trimmed-surface` at 4.81:1.
-- **Control boundaries**: `--color-border-control` (3.35:1 light, 3.23:1
-  dark) draws anything a reader operates — fields, ghost buttons, pager
-  controls, unselected chips. `--color-border-subtle` (1.43:1) is for
-  decoration only: row separators, card hairlines, the rail divider. 1.4.11
-  governs the first list and says nothing about the second, and using one
-  token for both meant every field in the app had an edge nobody could see.
-- **Focus visibility**: the base layer's `:focus-visible` outline is the
-  app's focus ring. Never cancel it with `focus:outline-none` — Tailwind
-  emits utilities in a later layer, so that utility silently wins and the
-  control is left with a 1px colour change.
-- **Icon usage**: decorative icons are `aria-hidden`. A meaningful one needs
-  a name the platform will actually keep: `aria-label` on a bare `<span>` is
-  prohibited by ARIA and dropped by browsers, which is how `TypeBadge` spent
-  its life announcing nothing. Put the words in the document with `sr-only`.
-- **Reduced motion**: `prefers-reduced-motion: reduce` is honoured in both
-  engines — a CSS block in `app.css` for what CSS animates, and `enterMs()` /
-  `exitMs()` in `#lib/motion.js` for the Svelte transitions CSS cannot reach.
-  See Motion.
-- **Colour alone**: state is never colour alone. A two-state control is
-  filled when pressed and carries `aria-pressed` — see `FilterChip`, which
-  is the shape every one of them should take.
-- **Status messages**: a list that reloads under a search, a filter or a page
-  announces what it became, through `ListStatus` and `describeList`. Silence
-  after an action the reader took is 4.1.3.
-- **Modals and drawers**: the native `<dialog>` with `.showModal()` gives
-  focus management and an inert background. Anything hand-rolled has to
-  supply the same by hand — the mobile drawer moves focus in on open, cycles
+- `formatDateTime` names the timezone it rendered in, and so does the
+  client's expiry line: these times are read against `ssh-keygen -L` and
+  host logs in other zones. (`timeZoneName` cannot combine with
+  `dateStyle`, so the components are spelled out.)
+- Certificate serials cross the wire as decimal strings (`json:",string"`
+  and `tstype:"string"`), never numbers: 63 random bits exceed
+  `Number.MAX_SAFE_INTEGER` and would round silently.
+
+### Forms
+
+- Every control has a name from a `<label>`, a wrapping label or
+  `aria-label`. A placeholder is not a name.
+- Labels sit above their field; a field caps its width to what it holds.
+- A reason the server records is required and validated before submit.
+- Checkbox and radio rows make the whole label the target (`min-h-target`).
+
+## 12. Detail levels: simplified and advanced
+
+A per-reader preference for the approval page and the three information
+pages (certificate, service code, admin service code). `advanced` is the
+default and is the full page. `simplified` keeps what a reader needs to
+decide or to understand the result and drops the diagnostic detail an expert
+compares.
+
+- **Store:** `src/lib/detail.svelte.ts`, localStorage `ssoossh:detail`,
+  modelled on `rail.svelte.ts` (one frame of the default before it is read
+  is accepted).
+- **Controls:** a "Display" section on `/preferences` and a `DetailToggle` in
+  each covered page's heading row. Both write the same preference.
+- **Scope:** a covered page calls `coverWithDetail()` once in its script.
+  Components that only appear on covered pages (`ServiceCodeFacts`, the two
+  service code details, `ApprovalView`) and `DetailRow` read
+  `inDetailScope()`, so the same component stays full anywhere else.
+- **Never hidden at either level:** a trimmed critical option (shown in
+  simplified as a one-line warning naming it), the client-policy forbidden
+  note, the console remote-host warning, the own-account notice, blocked and
+  outcome alerts, action errors, the "reported by the client" marking on any
+  client-reported value still shown, a skewed host clock, the pam-headless
+  note ("this looks like a script or a service"), and expired or active
+  status. A section whose only remaining content is one of these keeps it.
+- **Dropped in simplified:** request, certificate and enrollment ids; key
+  ids, serials and fingerprints; public keys and host trusts; process ids,
+  platform and client rows; registered IPs; request and decision timestamps
+  other than validity; approver groups, lifetime-policy detail and
+  granted-option echoes; critical options with nothing trimmed; non-extension
+  option chips (`from=`, `command=`, `no-touch-required`); the redemption
+  history; and the approval page's decision record (Decision, Decided by,
+  Email, From IP, Decided at). Who decided is history, not part of a
+  decision: `/certs/<id>` keeps "Approved by" or "Denied by" at both levels,
+  and a decided approval page in simplified shows only its outcome alert.
+- **Kept in simplified:** the claimed-context rows (Service, Terminal,
+  Remote host, Invoked by), "Principals granted" on `/certs/<id>`, and the
+  "View the code this came from" link on a service certificate.
+- **Simplified approval:**
+  - Opens with one request line in place of the description and the
+    Account, Command, Host and Requested-from rows: three `surface-muted`
+    tiles side by side (wrapping on a phone), each a sans `text-meta`
+    uppercase eyebrow over a `text-base` mono value: **Who**
+    `user@source-ip`, **Runs** `command`, **On** `host`. (The eyebrow was
+    mono in the first draft of this decision; the mono-scope decision makes
+    it sans, since it is a label, not a value.)
+  - One muted line under them: the values are reported by the client;
+    approve only if you just ran it.
+  - Then Principals, Valid for, the extensions the certificate will carry
+    (granted only; trimmed extensions and the narrowed warning are
+    advanced-only, because the approver still sees exactly what is
+    issued), the remaining warnings and the actions.
+  - Critical options are advanced-only unless one was trimmed.
+  - "Approvable until" is advanced-only except in its last minute, when a
+    live countdown sits beside the actions ("Expires in 0:42").
+  - An expired request has its own notice: "This request expired before it
+    was approved. Run the client again."
+- **Simplified service code pages** keep principal, certificate life,
+  validity, approver, granted extensions, the editable notification address
+  and the redemption count; the holders list and the redemption history are
+  advanced-only.
+- **Simplified type:** kept facts one step larger: a `DetailRow` on a
+  covered page moves its value from `text-dense` to `text-base` and its
+  label to `text-sm`, with `py-3` rows.
+- **Hint line** closing every simplified page: "Showing the essentials.
+  Switch to Advanced for ids, fingerprints and policy detail."
+- **Remembered principals:** the principals an approver last approved with
+  are stored per signed-in user in this browser (`ssoossh:principals:<user>`,
+  `src/lib/principals.ts`), separately for user, PAM and console requests,
+  since a PAM or console certificate's principals are matched against the
+  host's local account. The picker pre-ticks the stored ones the request
+  offers, in the order it offers them, and ignores the rest; with none of
+  them on offer the existing default applies. The picker is seeded once per
+  request, so unticking every chip leaves it empty. Chips stay visible and editable at both levels: a
+  remembered selection pre-fills, it never approves. Written on Approve only.
+  Every principal is rememberable, break-glass ones included. There is no
+  "forget" control: unticking a chip on the next approval is the way out.
+- **Roles** (from the 2026-10-10 review): SOC may disable and enable users;
+  `/api/users/me` gains `is_nss_key_admin`; NSS keys are one top-level rail
+  item, read-only for auditors. Admin, SOC and auditor powers sit behind
+  admin mode (`docs/proposals/admin-elevation.md`).
+- **`/preferences` order:** Email notifications, Login shell (the NSS login
+  shell setting), Display.
+
+## 13. The admin area
+
+`src/routes/admin/+layout.svelte` gates the area on auditor access and does
+nothing else. The gate is display-only (the server re-checks every read),
+and a signed-in identity without auditor access is told so rather than sent
+to a login it already passed. Each admin page sets its own width through
+`PageShell`; the rail marks the section for its own path and everything
+beneath it.
+
+- **Users** (`/admin/users`, `full`): every account, with search and a
+  segmented state filter (a toggle group, per Colour). **One user**
+  (`/admin/users/<id>`): the OIDC record as the ID token last carried it,
+  with each field an `ldap.fields` entry overrides struck through beside the
+  value used and an `oidc`/`ldap` source chip; group membership with source
+  and first/last seen; the directory record, with `directory_enabled`
+  separating "never enriched" from "directory off"; changed notification
+  preferences; what disabled the account; the user's audit timeline. Disable
+  and re-enable are heading actions.
+- **Certificates** (`/admin/certificates`): every issued certificate,
+  searchable by key id, principals, serial, fingerprint, owner username or
+  email, filtered by type and validity, offset-paged, from
+  `/api/admin/certificates/history`. Orphaned certificates still appear (a
+  LEFT JOIN) so an auditor can trace them. Rows open `/certs/<id>`.
+- **Service codes** (`/admin/service-codes`, and `/<id>`): every
+  enrollment; the detail carries Expire for SOC.
+- **Config** (`/admin/config`): every key in effect, grouped by the config
+  file's sections, filtered by key or value. The server reflects over its
+  own config struct (`server/config/effective.go`), so the page lists no key
+  itself. Keys at their defaults are hidden until "Show unset keys" is
+  checked; a typed filter overrides that. Secrets are redacted at their Go
+  declaration (`secret:"true"`) and still report whether they are set.
+  Keys render in mono.
+- **Directory** (`/admin/directory`): LDAP sync status and the last pass's
+  counts for any auditor; Sync now (dry run by default) and the read-only
+  Probe for admins. The probe's three views (entry as returned, field
+  mapping, merge and allowlist) are a segmented toggle group, not tabs; a
+  mapped attribute carries a "mapped" label, not a colour.
+- **Claims echo** (`/admin/identity/echo`, admin only): re-authenticates
+  with `prompt=login` and renders the decoded ID token, each claim annotated
+  by the field that reads it, plus the `fields.extra` block that would
+  capture the unread ones. Nothing is stored; the token arrives in the URL
+  fragment and the page clears it. The claims table is a `.data-table` built
+  for a token of any shape, since the claim count, the value lengths and
+  the value types all vary by identity provider and by user:
+  - Every claim, with no cap and no paging: the ones a field reads first,
+    then the rest alphabetically. The section description states the count
+    ("23 claims").
+  - Columns: Claim (mono, `wrap-anywhere`, so a long namespaced name wraps
+    only when it has to), Value (mono, the remaining width, `wrap-anywhere`)
+    and Used by (sans, `whitespace-nowrap`, sized to its text).
+  - Values by type: text, numbers and booleans as they are; an empty string
+    as `(empty string)` and null as `null`, both `ink-muted`, so the two are
+    told apart; an array one item per line (a comma list hides an item that
+    contains a comma); an object as JSON indented two spaces in a wrapping
+    `pre`. An array past 10 items or an object past 10 lines shows the first
+    10 and a "Show all N" button (`aria-expanded`) that expands it in place.
+  - Used by names the reading field in plain sans text, and an unread claim
+    says "unmapped" in `ink-muted`. No status colour: being read is not a
+    status.
+  - The table's own `overflow-x-auto` wrapper stays as a fallback; the page
+    never scrolls sideways.
+- **Audit log** (`/admin/audit`, `full`): the bounded table copy of the
+  audit stream, with Load more. `AuditTimeline` sits in a surface panel and
+  needs no frame of its own.
+- **Diagnostics** (`/admin/diagnostics`, admin only): four read-only
+  deployment checks run on demand (public URL reachability, proxy trust and
+  client IP, security headers, CORS and edge header attribution), one panel
+  per check in a single column, in the order they ran, each with an OK,
+  Warning, Critical or Skipped chip and a remediation note. Skipped is not a
+  pass.
+
+## 14. Dark mode
+
+- **Three states:** system (default, follows the OS live), light, dark.
+  "Follow my OS" is a real choice.
+- `src/lib/theme.svelte.ts` owns the preference (`ssoossh:theme`) and tracks
+  `prefers-color-scheme` with a live listener. The root layout applies the
+  resolved theme as the `.dark` class on `<html>`.
+- `color-scheme` is stated per theme (`light` on `:root`, `dark` on
+  `.dark`), never `light dark`, so the browser cannot paint its own defaults
+  from the OS while the tokens say otherwise.
+- **No flash:** an inline script in `src/app.html` resolves the theme before
+  first paint. It duplicates the resolution rule because it runs before any
+  module; change both together. ssoosshd injects a CSP nonce into every
+  script tag (`server/frontend/frontend_included.go`).
+- Storage access is wrapped everywhere: blocked site data throws, and that
+  case follows the OS.
+- Components need no dark-mode logic; tokens carry it. The one exception is
+  a `<dialog>`'s UA `CanvasText`, which `.modal-dialog` overrides.
+- Test with the toggle on system while switching the OS theme, and with each
+  explicit state.
+
+## 15. Branding and runtime configuration
+
+- **Branding** comes from the unauthenticated `/api/branding` at startup
+  (`branding.svelte.ts`: `loadBranding()`, `getBranding()`), non-blocking
+  and failing closed to "no branding". The shape is `BrandingResponse` in
+  `server/webtypes`: `org_name`, `logo_url`, `login_notice`.
+- **Version** comes from the unauthenticated `/api/version`
+  (`version.svelte.ts`: `loadVersion()`, `getVersion()`), failing closed to
+  `null`, which omits the footer's build identity. A tagged build shows
+  `v1.1.3` linked to its release; an untagged one shows `development
+(7a3f9c1)`. `version.mode` (`server/config/types_version.go`) is `show`
+  (default), `hide` (every field empty), or any other string, served as the
+  version with no commit or link. The exact version and commit are enough to
+  match a deployment against known issues, which is the disclosure `show`
+  trades away.
+- **Brand placement:** the logo (if set) before the "ssoossh" wordmark, at
+  the top of the rail and at the leading edge of the signed-out header. The
+  org name (if set) as a small tag after the wordmark, truncated at 6.5rem in
+  the rail and 8rem in the header. Collapsed, only the mark remains.
+- **Sign-in consent:** with `login_notice` set, a `ConsentModal` overlays
+  the form, which stays inert, blurred (`blur-inert`, 2px) and dimmed with
+  its button disabled until "I Accept". The notice is typically a government system-use warning:
+  nothing on the page may be used before it is accepted, and the dimmed form
+  shows that rather than hiding what accepting leads to. Every "you need to sign in" path lands on `/login` first
+  (`auth.goToLogin`, carrying `return_to`), and only `/login` calls
+  `auth.startLogin`, so the notice always stands in front of the identity
+  provider. This matters most on `/approve/<id>`, the URL most people
+  arrive on, signed out.
+- **Build-time environment:** only Vite development settings, chiefly
+  `DEVELOPMENT_BACKEND_URL` from `.env` / `.env.local` (see
+  `frontend/README.md`). Branding is never build-time.
+
+## 16. Voice
+
+- **Tone:** plain and exact, like a colleague who runs the system. No
+  apology, no cheer, no "Oops".
+- **Titles stand alone:** "All certificates", "Certificate details",
+  "Service code". Nothing above the title explains it.
+- **Sentence case** everywhere except the small uppercase labels, which are
+  uppercased in CSS, not in the source text.
+- **Buttons are verbs** naming the outcome: "Approve", "Deny", "Expire this
+  code", "Re-enable", "Try again", "Clear filters".
+- **Errors** say what failed and what to do next, in the reader's terms:
+  "Could not load your certificates", then the reason, then "Try again".
+  Never "Something went wrong".
+- **Empty states** teach: say what would fill the list ("Run `ssoossh
+login` to request a certificate. It appears here as soon as it is
+  issued.").
+- **Name things by what the reader knows:** "service code", not
+  "enrollment"; "claimed", for what a client reported about itself.
+- **Adjacent controls never share a word:** "Both" beside "All".
+- **Times name their zone**, and a sub line is a sentence, never a field.
+
+## 17. Accessibility
+
+WCAG 2.1 Level AA and Section 508 are hard requirements, plus the target
+rule above (36px with a mouse, 44px on touch). `make a11y` holds them.
+
+- **Bypass:** the layout's first focusable element is a skip link to
+  `#main-content`, visible on focus (`.skip-link`).
+- **Names:** every control has an accessible name; see Forms.
+- **Contrast:** every text pair is AA in both themes (see Measured contrast);
+  every control edge is 3:1 (`border-control`).
+- **Focus:** always visible; never `outline-none`.
+- **Icons:** decorative ones `aria-hidden`; meaningful ones carry `sr-only`
+  words.
+- **Colour alone:** never. A toggle is filled when pressed and carries
+  `aria-pressed`; a mutually exclusive set of views is a group of such
+  toggles, not tabs.
+- **Status messages:** lists announce through `ListStatus` (4.1.3).
+- **Dialogs and drawers:** native `<dialog>` with `showModal()` for focus
+  management and an inert background; a dialog dismissed by unmounting
+  restores focus itself. The mobile drawer moves focus in on open, cycles
   Tab inside, and returns focus to its trigger on every way out.
+- **Tables:** `<th scope="col">`.
+- **Page titles:** every route sets `<svelte:head><title>Name ·
+ssoossh</title>`.
+- **Reduced motion:** honoured in both engines; see Motion.
 
-  `showModal()` gives one thing less than it looks like: a `<dialog>` returns
-  the caret to whatever opened it, but only on `close()`. Every caller of
-  `ConfirmModal` wraps it in an `{#if}` and dismisses it by unmounting, so
-  the element and the focus it was holding used to leave together and the
-  caret landed on `<body>` — a keyboard reader who retired a service code
-  then had to tab the whole page again to get back. `ConfirmModal` captures
-  `document.activeElement` before it calls `showModal()` and restores it in
-  the effect teardown, which covers Cancel, Escape and a completed action
-  alike. A dialog that dismisses by unmounting has to do this for itself.
+**Keeping it true:** `make a11y` is a required CI job. `make a11y-frontend`
+runs axe over every component from `src/lib/components/a11y.test.ts`; a new
+component needs a case there, and a roster test fails the build when one is
+missing. `make a11y-docs` runs axe over every page `astro build` writes
+(`user-docs/scripts/axe-check.mjs`). Tooling reaches about a third of WCAG:
+still check contrast for a new colour in both themes, and tab through every
+change.
 
-- **Tables**: `<th scope="col">`. Browsers infer the association for a simple
-  table and the inference is not guaranteed.
-- **Page titles**: every route sets `<svelte:head><title>Name · ssoossh</title>`.
-  Six of twenty-two once did not, and all six read as "ssoossh" in history.
+## 18. Engineering conventions
 
-### Keeping it true
+- **Test ids:** components the e2e tier selects on (`Button`, `PageSection`,
+  `Alert`, `Pager`, `SearchInput`, `CertRow`, `PageHeading`,
+  `ServiceCodeRow`) take a `testid` prop and render `data-testid` on their
+  root. Passing `data-testid` to a component is an unknown prop that Svelte
+  drops silently; `make frontend-check` catches it because `Props` are typed.
+  Do not spread rest props onto the root to "fix" it: that removes the check.
+- **Variant objects:** `Button`, `Alert`, `StatusBadge` and `OptionDiffList`
+  map variants to classes in a local `const variants` object. Add a variant
+  by extending the `variant` union in `Props` and the object, with token
+  classes only.
+- **Token namespaces:** `--color-*`, `--font-*`, `--text-*`, `--leading-*`,
+  `--tracking-*`, `--font-weight-*`, `--radius-*`, `--shadow-*`,
+  `--spacing-*`, `--blur-*` are Tailwind v4 namespaces and emit utilities. A token under any other spelling
+  (`--font-family-*`, `--font-size-*`) emits nothing.
+- **Tests:** `@testing-library/svelte` and `vitest`, colocated, named
+  "should [action] when [condition]", one assertion where possible, external
+  dependencies mocked.
+- **Before a UI change lands:** check tokens first; verify light and dark;
+  tab through it; run `corepack pnpm run test`, `corepack pnpm run check` and
+  `corepack pnpm run build`.
 
-`make a11y` runs both halves and is a required CI job:
+## 19. Settled questions
 
-- `make a11y-frontend` — axe over every component, from
-  `src/lib/components/a11y.test.ts`. **A new component needs a case in that
-  file**; the roster test at the bottom reads the directory with
-  `import.meta.glob` and fails the build when one has no entry, so the sweep
-  cannot quietly fall behind what it covers.
-- `make a11y-docs` — axe over all 166 pages `astro build` writes, from
-  `user-docs/scripts/axe-check.mjs`. Two rules are off there with the reason
-  stated in the file, and one is off for the generated API reference only.
+Ruled by the product owner on 2026-10-10, each against a check an audit
+runs by default. A later audit should not raise them again.
 
-What the sweep cannot decide, you still have to: run a contrast check against
-both palettes before deploying a new colour, and tab through a change to see
-that focus is visible and lands somewhere sensible. Automated tooling reaches
-roughly a third of WCAG.
+- **Approve and Deny take one press, with no confirmation.** The approval
+  page is itself the review step, and a dialog in front of every approval
+  trains readers to click through it. Deny sits first as the ghost button,
+  Approve last as the primary.
+- **The own service codes page says nothing when the caller's held accounts
+  fail to load.** The accounts that appear on codes still render; only an
+  account with no codes is missing. Deliberate, and commented in
+  `src/routes/service-codes/+page.svelte`.
+- **The sign-in form behind the consent notice stays dimmed and blurred.**
+  See Branding: the notice must be accepted before anything is usable.
+- **Disabled controls fade to `opacity-50`.** WCAG 1.4.3 exempts them from
+  text contrast; the reason a control is disabled sits beside it.
+- **Targets are 36px with a mouse and 44px on touch,** not 44px everywhere.
+  Approvals happen in a desktop browser; see Interaction.
 
-## Testing
+No rulings are open.
 
-Tests for components use `@testing-library/svelte` and `vitest`. Pattern:
+## 20. Not yet in code
 
-```ts
-import { render, screen } from '@testing-library/svelte';
-import MyComponent from './MyComponent.svelte';
+The tokens and this spec are ahead of the components. Remove a line when its
+change lands.
 
-describe('MyComponent', () => {
-	it('should [action] when [condition]', () => {
-		render(MyComponent, { prop: 'value' });
-		expect(screen.getByText('expected text')).toBeInTheDocument();
-	});
-});
-```
-
-- One assertion per test when possible.
-- Use descriptive test names: "should [action] when [condition]".
-- Mock external dependencies; never call real APIs.
-
-## Contributing
-
-When adding or modifying styles:
-
-1. **Check tokens first**: Before hardcoding a color, spacing, or size, check if a token already exists in `app.css`. Reuse it.
-2. **Follow the variant pattern**: For variant-bearing components, use the local `const variants` object, not a centralized helper or Tailwind arbitrary values.
-3. **Test both modes**: Verify your changes in light and dark mode.
-4. **Verify keyboard access**: Tab through interactive elements; ensure focus is always visible.
-5. **Run the test suite**: `corepack pnpm run test`.
-6. **Run the build**: `corepack pnpm run build` — ensures fonts and tokens are prerendered correctly.
-7. **Run type check**: `corepack pnpm run check` — catches TypeScript errors.
+- The Login shell preference section is not built.
 
 ## References
 
-- [OKLch Color Space](https://oklch.com/) — perceptual color uniformity
-- [Public Sans](https://www.opensans.com/about) — UI typeface (OFL license)
-- [Fira Code](https://github.com/tonsky/FiraCode) — monospace typeface (OFL license)
-- [Tabler Icons](https://tabler.io/icons) — icon library (@tabler/icons-svelte, MIT)
-- [WCAG 2.1 Level AA](https://www.w3.org/WAI/WCAG21/quickref/?currentsetting=level%20aa) — accessibility guidelines
-- [Svelte Documentation](https://svelte.dev/docs) — framework reference
+- [OKLCH](https://oklch.com/)
+- [IBM Plex](https://github.com/IBM/plex) (OFL)
+- [Tabler Icons](https://tabler.io/icons) (`@tabler/icons-svelte`, MIT)
+- [WCAG 2.1 AA](https://www.w3.org/WAI/WCAG21/quickref/?currentsetting=level%20aa)
+- [Svelte](https://svelte.dev/docs)

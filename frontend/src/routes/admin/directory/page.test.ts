@@ -219,9 +219,35 @@ describe('Directory admin page', () => {
 
 			await userEvent.click(await screen.findByTestId('ldap-dry-run'));
 			await userEvent.click(screen.getByTestId('ldap-run-sync'));
+			await userEvent.click(await screen.findByTestId('confirm-live-sync'));
 
 			const sync = calls.find((call) => call.url.includes('/admin/ldap/sync'));
 			expect(sync?.body).toEqual({ dry_run: false });
+		});
+
+		// A live pass can disable accounts, so one click must not run it.
+		it('should ask before a live pass runs', async () => {
+			signedInAsAdmin();
+			const calls = mockApi({ status: enabledStatus() });
+			render(Page);
+
+			await userEvent.click(await screen.findByTestId('ldap-dry-run'));
+			await userEvent.click(screen.getByTestId('ldap-run-sync'));
+
+			await screen.findByText('Run a live sync now?');
+			expect(calls.some((call) => call.url.includes('/admin/ldap/sync'))).toBe(false);
+		});
+
+		it('should run nothing when the live pass is cancelled', async () => {
+			signedInAsAdmin();
+			const calls = mockApi({ status: enabledStatus() });
+			render(Page);
+
+			await userEvent.click(await screen.findByTestId('ldap-dry-run'));
+			await userEvent.click(screen.getByTestId('ldap-run-sync'));
+			await userEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+
+			expect(calls.some((call) => call.url.includes('/admin/ldap/sync'))).toBe(false);
 		});
 
 		it('should warn before a live pass that it can disable accounts', async () => {
@@ -362,6 +388,41 @@ describe('Directory admin page', () => {
 			await userEvent.click(await screen.findByTestId('ldap-run-probe'));
 			const entry = await screen.findByTestId('ldap-panel-entry');
 			expect(entry).toHaveTextContent('departmentNumber');
+		});
+
+		// The open view used to be an accent underline with no state behind
+		// it, which a screen reader could not see.
+		it('should report which probe view is showing', async () => {
+			signedInAsAdmin();
+			mockApi({ status: enabledStatus() });
+			render(Page);
+
+			await userEvent.click(await screen.findByTestId('ldap-run-probe'));
+			await userEvent.click(await screen.findByTestId('ldap-tab-merge'));
+
+			expect(screen.getByTestId('ldap-tab-merge')).toHaveAttribute('aria-pressed', 'true');
+		});
+
+		it('should report the other probe views as not showing', async () => {
+			signedInAsAdmin();
+			mockApi({ status: enabledStatus() });
+			render(Page);
+
+			await userEvent.click(await screen.findByTestId('ldap-run-probe'));
+			await userEvent.click(await screen.findByTestId('ldap-tab-merge'));
+
+			expect(screen.getByTestId('ldap-tab-entry')).toHaveAttribute('aria-pressed', 'false');
+		});
+
+		// A mapped attribute used to differ only by a green tint.
+		it('should mark an attribute the configuration reads in words', async () => {
+			signedInAsAdmin();
+			mockApi({ status: enabledStatus() });
+			render(Page);
+
+			await userEvent.click(await screen.findByTestId('ldap-run-probe'));
+
+			expect(await screen.findAllByTestId('ldap-attr-mapped')).toHaveLength(1);
 		});
 
 		it('should name the group values the allowlist would drop', async () => {

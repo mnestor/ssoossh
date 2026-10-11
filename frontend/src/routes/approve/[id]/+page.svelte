@@ -1,19 +1,32 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { approveRequest, denyRequest, getRequestDetail } from '#lib/api/endpoints.js';
 	import type { RequestDetail } from '#lib/api/types.js';
 	import { describeLoadError, type LoadFailure } from '#lib/approval.js';
 	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
 	import { session } from '#lib/session.svelte.js';
+	import Button from '#lib/components/Button.svelte';
 	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
 	import ApprovalView from '#lib/components/ApprovalView.svelte';
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import PageShell from '#lib/components/PageShell.svelte';
+	import { coverWithDetail } from '#lib/detail.svelte.js';
+	import {
+		preselect,
+		rememberedPrincipals,
+		rememberPrincipals,
+		type PickerType
+	} from '#lib/principals.js';
 
 	// The page a client prints as approval_url. It is the only place a human
 	// authorizes certificate issuance, so it does two things and nothing
 	// else: show what would be granted, and record one decision.
 	const id = $derived(page.params.id ?? '');
+
+	// One of the pages the detail level covers; ApprovalView reads the level
+	// (DESIGN.md, "Detail levels").
+	coverWithDetail();
 
 	let detail = $state<RequestDetail | null>(null);
 	let failure = $state<LoadFailure | null>(null);
@@ -22,11 +35,17 @@
 	let outcome = $state<'approved' | 'denied' | null>(null);
 	let selectedServiceAccount = $state<string | null>(null);
 	let selectedPrincipals = $state<string[]>([]);
+	// Seeded once, like the extensions below, rather than whenever the
+	// selection empties: re-ticking a remembered set the moment its last
+	// chip was unticked would make the picker fight the approver.
+	let principalsSeeded = $state(false);
 	// Seeded from the request itself, never from the ceiling — see the
 	// $effect below.
 	let selectedExtensions = $state<string[]>([]);
 	let extensionsSeeded = $state(false);
 	let notificationEmail = $state('');
+	// Bumped by Try again; the load below reads it, so a bump re-runs it.
+	let attempt = $state(0);
 
 	// Build the list of principals the approver holds: username plus other accounts,
 	// deduplicated and in that order.
@@ -52,20 +71,32 @@
 		return principals;
 	});
 
-	// Initialize selected principals on first load. For a PAM or console
-	// request that is the local account being acted as, when the approver
-	// holds it: the host matches the certificate's principals against that
-	// account, so it is the one the approver almost always means. Otherwise,
-	// and for a user request, it is the username. Either way the choice
-	// stays on the page.
+	// The request types whose approval offers the principal picker, and so
+	// the ones a remembered selection applies to.
+	function pickerType(type: string): PickerType | null {
+		return type === 'user' || type === 'pam' || type === 'console' ? type : null;
+	}
+
+	// Initialize selected principals on first load: the principals this
+	// approver last approved a request of this type with, where the request
+	// offers them (DESIGN.md, "Remembered principals"). With nothing
+	// remembered, the default: for a PAM or console request, the local
+	// account being acted as when the approver holds it, since the host
+	// matches the certificate's principals against that account; otherwise,
+	// and for a user request, the username. Either way the choice stays on
+	// the page, and a remembered selection only pre-fills it.
 	$effect(() => {
-		if (detail && !selectedPrincipals.length && session.user?.username) {
+		if (detail && !principalsSeeded && session.user?.username) {
 			const target = detail.target_account;
 			const actsLocally = detail.type === 'pam' || detail.type === 'console';
-			selectedPrincipals =
+			const fallback =
 				actsLocally && target && userPrincipals.includes(target)
 					? [target]
 					: [session.user.username];
+			const type = pickerType(detail.type);
+			const remembered = type ? rememberedPrincipals(session.user.username, type) : [];
+			selectedPrincipals = preselect(remembered, userPrincipals, fallback);
+			principalsSeeded = true;
 		}
 	});
 
@@ -91,6 +122,7 @@
 	// click.
 	$effect(() => {
 		const requestID = id;
+		void attempt;
 		if (!requestID) {
 			return;
 		}
@@ -100,6 +132,12 @@
 		failure = null;
 		outcome = null;
 		actionError = null;
+		// A different request starts its pickers afresh, so a selection
+		// made on one link is never carried silently onto the next.
+		selectedPrincipals = [];
+		principalsSeeded = false;
+		selectedExtensions = [];
+		extensionsSeeded = false;
 
 		getRequestDetail(requestID, controller.signal)
 			.then((loaded) => {
@@ -132,6 +170,13 @@
 		return () => controller.abort();
 	});
 
+	// The way out of a failure a second attempt can fix: the same request,
+	// fetched again. The effect clears the failure and shows the loading
+	// shape while it runs.
+	function retry() {
+		attempt += 1;
+	}
+
 	/** decide records one approve-or-deny decision and reflects the result.
 	 * The certificate itself never appears here — it is signed
 	 * asynchronously and delivered on the waiting client's own SSE stream
@@ -151,6 +196,14 @@
 					extensions: detail?.type === 'service' ? selectedExtensions : undefined,
 					notificationEmail: notificationEmail.trim() || undefined
 				});
+				// Written on Approve only, and only where the picker was
+				// offered: a denial says nothing about which accounts the
+				// approver wants next time.
+				const type = detail ? pickerType(detail.type) : null;
+				const username = session.user?.username;
+				if (type && username && userPrincipals.length > 0) {
+					rememberPrincipals(username, type, selectedPrincipals);
+				}
 			} else {
 				await denyRequest(id);
 			}
@@ -175,16 +228,27 @@
 		<!-- Bound once: a snippet is its own closure, so the `failure` the
 		     branch narrowed does not reach inside one. -->
 		{@const loadFailure = failure}
-		<div
-			data-testid="load-failure-{failure.kind}"
-			class="rounded-lg border border-border-subtle bg-surface-muted p-4"
-		>
+		<div data-testid="load-failure-{failure.kind}" class="rounded-lg bg-surface p-5">
 			<!-- The failure names itself: "This link was already used" is
 			     the whole answer, and the card it sits in is what marks it
 			     as a refusal rather than the screen it replaced. -->
 			<PageHeading title={loadFailure.title}>
 				{#snippet sub()}{loadFailure.message}{/snippet}
 			</PageHeading>
+			<!-- Every failure has a way out (DESIGN.md, "States"). One a
+			     second attempt can fix offers it; a claimed or missing request
+			     cannot be fixed from here, so it leads back into the app. -->
+			<div class="mt-4">
+				{#if loadFailure.kind === 'unknown'}
+					<Button variant="ghost" onclick={retry} testid="load-failure-retry">Try again</Button>
+				{:else}
+					<a
+						href={resolve('dashboard')}
+						class="inline-flex min-h-target items-center text-dense font-medium text-accent hover:underline"
+						data-testid="load-failure-dashboard">Go to your dashboard</a
+					>
+				{/if}
+			</div>
 		</div>
 	{:else if detail}
 		<ApprovalView

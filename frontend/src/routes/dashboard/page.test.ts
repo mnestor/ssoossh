@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/svelte';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest';
 
 import type { CertificateListResponse } from '#lib/api/types.js';
@@ -75,6 +76,39 @@ describe('Dashboard page', () => {
 			render(Page);
 			await new Promise((resolve) => setTimeout(resolve, 0));
 			expect(screen.getByText(/Could not load your certificates/)).toBeInTheDocument();
+		});
+
+		// A network error is not "you hold no certificates": the empty
+		// state under it told the reader to run `ssoossh login`.
+		it('should not show the empty state under the error', async () => {
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			expect(screen.queryByTestId('dashboard-empty')).not.toBeInTheDocument();
+		});
+	});
+
+	describe('when Try again is pressed after a failed load', () => {
+		it('should ask the server again and clear the error once it answers', async () => {
+			const empty: CertificateListResponse = { certificates: [] };
+			vi.stubGlobal(
+				'fetch',
+				vi
+					.fn()
+					.mockRejectedValueOnce(new Error('server error'))
+					.mockResolvedValue(
+						new Response(JSON.stringify({ data: empty, error: null }), {
+							status: 200,
+							headers: { 'Content-Type': 'application/json' }
+						})
+					)
+			);
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			expect(screen.queryByTestId('dashboard-error')).not.toBeInTheDocument();
 		});
 	});
 

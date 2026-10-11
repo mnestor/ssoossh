@@ -21,6 +21,7 @@ vi.mock('#lib/auth.js', async () => {
 
 import type { CurrentUser } from '#lib/api/types.js';
 import { session } from '#lib/session.svelte.js';
+import { detail } from '#lib/detail.svelte.js';
 
 import Page from './+page.svelte';
 
@@ -132,6 +133,38 @@ describe('Approval page', () => {
 			render(Page);
 			await settle();
 			expect(screen.queryByTestId('sign-in-button')).not.toBeInTheDocument();
+		});
+
+		// A claimed request cannot be fixed by asking again, so the way out
+		// leads back into the app instead of offering a retry.
+		it('should lead back to the dashboard', async () => {
+			render(Page);
+			await settle();
+			expect(await screen.findByTestId('load-failure-dashboard')).toBeInTheDocument();
+		});
+	});
+
+	describe('when the server fails to answer', () => {
+		beforeEach(() => {
+			mockFetch(500);
+			redirectIfUnauthenticated.mockReturnValue(false);
+		});
+
+		it('should offer Try again', async () => {
+			render(Page);
+			await settle();
+			expect(await screen.findByTestId('load-failure-retry')).toBeInTheDocument();
+		});
+
+		it('should fetch the request again when Try again is pressed', async () => {
+			render(Page);
+			await settle();
+			const calls = vi.mocked(fetch).mock.calls.length;
+
+			await userEvent.click(await screen.findByTestId('load-failure-retry'));
+			await settle();
+
+			expect(vi.mocked(fetch).mock.calls.length).toBeGreaterThan(calls);
 		});
 	});
 
@@ -274,5 +307,269 @@ describe('Approval page', () => {
 
 			expect(approveBody()).toEqual({ principals: ['alice', 'alice-alt'] });
 		});
+	});
+});
+
+describe('at the simplified detail level', () => {
+	/** pamRequest is a pending sudo request, overridable per case. */
+	function pamRequest(overrides: Record<string, unknown> = {}) {
+		return {
+			id: 'req-pam',
+			type: 'pam',
+			status: 'pending',
+			source_ip: '10.0.0.5',
+			public_key: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5',
+			principals: [],
+			valid_seconds: 30,
+			requested: { extensions: [], no_touch_required: false },
+			granted: { extensions: [], no_touch_required: false },
+			created_at: '2026-08-14T09:00:00Z',
+			expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+			approval_url: '/approve/req-pam',
+			is_owned_by_you: true,
+			already_closed: false,
+			target_account: 'root',
+			hostname: 'web01',
+			process: 'systemctl restart nginx',
+			pam_service: 'sudo',
+			tty: 'pts/3',
+			client: 'pam_ssoossh-c/0.3.0',
+			caller_pid: 4242,
+			...overrides
+		};
+	}
+
+	/** renderSimplified opens a request at the simplified level. */
+	async function renderSimplified(overrides: Record<string, unknown> = {}) {
+		vi.stubGlobal('localStorage', { getItem: () => null, setItem: () => undefined });
+		detail.level = 'simplified';
+		mockFetch(200, pamRequest(overrides));
+		redirectIfUnauthenticated.mockReturnValue(false);
+		render(Page);
+		await screen.findByTestId('approval-view');
+	}
+
+	afterEach(() => {
+		detail.level = 'advanced';
+	});
+
+	it('should open with who asked, as account at address', async () => {
+		await renderSimplified();
+		expect(screen.getByTestId('request-line')).toHaveTextContent('root@10.0.0.5');
+	});
+
+	it('should say what the request runs', async () => {
+		await renderSimplified();
+		expect(screen.getByTestId('request-line')).toHaveTextContent('systemctl restart nginx');
+	});
+
+	it('should say which machine it is on', async () => {
+		await renderSimplified();
+		expect(screen.getByTestId('request-line')).toHaveTextContent('web01');
+	});
+
+	it('should drop the request id', async () => {
+		await renderSimplified();
+		expect(screen.queryByTestId('request-id')).not.toBeInTheDocument();
+	});
+
+	// R1: the claimed service stays.
+	it('should keep the claimed service', async () => {
+		await renderSimplified();
+		expect(screen.getByText('sudo')).toBeInTheDocument();
+	});
+
+	it('should drop the process ids', async () => {
+		await renderSimplified();
+		expect(screen.queryByText(/pid 4242/)).not.toBeInTheDocument();
+	});
+
+	it('should drop the reporting client', async () => {
+		await renderSimplified();
+		expect(screen.queryByText('pam_ssoossh-c/0.3.0')).not.toBeInTheDocument();
+	});
+
+	it('should keep the decision itself', async () => {
+		await renderSimplified();
+		expect(screen.getByTestId('approve-button')).toBeInTheDocument();
+	});
+
+	it('should not count down while more than a minute is left', async () => {
+		await renderSimplified();
+		expect(screen.queryByTestId('approval-countdown')).not.toBeInTheDocument();
+	});
+
+	// "Approvable until" is advanced-only except in its last minute.
+	it('should count down beside the buttons in the last minute', async () => {
+		await renderSimplified({ expires_at: new Date(Date.now() + 40 * 1000).toISOString() });
+		expect(screen.getByTestId('approval-countdown')).toHaveTextContent(/Expires in 0:\d\d/);
+	});
+
+	it('should give an expired request its own notice', async () => {
+		await renderSimplified({ status: 'expired', already_closed: true });
+		expect(screen.getByTestId('expired-notice')).toHaveTextContent('Run the client again');
+	});
+
+	// R3: who decided is history; the certificate page keeps it.
+	it('should drop the decision record', async () => {
+		await renderSimplified({
+			status: 'approved',
+			already_closed: true,
+			decided_at: '2026-08-14T09:01:00Z',
+			decided_by_outcome: 'approved',
+			decided_by_username: 'alice'
+		});
+		expect(screen.queryByText('Decision record')).not.toBeInTheDocument();
+	});
+
+	// R3: the pam-headless note is never hidden.
+	it('should keep the note that a request looks unattended', async () => {
+		await renderSimplified({ tty: undefined });
+		expect(screen.getByTestId('pam-headless-note')).toBeInTheDocument();
+	});
+
+	it('should say what it left out', async () => {
+		await renderSimplified();
+		expect(screen.getByTestId('detail-hint')).toBeInTheDocument();
+	});
+});
+
+describe('a trimmed critical option at the simplified level', () => {
+	afterEach(() => {
+		detail.level = 'advanced';
+	});
+
+	// Never hidden: it changes what the certificate does.
+	it('should name it in a warning', async () => {
+		vi.stubGlobal('localStorage', { getItem: () => null, setItem: () => undefined });
+		detail.level = 'simplified';
+		mockFetch(200, {
+			id: 'req-1',
+			type: 'user',
+			status: 'pending',
+			source_ip: '198.51.100.7',
+			public_key: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5',
+			principals: [],
+			valid_seconds: 28800,
+			requested: { extensions: [], no_touch_required: false, force_command: 'backup.sh' },
+			granted: { extensions: [], no_touch_required: false },
+			created_at: '2026-08-14T09:00:00Z',
+			approval_url: '/approve/req-1',
+			is_owned_by_you: true,
+			already_closed: false
+		});
+		redirectIfUnauthenticated.mockReturnValue(false);
+		render(Page);
+
+		expect(await screen.findByTestId('trimmed-critical-warning')).toBeInTheDocument();
+	});
+});
+
+describe('remembered principals', () => {
+	/** userRequest is a pending user-certificate request. */
+	function userRequest() {
+		return {
+			id: 'req-1',
+			type: 'user',
+			status: 'pending',
+			source_ip: '198.51.100.7',
+			public_key: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5',
+			principals: [],
+			valid_seconds: 28800,
+			requested: { extensions: [], no_touch_required: false },
+			granted: { extensions: [], no_touch_required: false },
+			created_at: '2026-08-14T09:00:00Z',
+			approval_url: '/approve/req-1',
+			is_owned_by_you: true,
+			already_closed: false
+		};
+	}
+
+	/** stubStorage installs a localStorage holding `seed`, and returns it. */
+	function stubStorage(seed: Record<string, string> = {}) {
+		const store = new Map(Object.entries(seed));
+		vi.stubGlobal('localStorage', {
+			getItem: (key: string) => store.get(key) ?? null,
+			setItem: (key: string, value: string) => void store.set(key, value)
+		});
+		return store;
+	}
+
+	/** pressed lists the picker's ticked chips, in render order. */
+	function pressed(): string[] {
+		const group = screen.getByRole('group', { name: 'Principals to include' });
+		return within(group)
+			.getAllByRole('button')
+			.filter((chip) => chip.getAttribute('aria-pressed') === 'true')
+			.map((chip) => chip.textContent?.trim() ?? '');
+	}
+
+	beforeEach(() => {
+		redirectIfUnauthenticated.mockReturnValue(false);
+		session.user = signedInAs({ other_accounts: ['alice-admin', 'alice-ops'] });
+	});
+
+	afterEach(() => {
+		session.user = null;
+	});
+
+	it('should pre-tick what the approver last approved with', async () => {
+		stubStorage({
+			'ssoossh:principals:alice': JSON.stringify({ user: ['alice-admin', 'alice-ops'] })
+		});
+		mockFetch(200, userRequest());
+		render(Page);
+		await settle();
+
+		expect(pressed()).toEqual(['alice-admin', 'alice-ops']);
+	});
+
+	it('should fall back to the username when nothing is remembered', async () => {
+		stubStorage();
+		mockFetch(200, userRequest());
+		render(Page);
+		await settle();
+
+		expect(pressed()).toEqual(['alice']);
+	});
+
+	it('should remember the selection when the request is approved', async () => {
+		const store = stubStorage();
+		mockFetch(200, userRequest());
+		render(Page);
+		await settle();
+
+		await userEvent.click(screen.getByRole('button', { name: 'alice-ops' }));
+		await userEvent.click(screen.getByTestId('approve-button'));
+		await settle();
+
+		expect(JSON.parse(store.get('ssoossh:principals:alice') ?? '{}')).toEqual({
+			user: ['alice', 'alice-ops']
+		});
+	});
+
+	// A denial says nothing about which accounts the approver wants next.
+	it('should remember nothing when the request is denied', async () => {
+		const store = stubStorage();
+		mockFetch(200, userRequest());
+		render(Page);
+		await settle();
+
+		await userEvent.click(screen.getByTestId('deny-button'));
+		await settle();
+
+		expect(store.has('ssoossh:principals:alice')).toBe(false);
+	});
+
+	// Seeded once: unticking every chip must not re-tick the remembered set.
+	it('should leave the picker empty once the approver unticks everything', async () => {
+		stubStorage();
+		mockFetch(200, userRequest());
+		render(Page);
+		await settle();
+
+		await userEvent.click(screen.getByRole('button', { name: 'alice' }));
+
+		expect(pressed()).toEqual([]);
 	});
 });

@@ -219,6 +219,42 @@ describe('ServiceCodeDetail', () => {
 		expect(screen.queryByText('Redemption history')).not.toBeInTheDocument();
 	});
 
+	// A network failure used to be indistinguishable from a refusal: the
+	// section vanished either way.
+	describe('when the log fails to load for a reason that may pass', () => {
+		/** mockRetrievalsDown fails the log fetch outright, holders intact. */
+		function mockRetrievalsDown() {
+			vi.stubGlobal(
+				'fetch',
+				vi.fn((input: RequestInfo | URL) =>
+					String(input).includes('/holders')
+						? Promise.resolve(json({ service_account: 'svc-deploy', holders: [] }))
+						: Promise.reject(new Error('network down'))
+				)
+			);
+		}
+
+		it('should say the history could not load', async () => {
+			mockRetrievalsDown();
+			render(ServiceCodeDetail, { enrollment: enrollment(), now });
+
+			expect(await screen.findByTestId('redemption-error')).toBeInTheDocument();
+		});
+
+		it('should read the log again when Try again is pressed', async () => {
+			mockRetrievalsDown();
+			render(ServiceCodeDetail, { enrollment: enrollment(), now });
+			await screen.findByTestId('redemption-error');
+			const logReads = () =>
+				vi.mocked(fetch).mock.calls.filter(([input]) => !String(input).includes('/holders')).length;
+			const before = logReads();
+
+			await userEvent.click(screen.getByTestId('redemption-error-retry'));
+
+			expect(logReads()).toBeGreaterThan(before);
+		});
+	});
+
 	// Last on the page, as on the admin's: it is the only part that grows
 	// without bound, and the reader came for the facts and the one control
 	// this component still carries.

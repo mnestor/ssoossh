@@ -301,3 +301,13 @@ export function relativeTime(value: string, now: Date = new Date()): string {
 
 	return `${Math.floor(hours / 24)}d ago`;
 }
+
+/** formatCountdown renders seconds left as m:ss for a live countdown
+ * ("0:42"), the form a clock about to run out is read in. Negative input
+ * reads as 0:00. */
+export function formatCountdown(seconds: number): string {
+	const whole = Math.max(0, Math.floor(seconds));
+	const minutes = Math.floor(whole / 60);
+	const rest = whole % 60;
+	return `${minutes}:${String(rest).padStart(2, '0')}`;
+}

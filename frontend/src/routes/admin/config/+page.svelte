@@ -100,7 +100,12 @@
 			testid="config-loading"
 		/>
 	{:else if error}
-		<Alert variant="error" title="Could not load the configuration" testid="config-error">
+		<Alert
+			variant="error"
+			title="Could not load the configuration"
+			onretry={loadConfig}
+			testid="config-error"
+		>
 			{error}
 		</Alert>
 	{:else if config}
@@ -113,8 +118,10 @@
 					onsearch={(term: string) => (query = term)}
 				/>
 			</div>
-			<label class="flex items-center gap-2 text-dense whitespace-nowrap text-ink-muted">
-				<input type="checkbox" bind:checked={showUnset} class="accent-accent" />
+			<label
+				class="flex min-h-target items-center gap-2 text-dense whitespace-nowrap text-ink-muted"
+			>
+				<input type="checkbox" bind:checked={showUnset} />
 				Show unset keys
 			</label>
 		</div>
@@ -136,21 +143,16 @@
 			     key column is capped rather than a percentage: at this page's
 			     full width, 45% would put a value half a screen away from the
 			     key it belongs to. -->
-			<div class="flex flex-col gap-6">
+			<div class="flex flex-col gap-8">
 				{#each sections as section (section.name)}
-					<section
-						data-testid="config-section"
-						class="rounded-lg border border-border-subtle bg-surface-muted p-4"
-					>
-						<h2
-							class="mb-1.5 font-mono text-meta font-semibold tracking-label text-ink-muted uppercase"
-						>
+					<section data-testid="config-section" class="rounded-lg bg-surface p-5">
+						<h2 class="mb-1.5 text-meta font-semibold tracking-label text-ink-muted uppercase">
 							{section.name}
 						</h2>
 						<dl class="flex flex-col divide-y divide-border-subtle">
 							{#each section.settings as setting (setting.key)}
 								<div class="flex flex-col gap-0.5 py-1.5 sm:flex-row sm:items-baseline sm:gap-4">
-									<dt class="font-mono text-xs break-all text-ink-muted sm:w-[22rem] sm:shrink-0">
+									<dt class="font-mono text-xs break-all text-ink-muted sm:w-88 sm:shrink-0">
 										{setting.key}
 									</dt>
 									<dd class="flex items-baseline gap-2 font-mono text-xs break-all">

@@ -13,6 +13,7 @@
 	import PageShell from '#lib/components/PageShell.svelte';
 	import ListStatus from '#lib/components/ListStatus.svelte';
 	import SearchInput from '#lib/components/SearchInput.svelte';
+	import EmptyState from '#lib/components/EmptyState.svelte';
 	import { outcomeFilters, statusFilters, typeFilters } from '#lib/filters.js';
 	import { describeList } from '#lib/listStatus.js';
 	import { watchNarrow } from '#lib/viewport.js';
@@ -35,6 +36,9 @@
 	let nextCursor = $state<string | null>(null);
 	let nextDenialCursor = $state<string | null>(null);
 	let loadError = $state<string | null>(null);
+	// A failed "Load more" is its own error: the rows already shown are
+	// still right, so it sits by the button rather than replacing them.
+	let moreError = $state<string | null>(null);
 	let isLoading = $state(false);
 	let hasLoaded = $state(false);
 
@@ -134,6 +138,19 @@
 			selectedOutcome !== 'approved'
 	);
 
+	// Clearing remounts the search box: it owns what is typed in it and does
+	// not watch `value` afterwards, so resetting the term alone would leave
+	// the old text on screen over an unfiltered list.
+	let searchKey = $state(0);
+
+	function clearFilters() {
+		searchQuery = '';
+		selectedType = '';
+		selectedStatus = '';
+		selectedOutcome = 'approved';
+		searchKey += 1;
+	}
+
 	// Narrowing the results while looking at page 4 should show the first
 	// page of the new set, not whatever lands at that offset.
 	$effect(() => {
@@ -218,6 +235,9 @@
 	}) {
 		const load = ++latestLoad;
 		isLoading = true;
+		// A new read starts clean: an earlier failure says nothing about it.
+		loadError = null;
+		moreError = null;
 		const controller = new AbortController();
 		try {
 			const [certs, denials] = await Promise.all([
@@ -234,7 +254,6 @@
 			nextCursor = certs?.next_cursor ?? null;
 			allDenials = Array.isArray(denials?.denials) ? denials.denials : [];
 			nextDenialCursor = denials?.next_cursor ?? null;
-			loadError = null;
 		} catch (cause) {
 			if (load !== latestLoad || controller.signal.aborted || redirectIfUnauthenticated(cause)) {
 				return;
@@ -254,6 +273,7 @@
 		}
 		const load = ++latestLoad;
 		isLoading = true;
+		moreError = null;
 		const controller = new AbortController();
 		try {
 			// Both pages in flight together: they are independent reads, and
@@ -279,12 +299,17 @@
 			if (load !== latestLoad || controller.signal.aborted || redirectIfUnauthenticated(cause)) {
 				return;
 			}
-			loadError = errorMessage(cause);
+			moreError = errorMessage(cause);
 		} finally {
 			if (load === latestLoad) {
 				isLoading = false;
 			}
 		}
+	}
+
+	// The way out of a failed read: the same filters, asked again.
+	function retry() {
+		load({ filter, certificates: wantsCertificates, denials: wantsDenials });
 	}
 
 	// Reads the filters, and only the filters. Everything it writes is
@@ -300,10 +325,6 @@
 <PageShell width="wide">
 	<PageHeading title="Certificate history" />
 
-	{#if loadError}
-		<Alert variant="error" title="Could not load your history">{loadError}</Alert>
-	{/if}
-
 	{#if !hasLoaded}
 		<LoadingBlock shape="rows" count={4} testid="history-loading" />
 	{:else}
@@ -317,13 +338,15 @@
 		<ListStatus message={listStatus} />
 
 		<div class="flex flex-col gap-3">
-			<SearchInput
-				label="Search your history"
-				placeholder="Key ID, principal, serial, fingerprint, host"
-				value={searchQuery}
-				onsearch={(term) => (searchQuery = term)}
-				testid="search-input"
-			/>
+			{#key searchKey}
+				<SearchInput
+					label="Search your history"
+					placeholder="Key ID, principal, serial, fingerprint, host"
+					value={searchQuery}
+					onsearch={(term) => (searchQuery = term)}
+					testid="search-input"
+				/>
+			{/key}
 
 			<!-- Type, then Status, then Outcome. Ordered by how often a
 			     reader reaches for one: the type of certificate is what most
@@ -364,14 +387,35 @@
 			</div>
 		</div>
 
-		{#if filtered.length === 0}
-			<p class="text-sm text-ink-muted">
-				{isFiltered
-					? 'Nothing in your history matches the selected filter.'
-					: 'You have not decided any certificate requests yet.'}
-			</p>
+		<!-- The error takes the list's place: an empty-history message under a
+		     failed read told the reader they had decided nothing. A retry from
+		     an empty list shows the loading shape until it answers. -->
+		{#if loadError}
+			<Alert
+				variant="error"
+				title="Could not load your history"
+				onretry={retry}
+				testid="history-error"
+			>
+				{loadError}
+			</Alert>
+		{:else if isLoading && filtered.length === 0}
+			<LoadingBlock shape="rows" count={4} testid="history-loading" />
+		{:else if filtered.length === 0 && isFiltered}
+			<EmptyState icon="filter-off" title="Nothing matches" testid="history-empty">
+				{#snippet action()}
+					<Button variant="ghost" onclick={clearFilters} testid="history-clear-filters">
+						Clear filters
+					</Button>
+				{/snippet}
+				Nothing in your history matches the selected filter.
+			</EmptyState>
+		{:else if filtered.length === 0}
+			<EmptyState icon="certificate-off" title="No decisions yet" testid="history-empty">
+				You have not decided any certificate requests yet.
+			</EmptyState>
 		{:else}
-			<div class="flex flex-col gap-2.5">
+			<div class="flex flex-col gap-2">
 				<!-- Keyed on the kind as well as the id: a certificate and the
 				     decision that refused a different request are separate
 				     tables with separate id spaces, and nothing stops one from
@@ -410,6 +454,17 @@
 						Next
 					</Button>
 				</div>
+
+				{#if moreError}
+					<Alert
+						variant="error"
+						title="Could not load more of your history"
+						onretry={loadMore}
+						testid="history-more-error"
+					>
+						{moreError}
+					</Alert>
+				{/if}
 
 				{#if hasMore}
 					<div class="flex justify-center">

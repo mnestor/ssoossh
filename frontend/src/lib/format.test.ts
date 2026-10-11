@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+	formatCountdown,
 	clockSkewLabel,
 	expiryLabel,
 	formatDateTime,
@@ -307,6 +308,22 @@ describe('formatGoDuration', () => {
 	for (const testCase of cases) {
 		it(testCase.name, () => {
 			expect(formatGoDuration(testCase.raw)).toBe(testCase.want);
+		});
+	}
+});
+
+describe('formatCountdown', () => {
+	const cases: [number, string][] = [
+		[42, '0:42'],
+		[60, '1:00'],
+		[5, '0:05'],
+		[0, '0:00'],
+		[-3, '0:00'],
+		[59.9, '0:59']
+	];
+	for (const [seconds, want] of cases) {
+		it(`should render ${seconds} seconds as ${want}`, () => {
+			expect(formatCountdown(seconds)).toBe(want);
 		});
 	}
 });

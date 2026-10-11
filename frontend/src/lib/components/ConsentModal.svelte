@@ -50,7 +50,7 @@
 		<div
 			in:scale={{ start: 0.96, opacity: 0, duration: enterMs(), easing: easeEnter }}
 			out:scale={{ start: 0.96, opacity: 0, duration: exitMs(), easing: easeExit }}
-			class="flex w-full max-w-[520px] flex-col gap-4 rounded-xl border border-border-subtle bg-surface p-7 shadow-lg"
+			class="flex w-full max-w-[520px] flex-col gap-4 rounded-xl bg-surface p-7"
 		>
 			<h2 id="consent-notice-heading" class="sr-only">Notice</h2>
 
@@ -63,7 +63,7 @@
 				role="region"
 				aria-labelledby="consent-notice-heading"
 				tabindex="0"
-				class="max-h-[280px] overflow-y-auto text-sm leading-relaxed whitespace-pre-wrap text-ink"
+				class="max-h-70 overflow-y-auto text-sm leading-relaxed whitespace-pre-wrap text-ink"
 			>
 				{notice}
 			</div>

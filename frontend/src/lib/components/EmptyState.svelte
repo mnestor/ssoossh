@@ -35,7 +35,7 @@
      collapse to a single line when a filter matches nothing. -->
 <div
 	data-testid={testid}
-	class="flex flex-col items-center gap-3 rounded-xl border border-border-subtle bg-surface px-6 py-10 text-center"
+	class="flex flex-col items-center gap-3 rounded-lg bg-surface px-6 py-10 text-center"
 >
 	<!-- The icon is decoration: the title says the same thing in words, and
 	     a reader who cannot see it loses nothing. -->

@@ -20,7 +20,7 @@
  */
 export function railRowClass(collapsed: boolean, current: boolean = false): string {
 	const base =
-		'flex h-9 w-full items-center gap-2.5 rounded-md text-[13.5px] whitespace-nowrap transition';
+		'flex min-h-target w-full items-center gap-2.5 rounded-md text-dense whitespace-nowrap transition';
 	const width = collapsed ? 'justify-center' : 'px-2.5';
 	const state = current
 		? 'bg-accent-wash text-accent font-semibold'

@@ -73,7 +73,7 @@
 		onclick={() => theme.cycle()}
 		aria-label={label}
 		title={label}
-		class="inline-flex h-8 w-8 items-center justify-center rounded-md text-ink-muted transition hover:bg-surface-muted hover:text-ink"
+		class="inline-flex size-target items-center justify-center rounded-md text-ink-muted transition hover:bg-surface-muted hover:text-ink"
 	>
 		<Icon name={icons[theme.preference]} size="sm" />
 	</button>

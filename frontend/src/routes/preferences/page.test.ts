@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { NotificationPreferences } from '#lib/api/types.js';
+import { detail } from '#lib/detail.svelte.js';
 import Page from './+page.svelte';
 
 /** alicePreferences is a fully populated payload, overridable per test. */
@@ -200,5 +201,39 @@ describe('Preferences page', () => {
 
 			expect(await screen.findByText(/no user record/)).toBeInTheDocument();
 		});
+	});
+});
+
+describe('the Display section', () => {
+	afterEach(() => {
+		vi.unstubAllGlobals();
+		detail.level = 'advanced';
+	});
+
+	// The level lives in this browser, not on the server, so a failed read of
+	// the notification settings must not take it with it.
+	it('should stay usable when the notification settings fail to load', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(() => Promise.reject(new Error('network down')))
+		);
+		render(Page);
+
+		await screen.findByTestId('preferences-error');
+
+		expect(screen.getByTestId('display-preferences')).toBeInTheDocument();
+	});
+
+	it('should change the detail level the covered pages read', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(() => Promise.reject(new Error('network down')))
+		);
+		vi.stubGlobal('localStorage', { getItem: () => null, setItem: () => undefined });
+		render(Page);
+
+		await userEvent.click(screen.getByRole('button', { name: 'Simplified' }));
+
+		expect(detail.level).toBe('simplified');
 	});
 });

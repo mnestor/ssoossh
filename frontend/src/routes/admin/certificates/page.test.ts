@@ -404,3 +404,52 @@ describe('when a filter or search changes', () => {
 		expect(calls).toBe(1);
 	});
 });
+
+describe('when a load fails', () => {
+	afterEach(() => {
+		vi.unstubAllGlobals();
+	});
+
+	// A network error is not "nothing has been issued".
+	it('should not show the empty state under the error', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(() => Promise.reject(new Error('server error')))
+		);
+		render(Page);
+
+		await screen.findByTestId('certificates-error');
+
+		expect(screen.queryByTestId('certificates-empty')).not.toBeInTheDocument();
+	});
+
+	// The error used to stay on screen after a later load succeeded, since
+	// only Try again cleared it.
+	it('should clear the error when the next load succeeds', async () => {
+		const user = userEvent.setup();
+		vi.stubGlobal(
+			'fetch',
+			vi
+				.fn()
+				.mockRejectedValueOnce(new Error('server error'))
+				.mockResolvedValue(
+					new Response(
+						JSON.stringify({
+							data: {
+								certificates: [],
+								page_meta: { total: 0, limit: 25, offset: 0, page: 1, page_count: 1 }
+							},
+							error: null
+						}),
+						{ status: 200, headers: { 'Content-Type': 'application/json' } }
+					)
+				)
+		);
+		render(Page);
+		await screen.findByTestId('certificates-error');
+
+		await user.type(screen.getByRole('searchbox', { name: /search/i }), 'beta{Enter}');
+
+		await waitFor(() => expect(screen.queryByTestId('certificates-error')).not.toBeInTheDocument());
+	});
+});

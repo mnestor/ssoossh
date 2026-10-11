@@ -698,3 +698,167 @@ describe('the OIDC record and what the directory overrides', () => {
 		expect(screen.queryByTestId('user-groups-oidc-only')).not.toBeInTheDocument();
 	});
 });
+
+/** userDetail is the account the action tests read, disabled or not. */
+function userDetail(disabled: boolean): Record<string, unknown> {
+	return {
+		id: 'user-1',
+		username: 'alice',
+		email: 'alice@corp.example',
+		subject: 'sub-alice',
+		name: 'Alice Smith',
+		other_accounts: [],
+		service_accounts: [],
+		extra_fields: {},
+		directory_overrides: [],
+		directory_enabled: false,
+		groups: [],
+		oidc_fields: {},
+		notification_preferences: [],
+		created_at: '2026-08-01T10:00:00Z',
+		updated_at: '2026-08-01T10:00:00Z',
+		service_enrollment_count: 0,
+		certificate_count: 0,
+		disabled_at: disabled ? '2026-10-10T12:00:00Z' : undefined,
+		disabled_by_username: disabled ? 'admin' : undefined,
+		disabled_reason: disabled ? 'offboarded' : undefined
+	};
+}
+
+/** ok wraps a body in the API envelope. */
+function ok(body: unknown): Response {
+	return new Response(JSON.stringify({ data: body, error: null }), {
+		status: 200,
+		headers: { 'Content-Type': 'application/json' }
+	});
+}
+
+/**
+ * mockDisableFlow stubs a server that disables the account on PATCH and
+ * answers every later read with the disabled record. `failRefresh` makes
+ * the reads after the PATCH fail, the case where the change went through
+ * but the page could not show it.
+ */
+function mockDisableFlow(failRefresh = false) {
+	let disabled = false;
+	vi.stubGlobal(
+		'fetch',
+		vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+			const url = String(input);
+			if (init?.method === 'PATCH' && url.includes('/disable')) {
+				disabled = true;
+				return Promise.resolve(ok({ service_enrollment_count: 0 }));
+			}
+			if (url.includes('/audit')) {
+				return Promise.resolve(ok({ events: [], total: 0 }));
+			}
+			if (disabled && failRefresh) {
+				return Promise.reject(new Error('network down'));
+			}
+			return Promise.resolve(ok(userDetail(disabled)));
+		})
+	);
+}
+
+/** disableAlice walks the disable dialog through to a confirmed reason. */
+async function disableAlice() {
+	render(Page);
+	await screen.findByTestId('user-username');
+	await userEvent.click(screen.getByRole('button', { name: /^Disable$/ }));
+	await screen.findByText(/Disable this account\?/);
+	await userEvent.type(screen.getByTestId('disable-reason'), 'offboarded, SEC-1234');
+	await userEvent.click(screen.getByTestId('confirm-disable'));
+	await waitFor(() => expect(screen.queryByText(/Disable this account\?/)).not.toBeInTheDocument());
+}
+
+describe('when the account fails to load', () => {
+	beforeEach(() => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(() => Promise.reject(new Error('network down')))
+		);
+	});
+
+	// The heading stands in every state, so a failed load still has its
+	// way back to the list.
+	it('should keep the back chip to the user list', async () => {
+		render(Page);
+		await screen.findByTestId('user-error');
+
+		expect(screen.getByTestId('admin-user-back')).toBeInTheDocument();
+	});
+
+	it('should ask for the account again when Try again is pressed', async () => {
+		render(Page);
+		await screen.findByTestId('user-error');
+		const calls = vi.mocked(fetch).mock.calls.length;
+
+		await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+
+		expect(vi.mocked(fetch).mock.calls.length).toBeGreaterThan(calls);
+	});
+});
+
+describe('when an account is disabled', () => {
+	// Disabling used to swap the whole page for a loading state, which
+	// unmounted the dialog and left the caret on <body>.
+	it('should return focus to the heading action, now offering to re-enable', async () => {
+		mockDisableFlow();
+		await disableAlice();
+
+		await waitFor(() => expect(screen.getByTestId('enable-user')).toHaveFocus());
+	});
+
+	it('should say the account was disabled', async () => {
+		mockDisableFlow();
+		await disableAlice();
+
+		expect(await screen.findByTestId('user-action-notice')).toHaveTextContent(
+			'This account was disabled.'
+		);
+	});
+
+	// A disable that succeeded must not read as "Could not load this
+	// account" because the refresh after it failed.
+	it('should keep the page and report the failed refresh separately', async () => {
+		mockDisableFlow(true);
+		await disableAlice();
+
+		expect(await screen.findByTestId('user-refresh-error')).toBeInTheDocument();
+		expect(screen.queryByTestId('user-error')).not.toBeInTheDocument();
+	});
+});
+
+describe('when the audit timeline fails to load', () => {
+	/** mockAuditFailure answers the account and fails the timeline read. */
+	function mockAuditFailure() {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn((input: RequestInfo | URL) =>
+				String(input).includes('/audit')
+					? Promise.reject(new Error('network down'))
+					: Promise.resolve(ok(userDetail(false)))
+			)
+		);
+	}
+
+	it('should say the timeline could not load', async () => {
+		mockAuditFailure();
+		render(Page);
+
+		expect(await screen.findByTestId('user-audit-error')).toBeInTheDocument();
+	});
+
+	it('should read the timeline again when Try again is pressed', async () => {
+		mockAuditFailure();
+		render(Page);
+		await screen.findByTestId('user-audit-error');
+		const auditReads = () =>
+			vi.mocked(fetch).mock.calls.filter(([input]) => String(input).includes('/audit')).length;
+		const before = auditReads();
+
+		await userEvent.click(screen.getByTestId('user-audit-error-retry'));
+
+		expect(auditReads()).toBeGreaterThan(before);
+	});
+});

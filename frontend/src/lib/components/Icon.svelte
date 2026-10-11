@@ -71,6 +71,7 @@
 		IconSearch,
 		IconX,
 		IconCopy,
+		IconCopyCheck,
 		IconCheck,
 		// Detail rows: a person, and a span of time.
 		IconUser,
@@ -152,6 +153,9 @@
 		search: IconSearch,
 		x: IconX,
 		copy: IconCopy,
+		// Noun, then state: a copy that landed, not a choice. `check`
+		// means "chosen" and nothing else.
+		'copy-check': IconCopyCheck,
 		check: IconCheck,
 		// Detail rows
 		user: IconUser,
