@@ -407,6 +407,139 @@ func TestNewConfig_ShouldLetPlatformPolicyOverrideTheEnforcedFile(t *testing.T) 
 	}
 }
 
+// lockTestCommand parses args against --config, --server and --key-type,
+// the flags the lock tests pass. --key-type is local to `ssh login` in the
+// real tree; it is registered here so a lock on a nested setting
+// (sshkey.type) can be tested against the flag that sets it.
+func lockTestCommand(t *testing.T, args ...string) *cobra.Command {
+	t.Helper()
+
+	cmd := &cobra.Command{Use: "ssoossh", RunE: func(*cobra.Command, []string) error { return nil }}
+	cmd.PersistentFlags().StringP("config", "c", "", "path to the ssoossh config file")
+	cmd.PersistentFlags().String("server", "", "server address including scheme")
+	cmd.Flags().String("key-type", "", "key algorithm")
+	cmd.SetArgs(args)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("parse flags: %v", err)
+	}
+	return cmd
+}
+
+// An administrator lock overrides the user's command line as completely as
+// it overrides their config file. A flag is read above every merged layer,
+// so a locked setting's flag must not be bound at all.
+func TestNewConfig_ShouldLetALockOverrideACommandLineFlag(t *testing.T) {
+	tests := []struct {
+		name    string
+		enforce string
+		policy  map[string]any
+		args    []string
+		got     func(*Config) string
+		want    string
+	}{
+		{
+			name:    "should keep the enforce file's value over a flag",
+			enforce: "server: https://from-enforce-file.example.com\n",
+			args:    []string{"--server", "https://from-flag.example.com"},
+			got:     func(c *Config) string { return c.Server },
+			want:    "https://from-enforce-file.example.com",
+		},
+		{
+			name:   "should keep platform policy's value over a flag",
+			policy: map[string]any{"server": "https://from-platform-policy.example.com"},
+			args:   []string{"--server", "https://from-flag.example.com"},
+			got:    func(c *Config) string { return c.Server },
+			want:   "https://from-platform-policy.example.com",
+		},
+		{
+			// Policy arrives as a nested map; the flag binds a dotted key.
+			name:   "should keep a nested policy value over its flag",
+			policy: map[string]any{"sshkey": map[string]any{"type": "ecdsa"}},
+			args:   []string{"--key-type", "ed25519"},
+			got:    func(c *Config) string { return string(c.SSHKey.Type) },
+			want:   "ecdsa",
+		},
+		{
+			name:    "should still let a flag set what no lock sets",
+			enforce: "insecure_skip_verify: false\n",
+			args:    []string{"--server", "https://from-flag.example.com"},
+			got:     func(c *Config) string { return c.Server },
+			want:    "https://from-flag.example.com",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			files := map[string]string{}
+			if tt.enforce != "" {
+				files["ssoossh.yaml"] = "enforce: locked.yaml\n"
+				files["locked.yaml"] = tt.enforce
+			}
+			policy := func() (map[string]any, error) { return tt.policy, nil }
+
+			cfg, err := newConfig(lockTestCommand(t, tt.args...), testPaths(writeSystemConfig(t, files)), policy)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got := tt.got(cfg); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// A flag a lock overrode set nothing, so it must not be credited with the
+// value: ssh login uses SetByFlag to tell the user which layer to change.
+func TestNewConfig_ShouldNotCreditAnOverriddenFlagWithTheValue(t *testing.T) {
+	sysDir := writeSystemConfig(t, map[string]string{
+		"ssoossh.yaml": "enforce: locked.yaml\n",
+		"locked.yaml":  "server: https://from-enforce-file.example.com\n",
+	})
+
+	cfg, err := newConfig(lockTestCommand(t, "--server", "https://from-flag.example.com"), testPaths(sysDir), noPolicy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.SetByFlag["server"] {
+		t.Error("SetByFlag credits --server, which the enforce file overrode")
+	}
+}
+
+// The chain says a passed flag was overridden rather than leaving the user
+// to work out why it did nothing.
+func TestNewConfig_ShouldReportAFlagALockOverrode(t *testing.T) {
+	sysDir := writeSystemConfig(t, map[string]string{
+		"ssoossh.yaml": "enforce: locked.yaml\n",
+		"locked.yaml":  "server: https://from-enforce-file.example.com\n",
+	})
+
+	cfg, err := newConfig(lockTestCommand(t, "--server", "https://from-flag.example.com"), testPaths(sysDir), noPolicy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got := sourceFor(t, cfg.Sources, "command-line flags")
+	if got.Status != SourceOverridden || got.Detail != "--server" {
+		t.Errorf("command-line flags = %s: %s, want %s: --server", got.Status, got.Detail, SourceOverridden)
+	}
+}
+
+// A policy that sets only ordinary keys was merged all the same. The chain
+// used to report it "not given" unless it set fips or forbade extensions.
+func TestNewConfig_ShouldReportAPolicySettingOnlyOrdinaryKeysAsMerged(t *testing.T) {
+	cmd := newConfigCommand(t)
+	policy := func() (map[string]any, error) {
+		return map[string]any{"server": "https://from-platform-policy.example.com"}, nil
+	}
+
+	cfg, err := newConfig(cmd, testPaths(writeSystemConfig(t, nil)), policy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := sourceFor(t, cfg.Sources, "platform policy").Status; got != SourceMerged {
+		t.Errorf("platform policy status = %q, want %q", got, SourceMerged)
+	}
+}
+
 // TestNewConfig_ShouldLeaveUnsetPolicyKeysToTheEnforcedFile confirms a
 // platform policy that only sets some keys doesn't clobber the rest —
 // matching how the enforce file already behaves for a partial override.

@@ -68,6 +68,7 @@ ones above it, with what came of each:
 | `absent` | The file was not there, which is normal everywhere except a file you named yourself |
 | `error` | The file existed but could not be read or parsed, so its settings are silently not in effect |
 | `not given` | An optional source was not selected at all, such as `--config` or `enforce` |
+| `overridden` | Command-line flags you passed for settings an administrator lock sets, so they had no effect; the flags are named |
 
 Entries marked with `*` are administrator locks -- the `enforce` file and
 platform-native policy -- which override everything above them including your

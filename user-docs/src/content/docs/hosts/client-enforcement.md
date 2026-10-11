@@ -24,7 +24,8 @@ sets the same key:
 2. User config (`~/.config/ssoossh.yaml`, or
    `%AppData%\ssoossh\ssoossh.yaml`)
 3. Local config (`./ssoossh.yaml`, or `--config`)
-4. CLI flags (`--server`, `--key-type`, `--key-size`)
+4. CLI flags (`--server`, `--key-type`, `--key-size`, and the `--no-*`
+   extension flags)
 5. The `enforce` file named by the machine-wide config
    (`/etc/ssoossh/ssoossh.yaml`, or `%ProgramData%\ssoossh\ssoossh.yaml`)
 6. Platform-native policy: the Windows registry key or the macOS managed
@@ -34,15 +35,12 @@ A value simply absent from a source is left to whatever the next source down
 sets. A policy source that only locks `server`, for example, leaves every other
 setting free.
 
-:::note[The three flags outrank everything]
-`server`, `sshkey.type` and `sshkey.size` are also the three settings
-`ssh login` accepts as CLI flags (`--server`, `--key-type`, `--key-size`).
-Those flags are bound as flags rather than merged as config, so they take
-precedence over every config-file-tier source above -- including `enforce` and
-platform policy -- if the user actually passes them.
-
-That is pre-existing behaviour, not something these mechanisms change, and it
-is the same "guardrail, not a boundary" situation as running your own binary.
+:::note[Locks override flags too]
+A setting `enforce` or platform policy sets cannot be overridden from the
+command line. If the user passes a flag for one, the client ignores it, warns,
+and reports it as `overridden` in the `--debug` source chain. The locks are
+still a guardrail rather than a boundary: the client runs as the user, who can
+always run a binary of their own.
 :::
 
 ## Settings

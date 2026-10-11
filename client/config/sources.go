@@ -19,6 +19,10 @@ const (
 	// SourceNotGiven means an optional source was not selected at all, such
 	// as --config or `enforce`.
 	SourceNotGiven SourceStatus = "not given"
+	// SourceOverridden means the source was given but an administrator lock
+	// overrides everything it set: command-line flags for settings that
+	// `enforce` or platform policy sets.
+	SourceOverridden SourceStatus = "overridden"
 )
 
 // ConfigSource records one entry in the configuration merge chain, in the

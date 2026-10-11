@@ -75,55 +75,9 @@ func newConfig(cmd *cobra.Command, paths searchPaths, loadPolicy func() (map[str
 		return nil, err
 	}
 
-	// Flags override whatever the files said. Bound rather than read
-	// directly so viper's own precedence applies: a flag that wasn't passed
-	// contributes its empty default at the lowest priority and does not
-	// clobber a configured value. --key-type/--key-size and certificate
-	// extension flags are local to `ssh login` (the only command that
-	// generates a keypair and requests extensions), so Lookup returns nil
-	// and binding them no-ops for every other command's cmd.
-	changed, setByFlag, err := bindFlags(v, cmd, map[string]string{
-		"server":              "server",
-		"key-type":            "sshkey.type",
-		"key-size":            "sshkey.size",
-		"no-pty":              "certificate_extensions.no_pty",
-		"no-agent-forwarding": "certificate_extensions.no_agent_forwarding",
-		"no-port-forwarding":  "certificate_extensions.no_port_forwarding",
-		"no-x11-forwarding":   "certificate_extensions.no_x11_forwarding",
-		"no-user-rc":          "certificate_extensions.no_user_rc",
-	})
+	enforceKeys, enforceSource, err := mergeEnforceFile(v, paths, enforce)
 	if err != nil {
 		return nil, err
-	}
-	flagSource := ConfigSource{Label: "command-line flags", Status: SourceNotGiven}
-	if len(changed) > 0 {
-		flagSource.Status = SourceMerged
-		flagSource.Detail = strings.Join(changed, ", ")
-	}
-	sources = append(sources, flagSource)
-
-	// Merged last, so it wins over every user-writable location — that is the
-	// whole point of `enforce`. A relative target resolves inside the system
-	// directory, so naming one cannot reach a file the user controls.
-	enforceSetsFIPS := false
-	if enforce == "" {
-		sources = append(sources, ConfigSource{Label: "enforce", Status: SourceNotGiven, AdminLock: true})
-	}
-	if enforce != "" {
-		if !filepath.IsAbs(enforce) {
-			enforce = filepath.Join(paths.systemDir, enforce)
-		}
-		enforceSetsFIPS = enforceFileSets(enforce, "fips")
-		// Fail closed, unlike the optional user/local config files merged
-		// above: `enforce` is the admin's mechanism for locking settings a
-		// user cannot override, so a missing or malformed enforce file must
-		// be a hard startup error rather than silently dropping every locked
-		// setting (which is exactly what the control exists to prevent).
-		v.SetConfigFile(enforce)
-		if err := v.MergeInConfig(); err != nil {
-			return nil, fmt.Errorf("failed to load enforce file %q: %w", enforce, err)
-		}
-		sources = append(sources, ConfigSource{Label: "enforce", Path: enforce, Status: SourceMerged, AdminLock: true})
 	}
 
 	// Merged after `enforce`, so a platform-native policy source (Windows
@@ -132,15 +86,55 @@ func newConfig(cmd *cobra.Command, paths searchPaths, loadPolicy func() (map[str
 	// each key it sets is treated exactly like an enforce-file key.
 	// Forbidden certificate extensions are handled separately because they're
 	// not a per-key override but an unconditional floor — see extractForbiddenExtensions.
-	policySetsFIPS, policyForbiddenExtensions, err := mergePlatformPolicy(v, loadPolicy)
+	policy, err := mergePlatformPolicy(v, loadPolicy)
 	if err != nil {
 		return nil, err
 	}
-	policyStatus := SourceNotGiven
-	if policySetsFIPS || len(policyForbiddenExtensions) > 0 {
-		policyStatus = SourceMerged
+	policySource := ConfigSource{Label: "platform policy", Status: SourceNotGiven, AdminLock: true}
+	if policy.merged {
+		policySource.Status = SourceMerged
 	}
-	sources = append(sources, ConfigSource{Label: "platform policy", Status: policyStatus, AdminLock: true})
+
+	// Flags override the user's own files but never a lock. viper reads a
+	// bound flag above every merged layer, so a flag for a setting that
+	// `enforce` or platform policy sets is not bound at all: bound, it
+	// would let the command line beat the administrator. The rest are bound
+	// rather than read directly so viper's own precedence applies: a flag
+	// that wasn't passed contributes its empty default at the lowest
+	// priority and does not clobber a configured value. --key-type/
+	// --key-size and certificate extension flags are local to `ssh login`
+	// (the only command that generates a keypair and requests extensions),
+	// so Lookup returns nil and binding them no-ops for every other
+	// command's cmd.
+	locked := make(map[string]bool, len(enforceKeys)+len(policy.keys))
+	for key := range enforceKeys {
+		locked[key] = true
+	}
+	for key := range policy.keys {
+		locked[key] = true
+	}
+	changed, overridden, setByFlag, err := bindFlags(v, cmd, map[string]string{
+		"server":              "server",
+		"key-type":            "sshkey.type",
+		"key-size":            "sshkey.size",
+		"no-pty":              "certificate_extensions.no_pty",
+		"no-agent-forwarding": "certificate_extensions.no_agent_forwarding",
+		"no-port-forwarding":  "certificate_extensions.no_port_forwarding",
+		"no-x11-forwarding":   "certificate_extensions.no_x11_forwarding",
+		"no-user-rc":          "certificate_extensions.no_user_rc",
+	}, locked)
+	if err != nil {
+		return nil, err
+	}
+	// Said at load rather than left to --debug: the user typed the flag
+	// and is owed an answer for why it did nothing.
+	for _, flag := range overridden {
+		slog.Warn("ignoring a command-line flag for a setting an administrator has locked", "flag", flag)
+	}
+
+	// Recorded in precedence order, which is not the order the work above
+	// happened in: flags sit above the user's files and below both locks.
+	sources = append(sources, flagsSource(changed, overridden), enforceSource, policySource)
 
 	// The hook chain is spelled out rather than left to viper's default
 	// because capubkey accepts a scalar as well as a sequence, and the
@@ -155,8 +149,8 @@ func newConfig(cmd *cobra.Command, paths searchPaths, loadPolicy func() (map[str
 	))); err != nil {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
-	c.FIPSEnforced = (enforceSetsFIPS || policySetsFIPS) && c.FIPS != nil && *c.FIPS
-	c.ForbiddenCertificateExtensions = policyForbiddenExtensions
+	c.FIPSEnforced = (enforceKeys["fips"] || policy.fipsSet) && c.FIPS != nil && *c.FIPS
+	c.ForbiddenCertificateExtensions = policy.forbiddenExtensions
 	c.SetByFlag = setByFlag
 
 	// Resolve the key settings now so a bad combination is reported at
@@ -234,21 +228,84 @@ func mergeConfigFiles(v *viper.Viper, paths searchPaths, configFile string) (enf
 	return enforce, sources, nil
 }
 
+// mergeEnforceFile merges the `enforce` file the system file named, if
+// any, into v, and returns the settings it sets along with its entry in the
+// source chain. Merged last of the files, so it wins over every
+// user-writable location — that is the whole point of `enforce`. A relative
+// target resolves inside the system directory, so naming one cannot reach a
+// file the user controls.
+func mergeEnforceFile(v *viper.Viper, paths searchPaths, enforce string) (map[string]bool, ConfigSource, error) {
+	if enforce == "" {
+		return nil, ConfigSource{Label: "enforce", Status: SourceNotGiven, AdminLock: true}, nil
+	}
+	if !filepath.IsAbs(enforce) {
+		enforce = filepath.Join(paths.systemDir, enforce)
+	}
+
+	// Fail closed, unlike the optional user/local config files merged
+	// before it: `enforce` is the admin's mechanism for locking settings a
+	// user cannot override, so a missing or malformed enforce file must be a
+	// hard startup error rather than silently dropping every locked setting
+	// (which is exactly what the control exists to prevent).
+	v.SetConfigFile(enforce)
+	if err := v.MergeInConfig(); err != nil {
+		return nil, ConfigSource{}, fmt.Errorf("failed to load enforce file %q: %w", enforce, err)
+	}
+	keys, err := enforceFileKeys(enforce)
+	if err != nil {
+		return nil, ConfigSource{}, fmt.Errorf("failed to load enforce file %q: %w", enforce, err)
+	}
+	return keys, ConfigSource{Label: "enforce", Path: enforce, Status: SourceMerged, AdminLock: true}, nil
+}
+
+// flagsSource is the command-line flags' entry in the source chain: which
+// flags took effect, and which a lock overrode.
+func flagsSource(changed, overridden []string) ConfigSource {
+	source := ConfigSource{Label: "command-line flags", Status: SourceNotGiven}
+	switch {
+	case len(changed) > 0:
+		source.Status = SourceMerged
+		source.Detail = strings.Join(changed, ", ")
+		if len(overridden) > 0 {
+			source.Detail += "; overridden by a lock: " + strings.Join(overridden, ", ")
+		}
+	case len(overridden) > 0:
+		source.Status = SourceOverridden
+		source.Detail = strings.Join(overridden, ", ")
+	}
+	return source
+}
+
+// platformPolicy is what mergePlatformPolicy found in the platform-native
+// policy source.
+type platformPolicy struct {
+	// merged says the source set anything at all, for the debug report's
+	// chain.
+	merged bool
+	// keys are the settings it set, flattened the way viper names them
+	// ("sshkey.type"). No command-line flag may override one.
+	keys map[string]bool
+	// fipsSet says it set fips: true, the counterpart of the enforce file's
+	// "fips" key in newConfig's FIPSEnforced computation.
+	fipsSet bool
+	// forbiddenExtensions is forbidden_certificate_extensions, handled
+	// separately because it is not a per-key override but an
+	// unconditional floor on which extensions are allowed.
+	forbiddenExtensions []string
+}
+
 // mergePlatformPolicy loads and merges the platform-native policy source
 // (see loadPlatformPolicy and its per-GOOS implementations) into v, and
-// reports whether it set fips: true — the platform-policy counterpart of
-// enforceFileSets, used the same way by newConfig's FIPSEnforced
-// computation. It also extracts and returns the forbidden_certificate_extensions
-// list, which is handled separately because it's not a per-key override but
-// an unconditional floor on which extensions are allowed.
-func mergePlatformPolicy(v *viper.Viper, loadPolicy func() (map[string]any, error)) (fipsSet bool, forbiddenExtensions []string, err error) {
+// reports what it found.
+func mergePlatformPolicy(v *viper.Viper, loadPolicy func() (map[string]any, error)) (platformPolicy, error) {
 	policy, err := loadPolicy()
 	if err != nil {
-		return false, nil, fmt.Errorf("failed to load platform policy: %w", err)
+		return platformPolicy{}, fmt.Errorf("failed to load platform policy: %w", err)
 	}
 	if len(policy) == 0 {
-		return false, nil, nil
+		return platformPolicy{}, nil
 	}
+	found := platformPolicy{merged: true}
 
 	// Extract forbidden extensions before merging, since it shouldn't go through
 	// viper's normal merge (it's a list that acts as a floor, not an override).
@@ -258,19 +315,36 @@ func mergePlatformPolicy(v *viper.Viper, loadPolicy func() (map[string]any, erro
 		if forbiddenSlice, ok := forbidden.([]any); ok {
 			for _, ext := range forbiddenSlice {
 				if s, ok := ext.(string); ok {
-					forbiddenExtensions = append(forbiddenExtensions, s)
+					found.forbiddenExtensions = append(found.forbiddenExtensions, s)
 				}
 			}
 		}
 	}
 
 	if fips, ok := policy["fips"].(bool); ok {
-		fipsSet = fips
+		found.fipsSet = fips
 	}
 	if err := v.MergeConfigMap(policy); err != nil {
-		return false, nil, fmt.Errorf("failed to merge platform policy: %w", err)
+		return platformPolicy{}, fmt.Errorf("failed to merge platform policy: %w", err)
 	}
-	return fipsSet, forbiddenExtensions, nil
+
+	// Read back through a viper of its own, which flattens the nested map
+	// into the dotted keys the flags are bound to.
+	isolated := viper.New()
+	if err := isolated.MergeConfigMap(policy); err != nil {
+		return platformPolicy{}, fmt.Errorf("failed to merge platform policy: %w", err)
+	}
+	found.keys = keySet(isolated.AllKeys())
+	return found, nil
+}
+
+// keySet turns a list of setting keys into a set.
+func keySet(keys []string) map[string]bool {
+	set := make(map[string]bool, len(keys))
+	for _, key := range keys {
+		set[key] = true
+	}
+	return set
 }
 
 // mergeConfig merges f into v and reports what happened. A missing file is
@@ -304,24 +378,31 @@ func isNotExist(err error) bool {
 
 // bindFlags binds each cmd flag named in flagToKey to the viper key it maps
 // to, skipping any flag cmd does not have registered (a leaf-local flag on
-// a command other than the one invoked).
-// Returns the names of the flags the caller actually passed, sorted, so the
-// merge chain can report which flags overrode the files rather than only
-// that flags were considered.
-// It returns both the display list of changed flags (for the debug report)
-// and the set of viper keys those flags set, keyed the way Config.SetByFlag
+// a command other than the one invoked) and any whose key is locked, which
+// an administrator lock sets and no flag may override.
+//
+// Returns the names of the flags the caller actually passed, sorted, split
+// into those that took effect and those a lock overrode, so the merge chain
+// can report both rather than only that flags were considered. setByFlag is
+// the viper keys the effective flags set, keyed the way Config.SetByFlag
 // is — binding loses which layer a value came from, and that is the only
 // thing that can tell a user whether to look at their command line or their
 // config file.
-func bindFlags(v *viper.Viper, cmd *cobra.Command, flagToKey map[string]string) (changed []string, setByFlag map[string]bool, err error) {
+func bindFlags(v *viper.Viper, cmd *cobra.Command, flagToKey map[string]string, locked map[string]bool) (changed, overridden []string, setByFlag map[string]bool, err error) {
 	setByFlag = make(map[string]bool)
 	for flag, key := range flagToKey {
 		f := cmd.Flags().Lookup(flag)
 		if f == nil {
 			continue
 		}
+		if locked[key] {
+			if f.Changed {
+				overridden = append(overridden, "--"+flag)
+			}
+			continue
+		}
 		if err := v.BindPFlag(key, f); err != nil {
-			return nil, nil, fmt.Errorf("failed to bind the --%s flag: %w", flag, err)
+			return nil, nil, nil, fmt.Errorf("failed to bind the --%s flag: %w", flag, err)
 		}
 		if f.Changed {
 			changed = append(changed, "--"+flag)
@@ -332,19 +413,21 @@ func bindFlags(v *viper.Viper, cmd *cobra.Command, flagToKey map[string]string) 
 	// varies run to run, and a diagnostic report that differs between two
 	// identical invocations wastes the reader's time.
 	sort.Strings(changed)
-	return changed, setByFlag, nil
+	sort.Strings(overridden)
+	return changed, overridden, setByFlag, nil
 }
 
-// enforceFileSets reports whether the enforce file at path explicitly sets
-// key, read in isolation from the main viper instance so the origin of a
-// merged value isn't lost by the time it's unmarshaled. A read failure
-// (missing/malformed file) is not reported here: mergeConfig re-reads the
-// same file right after this call and is where a genuine problem surfaces.
-func enforceFileSets(path, key string) bool {
+// enforceFileKeys returns the settings the enforce file at path sets,
+// flattened the way viper names them ("sshkey.type"). Read in isolation
+// from the main viper instance, where the origin of a merged value is lost.
+// These are the settings no command-line flag may override, so a read that
+// fails is an error rather than an empty set: the caller has just merged
+// the same file, and an empty set here would quietly unlock all of them.
+func enforceFileKeys(path string) (map[string]bool, error) {
 	v := viper.New()
 	v.SetConfigFile(path)
 	if err := v.MergeInConfig(); err != nil {
-		return false
+		return nil, err
 	}
-	return v.IsSet(key)
+	return keySet(v.AllKeys()), nil
 }
