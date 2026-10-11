@@ -758,7 +758,9 @@
 				oncancel={closeDisableConfirm}
 			>
 				<span data-testid="disable-consequences">
-					This will prevent <strong>{account.username}</strong> from authenticating immediately.
+					<strong>{account.username}</strong> can no longer sign in, and a session they already have
+					open ends on its next request. Certificates already issued to them stay valid until they
+					expire.
 					{#if disableConsequences.service_enrollment_count > 0}
 						The <strong>{disableConsequences.service_enrollment_count}</strong> live service enrollment(s)
 						they approved keep working: those belong to their service accounts, not to this person, and

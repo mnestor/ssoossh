@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 
 	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/model"
+	"github.com/mnestor/ssoossh/server/utils/errorresponses"
 )
 
 // newIdentityTestDB gives the identity tests the two tables a refresh
@@ -329,4 +331,25 @@ func equalStrings(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// TestRefreshIdentity_ShouldReportAnAccountDisabledSinceSignIn is what
+// lets a disable take effect on the next request: sign-in already refuses
+// a disabled account, and a session opened before the disable has to be
+// told too, or it keeps approving until it times out.
+func TestRefreshIdentity_ShouldReportAnAccountDisabledSinceSignIn(t *testing.T) {
+	t.Parallel()
+
+	db := newIdentityTestDB(t)
+	id := seedIdentityUser(t, db, "sub-alice", nil, nil, nil)
+	if err := db.Model(&model.User{}).Where("id = ?", id).Update("disabled_at", time.Now()).Error; err != nil {
+		t.Fatalf("failed to disable the user: %v", err)
+	}
+
+	err := NewIdentityService(db, nil).RefreshIdentity(context.Background(), &Identity{Subject: "sub-alice"})
+
+	var disabled *errorresponses.UserDisabledError
+	if !errors.As(err, &disabled) {
+		t.Errorf("RefreshIdentity() returned %v, want a UserDisabledError", err)
+	}
 }

@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"strings"
 	"time"
@@ -412,8 +413,24 @@ func (m *SessionAuthMiddleware) Add() gin.HandlerFunc {
 		// logged rather than 500ing every authenticated request, because
 		// the alternative to slightly stale principals here is no
 		// principals at all.
+		//
+		// The exception is an account disabled since this session signed
+		// in: that session ends here, so disabling someone takes effect on
+		// their next request rather than when the session times out. The
+		// 401 sends the browser to sign in again, which a disabled account
+		// cannot.
 		if m.refresher != nil {
 			if err := m.refresher.RefreshIdentity(c.Request.Context(), identity); err != nil {
+				var disabled *errorresponses.UserDisabledError
+				if errors.As(err, &disabled) {
+					slog.InfoContext(c.Request.Context(),
+						"ended the session of a disabled account", slog.String("subject", subject))
+					sess.Clear()
+					_ = sess.Save()                                  //nolint:errcheck // the session is already being rejected; a failed clear changes nothing.
+					_ = c.Error(&errorresponses.UnauthorizedError{}) //nolint:errcheck // c.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
+					c.Abort()
+					return
+				}
 				slog.WarnContext(c.Request.Context(),
 					"failed to refresh the session identity from the database; using the login-time values",
 					slog.String("subject", subject), slog.Any("error", err))

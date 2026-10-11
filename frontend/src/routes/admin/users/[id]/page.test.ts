@@ -150,13 +150,29 @@ describe('Admin user detail', () => {
 		expect(consequences).toHaveTextContent(/no live service enrollments/);
 	});
 
-	it('should say the account is blocked immediately', async () => {
+	// What disabling really does: no new sign-in, and the open session ends
+	// on its next request. The dialog used to promise an immediate lock-out
+	// while the server only stopped new sign-ins.
+	it('should say an open session ends on its next request', async () => {
 		mockDetail();
 		render(Page);
 		await screen.findByTestId('user-username');
 
 		await userEvent.click(screen.getByRole('button', { name: /^Disable$/ }));
-		expect(await screen.findByText(/immediately/)).toBeInTheDocument();
+		const consequences = await screen.findByTestId('disable-consequences');
+		expect(consequences).toHaveTextContent(
+			/session they already have open ends on its next request/
+		);
+	});
+
+	it('should say certificates already issued stay valid until they expire', async () => {
+		mockDetail();
+		render(Page);
+		await screen.findByTestId('user-username');
+
+		await userEvent.click(screen.getByRole('button', { name: /^Disable$/ }));
+		const consequences = await screen.findByTestId('disable-consequences');
+		expect(consequences).toHaveTextContent(/stay valid until they expire/);
 	});
 
 	it('should close the confirmation without disabling when cancelled', async () => {

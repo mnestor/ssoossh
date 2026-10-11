@@ -299,8 +299,12 @@ Admins inherit SOC and auditor access; SOC inherits auditor access but
 deliberately not the restorative operations, so re-enabling stays admin-only.
 
 **Disabling** takes effect immediately and is fail-closed at login: a transient
-database error denies rather than admits. A reason is required and is recorded;
-you land on a page that can carry an operator-set message and contact address.
+database error denies rather than admits. A session that is already open ends on
+its next request, so a disabled account cannot keep approving in a browser tab it
+signed in to earlier. Certificates already issued stay valid until they expire:
+ssoossh never stores them, so there is nothing to revoke. A reason is required
+and is recorded; you land on a page that can carry an operator-set message and
+contact address.
 
 Disabling does exactly that and no more. Service enrollments you approved keep
 working, because they belong to their service accounts rather than to you, so
