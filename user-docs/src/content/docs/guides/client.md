@@ -65,6 +65,17 @@ These are persistent flags: every subcommand accepts them.
 command line belongs to `ssh` or cron. See
 [Diagnostics](/ssoossh/guides/diagnostics/).
 
+## Exit status
+
+| Status | Meaning |
+| --- | --- |
+| `0` | Success, including the cases a command documents as succeeding without doing anything (a certificate still valid, nothing to remove). |
+| `1` | The command ran and failed: the server was unreachable, the request was denied, a file could not be written. |
+| `2` | The command was invoked wrongly: an unknown command or flag, a bad flag value, missing or extra arguments. The message ends with the `--help` command to run. |
+
+`Match exec` treats any non-zero status as "do not connect", so the
+distinction matters only to scripts.
+
 ## The commands
 
 | Command | Talks to the server | What it does |

@@ -77,6 +77,7 @@ func (r *RootCommand) Init(cd *simplecobra.Commandeer) error {
 	cmd.Use = r.Name() + " [command]"
 	cmd.Args = rejectUnknownSubcommand
 	cmd.SetUsageTemplate(usageTemplate)
+	cmd.SetHelpCommand(newHelpCommand())
 	cmd.Short = "The ssoossh client — turns an OIDC login into a short-lived SSH certificate, from your ssh_config."
 	cmd.Long = "The ssoossh client wires SSO into your existing SSH workflow. Configured " +
 		"as a ProxyCommand or Match exec in ssh_config, it generates a fresh keypair, " +
@@ -335,9 +336,8 @@ func Execute() {
 		os.Exit(1)
 	}
 
-	if _, err := x.Execute(ctx, os.Args[1:]); err != nil {
-		fmt.Fprintln(os.Stderr, "Error:", err)
-		os.Exit(1)
+	if cd, err := x.Execute(ctx, os.Args[1:]); err != nil {
+		os.Exit(reportError(os.Stderr, cd, err))
 	}
 }
 

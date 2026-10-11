@@ -67,7 +67,7 @@ type simpleCommand struct {
 // the message a user gets for calling it wrong and the usage line --help
 // prints cannot drift apart -- and neither hard-codes the binary name.
 func (c *simpleCommand) usageError(cd *simplecobra.Commandeer) error {
-	return fmt.Errorf("usage: %s %s", cd.CobraCommand.CommandPath(), c.argSpec)
+	return &usageError{msg: fmt.Sprintf("usage: %s %s", cd.CobraCommand.CommandPath(), c.argSpec)}
 }
 
 // Name implements simplecobra.Commander.

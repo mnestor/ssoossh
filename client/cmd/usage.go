@@ -3,6 +3,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/bep/simplecobra"
@@ -95,3 +96,68 @@ Additional help topics:{{range .Commands}}{{if .IsAdditionalHelpTopicCommand}}
 
 Use "{{.CommandPath}} [command] --help" for more information about a command.{{end}}
 `
+
+// reportError prints err for the person who ran the command and returns the
+// exit status: 2 for a mistake in how the command was invoked, 1 for a
+// failure while running it. Scripts can tell the two apart, and a usage
+// mistake ends with where to read the usage.
+//
+// simplecobra wraps every error cobra raises itself (unknown flag, bad flag
+// value, unknown command) in a CommandError whose message starts "command
+// error:". That prefix is dropped: it names the framework, not the problem.
+func reportError(w io.Writer, cd *simplecobra.Commandeer, err error) int {
+	var cmdErr *simplecobra.CommandError
+	isUsage := errors.As(err, &cmdErr)
+	err = unwrapCommandError(err)
+
+	var usage *usageError
+	if errors.As(err, &usage) {
+		isUsage = true
+	}
+
+	fmt.Fprintln(w, "Error:", err)
+	if !isUsage {
+		return 1
+	}
+
+	// cd is nil when the invoked command is not one of ours: cobra's own
+	// completion command, or the help command below.
+	path := "ssoossh"
+	if cd != nil {
+		path = cd.CobraCommand.CommandPath()
+	}
+	fmt.Fprintf(w, "Run '%s --help' for usage.\n", path)
+	return 2
+}
+
+// newHelpCommand replaces cobra's help command, which answered `ssoossh
+// help nonexistent` with "Unknown help topic", the root usage, and exit 0.
+// An unknown topic is now a usage error like an unknown command.
+func newHelpCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "help [command]",
+		Short: "Help about any command",
+		Long:  "Prints the help for any command. Type ssoossh help followed by the command's path, e.g. ssoossh help ssh login.",
+		ValidArgsFunction: func(c *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
+			cmd, _, err := c.Root().Find(args)
+			if err != nil {
+				return nil, cobra.ShellCompDirectiveNoFileComp
+			}
+			var completions []cobra.Completion
+			for _, sub := range cmd.Commands() {
+				if (sub.IsAvailableCommand() || sub.Name() == "help") && strings.HasPrefix(sub.Name(), toComplete) {
+					completions = append(completions, cobra.CompletionWithDesc(sub.Name(), sub.Short))
+				}
+			}
+			return completions, cobra.ShellCompDirectiveNoFileComp
+		},
+		RunE: func(c *cobra.Command, args []string) error {
+			cmd, rest, err := c.Root().Find(args)
+			if err != nil || cmd == nil || len(rest) > 0 {
+				return &usageError{msg: fmt.Sprintf("unknown help topic %q", strings.Join(args, " "))}
+			}
+			cmd.InitDefaultHelpFlag()
+			return cmd.Help()
+		},
+	}
+}
