@@ -172,6 +172,14 @@ starting an echo signs you in again with `prompt=login`, and the callback
 renders the token instead of establishing a session. Your existing session is
 untouched, no user record is written, and no login is recorded.
 
+The result is a table of every claim the token carried, however many and
+whatever their shape, with the count above it. Each value is shown in the
+shape of its type: a list one item per line, so a group named `eng, ops`
+stays one group; an object as indented JSON; an empty string and a null each
+labelled, so the two are told apart. A list or object longer than ten
+entries shows the first ten and a **Show all** button. The last column names
+the configured field that reads each claim, or says "unmapped".
+
 Nothing about the result is stored. It reaches the page in the URL fragment,
 which browsers never send to a server, and the page clears the address bar as
 soon as it has read it. Reload and it is gone. There is no shareable link, on

@@ -156,7 +156,7 @@ back to the code they were redeemed from. See
 Because you turned that kind on. The three "was this you?" notifications --
 user, PAM, and console certificate issued -- are off by default; the four about
 service enrollments are on. Choose at `/preferences` in the web UI:
-[Notification preferences](/ssoossh/guides/approving/#notification-preferences).
+[Email notifications](/ssoossh/guides/approving/#email-notifications).
 
 ## Can my administrator lock my client settings?
 

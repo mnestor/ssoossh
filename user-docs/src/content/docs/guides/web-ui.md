@@ -46,7 +46,7 @@ The rail has a few behaviours worth knowing:
   except that landing on any admin page opens it, because arriving in the
   admin area with its section list hidden is never what you meant.
 - **Your identity is a menu.** The row at the bottom opens a drop-up holding
-  the account page, notification preferences, the theme switch, and sign-out.
+  the account page, preferences, the theme switch, and sign-out.
   These are deliberately not in the destination list: they act on the
   session, not on the app.
 - **On a narrow screen** the same rail becomes a drawer behind a single
@@ -63,26 +63,27 @@ The rail has a few behaviours worth knowing:
 
 <p class="screen-caption">Left: the rail collapsed. Right: the drop-up behind the identity row, where the account page, preferences, the theme and sign-out live.</p>
 
-Four screens have no rail at all: sign-in, an approval, a console code, and
-the page shown when an approval cannot proceed. They are single-decision
-screens, and a column of other destinations beside them would only invite
-you to wander off mid-decision.
+Three screens have no rail at all: sign-in, a console code link (`/c/<code>`),
+and the page shown when an approval link cannot proceed. They are reached
+before or outside a session, and a column of destinations beside them would
+only invite you to wander off. The approval page itself is inside the app:
+reaching it means signing in, so it keeps the rail.
 
 ## Where everything lives
 
 | Page | Path | What it holds | Who sees it |
 | --- | --- | --- | --- |
 | **Dashboard** | `/dashboard` | Your recent certificates, newest first | everyone |
-| **History** | `/logs/me` | Your full certificate history, filterable by type | everyone |
+| **History** | `/logs/me` | Your full certificate history, searchable and filterable by type, status and outcome | everyone |
 | **Service codes** | `/service-codes` | The service accounts you hold, then the codes approved for each | everyone |
 | **Console login** | `/console` | Where you type the code a console showed you | everyone |
 | **Account** | `/account` | Your identity, the principals you can mint, your service accounts, and your groups | everyone, from the identity drop-up |
-| **Preferences** | `/preferences` | Which notification emails you receive | everyone, from the identity drop-up |
+| **Preferences** | `/preferences` | Which notification emails you receive, and how much detail the approval and detail pages show | everyone, from the identity drop-up |
 | **Users** | `/admin/users` | The user directory, with disable and re-enable | auditor and up |
 | **Certificates** | `/admin/certificates` | Certificate history across every user | auditor and up |
 | **Service codes** | `/admin/service-codes` | Every approved enrollment code, searchable by id, account, key ID, request id or approver | auditor and up |
 | **Config** | `/admin/config` | The effective server configuration, secrets redacted | auditor and up |
-| **Directory** | `/admin/directory` | The LDAP sync's last pass, a dry run, and a read-only probe | auditor to view; admin to run |
+| **Directory** | `/admin/directory` | The LDAP sync's last pass, a sync (a dry run by default; a live pass asks for confirmation), and a read-only probe | auditor to view; admin to run |
 | **Claims echo** | `/admin/identity/echo` | Your own decoded ID token, annotated by the field that consumes each claim | admin |
 | **Audit log** | `/admin/audit` | Recent administrative activity | auditor and up |
 | **Diagnostics** | `/admin/diagnostics` | Read-only checks of the deployment's public URL, proxy trust and edge headers | admin |
@@ -103,7 +104,35 @@ opened from.
 
 ![A certificate's detail page: type and status chips, the certificate card with principals, key ID, serial, fingerprint and validity, then the decision card with the approver, source address, approver groups and the lifetime policy that applied](../../../assets/screens/cert-detail.png)
 
-<p class="screen-caption">A PAM certificate's detail page. The "What asked for it" card at the bottom is what the requesting host reported about itself, labelled as never verified.</p>
+<p class="screen-caption">A PAM certificate's detail page. The "What asked for it" section at the bottom is what the requesting host reported about itself, labelled as never verified.</p>
+
+## Simplified and Advanced
+
+The approval page and the three detail pages each carry a **Simplified /
+Advanced** switch in their heading. Advanced, the default, is the whole page.
+Simplified keeps what you need to decide or to understand the result and
+leaves out what an expert compares: ids, key ids, serials and fingerprints,
+public keys, process ids, the reporting client, timestamps other than the
+validity window, approver groups, lifetime-policy detail, and the redemption
+history. Facts that remain are set a size larger, and the page closes with a
+line naming what was left out and a button back to Advanced.
+
+Simplified never hides a warning. A trimmed critical option, the requesting
+machine's own policy note, a console request that reports a remote host, a
+skewed host clock, an expired or blocked request, and any error all show at
+both levels.
+
+The switch on each page and the **Display** section on
+[Preferences](/ssoossh/guides/approving/#preferences) are the same setting. It
+is kept in this browser, not on your account.
+
+## When something does not load
+
+A page that cannot load says what failed and offers **Try again**, which asks
+the server again without leaving the page. A list that failed to load never
+shows its empty state underneath, so "could not load your certificates" is
+never mistaken for "you have none". A request link that cannot be retried, one
+that is already claimed or no longer exists, leads back to the dashboard.
 
 ## Theme, and the footer
 

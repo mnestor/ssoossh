@@ -324,7 +324,7 @@ to run `ssoossh service enroll` again rather than offering anything to reuse.
 "Expired enrollment code used" is rate-limited rather than one-shot, because
 what it usually reports is a cron job holding a dead code and failing on its own
 schedule indefinitely. Each holder's own
-[preferences](/ssoossh/guides/approving/#notification-preferences) gate their
+[preferences](/ssoossh/guides/approving/#email-notifications) gate their
 own copy.
 
 Set the notification address on the approval page, or afterwards from the
