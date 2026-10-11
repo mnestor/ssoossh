@@ -52,7 +52,9 @@ an authoritative miss. All routes return 404 `nss_disabled` when
 ```
 
 - `groups`: every membership, primary first, gid and name together, so the
-  daemon fills `initgroups`, `getgrgid` and `getgrnam` from one call.
+  daemon answers `GetMemberships` by user and `GetGroupRecord` by name or
+  gid from one call. Group members (`GetMemberships` by group) still need
+  the group endpoint.
 - `home`: `homeDirectory`, else `nss.default_home` expanded, else null.
 - `shell`: `loginShell` path, else `nss.default_shell`, else null.
 - `shell_pref`: user's chosen shell **name** or null.
@@ -157,7 +159,7 @@ from the cert-request routes first. Per-key miss rate above
 | Status | Served as | Notes |
 | --- | --- | --- |
 | `active` | normal | |
-| `disabled` | name, uid, gid, gecos, home kept; `shell` = `nss.disabled_shell` (`/usr/sbin/nologin`); `status: disabled` | daemon sets passwd `!` |
+| `disabled` | name, uid, gid, gecos, home kept; `shell` = `nss.disabled_shell` (`/usr/sbin/nologin`); `status: disabled` | daemon serves the record with `locked: true` (README U6) |
 | `deleted` | as `disabled` until `tombstone_retention`, then 404 | |
 
 Group memberships are kept through `disabled`.
