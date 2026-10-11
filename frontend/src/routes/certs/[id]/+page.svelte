@@ -63,8 +63,20 @@
 	let loadError = $state<string | null>(null);
 	let isAccessDenied = $state(false);
 	let hasLoaded = $state(false);
+	// Bumped by Try again; the load below reads it, so a bump re-runs it.
+	let attempt = $state(0);
+
+	// The way out of a failed load: back to the loading shape, then the
+	// same request again (DESIGN.md, "States"). A not-found answer gets no
+	// retry, because asking again cannot change it.
+	function retry() {
+		loadError = null;
+		hasLoaded = false;
+		attempt += 1;
+	}
 
 	$effect(() => {
+		void attempt;
 		const controller = new AbortController();
 
 		getCertificateDetail(id, controller.signal)
@@ -224,7 +236,9 @@
 	</PageHeading>
 
 	{#if loadError}
-		<Alert variant="error" title="Could not load certificate">{loadError}</Alert>
+		<Alert variant="error" title="Could not load certificate" onretry={retry} testid="cert-error"
+			>{loadError}</Alert
+		>
 	{:else if isAccessDenied}
 		<div data-testid="access-denied">
 			<Alert variant="error" title="Access denied">

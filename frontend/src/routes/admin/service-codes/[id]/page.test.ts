@@ -222,3 +222,18 @@ describe('at the simplified detail level', () => {
 		expect(screen.queryByTestId('account-holders')).not.toBeInTheDocument();
 	});
 });
+
+describe('when the enrollment fails to load', () => {
+	it('should offer Try again for a server failure', async () => {
+		stubStatus(500, 'database unavailable');
+		render(Page);
+		expect(await screen.findByRole('button', { name: 'Try again' })).toBeInTheDocument();
+	});
+
+	it('should offer no Try again when the enrollment does not exist', async () => {
+		stubStatus(404);
+		render(Page);
+		await screen.findByText('No enrollment with that ID.');
+		expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
+	});
+});

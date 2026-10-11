@@ -4,6 +4,7 @@ import { ApiError } from './api/client';
 import {
 	currentPath,
 	errorMessage,
+	unknownErrorText,
 	goToLogin,
 	loginPageURL,
 	redirectIfUnauthenticated,
@@ -99,6 +100,6 @@ describe('errorMessage', () => {
 	});
 
 	it('should describe a non-Error throw without inventing a message', () => {
-		expect(errorMessage('boom')).toBe('something went wrong');
+		expect(errorMessage('boom')).toBe(unknownErrorText);
 	});
 });

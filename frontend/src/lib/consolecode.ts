@@ -1,4 +1,5 @@
 import { ApiError } from '#lib/api/client.js';
+import { unknownErrorText } from '#lib/auth.js';
 
 // The browser half of the console login code: what the code-entry box does
 // to input as it is typed, and what the three ways a submission can fail
@@ -126,6 +127,6 @@ export function describeCodeError(error: unknown): CodeFailure {
 	return {
 		kind: 'unknown',
 		title: 'Could not check that code',
-		message: error instanceof Error ? error.message : 'something went wrong'
+		message: error instanceof Error ? error.message : unknownErrorText
 	};
 }

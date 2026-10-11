@@ -828,3 +828,40 @@ describe('at the advanced detail level', () => {
 		expect(screen.queryByTestId('detail-hint')).not.toBeInTheDocument();
 	});
 });
+
+describe('when the certificate fails to load', () => {
+	it('should ask the server again when Try again is pressed', async () => {
+		const cert: CertificateResponse = {
+			id: 'cert-123',
+			type: 'user',
+			serial_number: '42',
+			key_id: 'my-key',
+			principals: 'alice',
+			public_key_fingerprint: 'SHA256:abcd1234',
+			issued_at: new Date('2024-08-24T10:00:00Z').toISOString(),
+			expires_at: new Date('2024-08-24T18:00:00Z').toISOString()
+		};
+		vi.stubGlobal(
+			'fetch',
+			vi
+				.fn()
+				.mockRejectedValueOnce(new Error('server error'))
+				.mockResolvedValue(
+					new Response(JSON.stringify({ data: cert, error: null }), {
+						status: 200,
+						headers: { 'Content-Type': 'application/json' }
+					})
+				)
+		);
+		render(Page);
+		await userEvent.click(await screen.findByRole('button', { name: 'Try again' }));
+		expect(await screen.findByTestId('cert-details')).toBeInTheDocument();
+	});
+
+	it('should offer no Try again when the certificate is not found', async () => {
+		mockFetch({}, 404);
+		render(Page);
+		await screen.findByTestId('access-denied');
+		expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
+	});
+});

@@ -1,3 +1,4 @@
+import userEvent from '@testing-library/user-event';
 import { render, screen } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -232,5 +233,33 @@ describe('at the simplified detail level', () => {
 	it('should say what it left out', async () => {
 		await renderSimplified();
 		expect(screen.getByTestId('detail-hint')).toBeInTheDocument();
+	});
+});
+
+describe('when the service code fails to load', () => {
+	it('should ask the server again when Try again is pressed', async () => {
+		const ok = (body: unknown) =>
+			new Response(JSON.stringify({ data: body, error: null }), {
+				status: 200,
+				headers: { 'Content-Type': 'application/json' }
+			});
+		let failed = false;
+		vi.stubGlobal(
+			'fetch',
+			vi.fn((input: RequestInfo | URL) => {
+				const url = String(input);
+				if (url.includes('/retrievals')) return Promise.resolve(ok({ retrievals: [], total: 0 }));
+				if (url.includes('/holders'))
+					return Promise.resolve(ok({ service_account: 'svc-deploy', holders: [] }));
+				if (!failed) {
+					failed = true;
+					return Promise.reject(new Error('server error'));
+				}
+				return Promise.resolve(ok({ enrollments: [deployCode()] }));
+			})
+		);
+		render(Page);
+		await userEvent.click(await screen.findByRole('button', { name: 'Try again' }));
+		expect(await screen.findByTestId('service-code-account')).toHaveTextContent('svc-deploy');
 	});
 });

@@ -43,7 +43,20 @@
 	// because retiring is the page's action, not the reading's.
 	const expired = $derived(detail ? isExpired(detail.enrollment.expires_at) : false);
 
+	// Bumped by Try again; the load below reads it, so a bump re-runs it.
+	let attempt = $state(0);
+	// Whether asking again could change the answer. A missing or forbidden
+	// enrollment stays that way, so those get no Try again.
+	let retryable = $state(true);
+
+	// The way out of a failed load: the same request again (DESIGN.md,
+	// "States"). The effect resets the loading shape itself.
+	function retry() {
+		attempt += 1;
+	}
+
 	$effect(() => {
+		void attempt;
 		const controller = new AbortController();
 		const id = page.params.id;
 		if (!id) {
@@ -66,11 +79,13 @@
 				}
 				// The three answers a reader has to be able to tell apart:
 				// no such code, a code they may not see, and a failure.
+				retryable = false;
 				if (cause instanceof ApiError && cause.status === 404) {
 					loadError = 'No enrollment with that ID.';
 				} else if (cause instanceof ApiError && cause.status === 403) {
 					loadError = 'You do not have permission to view this enrollment.';
 				} else {
+					retryable = true;
 					loadError = errorMessage(cause);
 				}
 				hasLoaded = true;
@@ -110,7 +125,12 @@
 	</PageHeading>
 
 	{#if loadError}
-		<Alert variant="error" title="Could not load enrollment">{loadError}</Alert>
+		<Alert
+			variant="error"
+			title="Could not load enrollment"
+			onretry={retryable ? retry : undefined}
+			testid="enrollment-error">{loadError}</Alert
+		>
 	{:else if !hasLoaded}
 		<LoadingBlock
 			shape="lines"
