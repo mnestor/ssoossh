@@ -342,9 +342,11 @@ changes no file and reloads nothing.
 | `mapping-access` | The command's account cannot read the mapping file |
 
 The rest are notes or warnings and never fail the run: `TrustedUserCAKeys`
-writable by someone other than root, plain public keys still accepted beside
-certificates (`plain-keys` asks whether that is intended; it is how the docs
-suggest adopting ssoossh), and a clock that is not synchronized.
+writable by someone other than root; an `AuthorizedPrincipalsCommand` naming the
+`/usr/local/bin/ssoossh` compatibility link, which `sshd` follows to
+`/usr/bin/ssoossh` and runs until the link is removed; plain public keys still
+accepted beside certificates (`plain-keys` asks whether that is intended; it is
+how the docs suggest adopting ssoossh); and a clock that is not synchronized.
 
 The CA keys to compare with come from a pinned `capubkey` when there is one,
 otherwise from the server, never from the CA cache. When neither is available

@@ -29,6 +29,12 @@ const defaultSSHDPath = "/usr/sbin/sshd"
 // same path.
 const defaultMappingPath = "/etc/ssoossh/principals.yaml"
 
+// compatSSOOSSHPath is where packages before the move to /usr/bin installed
+// the client. Linux packages now leave a symlink there to /usr/bin/ssoossh,
+// removed two releases after it was introduced (see .goreleaser.yml). On
+// macOS it is still the real install path.
+const compatSSOOSSHPath = "/usr/local/bin/ssoossh"
+
 // errNoCAReference reports that there is nothing to compare the host's CA
 // keys with: no capubkey pinned in config, and no server to ask.
 var errNoCAReference = errors.New("no server configured and no capubkey pinned")
@@ -763,14 +769,27 @@ func (c *hostChecker) checkCommandPath(path string) checkResult {
 		}
 	case !checked:
 		return checkResult{status: checkSkip, name: name, detail: fmt.Sprintf("ownership of %s is not checked on this platform", real)}
+	case path == compatSSOOSSHPath && real != path:
+		// sshd judges the link's target, so this works today; it is the
+		// link's scheduled removal that will break it.
+		return checkResult{
+			status: checkWarn, name: name,
+			detail: fmt.Sprintf("AuthorizedPrincipalsCommand names the compatibility link %s; sshd follows it to %s and runs it today, "+
+				"but the link is removed in a later release and every certificate login then fails", path, real),
+			hint: "point AuthorizedPrincipalsCommand at " + real,
+		}
 	}
 	return checkResult{status: checkPass, name: name, detail: fmt.Sprintf("sshd's path-safety rule allows %s", real)}
 }
 
 // unsafePath returns why sshd would refuse to run the resolved path, or ""
 // when it would not; checked is false where the platform has no owners to
-// check. sshd also accepts a few platform system uids for a directory; this
-// holds every platform to root, which can only over-report.
+// check. This is upstream's rule, and it can only over-report against two
+// relaxations: sshd accepts a few platform system uids for a directory, and
+// Debian's and Ubuntu's sshd (user-group-modes.patch) accept a
+// group-writable file or directory whose group has the owner as its only
+// member, such as root:root 0775. A root:staff 2775 directory with no staff
+// members is refused by both.
 func (c *hostChecker) unsafePath(real string) (problem string, checked bool) {
 	st, err := c.sys.Stat(real)
 	if err != nil {

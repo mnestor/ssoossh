@@ -602,10 +602,35 @@ func TestCheckPrincipals(t *testing.T) {
 			// sshd resolves the path before judging it, so a symlink to a
 			// safe binary is safe wherever the link itself lives.
 			name: "should judge a symlinked command by its target",
+			sshd: principalsSSHD("/opt/bin/ssoossh host principals %u"),
+			host: func() *fakeHostSystem {
+				h := principalsHost()
+				h.links = map[string]string{"/opt/bin/ssoossh": "/usr/bin/ssoossh"}
+				return h
+			},
+			check: "principals-command", want: checkPass,
+		},
+		{
+			// Measured on Debian 13's sshd: the link in root:staff 2775
+			// /usr/local/bin is accepted. It breaks only when the link goes.
+			name: "should warn about the compatibility link that is scheduled for removal",
 			sshd: principalsSSHD("/usr/local/bin/ssoossh host principals %u"),
 			host: func() *fakeHostSystem {
 				h := principalsHost()
 				h.links = map[string]string{"/usr/local/bin/ssoossh": "/usr/bin/ssoossh"}
+				return h
+			},
+			check: "principals-command", want: checkWarn,
+		},
+		{
+			// macOS installs the real binary there; nothing will remove it.
+			name: "should pass a real binary at the old path",
+			sshd: principalsSSHD("/usr/local/bin/ssoossh host principals %u"),
+			host: func() *fakeHostSystem {
+				h := principalsHost()
+				h.stats["/usr/local/bin/ssoossh"] = rootExec()
+				h.stats["/usr/local/bin"] = rootDir()
+				h.stats["/usr/local"] = rootDir()
 				return h
 			},
 			check: "principals-command", want: checkPass,
