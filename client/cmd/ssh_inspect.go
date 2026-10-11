@@ -37,7 +37,8 @@ func runInspect(root *RootCommand, out io.Writer) error {
 		return fmt.Errorf("list identities in %s: %w", root.Agent().Backend(), err)
 	}
 	if len(keys) == 0 {
-		fmt.Fprintf(out, "\nNo certificates signed by your CA are loaded in %s.\n", root.Agent().Backend())
+		fmt.Fprintf(out, "\nNo ssoossh certificate is loaded in %s. Run 'ssoossh ssh login' to get one.\n",
+			inspectedStorage(root))
 		return nil
 	}
 
@@ -53,6 +54,18 @@ func runInspect(root *RootCommand, out io.Writer) error {
 		writeCertificate(out, cert)
 	}
 	return nil
+}
+
+// inspectedStorage names where runInspect looked, in words, including why it
+// looked in key files when an ssh-agent was wanted but unreachable.
+func inspectedStorage(root *RootCommand) string {
+	if root.Agent().Type() != agent.AgentTypeFile {
+		return "your ssh-agent"
+	}
+	if root.agentFallback != nil {
+		return fmt.Sprintf("the key files (no ssh-agent was reachable: %v)", root.agentFallback)
+	}
+	return "the key files"
 }
 
 // keyFileLister is the part of a file-backed agent this report needs: the

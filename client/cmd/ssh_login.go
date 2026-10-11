@@ -285,7 +285,8 @@ func runLoginPreflight(root *RootCommand, cfg *config.Config, out io.Writer) err
 
 	// If preflight failed and fallback is configured, try the file agent
 	if cfg.UseAgent && cfg.FallbackFileAgent {
-		slog.Warn("agent preflight failed, attempting fallback to file storage", "error", preflightErr)
+		// Info: the line printed below tells the person; this is the detail.
+		slog.Info("agent preflight failed, attempting fallback to file storage", "error", preflightErr)
 		fallbackErr := probeFileAgentPreflightWithPath(cfg.Filename)
 		if fallbackErr != nil {
 			return fmt.Errorf("agent storage check failed and fallback also failed: primary error: %w, fallback error: %w", preflightErr, fallbackErr)

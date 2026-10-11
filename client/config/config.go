@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -261,6 +262,7 @@ func mergeEnforceFile(v *viper.Viper, paths searchPaths, enforce string) (enforc
 	if err != nil {
 		return enforceFile{}, ConfigSource{}, enforceLoadError(enforce, err)
 	}
+	warnUnknownSettings(enforce, slices.Sorted(maps.Keys(found.keys)), true)
 	return found, ConfigSource{Label: "enforce", Path: enforce, Status: SourceMerged, AdminLock: true}, nil
 }
 
@@ -396,6 +398,7 @@ func mergeConfig(v *viper.Viper, label, f string) ConfigSource {
 	err := v.MergeInConfig()
 	switch {
 	case err == nil:
+		warnUnknownSettings(f, fileSettings(f), false)
 		return ConfigSource{Label: label, Path: f, Status: SourceMerged}
 	case isNotExist(err):
 		return ConfigSource{Label: label, Path: f, Status: SourceAbsent}

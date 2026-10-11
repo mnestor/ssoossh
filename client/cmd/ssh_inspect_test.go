@@ -69,15 +69,42 @@ func TestRunInspect_ShouldListExtensionsInAStableOrder(t *testing.T) {
 	}
 }
 
+// TestRunInspect_ShouldSayWhenNothingIsLoaded covers the empty report: where
+// it looked, why when that was key files in place of an unreachable agent,
+// and the command that gets a certificate.
 func TestRunInspect_ShouldSayWhenNothingIsLoaded(t *testing.T) {
-	ag := &stubAgent{}
-
-	var out bytes.Buffer
-	if err := runInspect(&RootCommand{ssh: ag}, &out); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	tests := []struct {
+		name     string
+		root     *RootCommand
+		wantLine string
+	}{
+		{
+			name:     "should point at ssh login when the agent holds nothing",
+			root:     &RootCommand{ssh: &stubAgent{}},
+			wantLine: "No ssoossh certificate is loaded in your ssh-agent. Run 'ssoossh ssh login' to get one.",
+		},
+		{
+			name:     "should say key files were checked because no agent was reachable",
+			root:     &RootCommand{ssh: &stubAgent{agentType: agent.AgentTypeFile}, agentFallback: errors.New("SSH_AUTH_SOCK is not set")},
+			wantLine: "No ssoossh certificate is loaded in the key files (no ssh-agent was reachable: SSH_AUTH_SOCK is not set). Run 'ssoossh ssh login' to get one.",
+		},
+		{
+			name:     "should name the key files when they are the configured storage",
+			root:     &RootCommand{ssh: &stubAgent{agentType: agent.AgentTypeFile}},
+			wantLine: "No ssoossh certificate is loaded in the key files. Run 'ssoossh ssh login' to get one.",
+		},
 	}
-	if !strings.Contains(out.String(), "No certificates") {
-		t.Errorf("got %q, want it to say nothing is loaded", out.String())
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var out bytes.Buffer
+			if err := runInspect(tt.root, &out); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !strings.Contains(out.String(), tt.wantLine) {
+				t.Errorf("got %q, want it to contain %q", out.String(), tt.wantLine)
+			}
+		})
 	}
 }
 

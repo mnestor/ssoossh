@@ -36,6 +36,10 @@ type RootCommand struct {
 	ssh     agent.Agent
 	initErr error
 
+	// agentFallback is why the ssh-agent could not be used when key files
+	// were used instead, nil otherwise. ssh inspect reports it.
+	agentFallback error
+
 	// newConfig, newAPIClient, newSSHAgent, newFileAgent and caCachePath are
 	// overridable seams for PreRun, so tests can inject fakes instead of
 	// hitting a real server/ssh-agent/config file on disk.
@@ -273,7 +277,12 @@ func (r *RootCommand) resolveAgent(cfg *config.Config) (agent.Agent, error) {
 		return nil, fmt.Errorf("connect to ssh-agent: %w", err)
 	}
 
-	slog.Warn("failed to connect to ssh-agent, falling back to file-based storage", "error", err)
+	// Info, not Warn: with fallback_file_agent on, key files are the
+	// configured answer to "no agent", and a warning on every invocation
+	// of ca or service retrieve under cron is noise. ssh login says where
+	// it stored the certificate, and ssh inspect says why it checked files.
+	slog.Info("no ssh-agent reachable; using key files", "error", err)
+	r.agentFallback = err
 	a, err = r.newFileAgent(cfg.Filename)
 	if err != nil {
 		return nil, fmt.Errorf("no ssh-agent, and key file storage failed too: %w", err)

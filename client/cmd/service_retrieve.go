@@ -92,7 +92,7 @@ func runServiceRetrieve(ctx context.Context, root *RootCommand, errOut io.Writer
 
 		// Check for a still-valid certificate on disk.
 		if cert := reusableCertificateFile(certPath, reuseGrace); cert != nil {
-			fmt.Fprintf(errOut, "WARNING: could not refresh certificate (%v), but %s is still valid %s\n",
+			fmt.Fprintf(errOut, "Warning: could not refresh certificate (%v), but %s is still valid %s\n",
 				err, certPath, expiryPhrase(cert))
 			return nil
 		}
