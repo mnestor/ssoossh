@@ -209,7 +209,7 @@ jobs:
       # zig-linux-x86_64-).
       - name: Set up Zig
         env:
-          ZIG_VERSION: "0.16.0"
+          ZIG_VERSION: "0.17.0"
         run: |
           mkdir -p /tmp/zig
           cd /tmp/zig
