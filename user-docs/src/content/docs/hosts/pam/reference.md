@@ -328,10 +328,61 @@ including for a host whose distribution has stopped issuing updates.
 Failures log their reason at `LOG_ERR`, a successful authentication at
 `LOG_INFO`, and the per-check reasoning at `LOG_DEBUG` when `debug` is set.
 
-The success line names the local account and the validated certificate's key
-ID, as `sshd` does for a certificate login. That is what makes a `sudo` to a
-shared account attributable from the host's own log, as long as the server's
-[key ID template](/ssoossh/operations/key-id-templates/) names the approver.
+### The success line
+
+Logged only after all four checks pass:
+
+```text
+pam_ssoossh: successful authentication: root, certificate ID "pam:alice" (serial 42) CA ecdsa-sha2-nistp384 SHA256:E6/OtzG5rhH8EAuAWVlTuuZdc61lz26dN0cciVOI0x4
+```
+
+| Field | Is |
+| --- | --- |
+| `successful authentication: root` | The local account authenticated, `PAM_USER`. This prefix is unchanged from earlier releases, so existing greps still match |
+| `certificate ID "pam:alice"` | The certificate's key ID, rendered by the server's [key ID template](/ssoossh/operations/key-id-templates/). The built-in PAM default is `pam:{{.Username}}`, the approver's username |
+| `(serial 42)` | The certificate serial |
+| `CA ecdsa-sha2-nistp384 SHA256:...` | The key from `trusted-ca-file` that verified the signature, as its full algorithm name and fingerprint |
+
+The fields follow `sshd`'s order for a certificate login: ID, serial, CA. It
+differs in two ways: the key ID is quoted, and the CA is shown by its full
+algorithm name (`ecdsa-sha2-nistp384`) where `sshd` prints `ECDSA`.
+
+That line is what makes a `sudo` to a shared account attributable from the
+host's own log, with no join against the server's records. It names a person
+only if the key ID template does: a custom template with no identifying field
+leaves it naming nobody.
+
+### A principals refusal names the certificate too
+
+When check 3 refuses a certificate, the `LOG_ERR` line carries the key ID and
+serial, because someone did approve and this is where an operator finds out
+who:
+
+```text
+certificate principals [alice] do not include "root", certificate ID "pam:alice" (serial 42)
+certificate principals [alice] include neither the account "root" nor any principal /etc/ssoossh/principals.yaml maps to it, certificate ID "pam:alice" (serial 42)
+```
+
+The second form is the principals-map refusal. Check 3 runs only after the CA
+signature and the key binding have been verified, so the key ID on these lines
+is genuine. Refusals from earlier checks (unsigned, wrong key, expired) do not
+log it.
+
+### Escaping
+
+Whoever holds the CA key chooses the key ID, so it and the principals are
+escaped before they reach syslog:
+
+- printable ASCII passes through unchanged;
+- `"` and `\` are written as `\"` and `\\`;
+- every other byte, including newlines, control characters, DEL and anything
+  outside ASCII, becomes `\xNN`, so `José` logs as `Jos\xc3\xa9`;
+- a value longer than 255 bytes once escaped is cut, and the cut is marked by
+  `...` after the closing quote: `ID "aaaa"... (serial 1)`.
+
+A key ID cannot start a second log line, so it cannot forge one.
+
+### What reaches the terminal
 
 Text that reaches the terminal is filtered first: the approval URL is reduced
 to the RFC 3986 character set, the console code to its base32 alphabet, and the

@@ -39,7 +39,10 @@ stack, or the `.so` failed to load. Check the module path against
 [the install paths](/ssoossh/hosts/pam/install/#where-the-package-puts-things).
 
 Failures log their reason at `LOG_ERR`. A successful authentication logs at
-`LOG_INFO`. Adding `debug` to the `pam.d` line adds, at `LOG_DEBUG`, the
+`LOG_INFO`, naming the account and the certificate's key ID. A principals
+refusal names the key ID too, which tells you who approved a login the host
+then refused; both lines are described under
+[Logging](/ssoossh/hosts/pam/reference/#the-success-line). Adding `debug` to the `pam.d` line adds, at `LOG_DEBUG`, the
 decision for each of the four checks, the URL sent to the terminal, and the
 request context -- which is what tells you *which* check failed rather than
 just that one did. Take it off again afterwards.

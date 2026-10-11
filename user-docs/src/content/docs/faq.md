@@ -182,10 +182,16 @@ What gets recorded:
 - **`sudo`, `su` or a console login through `pam_ssoossh`.** The module logs
   each successful authentication to the host's syslog with the local account
   and the certificate's key ID, so a `sudo` to `root` from a shared account
-  still names who approved it. The server's
-  approval record keeps the approver too, beside what the host reported:
-  hostname, PAM service, tty, the account that ran `sudo`, and the command
-  line (`sudo systemctl restart nginx`) on Linux and FreeBSD. See the
+  names who approved it in the host's own log, with no lookup on the server:
+
+  ```text
+  pam_ssoossh: successful authentication: root, certificate ID "pam:alice" (serial 42) CA ecdsa-sha2-nistp384 SHA256:E6/Otz...
+  ```
+
+  The server's approval record keeps the approver too, beside what the host
+  reported: hostname, PAM service, tty, the account that ran `sudo`, and the
+  command line (`sudo systemctl restart nginx`) on Linux and FreeBSD. See the
+  [module's logging](/ssoossh/hosts/pam/reference/#the-success-line) and the
   [audit log](/ssoossh/operations/audit-log/).
 
 Your existing logging is unchanged: `sudo` still logs the account that ran it
