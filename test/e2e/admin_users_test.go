@@ -108,7 +108,7 @@ func TestAdminUsers_DisabledUserSeesTheDisabledPage(t *testing.T) {
 	admin.WaitVisible(t, `[data-testid="disable-consequences"]`)
 	admin.Type(t, `[data-testid="disable-reason"]`, "e2e: offboarding drill")
 	admin.Click(t, `[data-testid="confirm-disable"]`)
-	admin.WaitVisible(t, `[data-testid="user-disabled-badge"]`)
+	admin.WaitVisible(t, `[data-testid="user-state"]`)
 
 	// The disabled page itself, loaded in a browser that is not mid-redirect.
 	//
