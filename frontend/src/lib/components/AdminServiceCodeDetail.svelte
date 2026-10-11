@@ -82,8 +82,12 @@
 	// The approver in full. An operator reading an audit trail needs to be
 	// able to tell two people with similar usernames apart, which is the one
 	// place this audience is shown more than the holder's page shows.
+	// Username and address, joined only from the parts that are there: an
+	// approver with no email used to read "alice ()".
 	const approvedBy = $derived(
-		`${enrollment.approved_by_username} (${enrollment.approved_by_email})`
+		enrollment.approved_by_username && enrollment.approved_by_email
+			? `${enrollment.approved_by_username} (${enrollment.approved_by_email})`
+			: enrollment.approved_by_username || enrollment.approved_by_email || ''
 	);
 </script>
 
@@ -102,13 +106,13 @@
 	     section of its own. Retiring the code is not among them — that is the
 	     page's action, in the heading's top right, the same place an account
 	     is disabled from. -->
-	<PageSection title="Admin actions">
+	<PageSection title="Notifications">
 		<!-- The address is editable here as well as on the holder's own
 			     page, for the deployment where the account's holders are
 			     outside ssoossh entirely and so have no page to set it on.
 			     Changing it is audited. -->
 		<div class="space-y-2">
-			<p class="text-dense text-ink-muted">
+			<p class="text-dense text-ink-muted" id="admin-notification-email-help-{enrollment.id}">
 				{#if storedEmail}
 					Notifications about this code go to
 					<span class="font-mono">{storedEmail}</span>. Clear the field to send them to everyone
@@ -120,14 +124,15 @@
 			</p>
 			<div class="flex max-w-140 flex-wrap items-start gap-2">
 				<label class="flex min-w-55 flex-1 flex-col gap-1">
-					<span class="sr-only">Notification address</span>
+					<span class="text-dense font-medium text-ink">Send notifications to</span>
 					<input
 						type="email"
 						bind:value={emailDraft}
 						data-testid="notification-email-input"
 						placeholder="deploys@example.com"
 						disabled={savingEmail}
-						class="rounded-md border border-border-control bg-surface px-3 py-2 text-dense text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+						aria-describedby="admin-notification-email-help-{enrollment.id}"
+						class="min-h-target rounded-md border border-border-control bg-surface px-3 py-2 text-dense text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 					/>
 				</label>
 				<Button
@@ -143,11 +148,13 @@
 				<Alert variant="error" title="That did not save" testid="notification-email-error">
 					{emailError}
 				</Alert>
-			{:else if emailSaved}
-				<p class="text-dense text-granted" data-testid="notification-email-saved">
-					{emailDraft ? 'Saved.' : 'Cleared — notifications go to everyone with access again.'}
-				</p>
 			{/if}
+			<!-- Always in the document, so a screen reader hears it change. -->
+			<p class="text-dense text-granted" role="status" data-testid="notification-email-saved">
+				{#if emailSaved && !emailError}
+					{emailDraft ? 'Saved.' : 'Cleared — notifications go to everyone with access again.'}
+				{/if}
+			</p>
 		</div>
 	</PageSection>
 

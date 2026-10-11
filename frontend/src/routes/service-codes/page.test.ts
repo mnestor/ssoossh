@@ -114,7 +114,7 @@ describe('Service codes page', () => {
 			render(Page);
 			await screen.findByText('svc-deploy');
 			expect(screen.getByText('svc-backup')).toBeInTheDocument();
-			expect(screen.getAllByRole('button')).toHaveLength(2);
+			expect(screen.getAllByTestId('service-account-row')).toHaveLength(2);
 		});
 
 		it('should count the live codes behind an account', async () => {
@@ -234,6 +234,42 @@ describe('Service codes page', () => {
 			mockFetchError('boom');
 			render(Page);
 			expect(await screen.findByText('Could not load your service codes')).toBeInTheDocument();
+		});
+	});
+
+	describe('an account row', () => {
+		// A real link, so middle-click and "copy link address" work on an
+		// account as they do on a code.
+		it('should link to the account view', async () => {
+			mockFetch([deployCode()]);
+			render(Page);
+			await screen.findByText('svc-deploy');
+			expect(screen.getByTestId('service-account-row')).toHaveAttribute(
+				'href',
+				'/service-codes?account=svc-deploy'
+			);
+		});
+
+		// No live code on an account that had some is the job that stopped.
+		it('should warn when every code an account had has expired', async () => {
+			mockFetch([deployCode({ expires_at: new Date(Date.now() - 1000).toISOString() })]);
+			render(Page);
+			await screen.findByText('svc-deploy');
+			expect(screen.getByTestId('service-account-state')).toHaveClass('text-trimmed');
+		});
+
+		it('should warn when the soonest code expires within a week', async () => {
+			mockFetch([deployCode({ expires_at: new Date(Date.now() + 2 * 86400000).toISOString() })]);
+			render(Page);
+			await screen.findByText('svc-deploy');
+			expect(screen.getByTestId('service-account-state')).toHaveTextContent('Expires soon');
+		});
+
+		it('should call a code far from expiry active', async () => {
+			mockFetch([deployCode()]);
+			render(Page);
+			await screen.findByText('svc-deploy');
+			expect(screen.getByTestId('service-account-state')).toHaveTextContent('Active');
 		});
 	});
 });

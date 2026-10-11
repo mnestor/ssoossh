@@ -18,9 +18,12 @@
 		retrievals: EnrollmentRetrievalResponse[];
 		/** Every logged redemption, not just the ones in `retrievals`. */
 		total: number;
+		/** The section's heading; the simplified page shows the latest few
+		 *  under a heading that says so. */
+		title?: string;
 	}
 
-	let { retrievals, total }: Props = $props();
+	let { retrievals, total, title = 'Redemption history' }: Props = $props();
 
 	// The server caps the log it returns, so the page has to say what it is
 	// showing a slice of rather than let the last row read as the first
@@ -28,7 +31,7 @@
 	const truncated = $derived(retrievals.length < total);
 </script>
 
-<PageSection title="Redemption history">
+<PageSection {title}>
 	{#if retrievals.length === 0}
 		<p class="text-dense text-ink-muted">Never redeemed.</p>
 	{:else}

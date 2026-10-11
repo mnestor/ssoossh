@@ -263,3 +263,39 @@ describe('when the service code fails to load', () => {
 		expect(await screen.findByTestId('service-code-account')).toHaveTextContent('svc-deploy');
 	});
 });
+
+describe('redemptions at the simplified level', () => {
+	afterEach(() => {
+		detail.level = 'advanced';
+	});
+
+	// When and from where a code was last redeemed is how a holder notices it
+	// being used from somewhere unexpected, which a bare count cannot show.
+	it('should list the five most recent with where they came from', async () => {
+		vi.stubGlobal('localStorage', { getItem: () => null, setItem: () => undefined });
+		detail.level = 'simplified';
+		const retrievals = Array.from({ length: 7 }, (_, i) => ({
+			retrieved_at: new Date(Date.now() - i * 3600_000).toISOString(),
+			source_ip: `10.0.0.${i + 1}`,
+			succeeded: true
+		}));
+		vi.stubGlobal(
+			'fetch',
+			vi.fn((input: RequestInfo | URL) => {
+				const url = String(input);
+				let body: unknown = { enrollments: [deployCode({ retrieval_count: 7 })] };
+				if (url.includes('/retrievals')) body = { retrievals, total: 7 };
+				else if (url.includes('/holders')) body = { service_account: 'svc-deploy', holders: [] };
+				return Promise.resolve(
+					new Response(JSON.stringify({ data: body, error: null }), {
+						status: 200,
+						headers: { 'Content-Type': 'application/json' }
+					})
+				);
+			})
+		);
+		render(Page);
+		expect(await screen.findByText('The 5 most recent of 7 redemptions.')).toBeInTheDocument();
+		expect(screen.getByText('10.0.0.1')).toBeInTheDocument();
+	});
+});

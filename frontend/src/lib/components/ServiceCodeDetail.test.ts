@@ -142,7 +142,29 @@ describe('ServiceCodeDetail', () => {
 	it('should show the key id fixed at approval', () => {
 		mockRetrievals([]);
 		render(ServiceCodeDetail, { enrollment: enrollment(), now });
-		expect(screen.getByText('svc-deploy/req-1')).toBeInTheDocument();
+		expect(screen.getAllByText('svc-deploy/req-1').length).toBeGreaterThan(0);
+	});
+
+	// The account's code list leads each row with the key ID, so the page a
+	// row opens says it at the top too, at both levels.
+	it('should name the code in the top strip', () => {
+		mockRetrievals([]);
+		render(ServiceCodeDetail, { enrollment: enrollment(), now });
+		expect(screen.getByTestId('service-code-identity')).toHaveTextContent('svc-deploy/req-1');
+	});
+
+	// A confirmation that appears with its text already in it is often not
+	// announced; the region is always there and its text changes.
+	it('should keep the save confirmation region in the document before saving', () => {
+		mockRetrievals([]);
+		render(ServiceCodeDetail, { enrollment: enrollment(), now });
+		expect(screen.getByTestId('notification-email-saved')).toHaveAttribute('role', 'status');
+	});
+
+	it('should label the notification field visibly', () => {
+		mockRetrievals([]);
+		render(ServiceCodeDetail, { enrollment: enrollment(), now });
+		expect(screen.getByLabelText('Send notifications to')).toBeInTheDocument();
 	});
 
 	it('should show the fingerprint of the bound keypair', () => {

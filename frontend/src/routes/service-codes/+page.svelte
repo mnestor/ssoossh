@@ -260,6 +260,7 @@
 					nextExpiry={entry.nextExpiry}
 					lastRetrievedAt={entry.lastRetrievedAt}
 					{now}
+					href={`${resolve('service-codes')}?account=${encodeURIComponent(entry.account)}`}
 					onclick={() => openAccountView(entry.account)}
 				/>
 			{/each}

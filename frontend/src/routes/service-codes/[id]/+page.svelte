@@ -106,7 +106,10 @@
 	}
 </script>
 
-<svelte:head><title>Service code · ssoossh</title></svelte:head>
+<svelte:head
+	><title>{enrollment?.key_id ? `${enrollment.key_id} · ` : ''}Service code · ssoossh</title
+	></svelte:head
+>
 
 <PageShell width="wide">
 	<!-- A visible heading, where there used to be an sr-only one. The page

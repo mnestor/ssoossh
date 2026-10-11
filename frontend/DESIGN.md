@@ -867,14 +867,16 @@ the result and drops the diagnostic detail an expert compares.
   platform and client rows; registered IPs; request and decision timestamps
   other than validity; approver groups, lifetime-policy detail and
   granted-option echoes; critical options with nothing trimmed; non-extension
-  option chips (`from=`, `command=`, `no-touch-required`); the redemption
-  history; and the approval page's decision record (Decision, Decided by,
+  option chips (`from=`, `command=`, `no-touch-required`); redemptions past
+  the five most recent; and the approval page's decision record (Decision, Decided by,
   Email, From IP, Decided at). Who decided is history, not part of a
   decision: `/certs/<id>` keeps "Approved by" or "Denied by" at both levels,
   and a decided approval page in simplified shows only its outcome alert.
 - **Kept in simplified:** the claimed-context rows (Service, Terminal,
-  Remote host, Invoked by), "Principals granted" on `/certs/<id>`, and the
-  "View the code this came from" link on a service certificate.
+  Remote host, Invoked by), "Principals granted" on `/certs/<id>` when the
+  approval chose a different set from the certificate's, the "View the code
+  this came from" link on a service certificate, and a service code's five
+  most recent redemptions with their addresses.
 - **Simplified approval:**
   - Opens with one request line in place of the description and the
     Account, Command, Host and Requested-from rows: three `surface-muted`
@@ -895,9 +897,11 @@ the result and drops the diagnostic detail an expert compares.
   - An expired request has its own notice: "This request expired before it
     was approved. Run the client again."
 - **Simplified service code pages** keep principal, certificate life,
-  validity, approver, granted extensions, the editable notification address
-  and the redemption count; the holders list and the redemption history are
-  advanced-only.
+  validity, approver, granted extensions, the editable notification address,
+  the redemption count and the five most recent redemptions ("Recent
+  redemptions"), because when and from where a code was redeemed is how a
+  holder notices it being used from somewhere unexpected. The holders list
+  and the full redemption history are advanced-only.
 - **Simplified type:** kept facts one step larger: a `DetailRow` on a
   covered page moves its value from `text-dense` to `text-base` and its
   label to `text-sm`, with `py-3` rows.

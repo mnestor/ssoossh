@@ -25,11 +25,22 @@
 		expire: (reason: string) => Promise<unknown>;
 		/** Called once the code is retired, to close whatever is showing. */
 		onexpired: () => void;
+		/**
+		 * What a 403 means where this is used. The holder's endpoint refuses
+		 * someone who does not hold the account; the admin one refuses a role
+		 * below SOC, and the holder's wording would be wrong there.
+		 */
+		forbiddenMessage?: string;
 		/** Stable selector for the e2e browser tier — see test/e2e/README.md. */
 		testid?: string;
 	}
 
-	let { expire, onexpired, testid }: Props = $props();
+	let {
+		expire,
+		onexpired,
+		forbiddenMessage = 'You do not hold the service account this code belongs to.',
+		testid
+	}: Props = $props();
 
 	let confirming = $state(false);
 	let busy = $state(false);
@@ -50,7 +61,7 @@
 			if (cause instanceof ApiError && cause.status === 404) {
 				error = 'This code no longer exists.';
 			} else if (cause instanceof ApiError && cause.status === 403) {
-				error = 'You do not hold the service account this code belongs to.';
+				error = forbiddenMessage;
 			} else {
 				error = cause instanceof Error ? cause.message : 'The code could not be retired.';
 			}
@@ -71,7 +82,7 @@
 			{busy}
 			{error}
 			errorTitle="The code was not retired"
-			reasonLabel="Why is it being retired?"
+			reasonLabel="Why is it being retired? (required)"
 			reasonPlaceholder="the job behind it was decommissioned"
 			reasonHelp="Shown to whoever next reads this code's history."
 			reasonTestid="expire-reason"
