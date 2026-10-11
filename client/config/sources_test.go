@@ -29,8 +29,8 @@ func TestConfigSource_ShouldRenderEachOutcome(t *testing.T) {
 		},
 		{
 			name:   "error carries the parse failure",
-			source: ConfigSource{Label: "local file", Path: "./ssoossh.yaml", Status: SourceError, Err: "yaml: line 1: bad"},
-			want:   []string{"local file", "./ssoossh.yaml", "error", "yaml: line 1: bad"},
+			source: ConfigSource{Label: "user file", Path: "/home/u/.config/ssoossh.yaml", Status: SourceError, Err: "yaml: line 1: bad"},
+			want:   []string{"user file", "/home/u/.config/ssoossh.yaml", "error", "yaml: line 1: bad"},
 		},
 		{
 			name:   "a source with no file omits the parentheses",

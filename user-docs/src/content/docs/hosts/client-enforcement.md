@@ -23,7 +23,7 @@ sets the same key:
 1. Built-in defaults
 2. User config (`~/.config/ssoossh.yaml`, or
    `%AppData%\ssoossh\ssoossh.yaml`)
-3. Local config (`./ssoossh.yaml`, or `--config`)
+3. The file named by `--config`
 4. CLI flags (`--server`, `--key-type`, `--key-size`, and the `--no-*`
    extension flags)
 5. The `enforce` file named by the machine-wide config

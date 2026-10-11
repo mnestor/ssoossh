@@ -38,7 +38,6 @@ const configFlagLabel = "--config"
 // last file merged overrides
 //   - /etc/ssoossh/ssoossh.yaml
 //   - ~/.config/ssoossh.yaml
-//   - ./ssoossh.yaml
 //   - config flag setting
 //
 // Then, if the system file names an `enforce` file, that one is merged last
@@ -190,9 +189,6 @@ func mergeConfigFiles(v *viper.Viper, paths searchPaths, configFile string) (enf
 	configFiles := []candidate{{"system file", filepath.Join(paths.systemDir, configFileName)}}
 	if paths.userFile != "" {
 		configFiles = append(configFiles, candidate{"user file", paths.userFile})
-	}
-	if paths.localFile != "" {
-		configFiles = append(configFiles, candidate{"local file", paths.localFile})
 	}
 	if configFile != "" {
 		configFiles = append(configFiles, candidate{configFlagLabel, configFile})

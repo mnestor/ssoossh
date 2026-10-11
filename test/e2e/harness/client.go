@@ -37,9 +37,8 @@ type ClientOptions struct {
 	// configuration files deliberately does not.
 	Args []string
 
-	// Dir is the working directory. Empty means a fresh t.TempDir(), which
-	// is what keeps a stray ./ssoossh.yaml in the repo from reaching the
-	// client.
+	// Dir is the working directory. Empty means a fresh t.TempDir(), so a
+	// relative path the client writes or reads cannot land in the repo.
 	Dir string
 
 	// Home is the HOME the client runs with. Empty means a fresh
@@ -49,13 +48,13 @@ type ClientOptions struct {
 	// directory in advance, or supply their own.
 	Home string
 
-	// LocalYAML, if non-empty, is written to <Dir>/ssoossh.yaml — the
-	// lowest-precedence location the client reads from the working
-	// directory.
+	// LocalYAML, if non-empty, is written to <Dir>/ssoossh.yaml. The client
+	// must ignore it: the working directory is not a configuration source,
+	// and this exists to prove that.
 	LocalYAML string
 
 	// UserYAML, if non-empty, is written to <HOME>/.config/ssoossh.yaml,
-	// the per-user configuration file. It outranks the local file.
+	// the per-user configuration file.
 	UserYAML string
 
 	// ConfigYAML, if non-empty, is written to a file outside the working
@@ -138,8 +137,7 @@ func buildClientCommand(t *testing.T, ssoosshPath string, o ClientOptions) (cmd 
 	// HOME is isolated on every invocation, not only when UserYAML is set.
 	// Without this the client reads the developer's own
 	// ~/.config/ssoossh.yaml, so whether the suite passes depends on who is
-	// running it — the same hazard the fresh working directory already
-	// guards against for ./ssoossh.yaml.
+	// running it.
 	home := o.Home
 	if home == "" {
 		home = t.TempDir()
@@ -330,8 +328,7 @@ func StartClient(t *testing.T, ssoosshPath string, o ClientOptions) *ClientProce
 }
 
 // StartLogin runs `ssoossh ssh login` against serverURL with agentSocket as
-// its SSH_AUTH_SOCK, in a fresh working directory so no stray
-// ./ssoossh.yaml in the repo can influence it. extraArgs are appended after
+// its SSH_AUTH_SOCK, in a fresh working directory. extraArgs are appended after
 // the fixed flags (e.g. "--force").
 //
 // A thin wrapper over StartClient, kept because it is what most of the

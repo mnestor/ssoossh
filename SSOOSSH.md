@@ -55,7 +55,7 @@
   ### Client admin locks (`enforce`): never remove or weaken
   - Only the machine-wide config (`/etc/ssoossh/ssoossh.yaml`, `%ProgramData%\ssoossh\ssoossh.yaml`) can name an `enforce` file. A relative path resolves inside the system directory.
   - Platform policy: Windows `HKLM\SOFTWARE\Policies\com.github.mnestor\ssoossh` (GPO or Intune) and macOS managed preferences (MDM).
-  - Precedence, lowest to highest: defaults, user file, local file or `--config`, CLI flags, `enforce`, platform policy. A locked setting beats everything the user controls, CLI flags included.
+  - Precedence, lowest to highest: defaults, user file, `--config`, CLI flags, `enforce`, platform policy. A locked setting beats everything the user controls, CLI flags included.
   - A missing or malformed `enforce` file is a hard error (fail closed).
   - `fips: true` from a locked source makes a non-FIPS key type a hard error.
   - `forbidden_certificate_extensions` is subtracted after flags and cannot be re-added.

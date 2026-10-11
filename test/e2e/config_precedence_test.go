@@ -12,8 +12,8 @@ import (
 
 // No test anywhere had ever written a client config file. Every invocation
 // in every suite passed --server in an empty temp directory, so the merge
-// chain documented at client/config/config.go:28-44 -- defaults, system
-// file, user file, local file, --config, flags, enforce, platform policy --
+// chain documented at client/config.NewConfig -- defaults, system file,
+// user file, --config, flags, enforce, platform policy --
 // was proven only by unit tests calling newConfig directly with injected
 // search paths. What a real binary does with real files in real locations
 // was unverified.
@@ -82,18 +82,9 @@ func TestConfigPrecedence_ShouldLetTheMoreSpecificFileWin(t *testing.T) {
 			want: "from-user",
 		},
 		{
-			name: "local file beats user file",
-			opts: harness.ClientOptions{
-				UserYAML:  "key_filename: from-user\n",
-				LocalYAML: "key_filename: from-local\n",
-			},
-			want: "from-local",
-		},
-		{
-			name: "--config beats both",
+			name: "--config beats the user file",
 			opts: harness.ClientOptions{
 				UserYAML:   "key_filename: from-user\n",
-				LocalYAML:  "key_filename: from-local\n",
 				ConfigYAML: "key_filename: from-flag-file\n",
 			},
 			want: "from-flag-file",
@@ -118,6 +109,26 @@ func TestConfigPrecedence_ShouldLetTheMoreSpecificFileWin(t *testing.T) {
 	}
 }
 
+// A ssoossh.yaml in the working directory is not a configuration source.
+// ssh runs the client from wherever the user is, so honoring one would let
+// any directory, a cloned repository included, repoint the server. The
+// key is one the user file also sets, so a regression shows up as the
+// wrong value rather than only as an extra entry in the chain.
+func TestConfigPrecedence_ShouldIgnoreAFileInTheWorkingDirectory(t *testing.T) {
+	f := newFixture(t)
+
+	out := showConfig(t, f.SsoosshBin, harness.ClientOptions{
+		Args:      []string{"--server", f.Server.BaseURL},
+		UserYAML:  "key_filename: from-user\n",
+		LocalYAML: "key_filename: from-working-dir\n",
+		Env:       map[string]string{"SSH_AUTH_SOCK": f.Agent.Socket},
+	})
+
+	if got := resolvedValue(t, out, "Key file"); got != "from-user" {
+		t.Errorf("got key file %q, want the user file's %q", got, "from-user")
+	}
+}
+
 // A flag outranks every file. This is the one layer the suite already
 // depended on without ever asserting it: every existing test passes
 // --server, and none had a file for it to beat.
@@ -127,7 +138,6 @@ func TestConfigPrecedence_ShouldLetFlagsBeatEveryFile(t *testing.T) {
 	out := showConfig(t, f.SsoosshBin, harness.ClientOptions{
 		Args:       []string{"--server", f.Server.BaseURL},
 		UserYAML:   "server: https://user.example.invalid\n",
-		LocalYAML:  "server: https://local.example.invalid\n",
 		ConfigYAML: "server: https://flagfile.example.invalid\n",
 		Env:        map[string]string{"SSH_AUTH_SOCK": f.Agent.Socket},
 	})
@@ -275,7 +285,6 @@ func TestConfigPrecedence_ShouldListEverySourceInApplicationOrder(t *testing.T) 
 	res := harness.RunClient(t, f.SsoosshBin, harness.ClientOptions{
 		Args:       []string{"ssh", "config", "--server", f.Server.BaseURL, "--debug"},
 		UserYAML:   "key_filename: from-user\n",
-		LocalYAML:  "key_filename: from-local\n",
 		ConfigYAML: "key_filename: from-flag-file\n",
 		Env:        map[string]string{"SSH_AUTH_SOCK": f.Agent.Socket},
 	})
@@ -284,7 +293,7 @@ func TestConfigPrecedence_ShouldListEverySourceInApplicationOrder(t *testing.T) 
 	}
 
 	// In order, each appearing after the previous one.
-	want := []string{"embedded defaults", "system file", "user file", "local file", "--config", "command-line flags", "enforce", "platform policy"}
+	want := []string{"embedded defaults", "system file", "user file", "--config", "command-line flags", "enforce", "platform policy"}
 	at := 0
 	for _, label := range want {
 		idx := strings.Index(res.Stderr[at:], label)
