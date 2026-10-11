@@ -3587,7 +3587,7 @@ paths:
       description: |-
         Marks a user as disabled, preventing authentication. Service
         enrollments they approved are unaffected. The operation is
-        idempotent.
+        idempotent. A caller cannot disable their own account.
       parameters:
       - description: User ID
         in: path
@@ -3622,7 +3622,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
-          description: Not authorized as admin or SOC
+          description: Not authorized as admin or SOC, or the target is the caller's
+            own account
         "404":
           content:
             application/json:
