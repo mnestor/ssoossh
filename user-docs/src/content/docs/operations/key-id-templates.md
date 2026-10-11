@@ -6,8 +6,19 @@ sidebar:
 ---
 
 The key ID is the free-text field `sshd` writes to its auth log for every
-certificate login, which makes it the audit trail's join key: it is how an
-issuance recorded in `ssoosshd` meets a session recorded on the target host.
+certificate login, and `pam_ssoossh` writes to syslog for every `sudo`, `su`
+and console login it approves. That makes it the audit trail's join key: it is
+how an issuance recorded in `ssoosshd` meets a session recorded on the target
+host.
+
+:::caution[The template is what makes a host log name a person]
+On a shared account the key ID is the only thing in the host's log that says
+who it was. The built-in defaults all include `{{.Username}}`. A custom
+template with no identifying field (`{{.Username}}`, `{{.Subject}}` or
+`{{.Email}}`) is valid and passes startup, and then every host log line names
+nobody. Keep one of them in every type's template, and add `{{.UniqueID}}` to
+join a host log line to its exact approval record.
+:::
 Each certificate type's key ID is produced by a Go
 [`text/template`](https://pkg.go.dev/text/template) configured under
 `cert_options.<type>.key_id_template`.

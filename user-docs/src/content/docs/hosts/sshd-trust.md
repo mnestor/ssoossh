@@ -7,7 +7,9 @@ sidebar:
 
 The one thing every target host needs. `sshd` is told which certificate
 authority to trust, and from then on it accepts certificates that authority
-signed instead of keys listed in `authorized_keys`.
+signed, in addition to every key it already accepts. `authorized_keys` and
+`AuthorizedKeysCommand` keep working; see the
+[adoption FAQ](/ssoossh/faq/) for how they combine and how to retire them.
 
 ## The one line
 

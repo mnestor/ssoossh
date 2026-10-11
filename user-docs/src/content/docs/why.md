@@ -30,10 +30,11 @@ hand of the person logging in.
 
 ## What ssoossh does about it
 
-- **The certificate replaces the key entry.** You sign in at your identity
+- **The certificate does the key entry's job.** You sign in at your identity
   provider, a human approves the request, and the server signs your public key
   into a certificate that expires on its own. Hosts trust one CA public key
-  instead of a file per account.
+  instead of a file per account, and keep accepting the keys they already
+  have until you remove them.
 - **The factor is inherited, not reimplemented.** ssoossh has no MFA of its
   own. Whatever your identity provider already enforces at sign-in is what
   guards the login behind it.
@@ -84,6 +85,8 @@ token keep it, and send remote `sudo` through the browser flow with
 
 ## Read next
 
+- [Adoption FAQ](/ssoossh/faq/) -- how ssoossh sits beside `authorized_keys`,
+  existing PAM stacks and your logging, and what it does and does not attribute.
 - [Getting started](/ssoossh/getting-started/) -- the shortest path to a working
   `ssh` login.
 - [Passwords, tokens, and pam_ssoossh](/ssoossh/concepts/pam-factors/) -- the
