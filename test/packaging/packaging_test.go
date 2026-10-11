@@ -757,8 +757,8 @@ func TestNFPMClientShouldOwnTheMappingFileByTheLookupGroup(t *testing.T) {
 
 // should ship both SSH drop-ins completely inert. Installing the client
 // package must not change how a machine accepts or makes SSH connections,
-// so every directive in them is commented and the operator uncomments two
-// lines to opt in.
+// so every directive in them is commented and the operator uncomments the
+// lines they want to opt in.
 func TestShippedDropInsShouldBeFullyCommented(t *testing.T) {
 	t.Parallel()
 
@@ -781,6 +781,40 @@ func TestShippedDropInsShouldBeFullyCommented(t *testing.T) {
 				}
 				t.Errorf("line %d is an active directive: %q", i+1, trimmed)
 			}
+		})
+	}
+}
+
+// should offer, commented, every sshd directive a host needs to accept
+// ssoossh certificates. The drop-in is where an operator looks for what to
+// uncomment, and a host given only the principals lines still refuses every
+// certificate: sshd trusts no CA until TrustedUserCAKeys names one, and at
+// the default LogLevel it logs "Failed publickey" with no reason. A
+// directive counts only as "#Directive value", so prose that merely
+// mentions one does not.
+func TestSSHDDropInShouldOfferEveryDirectiveAHostNeeds(t *testing.T) {
+	t.Parallel()
+
+	body, err := os.ReadFile(filepath.Join(repoRoot(t), "packaging/linux/sshd_config.d/50-ssoossh.conf"))
+	if err != nil {
+		t.Fatalf("read drop-in: %v", err)
+	}
+	lines := strings.Split(string(body), "\n")
+
+	for _, directive := range []string{
+		"TrustedUserCAKeys",
+		"AuthorizedPrincipalsCommandUser",
+		"AuthorizedPrincipalsCommand",
+	} {
+		t.Run(directive, func(t *testing.T) {
+			t.Parallel()
+
+			for _, line := range lines {
+				if strings.HasPrefix(strings.TrimSpace(line), "#"+directive+" ") {
+					return
+				}
+			}
+			t.Errorf("drop-in does not offer a commented %s line", directive)
 		})
 	}
 }
