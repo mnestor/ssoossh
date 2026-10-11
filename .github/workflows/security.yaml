@@ -46,8 +46,9 @@ jobs:
 
   # govulncheck and pnpm audit stay advisory: both report on dependencies
   # you may not be able to fix in the same PR that surfaces them, so they
-  # tee their output into the job summary and the PR comment below rather
-  # than blocking. semgrep is different -- see that job.
+  # tee their output into the job summary and the PR comment below, and
+  # raise a warning annotation on findings, rather than blocking. semgrep
+  # is different -- see that job.
   govulncheck:
     name: govulncheck
     needs: changes
@@ -85,7 +86,18 @@ jobs:
         # default in this image, but relying on that default means a base
         # image that ever sets CGO_ENABLED=0 turns this scan into a wall of
         # "undefined: pkcs11.*" instead of a vulnerability report.
+        #
+        # shell: bash, because Actions only adds pipefail when the shell is
+        # named. The default `sh -e` takes tee's status, so steps.scan.outcome
+        # read "success" over every report of reachable vulnerabilities.
+        shell: bash
         run: CGO_ENABLED=1 govulncheck ./... 2>&1 | tee govulncheck.txt
+      # continue-on-error keeps the job green, so findings would otherwise
+      # show only to someone who opens the summary. The annotation puts
+      # them on the run and the PR checks list without blocking the merge.
+      - name: Flag findings
+        if: ${{ steps.scan.outcome == 'failure' }}
+        run: echo "::warning title=govulncheck::govulncheck exited non-zero (reachable vulnerabilities or a scan error). See the job summary."
       - name: Add results to job summary
         if: ${{ !cancelled() }}
         run: |
@@ -121,7 +133,12 @@ jobs:
       - name: pnpm audit
         id: scan
         continue-on-error: true
+        # shell: bash for pipefail; see the govulncheck step.
+        shell: bash
         run: pnpm audit --audit-level high 2>&1 | tee pnpm-audit.txt
+      - name: Flag findings
+        if: ${{ steps.scan.outcome == 'failure' }}
+        run: echo "::warning title=pnpm audit::pnpm audit exited non-zero (high-severity advisories or an audit error). See the job summary."
       - name: Add results to job summary
         if: ${{ !cancelled() }}
         run: |
