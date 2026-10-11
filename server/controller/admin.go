@@ -627,6 +627,11 @@ func (a *adminController) disableUserHandler(g *gin.Context) {
 	// The disable and its audit row commit together: a containment action
 	// without a record of who took it and why is the one outcome this
 	// exists to prevent.
+	//
+	// disabled_source is always written, over whatever was there: the
+	// directory sync clears a disable whose source is ldap_sync, so leaving
+	// a stale one in place (from an earlier automatic disable, or one this
+	// disable lands on top of) would let the sync undo this one.
 	err = a.db.WithContext(g.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		result := tx.Model(&model.User{}).
 			Where("id = ?", id).
@@ -634,6 +639,7 @@ func (a *adminController) disableUserHandler(g *gin.Context) {
 				"disabled_at":         now,
 				"disabled_by_user_id": currentUser.ID,
 				"disabled_reason":     reason,
+				"disabled_source":     a.disableSource(currentIdentity.Groups),
 			})
 		if result.Error != nil {
 			return result.Error
@@ -665,6 +671,16 @@ func (a *adminController) disableUserHandler(g *gin.Context) {
 	}
 
 	respondData(g, webtypes.DisableUserConsequences{ServiceEnrollmentCount: enrollmentCount})
+}
+
+// disableSource names the role a disable is taken under: admin when the
+// caller holds the admin group, SOC otherwise. The disable route admits
+// only those two, so a caller who is not an admin reached it as SOC.
+func (a *adminController) disableSource(groups []string) model.DisabledSource {
+	if a.config.Admin.GrantsAdmin(groups) {
+		return model.DisabledSourceAdmin
+	}
+	return model.DisabledSourceSOC
 }
 
 // enableUserHandler handles PATCH /api/admin/users/:id/enable: re-enables a
@@ -726,6 +742,9 @@ func (a *adminController) enableUserHandler(g *gin.Context) {
 		Detail:     map[string]any{"previous_disable_reason": target.DisabledReason},
 	}
 
+	// The source goes with the rest of the disable. Left behind, an
+	// ldap_sync source would still be on the row when an operator next
+	// disables this user, and the sync would read that disable as its own.
 	err = a.db.WithContext(g.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		result := tx.Model(&model.User{}).
 			Where("id = ?", id).
@@ -733,6 +752,7 @@ func (a *adminController) enableUserHandler(g *gin.Context) {
 				"disabled_at":         nil,
 				"disabled_by_user_id": nil,
 				"disabled_reason":     "",
+				"disabled_source":     nil,
 			})
 		if result.Error != nil {
 			return result.Error

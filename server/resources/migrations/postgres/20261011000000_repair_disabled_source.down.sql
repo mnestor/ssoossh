@@ -1,0 +1,2 @@
+-- Nothing to undo. The up migration cleared values that were wrong, and
+-- restoring them would hand operator disables back to the directory sync.

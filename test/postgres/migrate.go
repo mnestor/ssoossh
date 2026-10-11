@@ -30,6 +30,16 @@ func RunDown(t *testing.T, ctx context.Context, db *gorm.DB) error {
 	})
 }
 
+// RunTo migrates to a specific version, in whichever direction that is from
+// where the database currently stands: the Postgres counterpart of
+// test/sqlite.RunTo, for testing what a migration does to existing rows.
+func RunTo(t *testing.T, ctx context.Context, db *gorm.DB, version uint) error {
+	t.Helper()
+	return doMigrate(ctx, db, func(m *migrate.Migrate) error {
+		return m.Migrate(version)
+	})
+}
+
 // doMigrate is a helper that sets up a migrator and applies fn.
 //
 // WithInstance over the pool rather than WithConnection over a checked-out

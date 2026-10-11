@@ -357,8 +357,9 @@ func (s *LDAPService) recordMiss(ctx context.Context, user *model.User, row *mod
 //
 // disabled_source is what makes this reversible safely: the sync clears
 // only disables it caused, so an operator's disable is never undone
-// automatically. DisabledByUserID stays NULL, since it is a users.id and
-// cannot represent the system actor.
+// automatically. DisabledByUserID is written NULL, since it is a users.id
+// and cannot represent the system actor; writing it rather than leaving it
+// keeps a stale operator id from making this disable look like theirs.
 // Returns whether the disable actually happened, so the run's count
 // reflects containment actions rather than attempts.
 func (s *LDAPService) autoDisable(ctx context.Context, user *model.User, missingFor time.Duration, now time.Time) bool {
@@ -381,9 +382,10 @@ func (s *LDAPService) autoDisable(ctx context.Context, user *model.User, missing
 		result := tx.Model(&model.User{}).
 			Where("id = ? AND disabled_at IS NULL", user.ID).
 			Updates(map[string]any{
-				"disabled_at":     now,
-				"disabled_source": source,
-				"disabled_reason": reason,
+				"disabled_at":         now,
+				"disabled_by_user_id": nil,
+				"disabled_source":     source,
+				"disabled_reason":     reason,
 			})
 		if result.Error != nil {
 			return result.Error
@@ -422,15 +424,16 @@ var errAlreadyDisabled = errors.New("user was already disabled")
 
 // maybeReenable clears an auto-disable when the directory entry reappears.
 //
-// Only ever clears a disable whose source is exactly ldap_sync. A user
-// disabled by an admin or a SOC operator is never touched by the sync, in
-// either direction — and a NULL source (a row predating the column) can
-// never match, which is the safe direction.
+// Only ever clears a disable whose source is exactly ldap_sync and that
+// names no operator. A user disabled by an admin or a SOC operator is never
+// touched by the sync, in either direction — and a NULL source (a row
+// predating the column) can never match, which is the safe direction.
 func (s *LDAPService) maybeReenable(ctx context.Context, user *model.User, run *model.LDAPSyncRun, opts SyncOptions) {
 	if !s.config.LDAP.Sync.Reenable || user.DisabledAt == nil {
 		return
 	}
-	if user.DisabledSource == nil || *user.DisabledSource != model.DisabledSourceLDAPSync {
+	if user.DisabledSource == nil || *user.DisabledSource != model.DisabledSourceLDAPSync ||
+		user.DisabledByUserID != nil {
 		return
 	}
 
@@ -454,9 +457,13 @@ func (s *LDAPService) maybeReenable(ctx context.Context, user *model.User, run *
 		Detail:     map[string]any{"trigger": "ldap-directory-sync"},
 	}
 
+	// disabled_by_user_id IS NULL as well as the source: the sync's own
+	// disable never names an operator, so a row that does is an operator's
+	// disable whatever its source says.
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result := tx.Model(&model.User{}).
-			Where("id = ? AND disabled_source = ?", user.ID, model.DisabledSourceLDAPSync).
+			Where("id = ? AND disabled_source = ? AND disabled_by_user_id IS NULL",
+				user.ID, model.DisabledSourceLDAPSync).
 			Updates(map[string]any{
 				"disabled_at":     nil,
 				"disabled_source": nil,
