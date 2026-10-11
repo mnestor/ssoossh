@@ -15,6 +15,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/mnestor/ssoossh/internal/apitypes"
+	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/webtypes"
 )
 
@@ -199,9 +200,25 @@ func decideWithBody[T any](client *http.Client, serverBaseURL, requestID, action
 // leaves every other kind alone, so this cannot accidentally reset the
 // defaults a test is relying on.
 func SetNotificationPreference(client *http.Client, serverBaseURL, kind string, enabled bool) error {
-	body, err := json.Marshal(webtypes.UpdateNotificationPreferencesBody{
+	return putNotificationPreferences(client, serverBaseURL, webtypes.UpdateNotificationPreferencesBody{
 		Kinds: map[string]bool{kind: enabled},
 	})
+}
+
+// SetEmailDetailLevel PUTs the email detail level as whoever client is
+// authenticated as, the "Email detail" switch on the preferences page. No
+// kind is sent, so every notification setting is left as it was.
+func SetEmailDetailLevel(client *http.Client, serverBaseURL string, level model.DetailLevel) error {
+	return putNotificationPreferences(client, serverBaseURL, webtypes.UpdateNotificationPreferencesBody{
+		Kinds:       map[string]bool{},
+		DetailLevel: &level,
+	})
+}
+
+// putNotificationPreferences sends one save of the preferences page's
+// notification section and checks the server accepted it.
+func putNotificationPreferences(client *http.Client, serverBaseURL string, update webtypes.UpdateNotificationPreferencesBody) error {
+	body, err := json.Marshal(update)
 	if err != nil {
 		return fmt.Errorf("encode notification preferences body: %w", err)
 	}

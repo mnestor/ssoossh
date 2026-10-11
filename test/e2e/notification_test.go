@@ -3,12 +3,19 @@
 package e2e
 
 import (
+	"encoding/base64"
+	"errors"
 	"fmt"
+	"io"
+	"mime"
+	"mime/multipart"
+	"net/mail"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/testutil"
 	"github.com/mnestor/ssoossh/test/e2e/harness"
 )
@@ -17,8 +24,8 @@ import (
 // process, so a unit test can only ever prove the pieces. What has to be
 // established end to end is the property the design turns on: an approval
 // and a redemption each produce a real message, delivered over a real SMTP
-// conversation to the approver's real address, carrying every detail
-// `service enroll` printed to the terminal EXCEPT the enrollment code.
+// conversation to the approver's real address, naming the service account
+// and linking to the code's page, but never carrying the enrollment code.
 //
 // The code's absence is the assertion that matters most. It is a bearer
 // credential that mints certificates unattended, and mail is stored,
@@ -135,26 +142,103 @@ func TestServiceNotifications_ShouldEmailTheApproverWhenAnEnrollmentIsCreated(t 
 		t.Errorf("subject %q does not name the service account", subject)
 	}
 
-	// The message has to carry what the terminal carried, so the approver
-	// can act on it without the operator's screen in front of them.
+	// The message says what happened and links to where the approver acts
+	// on it. The ssh_config recipe stays in the terminal, which prints it
+	// with real values. alice is neither SOC nor admin, so her first login
+	// set the simplified email level: no Details section.
+	body := textBody(t, msg)
 	for _, want := range []string{
 		notifyServiceAccount,
-		"IdentityFile",
-		"IdentitiesOnly",
-		"service retrieve",
-		// The recipe names the approved account rather than a placeholder,
-		// matching what `service enroll` prints: it is the certificate's
-		// sole principal, so the line can be pasted as sent.
-		"Match user " + notifyServiceAccount,
+		f.Server.BaseURL + "/service-codes/",
 	} {
-		if !strings.Contains(msg.Data, want) {
+		if !strings.Contains(body, want) {
 			t.Errorf("message body does not mention %q", want)
 		}
 	}
+	if strings.Contains(body, "Key ID") {
+		t.Error("a simplified message carries the Details section")
+	}
 
 	// And it must not carry the one thing that never leaves the terminal.
-	if strings.Contains(msg.Data, code) {
+	if strings.Contains(msg.Data, code) || strings.Contains(body, code) {
 		t.Error("the enrollment code was delivered by email")
+	}
+}
+
+// TestServiceNotifications_ShouldAddDetailsAtTheAdvancedEmailLevel: an
+// approver who chose the advanced email level gets the Details section,
+// and still never the code.
+func TestServiceNotifications_ShouldAddDetailsAtTheAdvancedEmailLevel(t *testing.T) {
+	f := newNotificationFixture(t)
+	keyPath := filepath.Join(t.TempDir(), "notify-key")
+
+	// Sign in first, so alice's account exists to hold the level.
+	client := newBrowserClient(t)
+	err := harness.AuthenticateWithExtraClaims(client, f.Server.BaseURL, "/preferences", "alice", nil,
+		map[string]any{
+			serviceAccountClaim: []string{notifyServiceAccount},
+			"email":             notifyApproverEmail,
+		})
+	if err != nil {
+		t.Fatalf("harness: %v", err)
+	}
+	if err := harness.SetEmailDetailLevel(client, f.Server.BaseURL, model.DetailLevelAdvanced); err != nil {
+		t.Fatalf("harness: %v", err)
+	}
+
+	code, _ := f.enroll(t, keyPath)
+
+	body := textBody(t, f.Sink.WaitForMessages(t, 1, waitFor)[0])
+	for _, want := range []string{"DETAILS", "Key ID", "Bound key"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("advanced message body does not mention %q", want)
+		}
+	}
+	if strings.Contains(body, code) {
+		t.Error("the enrollment code was delivered by email")
+	}
+}
+
+// textBody returns the decoded text/plain part of msg. Mail goes out
+// quoted-printable, which soft-wraps long lines such as a URL, so the raw
+// DATA cannot be searched for one. multipart.Reader decodes
+// quoted-printable on its own; base64 is decoded here.
+func textBody(t *testing.T, msg testutil.SMTPMessage) string {
+	t.Helper()
+
+	m, err := mail.ReadMessage(strings.NewReader(msg.Data))
+	if err != nil {
+		t.Fatalf("parse message: %v", err)
+	}
+	mediaType, params, err := mime.ParseMediaType(m.Header.Get("Content-Type"))
+	if err != nil {
+		t.Fatalf("parse Content-Type: %v", err)
+	}
+	if !strings.HasPrefix(mediaType, "multipart/") {
+		t.Fatalf("message is %s, want multipart/alternative", mediaType)
+	}
+
+	parts := multipart.NewReader(m.Body, params["boundary"])
+	for {
+		part, err := parts.NextPart()
+		if errors.Is(err, io.EOF) {
+			t.Fatal("message has no text/plain part")
+		}
+		if err != nil {
+			t.Fatalf("read part: %v", err)
+		}
+		if !strings.HasPrefix(part.Header.Get("Content-Type"), "text/plain") {
+			continue
+		}
+		var r io.Reader = part
+		if strings.EqualFold(part.Header.Get("Content-Transfer-Encoding"), "base64") {
+			r = base64.NewDecoder(base64.StdEncoding, part)
+		}
+		body, err := io.ReadAll(r)
+		if err != nil {
+			t.Fatalf("decode text part: %v", err)
+		}
+		return string(body)
 	}
 }
 
