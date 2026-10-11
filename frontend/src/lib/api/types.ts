@@ -10,7 +10,11 @@
 // anything under generated/ is pointless: the next run overwrites it, and
 // server/webtypes/golden_test.go fails the build if the two disagree.
 
-export type { CertificateType, CertificateRequestStatus as RequestStatus } from './generated/enums';
+export type {
+	CertificateType,
+	CertificateRequestStatus as RequestStatus,
+	DetailLevel
+} from './generated/enums';
 
 export type {
 	AccountHolderResponse as AccountHolder,
@@ -38,6 +42,7 @@ export type {
 	DiagnosticsResponse,
 	DisableUserConsequences,
 	DisableUserRequestBody,
+	DisplayPreferencesResponse as DisplayPreferences,
 	EffectiveConfigResponse,
 	EnrollmentRetrievalResponse,
 	EnrollmentRetrievalsResponse,

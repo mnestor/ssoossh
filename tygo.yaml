@@ -46,7 +46,8 @@ packages:
     output_path: "frontend/src/lib/api/generated/webtypes.ts"
     indent: "\t"
     frontmatter: |
-      import type { CertificateType, CertificateRequestStatus } from './enums';
+      import type { CertificateType, CertificateRequestStatus, DetailLevel } from './enums';
     type_mappings:
       model.CertificateType: "CertificateType"
       model.CertificateRequestStatus: "CertificateRequestStatus"
+      model.DetailLevel: "DetailLevel"

@@ -117,6 +117,23 @@ type CurrentUserResponse struct {
 	IsAdmin   bool `json:"is_admin" validate:"required"`
 	IsSOC     bool `json:"is_soc" validate:"required"`
 	IsAuditor bool `json:"is_auditor" validate:"required"`
+
+	// DetailLevel is how much of the covered pages this person sees:
+	// "simplified" or "advanced". Stored on the server so it follows the
+	// person between browsers; the email level is separate and travels with
+	// the notification preferences.
+	DetailLevel model.DetailLevel `json:"detail_level" enums:"simplified,advanced" validate:"required"`
+}
+
+// DisplayPreferencesResponse is the body of PUT /api/users/me/display: the
+// web UI detail level as stored.
+type DisplayPreferencesResponse struct {
+	DetailLevel model.DetailLevel `json:"detail_level" enums:"simplified,advanced" validate:"required"`
+}
+
+// UpdateDisplayPreferencesBody changes the caller's web UI detail level.
+type UpdateDisplayPreferencesBody struct {
+	DetailLevel model.DetailLevel `json:"detail_level" enums:"simplified,advanced" validate:"required"`
 }
 
 // ApproveRequestBody is the optional body of the approve endpoint. For a
@@ -904,6 +921,11 @@ type NotificationPreferencesResponse struct {
 	// Kinds is every notification the server knows how to send, in a
 	// stable order.
 	Kinds []NotificationKindResponse `json:"kinds" validate:"required"`
+
+	// DetailLevel is how much each notification email carries: "simplified"
+	// or "advanced". Separate from the web UI's level, because short mail
+	// and a full approval page are a common pairing.
+	DetailLevel model.DetailLevel `json:"detail_level" enums:"simplified,advanced" validate:"required"`
 }
 
 // UpdateNotificationPreferencesBody is the preferences page's save. Only
@@ -914,6 +936,11 @@ type UpdateNotificationPreferencesBody struct {
 	// unknown key is rejected rather than ignored: silently dropping it
 	// would report success for a preference that was never stored.
 	Kinds map[string]bool `json:"kinds" validate:"required"`
+
+	// DetailLevel, when present, changes the email detail level in the same
+	// save. Absent leaves it alone, so a page that predates the field cannot
+	// reset it.
+	DetailLevel *model.DetailLevel `json:"detail_level,omitempty" enums:"simplified,advanced"`
 }
 
 // AdminUserSummary is one row in the paginated auditor user list view,

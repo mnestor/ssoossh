@@ -33,7 +33,8 @@ function signedInUser(isAuditor: boolean) {
 		extra: {},
 		is_admin: false,
 		is_soc: false,
-		is_auditor: isAuditor
+		is_auditor: isAuditor,
+		detail_level: 'advanced' as const
 	};
 }
 

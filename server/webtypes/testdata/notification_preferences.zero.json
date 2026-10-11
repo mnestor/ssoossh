@@ -1,5 +1,6 @@
 {
   "mail_enabled": false,
   "address": "",
-  "kinds": null
+  "kinds": null,
+  "detail_level": ""
 }

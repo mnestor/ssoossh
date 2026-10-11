@@ -70,6 +70,26 @@ type User struct {
 	// audit trail is the history; this is the current state, and it
 	// survives audit pruning. Empty when not disabled.
 	DisabledReason string `gorm:"column:disabled_reason"`
+
+	// WebDetailLevel is how much of the web UI's covered pages this person
+	// sees, and EmailDetailLevel how much of each notification email. Two
+	// settings because a reader who wants the full approval page may still
+	// want short mail, and the reverse. Nil until first set: the first login
+	// after the columns arrived fills both from that session's roles (see
+	// service.DefaultDetailLevel), and nothing changes them afterwards but
+	// the person themselves.
+	WebDetailLevel   *DetailLevel `gorm:"column:web_detail_level"`
+	EmailDetailLevel *DetailLevel `gorm:"column:email_detail_level"`
+}
+
+// OrSimplified returns the level l points at, or simplified when l is nil
+// or holds anything else: the reading for a person who has not chosen and
+// whose roles are not to hand, such as a mail recipient.
+func OrSimplified(l *DetailLevel) DetailLevel {
+	if l == nil || !l.Valid() {
+		return DetailLevelSimplified
+	}
+	return *l
 }
 
 // TableName overrides GORM's default pluralization to match the migration.

@@ -77,3 +77,21 @@ const (
 	CertificateRequestDecisionApproved CertificateRequestDecisionOutcome = "approved"
 	CertificateRequestDecisionDenied   CertificateRequestDecisionOutcome = "denied"
 )
+
+// DetailLevel is how much a reader is shown: the full page or message, or
+// the facts needed to decide or to understand the result.
+type DetailLevel string
+
+const (
+	// DetailLevelSimplified keeps what a reader needs to decide or to
+	// understand the result, and drops the diagnostic detail an expert
+	// compares.
+	DetailLevelSimplified DetailLevel = "simplified"
+	// DetailLevelAdvanced is everything.
+	DetailLevelAdvanced DetailLevel = "advanced"
+)
+
+// Valid reports whether l is one of the two levels.
+func (l DetailLevel) Valid() bool {
+	return l == DetailLevelSimplified || l == DetailLevelAdvanced
+}

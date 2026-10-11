@@ -335,3 +335,24 @@ func TestTableName_ShouldMatchTheMigrationForAuditAndKeyModels(t *testing.T) {
 		})
 	}
 }
+
+func TestOrSimplified(t *testing.T) {
+	advanced := DetailLevelAdvanced
+	junk := DetailLevel("verbose")
+	tests := []struct {
+		name  string
+		level *DetailLevel
+		want  DetailLevel
+	}{
+		{name: "should read an unset level as simplified", level: nil, want: DetailLevelSimplified},
+		{name: "should read an unknown stored value as simplified", level: &junk, want: DetailLevelSimplified},
+		{name: "should return a valid stored level", level: &advanced, want: DetailLevelAdvanced},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := OrSimplified(tc.level); got != tc.want {
+				t.Errorf("OrSimplified = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

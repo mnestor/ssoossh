@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { getNotificationPreferences, updateNotificationPreferences } from '#lib/api/endpoints.js';
-	import type { NotificationPreferences } from '#lib/api/types.js';
+	import type { DetailLevel, NotificationPreferences } from '#lib/api/types.js';
 	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
 	import Alert from '#lib/components/Alert.svelte';
 	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
@@ -24,11 +24,21 @@
 	// just those is what stops a tab loaded before an upgrade from resetting
 	// kinds it has never heard of.
 	let pending = $state<Record<string, boolean>>({});
+	// The email detail level, held like a toggle: an edit until saved, and
+	// dropped again when put back to what the server said.
+	let pendingLevel = $state<DetailLevel | null>(null);
 	let saving = $state(false);
 	let saveError = $state<string | null>(null);
 	let saved = $state(false);
 
-	const hasChanges = $derived(Object.keys(pending).length > 0);
+	const hasChanges = $derived(Object.keys(pending).length > 0 || pendingLevel !== null);
+	const emailLevel = $derived(pendingLevel ?? preferences?.detail_level ?? 'simplified');
+
+	/** chooseEmailLevel records an edit to the email detail level. */
+	function chooseEmailLevel(level: DetailLevel) {
+		saved = false;
+		pendingLevel = level === preferences?.detail_level ? null : level;
+	}
 
 	// The way out of a failed load: back to the loading shape, then the
 	// same request again.
@@ -91,8 +101,9 @@
 		try {
 			// The server answers with the preferences as stored, so the page
 			// shows what was actually saved rather than what it submitted.
-			preferences = await updateNotificationPreferences(pending);
+			preferences = await updateNotificationPreferences(pending, pendingLevel ?? undefined);
 			pending = {};
+			pendingLevel = null;
 			saved = true;
 		} catch (cause) {
 			if (redirectIfUnauthenticated(cause)) {
@@ -158,6 +169,22 @@
 					</p>
 				{/if}
 
+				<!-- Separate from Display below: short mail and a full approval
+				     page are a common pairing. Saved with the toggles. -->
+				<div class="flex flex-col gap-2" data-testid="email-detail">
+					<span class="text-sm font-medium text-ink">Email detail</span>
+					<DetailToggle
+						testid="email-detail-toggle"
+						label="Email detail level"
+						value={emailLevel}
+						onselect={chooseEmailLevel}
+					/>
+					<p class="text-dense text-ink-muted">
+						Simplified sends what you need to recognise the event and act. Advanced adds key IDs,
+						serials and certificate options.
+					</p>
+				</div>
+
 				{#each preferences.kinds as kind (kind.kind)}
 					<label class="flex min-h-target cursor-pointer items-start gap-3">
 						<input
@@ -184,7 +211,7 @@
 			<Alert variant="error" title="Could not save your preferences">{saveError}</Alert>
 		{:else if saved}
 			<Alert variant="info" title="Preferences saved">
-				Your notification choices are up to date.
+				Your notification choices and email detail are up to date.
 			</Alert>
 		{/if}
 
@@ -195,13 +222,14 @@
 		</div>
 	{/if}
 
-	<!-- Outside the notification load: it lives in this browser, not on the
-	     server, so a failed read of the notification settings must not take
-	     it with it. It applies at once, unlike the notifications above, and
-	     says so, since the Save button belongs to those alone. -->
+	<!-- Outside the notification load: it arrives with the session rather
+	     than with the notification settings, so a failed read of those must
+	     not take it with it. It applies and saves at once, unlike the
+	     notifications above, and says so, since the Save button belongs to
+	     those alone. -->
 	<PageSection
 		title="Display"
-		description="How much the approval, certificate and service code pages show. Takes effect at once, in this browser."
+		description="How much the approval, certificate and service code pages show. Takes effect at once and is saved to your account."
 		testid="display-preferences"
 	>
 		<div class="flex max-w-[70ch] flex-col gap-3">

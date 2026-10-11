@@ -189,6 +189,12 @@ type NotificationPreferencesEnvelope struct {
 	Error *string                                  `json:"error"`
 }
 
+// DisplayPreferencesEnvelope is PUT /api/users/me/display's body.
+type DisplayPreferencesEnvelope struct {
+	Data  webtypes.DisplayPreferencesResponse `json:"data" validate:"required"`
+	Error *string                             `json:"error"`
+}
+
 // RequestDetailEnvelope is GET /api/certs/requests/{id}'s body.
 type RequestDetailEnvelope struct {
 	Data  webtypes.RequestDetailResponse `json:"data" validate:"required"`

@@ -316,6 +316,54 @@ func TestHandleCallback_ShouldExchangeAndUpsertTheUser(t *testing.T) {
 	}
 }
 
+// The first login fills both detail levels from the roles it carries: SOC
+// and admin start on advanced, everyone else on simplified.
+func TestHandleCallback_ShouldStoreTheDefaultDetailLevels(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		groups []string
+		want   model.DetailLevel
+	}{
+		{name: "should store advanced when the login carries the admin group", groups: []string{"admins"}, want: model.DetailLevelAdvanced},
+		{name: "should store simplified when the login carries no role", groups: []string{"devs"}, want: model.DetailLevelSimplified},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			provider := newFakeOIDCProvider(t)
+			db := newTestUserDB(t)
+			cfg := newTestAuthConfig(provider, "client-1")
+			cfg.Admin.RequireGroup = "admins"
+			svc, err := NewAuthService(context.Background(), cfg, db, provider.srv.Client())
+			if err != nil {
+				t.Fatalf("NewAuthService() error = %v", err)
+			}
+			provider.nextID = provider.signIDToken(t, "sub-alice", "client-1", "nonce-1", map[string]any{
+				"preferred_username": "alice",
+				"groups":             tc.groups,
+			})
+
+			if _, err := svc.HandleCallback(context.Background(), "auth-code", "nonce-1", oauth2.GenerateVerifier()); err != nil {
+				t.Fatalf("HandleCallback() error = %v", err)
+			}
+
+			var user model.User
+			if err := db.First(&user, "subject = ?", "sub-alice").Error; err != nil {
+				t.Fatalf("failed to read the user: %v", err)
+			}
+			if model.OrSimplified(user.WebDetailLevel) != tc.want || user.WebDetailLevel == nil {
+				t.Errorf("web level = %v, want %q stored", user.WebDetailLevel, tc.want)
+			}
+			if model.OrSimplified(user.EmailDetailLevel) != tc.want || user.EmailDetailLevel == nil {
+				t.Errorf("email level = %v, want %q stored", user.EmailDetailLevel, tc.want)
+			}
+		})
+	}
+}
+
 // TestHandleCallback_ShouldExtractAndPersistConfiguredExtraFields covers
 // the extra-fields pipeline end to end: configured mapping -> ID token
 // claims -> Identity.Extra -> JSON on the users row (extra_fields).

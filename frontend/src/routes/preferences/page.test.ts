@@ -16,17 +16,18 @@ function alicePreferences(
 		kinds: [
 			{
 				kind: 'service_enrollment_created',
-				title: 'Service enrollment created',
+				title: 'Service code created',
 				description: 'Sent when you approve a service certificate request.',
 				enabled: true
 			},
 			{
 				kind: 'service_enrollment_redeemed',
-				title: 'Service enrollment redeemed',
+				title: 'Service code redeemed',
 				description: 'Sent every time one of your enrollment codes is redeemed.',
 				enabled: false
 			}
 		],
+		detail_level: 'simplified',
 		...overrides
 	};
 }
@@ -71,8 +72,8 @@ describe('Preferences page', () => {
 			mockFetch(alicePreferences());
 			render(Page);
 
-			expect(await screen.findByText('Service enrollment created')).toBeInTheDocument();
-			expect(screen.getByText('Service enrollment redeemed')).toBeInTheDocument();
+			expect(await screen.findByText('Service code created')).toBeInTheDocument();
+			expect(screen.getByText('Service code redeemed')).toBeInTheDocument();
 		});
 
 		it("should show each kind's description", async () => {
@@ -88,8 +89,8 @@ describe('Preferences page', () => {
 			mockFetch(alicePreferences());
 			render(Page);
 
-			const created = await screen.findByRole('checkbox', { name: /Service enrollment created/ });
-			const redeemed = screen.getByRole('checkbox', { name: /Service enrollment redeemed/ });
+			const created = await screen.findByRole('checkbox', { name: /Service code created/ });
+			const redeemed = screen.getByRole('checkbox', { name: /Service code redeemed/ });
 
 			expect(created).toBeChecked();
 			expect(redeemed).not.toBeChecked();
@@ -118,7 +119,7 @@ describe('Preferences page', () => {
 			render(Page);
 
 			expect(
-				await screen.findByRole('checkbox', { name: /Service enrollment created/ })
+				await screen.findByRole('checkbox', { name: /Service code created/ })
 			).toBeInTheDocument();
 		});
 	});
@@ -137,7 +138,7 @@ describe('Preferences page', () => {
 			const fetchMock = mockFetch(alicePreferences(), alicePreferences());
 			render(Page);
 
-			const created = await screen.findByRole('checkbox', { name: /Service enrollment created/ });
+			const created = await screen.findByRole('checkbox', { name: /Service code created/ });
 			await userEvent.click(created);
 			await userEvent.click(screen.getByRole('button', { name: /save/i }));
 
@@ -152,9 +153,7 @@ describe('Preferences page', () => {
 			mockFetch(alicePreferences(), alicePreferences());
 			render(Page);
 
-			await userEvent.click(
-				await screen.findByRole('checkbox', { name: /Service enrollment created/ })
-			);
+			await userEvent.click(await screen.findByRole('checkbox', { name: /Service code created/ }));
 			await userEvent.click(screen.getByRole('button', { name: /save/i }));
 
 			expect(await screen.findByText(/preferences saved/i)).toBeInTheDocument();
@@ -164,7 +163,7 @@ describe('Preferences page', () => {
 			mockFetch(alicePreferences());
 			render(Page);
 
-			await screen.findByRole('checkbox', { name: /Service enrollment created/ });
+			await screen.findByRole('checkbox', { name: /Service code created/ });
 			expect(screen.getByRole('button', { name: /save/i })).toBeDisabled();
 		});
 
@@ -185,7 +184,7 @@ describe('Preferences page', () => {
 			vi.stubGlobal('fetch', fetchMock);
 
 			render(Page);
-			const created = await screen.findByRole('checkbox', { name: /Service enrollment created/ });
+			const created = await screen.findByRole('checkbox', { name: /Service code created/ });
 			await userEvent.click(created);
 			await userEvent.click(screen.getByRole('button', { name: /save/i }));
 
@@ -207,11 +206,12 @@ describe('Preferences page', () => {
 describe('the Display section', () => {
 	afterEach(() => {
 		vi.unstubAllGlobals();
-		detail.level = 'advanced';
+		detail.level = 'simplified';
+		detail.saveError = null;
 	});
 
-	// The level lives in this browser, not on the server, so a failed read of
-	// the notification settings must not take it with it.
+	// The level arrives with the session, not with the notification
+	// settings, so a failed read of those must not take it with it.
 	it('should stay usable when the notification settings fail to load', async () => {
 		vi.stubGlobal(
 			'fetch',
@@ -225,14 +225,81 @@ describe('the Display section', () => {
 	});
 
 	it('should change the detail level the covered pages read', async () => {
+		const fetchMock = vi.fn();
+		fetchMock.mockRejectedValueOnce(new Error('network down'));
+		fetchMock.mockResolvedValueOnce(
+			new Response(JSON.stringify({ data: { detail_level: 'advanced' }, error: null }), {
+				status: 200,
+				headers: { 'Content-Type': 'application/json' }
+			})
+		);
+		vi.stubGlobal('fetch', fetchMock);
+		vi.stubGlobal('localStorage', { getItem: () => null, setItem: () => undefined });
+		render(Page);
+		await screen.findByTestId('preferences-error');
+
+		await userEvent.click(screen.getByTestId('display-detail-advanced'));
+
+		await waitFor(() => expect(detail.level).toBe('advanced'));
+	});
+
+	it('should say so when the level could not be saved', async () => {
 		vi.stubGlobal(
 			'fetch',
 			vi.fn(() => Promise.reject(new Error('network down')))
 		);
 		vi.stubGlobal('localStorage', { getItem: () => null, setItem: () => undefined });
 		render(Page);
+		await screen.findByTestId('preferences-error');
 
-		await userEvent.click(screen.getByRole('button', { name: 'Simplified' }));
+		await userEvent.click(screen.getByTestId('display-detail-advanced'));
+
+		expect(await screen.findByTestId('display-detail-error')).toBeInTheDocument();
+	});
+});
+
+describe('the email detail level', () => {
+	afterEach(() => {
+		vi.unstubAllGlobals();
+	});
+
+	it('should show the stored email level as selected', async () => {
+		mockFetch(alicePreferences({ detail_level: 'advanced' }));
+		render(Page);
+
+		const advanced = await screen.findByTestId('email-detail-toggle-advanced');
+
+		expect(advanced).toHaveAttribute('aria-pressed', 'true');
+	});
+
+	it('should send the chosen level with the save', async () => {
+		const fetchMock = mockFetch(alicePreferences(), alicePreferences({ detail_level: 'advanced' }));
+		render(Page);
+
+		await userEvent.click(await screen.findByTestId('email-detail-toggle-advanced'));
+		await userEvent.click(screen.getByTestId('save-preferences'));
+
+		await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+		const [, init] = fetchMock.mock.calls[1];
+		expect(JSON.parse(init.body)).toEqual({ kinds: {}, detail_level: 'advanced' });
+	});
+
+	it('should leave nothing to save when the level is put back', async () => {
+		mockFetch(alicePreferences());
+		render(Page);
+
+		await userEvent.click(await screen.findByTestId('email-detail-toggle-advanced'));
+		await userEvent.click(screen.getByTestId('email-detail-toggle-simplified'));
+
+		expect(screen.getByTestId('save-preferences')).toBeDisabled();
+	});
+
+	it('should not touch the web display level', async () => {
+		mockFetch(alicePreferences());
+		detail.level = 'simplified';
+		render(Page);
+
+		await userEvent.click(await screen.findByTestId('email-detail-toggle-advanced'));
 
 		expect(detail.level).toBe('simplified');
 	});

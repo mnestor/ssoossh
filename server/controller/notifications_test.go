@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/mnestor/ssoossh/server/middleware"
+	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/notify"
 	"github.com/mnestor/ssoossh/server/service"
 	"github.com/mnestor/ssoossh/server/utils/errorresponses"
@@ -44,9 +45,53 @@ func (s *stubNotificationPreferences) SetPreferencesForIdentity(_ context.Contex
 	return nil
 }
 
+// stubDetailLevels stands in for DetailLevelService, recording what was set.
+type stubDetailLevels struct {
+	levels  service.DetailLevels
+	readErr error
+	saveErr error
+
+	webSet   *model.DetailLevel
+	emailSet *model.DetailLevel
+}
+
+func (s *stubDetailLevels) Levels(context.Context, *service.Identity) (service.DetailLevels, error) {
+	if s.readErr != nil {
+		return service.DetailLevels{}, s.readErr
+	}
+	return s.levels, nil
+}
+
+func (s *stubDetailLevels) SetWeb(_ context.Context, _ *service.Identity, level model.DetailLevel) error {
+	if s.saveErr != nil {
+		return s.saveErr
+	}
+	s.webSet = &level
+	s.levels.Web = level
+	return nil
+}
+
+func (s *stubDetailLevels) SetEmail(_ context.Context, _ *service.Identity, level model.DetailLevel) error {
+	if s.saveErr != nil {
+		return s.saveErr
+	}
+	s.emailSet = &level
+	s.levels.Email = level
+	return nil
+}
+
 // newNotificationRouter wires the controller behind a middleware that
 // installs identity, mirroring the session auth the real route sits behind.
 func newNotificationRouter(t *testing.T, prefs service.NotificationPreferenceProvider, identity *service.Identity) *gin.Engine {
+	t.Helper()
+	return newNotificationRouterWithLevels(t, prefs, &stubDetailLevels{levels: service.DetailLevels{
+		Web: model.DetailLevelSimplified, Email: model.DetailLevelSimplified,
+	}}, identity)
+}
+
+// newNotificationRouterWithLevels is newNotificationRouter with the detail
+// level provider supplied by the test.
+func newNotificationRouterWithLevels(t *testing.T, prefs service.NotificationPreferenceProvider, levels service.DetailLevelProvider, identity *service.Identity) *gin.Engine {
 	t.Helper()
 
 	gin.SetMode(gin.TestMode)
@@ -63,7 +108,7 @@ func newNotificationRouter(t *testing.T, prefs service.NotificationPreferencePro
 		g.Next()
 	}
 
-	NewNotificationController(router.Group("/api"), prefs, auth, func(g *gin.Context) { g.Next() })
+	NewNotificationController(router.Group("/api"), prefs, levels, auth, func(g *gin.Context) { g.Next() })
 	return router
 }
 
@@ -249,5 +294,80 @@ func TestUpdateNotificationsHandler_shouldRequireASession(t *testing.T) {
 	}
 	if prefs.saveCalls != 0 {
 		t.Error("an unauthenticated request reached the service")
+	}
+}
+
+// The email detail level travels with the notification preferences, in
+// both directions: GET reports it, and a PUT that names it stores it.
+func TestNotificationsHandler_shouldReportTheEmailDetailLevel(t *testing.T) {
+	levels := &stubDetailLevels{levels: service.DetailLevels{Web: model.DetailLevelSimplified, Email: model.DetailLevelAdvanced}}
+	router := newNotificationRouterWithLevels(t, &stubNotificationPreferences{settings: sampleSettings()}, levels, &service.Identity{Subject: "sub-1"})
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/users/me/notifications", nil))
+
+	var envelope struct {
+		Data webtypes.NotificationPreferencesResponse `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if envelope.Data.DetailLevel != model.DetailLevelAdvanced {
+		t.Errorf("detail_level = %q, want the email level, not the web one", envelope.Data.DetailLevel)
+	}
+}
+
+func TestUpdateNotificationsHandler_detailLevel(t *testing.T) {
+	tests := []struct {
+		name          string
+		body          string
+		wantStatus    int
+		wantEmailSet  *model.DetailLevel
+		wantKindsSave int
+	}{
+		{
+			name:          "should store the email level when the body names one",
+			body:          `{"kinds":{},"detail_level":"advanced"}`,
+			wantStatus:    http.StatusOK,
+			wantEmailSet:  ptrTo(model.DetailLevelAdvanced),
+			wantKindsSave: 1,
+		},
+		{
+			name:          "should leave the email level alone when the body omits it",
+			body:          `{"kinds":{"service_enrollment_created":true}}`,
+			wantStatus:    http.StatusOK,
+			wantKindsSave: 1,
+		},
+		{
+			name:          "should reject an unknown level before saving any kind",
+			body:          `{"kinds":{"service_enrollment_created":true},"detail_level":"verbose"}`,
+			wantStatus:    http.StatusBadRequest,
+			wantKindsSave: 0,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			prefs := &stubNotificationPreferences{settings: sampleSettings()}
+			levels := &stubDetailLevels{levels: service.DetailLevels{Web: model.DetailLevelSimplified, Email: model.DetailLevelSimplified}}
+			router := newNotificationRouterWithLevels(t, prefs, levels, &service.Identity{Subject: "sub-1"})
+
+			req := httptest.NewRequest(http.MethodPut, "/api/users/me/notifications", bytes.NewBufferString(tc.body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			if rec.Code != tc.wantStatus {
+				t.Fatalf("status = %d, want %d, body = %s", rec.Code, tc.wantStatus, rec.Body.String())
+			}
+			if prefs.saveCalls != tc.wantKindsSave {
+				t.Errorf("kind saves = %d, want %d", prefs.saveCalls, tc.wantKindsSave)
+			}
+			switch {
+			case tc.wantEmailSet == nil && levels.emailSet != nil:
+				t.Errorf("stored email level %q, want none", *levels.emailSet)
+			case tc.wantEmailSet != nil && (levels.emailSet == nil || *levels.emailSet != *tc.wantEmailSet):
+				t.Errorf("stored email level %v, want %q", levels.emailSet, *tc.wantEmailSet)
+			}
+		})
 	}
 }

@@ -30,6 +30,9 @@ function mockFetchError(message = 'network error') {
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	// The full page unless a case says otherwise: simplified is the new
+	// default, and these cases describe what advanced shows.
+	detail.level = 'advanced';
 });
 
 afterEach(() => {

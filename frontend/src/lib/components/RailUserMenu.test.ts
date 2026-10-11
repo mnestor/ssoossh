@@ -33,7 +33,8 @@ function signedInUser() {
 		extra: {},
 		is_admin: false,
 		is_soc: false,
-		is_auditor: false
+		is_auditor: false,
+		detail_level: 'advanced' as const
 	};
 }
 

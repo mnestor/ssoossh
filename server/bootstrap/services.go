@@ -37,6 +37,8 @@ type services struct {
 	// request. Always present: it answers the same question with or
 	// without a directory, just from fewer sources.
 	identity *service.IdentityService
+	// detailLevels holds each person's web and email detail levels.
+	detailLevels *service.DetailLevelService
 }
 
 // initServices constructs the services using a.config and a.httpClient,
@@ -115,6 +117,7 @@ func (a *app) initServices() (*services, error) {
 	// directory service, and after it so a nil svc.ldap here means the same
 	// thing it means everywhere else.
 	svc.identity = service.NewIdentityService(a.db, svc.ldap)
+	svc.detailLevels = service.NewDetailLevelService(a.db, &a.config.Admin)
 
 	// Validate lifetime policy configuration against reverse-proxy settings.
 	// This is a startup check with logging only; bad config here is not an error.

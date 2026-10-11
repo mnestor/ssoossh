@@ -94,6 +94,8 @@ func fullFixtures() map[string]any {
 			IsAdmin:   true,
 			IsSOC:     true,
 			IsAuditor: true,
+
+			DetailLevel: model.DetailLevelAdvanced,
 		},
 		"certificate_options": options,
 		"request_detail": webtypes.RequestDetailResponse{
@@ -166,11 +168,15 @@ func fullFixtures() map[string]any {
 			Kinds: []webtypes.NotificationKindResponse{
 				{
 					Kind:        "service_enrollment_created",
-					Title:       "Service enrollment created",
+					Title:       "Service code created",
 					Description: "Sent when you approve a service certificate request.",
 					Enabled:     true,
 				},
 			},
+			DetailLevel: model.DetailLevelSimplified,
+		},
+		"display_preferences": webtypes.DisplayPreferencesResponse{
+			DetailLevel: model.DetailLevelSimplified,
 		},
 		"enrollment_retrievals": webtypes.EnrollmentRetrievalsResponse{
 			Retrievals: []webtypes.EnrollmentRetrievalResponse{{
@@ -327,6 +333,7 @@ func zeroFixtures() map[string]any {
 		"service_enrollment":       webtypes.ServiceEnrollmentResponse{},
 		"enrollment_retrievals":    webtypes.EnrollmentRetrievalsResponse{},
 		"notification_preferences": webtypes.NotificationPreferencesResponse{},
+		"display_preferences":      webtypes.DisplayPreferencesResponse{},
 		"ldap_status":              webtypes.LDAPStatusResponse{},
 		"ldap_sync_run":            webtypes.LDAPSyncRunResponse{},
 		"ldap_probe":               webtypes.LDAPProbeResponse{},

@@ -227,6 +227,7 @@ table users
   column disabled_source type=TEXT nullable=true pk=false default=<none>
   column display_name type=TEXT nullable=false pk=false default=''
   column email type=TEXT nullable=false pk=false default=''
+  column email_detail_level type=TEXT nullable=true pk=false default=<none>
   column extra_fields type=TEXT nullable=false pk=false default=''
   column id type=TEXT nullable=false pk=true default=<none>
   column other_accounts type=TEXT nullable=false pk=false default=''
@@ -234,6 +235,7 @@ table users
   column subject type=TEXT nullable=false pk=false default=<none>
   column updated_at type=DATETIME nullable=false pk=false default=<none>
   column username type=TEXT nullable=false pk=false default=<none>
+  column web_detail_level type=TEXT nullable=true pk=false default=<none>
   fk disabled_by_user_id -> users.id on_delete=NO ACTION on_update=NO ACTION
   index idx_users_subject unique=true columns=subject
   index sqlite_autoindex_users_1 unique=true columns=id

@@ -70,3 +70,18 @@ export type CertificateRequestStatus = typeof CertificateRequestStatusPending | 
 export type CertificateRequestDecisionOutcome = string;
 export const CertificateRequestDecisionApproved: CertificateRequestDecisionOutcome = "approved";
 export const CertificateRequestDecisionDenied: CertificateRequestDecisionOutcome = "denied";
+/**
+ * DetailLevel is how much a reader is shown: the full page or message, or
+ * the facts needed to decide or to understand the result.
+ */
+/**
+ * DetailLevelSimplified keeps what a reader needs to decide or to
+ * understand the result, and drops the diagnostic detail an expert
+ * compares.
+ */
+export const DetailLevelSimplified = "simplified";
+/**
+ * DetailLevelAdvanced is everything.
+ */
+export const DetailLevelAdvanced = "advanced";
+export type DetailLevel = typeof DetailLevelSimplified | typeof DetailLevelAdvanced;
