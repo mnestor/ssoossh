@@ -50,6 +50,7 @@ export default defineConfig({
 			],
 			sidebar: [
 				{ label: 'Why ssoossh', slug: 'why' },
+				{ label: 'Adoption FAQ', slug: 'faq' },
 				{ label: 'Getting started', slug: 'getting-started' },
 				{ label: 'Installing from packages', slug: 'packages' },
 				{ label: 'How it works', items: [{ autogenerate: { directory: 'concepts' } }] },

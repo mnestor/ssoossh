@@ -328,6 +328,11 @@ including for a host whose distribution has stopped issuing updates.
 Failures log their reason at `LOG_ERR`, a successful authentication at
 `LOG_INFO`, and the per-check reasoning at `LOG_DEBUG` when `debug` is set.
 
+The success line names the local account and the validated certificate's key
+ID, as `sshd` does for a certificate login. That is what makes a `sudo` to a
+shared account attributable from the host's own log, as long as the server's
+[key ID template](/ssoossh/operations/key-id-templates/) names the approver.
+
 Text that reaches the terminal is filtered first: the approval URL is reduced
 to the RFC 3986 character set, the console code to its base32 alphabet, and the
 QR code to the three block characters it is drawn from. A server response that

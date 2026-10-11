@@ -13,8 +13,10 @@ server itself.
 ### What do I have to configure on my hosts?
 
 One line of `sshd_config`: `TrustedUserCAKeys` pointing at the ssoossh CA
-public key, fetched from the running server with `ssoossh ca`. Reload `sshd`
-and `authorized_keys` files can go away.
+public key, fetched from the running server with `ssoossh ca`. Reload `sshd`.
+Existing `authorized_keys` files and any `AuthorizedKeysCommand` keep working
+beside it; retiring them is a separate decision, covered in the
+[adoption FAQ](/ssoossh/faq/#how-do-i-make-certificates-the-only-way-in).
 
 Optionally, map allowed login names with `AuthorizedPrincipalsFile` or
 `AuthorizedPrincipalsCommand`. See

@@ -8,7 +8,8 @@ sidebar:
 Questions from the person using ssoossh to connect. Host administrators and
 server operators have their own FAQs, at
 [Host admin FAQ](/ssoossh/hosts/faq/) and
-[Operator FAQ](/ssoossh/operations/faq/). If your question is of the form "why
+[Operator FAQ](/ssoossh/operations/faq/); how ssoossh sits beside existing
+keys and PAM stacks is in the [Adoption FAQ](/ssoossh/faq/). If your question is of the form "why
 does it not just...", check [Decisions](/ssoossh/project/decisions/) first --
 that page exists for exactly those.
 

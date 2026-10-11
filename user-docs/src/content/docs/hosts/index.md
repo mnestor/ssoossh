@@ -14,9 +14,11 @@ should go through the same approval.
 
 **Trust the CA in `sshd`.** One line of `sshd_config` pointing
 `TrustedUserCAKeys` at the ssoossh CA public key. That is the whole
-requirement for certificate-based SSH login, and `authorized_keys` files can
-go away once it is in place. See
-[Trusting the CA in sshd](/ssoossh/hosts/sshd-trust/).
+requirement for certificate-based SSH login. It is added beside whatever the
+host already accepts: `authorized_keys` files and any `AuthorizedKeysCommand`
+keep working until you choose to retire them. See
+[Trusting the CA in sshd](/ssoossh/hosts/sshd-trust/) and the
+[adoption FAQ](/ssoossh/faq/).
 
 **Optionally, install `pam_ssoossh`.** A PAM module that authenticates a local
 account by asking `ssoosshd` for a short-lived certificate, showing the person
@@ -34,7 +36,7 @@ CA's public half and decides for itself what a certificate signed by it may do.
 
 | I want | Configure |
 | --- | --- |
-| SSH logins by certificate instead of `authorized_keys` | `TrustedUserCAKeys` in `sshd_config` -- [sshd trust](/ssoossh/hosts/sshd-trust/) |
+| SSH logins by certificate, alongside `authorized_keys` or in place of it | `TrustedUserCAKeys` in `sshd_config` -- [sshd trust](/ssoossh/hosts/sshd-trust/) |
 | To decide which certificate principals may log in as which local account over SSH | `AuthorizedPrincipalsFile` or `AuthorizedPrincipalsCommand` -- [sshd trust](/ssoossh/hosts/sshd-trust/) |
 | `sudo` approved in a browser instead of a typed password | `pam_ssoossh` in `/etc/pam.d/sudo` -- [sudo and su](/ssoossh/hosts/pam/sudo/) |
 | The same for `su` | `pam_ssoossh` in `/etc/pam.d/su` -- [sudo and su](/ssoossh/hosts/pam/sudo/) |

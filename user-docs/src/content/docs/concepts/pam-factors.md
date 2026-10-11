@@ -28,7 +28,7 @@ This page compares the three. For how the module itself works, see
 | What the host holds in advance | a password hash per account | trust anchors, plus a mapping from certificate to account | one CA public key, plus a principals map |
 | Proof of presence, now | none: a stored secret, replayable by anyone who learns it | yes: a PIN entry or a touch at the moment of use | yes: an interactive approval at the moment of use |
 | Resists phishing | no | yes, the credential is bound to the origin or the reader | partly: the credential cannot be phished, but the *approval* can be talked out of someone. See below |
-| Names an individual through a shared account | no | only if the device is not shared either | yes: the certificate names the approver, and the key ID reaches the host's log |
+| Names an individual through a shared account | no | only if the device is not shared either | yes, for the authentication: the certificate's key ID reaches the host's log, when the [key ID template](/ssoossh/operations/key-id-templates/) names the approver, and the server's record keeps the host, tty and command line. Not for what happens after it; see the [adoption FAQ](/ssoossh/faq/#does-ssoossh-record-who-did-what-on-a-shared-account) |
 | Says what is being authorized | no, a prompt is a prompt | no | yes: the approval page names the host, the service, the tty, the account, and the command line |
 
 The phishing row is the one to read twice. A token cannot be phished because
