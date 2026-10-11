@@ -542,14 +542,14 @@ func (a *adminController) getUserHandler(g *gin.Context) {
 // @Summary     Disable a user (admin or SOC)
 // @Description Marks a user as disabled, preventing authentication. Service
 // @Description enrollments they approved are unaffected. The operation is
-// @Description idempotent.
+// @Description idempotent. A caller cannot disable their own account.
 // @Tags        admin
 // @Produce     json
 // @Param       id path string true "User ID"
 // @Param       request body webtypes.DisableUserRequestBody true "Disable reason (required)"
 // @Success     200 {object} webtypes.DisableUserConsequences "Consequences of disabling"
 // @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
-// @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as admin or SOC"
+// @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as admin or SOC, or the target is the caller's own account"
 // @Failure     404 {object} openapidoc.ErrorEnvelope "User not found"
 // @Security    sessionCookie
 // @Router      /api/admin/users/{id}/disable [patch]
@@ -574,6 +574,17 @@ func (a *adminController) disableUserHandler(g *gin.Context) {
 		Where("subject = ?", currentIdentity.Subject).
 		First(&currentUser).Error; err != nil {
 		handleError(g, fmt.Errorf("failed to look up current user: %w", err))
+		return
+	}
+
+	// Refused before the body is read and before any write or audit row:
+	// disabling yourself ends your own session, and recovery needs another
+	// admin to re-enable you. Refusals in this package write no audit row
+	// (see certrequest's network refusal and checkUserPrincipalLinkage), so
+	// this one is logged rather than recorded.
+	if currentUser.ID == id {
+		slog.Warn("refused a self-disable", "user_id", id)
+		handleError(g, &errorresponses.ForbiddenError{Reason: "You can't disable your own account. Ask another admin."})
 		return
 	}
 
