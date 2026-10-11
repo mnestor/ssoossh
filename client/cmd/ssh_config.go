@@ -15,7 +15,8 @@ func newSSHConfigCommand() simplecobra.Commander {
 		// the same way whether or not a server is configured, reachable, or
 		// trusted, which is exactly when someone is most likely to be
 		// reading it. See offlineCommander in offline.go.
-		offline: true,
+		offline:    true,
+		configFree: true,
 		long: "Prints the ssh_config recipes that make `ssh` invoke ssoossh, with the " +
 			"rules that decide which one you want. Contacts nothing and reads nothing " +
 			"but this text, so it answers before a server is configured and keeps " +

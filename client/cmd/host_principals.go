@@ -22,6 +22,9 @@ func newHostPrincipalsCommand(mappingFileFunc func() string) simplecobra.Command
 		// documented: offline makes root's PreRun skip the CA fetch, so
 		// there is no server round-trip anywhere in this command's path.
 		offline: true,
+		// It reads only --file, never a configuration setting, so a broken
+		// config must not stop it answering sshd.
+		configFree: true,
 		long: "Implements AuthorizedPrincipalsCommand. Called on every login attempt, and " +
 			"must never touch the network -- it answers only from whatever local mapping " +
 			"files were written. It needs no privilege beyond read access to the mapping " +
@@ -29,9 +32,10 @@ func newHostPrincipalsCommand(mappingFileFunc func() string) simplecobra.Command
 			"account rather than root. Expects one argument: the local username to look " +
 			"up. Prints one principal per line, always including the looked-up name " +
 			"itself: the mapping file adds principals to an account and can never take " +
-			"the account's own name away. An unknown account, a missing file, and a file " +
-			"that will not load all still print that one line and exit 0 -- a file that " +
-			"will not load is reported on stderr rather than by refusing to answer, so " +
+			"the account's own name away. An unknown account, a missing mapping file, a " +
+			"mapping file that will not load, and a configuration that will not load all " +
+			"still print that one line and exit 0 -- a load failure is reported on stderr " +
+			"rather than by refusing to answer, so " +
 			"this host stays consistent with pam_ssoossh, which falls back to the same " +
 			"rule when it cannot read the map.",
 	}

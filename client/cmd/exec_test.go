@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"path/filepath"
@@ -33,6 +34,78 @@ func newTestExec(t *testing.T) *rootExecFixture {
 		t.Fatalf("failed to build command tree: %v", err)
 	}
 	return &rootExecFixture{root: root, exec: x}
+}
+
+// TestExecute_ShouldAnswerFromConfigFreeCommandsWhenConfigFailsToLoad pins
+// the two commands that must keep working when the configuration is broken:
+// `host principals`, because sshd calls it on every login and a refusal
+// denies certificate logins on the host, and `ssh config`, because it is what
+// someone reads while fixing the configuration.
+func TestExecute_ShouldAnswerFromConfigFreeCommandsWhenConfigFailsToLoad(t *testing.T) {
+	tests := []struct {
+		name       string
+		args       []string
+		wantStdout string
+	}{
+		{
+			name:       "should print the account name from host principals when config fails to load",
+			args:       []string{"host", "principals", "deploy", "--file", "MAPPING"},
+			wantStdout: "deploy\n",
+		},
+		{
+			name:       "should print the recipes from ssh config when config fails to load",
+			args:       []string{"ssh", "config"},
+			wantStdout: sshConfigGuidance,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newTestExec(t)
+			f.root.newConfig = func(cmd *cobra.Command) (*config.Config, error) {
+				return nil, errors.New("unsupported sshkey.type \"dsa\"")
+			}
+			var stdout, stderr bytes.Buffer
+			f.root.cobraRoot.SetOut(&stdout)
+			f.root.cobraRoot.SetErr(&stderr)
+			args := append([]string{}, tt.args...)
+			for i, a := range args {
+				if a == "MAPPING" {
+					args[i] = filepath.Join(t.TempDir(), "principals.yaml")
+				}
+			}
+
+			var err error
+			printed := captureStdout(t, func() { _, err = f.exec.Execute(context.Background(), args) })
+
+			if err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+			if got := printed + stdout.String(); got != tt.wantStdout {
+				t.Errorf("stdout = %q, want %q", got, tt.wantStdout)
+			}
+		})
+	}
+}
+
+// TestExecute_ShouldReportTheConfigFailureFromConfigFreeCommands checks the
+// other half: the failure is not swallowed, it moves to stderr.
+func TestExecute_ShouldReportTheConfigFailureFromConfigFreeCommands(t *testing.T) {
+	f := newTestExec(t)
+	f.root.newConfig = func(cmd *cobra.Command) (*config.Config, error) {
+		return nil, errors.New("unsupported sshkey.type \"dsa\"")
+	}
+	var stderr bytes.Buffer
+	f.root.cobraRoot.SetErr(&stderr)
+
+	captureStdout(t, func() {
+		_, _ = f.exec.Execute(context.Background(), []string{"host", "principals", "deploy", "--file", filepath.Join(t.TempDir(), "p.yaml")})
+	})
+
+	want := "Warning: load config: unsupported sshkey.type \"dsa\"; continuing without the configuration\n"
+	if stderr.String() != want {
+		t.Errorf("stderr = %q, want %q", stderr.String(), want)
+	}
 }
 
 type rootExecFixture struct {

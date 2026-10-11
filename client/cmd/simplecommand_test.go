@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"testing"
@@ -11,11 +12,13 @@ import (
 
 func TestSimpleCommandRun(t *testing.T) {
 	tests := []struct {
-		name    string
-		initErr error
-		run     func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error
-		wantErr error
-		wantRan bool
+		name       string
+		initErr    error
+		configFree bool
+		run        func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error
+		wantErr    error
+		wantRan    bool
+		wantStderr string
 	}{
 		{
 			name:    "should surface root InitErr without calling run when init failed",
@@ -38,6 +41,24 @@ func TestSimpleCommandRun(t *testing.T) {
 			run:     nil,
 			wantErr: nil,
 		},
+		{
+			name:       "should call run when init failed and the command reads no configuration",
+			initErr:    errors.New("load config: broken"),
+			configFree: true,
+			run: func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error {
+				return nil
+			},
+			wantRan: true,
+		},
+		{
+			name:       "should warn on stderr when init failed and the command reads no configuration",
+			initErr:    errors.New("load config: broken"),
+			configFree: true,
+			run: func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error {
+				return nil
+			},
+			wantStderr: "Warning: load config: broken; continuing without the configuration\n",
+		},
 	}
 
 	for _, tt := range tests {
@@ -46,10 +67,28 @@ func TestSimpleCommandRun(t *testing.T) {
 			rootCd := &simplecobra.Commandeer{Command: root}
 			rootCd.Root = rootCd
 
-			c := &simpleCommand{name: "test", run: tt.run}
-			cd := &simplecobra.Commandeer{Command: c, Root: rootCd, CobraCommand: &cobra.Command{}}
+			ran := false
+			run := tt.run
+			if run != nil {
+				run = func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error {
+					ran = true
+					return tt.run(ctx, cd, root, args)
+				}
+			}
+			c := &simpleCommand{name: "test", run: run, configFree: tt.configFree}
+			var stderr bytes.Buffer
+			cobraCmd := &cobra.Command{}
+			cobraCmd.SetErr(&stderr)
+			cd := &simplecobra.Commandeer{Command: c, Root: rootCd, CobraCommand: cobraCmd}
 
 			err := c.Run(context.Background(), cd, nil)
+
+			if tt.wantRan && !ran {
+				t.Fatal("expected run to be called")
+			}
+			if tt.wantStderr != "" && stderr.String() != tt.wantStderr {
+				t.Fatalf("stderr = %q, want %q", stderr.String(), tt.wantStderr)
+			}
 
 			if tt.wantErr != nil {
 				if err == nil || err.Error() != tt.wantErr.Error() {

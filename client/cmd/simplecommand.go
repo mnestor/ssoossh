@@ -39,6 +39,15 @@ type simpleCommand struct {
 	// serve it. See offlineCommander in offline.go.
 	offline bool
 
+	// configFree marks a command that reads no configuration setting at
+	// all, so a configuration that failed to load is reported as a warning
+	// rather than refusing to run. `host principals` needs it because sshd
+	// calls it on every login and a refusal there denies certificate logins
+	// on the host; `ssh config` because it is what someone reads when the
+	// configuration is the broken thing. No admin lock can be bypassed this
+	// way: a command that consults no setting has none to enforce.
+	configFree bool
+
 	// serverOptional marks a command whose work is local but which may ask
 	// the server one question itself, so root's PreRun builds nothing for
 	// it either: an unreachable server or a host with no ssh-agent must not
@@ -106,15 +115,21 @@ func (c *simpleCommand) Init(cd *simplecobra.Commandeer) error {
 func (c *simpleCommand) PreRun(this, runner *simplecobra.Commandeer) error { return nil }
 
 // Run implements simplecobra.Commander. It fails closed with the root's
-// InitErr (if init failed) before ever reaching run, and no-ops for group
-// commands that only exist to hold children.
+// InitErr (if init failed) before ever reaching run, unless the command is
+// configFree, and no-ops for group commands that only exist to hold
+// children.
 func (c *simpleCommand) Run(ctx context.Context, cd *simplecobra.Commandeer, args []string) error {
 	root, ok := cd.Root.Command.(*RootCommand)
 	if !ok {
 		return fmt.Errorf("simpleCommand.Run: root command is %T, not *RootCommand", cd.Root.Command)
 	}
-	if root.InitErr() != nil {
-		return root.InitErr()
+	if err := root.InitErr(); err != nil {
+		if !c.configFree {
+			return err
+		}
+		// stderr, never stdout: sshd parses `host principals` stdout as
+		// the principal list.
+		fmt.Fprintf(cd.CobraCommand.ErrOrStderr(), "Warning: %v; continuing without the configuration\n", err)
 	}
 	if c.run == nil {
 		return nil
