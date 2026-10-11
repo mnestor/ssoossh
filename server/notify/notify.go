@@ -73,11 +73,57 @@ type Field struct {
 	Description string
 }
 
+// Group is a set of kinds the preferences page shows together. Owned here,
+// with the kinds, so a new kind lands in a group without a frontend change.
+type Group string
+
+const (
+	// GroupServiceCodes is everything about the service codes on accounts
+	// the reader holds.
+	GroupServiceCodes Group = "service_codes"
+	// GroupCertificates is the "was this you?" mail: one message per
+	// certificate issued in the reader's name.
+	GroupCertificates Group = "certificates"
+)
+
+// GroupDefinition is how the preferences page heads and explains a group.
+type GroupDefinition struct {
+	Group       Group
+	Title       string
+	Description string
+}
+
+// groups is the group registry, in the order the preferences page shows
+// them.
+var groups = []GroupDefinition{
+	{
+		Group:       GroupServiceCodes,
+		Title:       "Service codes",
+		Description: "The service codes on accounts you hold: when one is created, used, close to expiring, or presented after it expired.",
+	},
+	{
+		Group:       GroupCertificates,
+		Title:       "Certificates issued to you",
+		Description: "One email for every login, sudo or console login, so these are off by default. Turn one on to hear about every certificate issued in your name.",
+	},
+}
+
+// Groups returns the registered groups in preferences-page order. The
+// returned slice is a copy, like Definitions.
+func Groups() []GroupDefinition {
+	out := make([]GroupDefinition, len(groups))
+	copy(out, groups)
+	return out
+}
+
 // Definition is everything the rest of the server needs to know about one
 // notification kind without hardcoding it.
 type Definition struct {
 	// Kind is the stable identifier, persisted and sent to the UI.
 	Kind Kind
+
+	// Group is the set the preferences page shows this kind in.
+	Group Group
 
 	// Title and Description are shown on the preferences page and in the
 	// generated documentation.
@@ -106,6 +152,7 @@ type Definition struct {
 var definitions = []Definition{
 	{
 		Kind:           KindServiceEnrollmentCreated,
+		Group:          GroupServiceCodes,
 		Title:          "Service code created",
 		Description:    "Sent when you approve a service certificate request and a service code is created for it.",
 		DefaultEnabled: true,
@@ -136,6 +183,7 @@ var definitions = []Definition{
 	},
 	{
 		Kind:           KindServiceEnrollmentRedeemed,
+		Group:          GroupServiceCodes,
 		Title:          "Service code redeemed",
 		Description:    "Sent every time one of your service codes is redeemed for a certificate, including failed attempts.",
 		DefaultEnabled: true,
@@ -160,6 +208,7 @@ var definitions = []Definition{
 	},
 	{
 		Kind:           KindServiceEnrollmentExpiring,
+		Group:          GroupServiceCodes,
 		Title:          "Service code expiring",
 		Description:    "Sent while one of your service codes is close to expiring, so an unattended job can be enrolled again before it starts failing: weekly inside the reminder window, then daily over the final week.",
 		DefaultEnabled: true,
@@ -181,6 +230,7 @@ var definitions = []Definition{
 	},
 	{
 		Kind:           KindServiceEnrollmentExpiredAttempt,
+		Group:          GroupServiceCodes,
 		Title:          "Expired service code used",
 		Description:    "Sent when an expired service code is presented for redemption: either a job is still trying to use it, or someone is replaying a credential that should no longer exist.",
 		DefaultEnabled: true,
@@ -202,6 +252,7 @@ var definitions = []Definition{
 	},
 	{
 		Kind:           KindUserCertificateIssued,
+		Group:          GroupCertificates,
 		Title:          "User certificate issued",
 		Description:    "Sent every time an interactive SSH certificate is signed for you. Off by default: this is one message per login, for people who want to see every one.",
 		DefaultEnabled: false,
@@ -210,6 +261,7 @@ var definitions = []Definition{
 	},
 	{
 		Kind:           KindPAMCertificateIssued,
+		Group:          GroupCertificates,
 		Title:          "PAM certificate issued",
 		Description:    "Sent every time a certificate is signed for a local sudo or su on your behalf. Off by default: this is one message per sudo.",
 		DefaultEnabled: false,
@@ -218,6 +270,7 @@ var definitions = []Definition{
 	},
 	{
 		Kind:           KindConsoleCertificateIssued,
+		Group:          GroupCertificates,
 		Title:          "Console certificate issued",
 		Description:    "Sent every time a certificate is signed for a console login you approved with a typed code. Off by default: this is one message per login.",
 		DefaultEnabled: false,

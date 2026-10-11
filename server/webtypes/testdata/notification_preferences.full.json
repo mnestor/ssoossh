@@ -1,9 +1,17 @@
 {
   "mail_enabled": true,
   "address": "alice@example.org",
+  "groups": [
+    {
+      "group": "service_codes",
+      "title": "Service codes",
+      "description": "The service codes on accounts you hold."
+    }
+  ],
   "kinds": [
     {
       "kind": "service_enrollment_created",
+      "group": "service_codes",
       "title": "Service code created",
       "description": "Sent when you approve a service certificate request.",
       "enabled": true

@@ -86,6 +86,33 @@ func TestDefinitions_shouldDocumentOnlyRealPayloadFields(t *testing.T) {
 	}
 }
 
+// The preferences page shows kinds by group, so a kind whose group is not
+// registered would not appear on it at all.
+func TestDefinitions_shouldPlaceEveryKindInARegisteredGroup(t *testing.T) {
+	registered := map[Group]bool{}
+	for _, g := range Groups() {
+		registered[g.Group] = true
+	}
+	for _, def := range Definitions() {
+		if !registered[def.Group] {
+			t.Errorf("%s is in group %q, which is not registered", def.Kind, def.Group)
+		}
+	}
+}
+
+// An empty group would be a heading over nothing on the preferences page.
+func TestGroups_shouldEachHoldAKind(t *testing.T) {
+	used := map[Group]bool{}
+	for _, def := range Definitions() {
+		used[def.Group] = true
+	}
+	for _, g := range Groups() {
+		if !used[g.Group] {
+			t.Errorf("group %q holds no kind", g.Group)
+		}
+	}
+}
+
 func TestLookup_shouldReportUnknownKinds(t *testing.T) {
 	if _, ok := Lookup("nope"); ok {
 		t.Error("Lookup reported an unregistered kind as known")

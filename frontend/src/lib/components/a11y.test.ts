@@ -42,6 +42,7 @@ import RailUserMenu from './RailUserMenu.svelte';
 import RedemptionHistory from './RedemptionHistory.svelte';
 import SearchInput from './SearchInput.svelte';
 import SectionLabel from './SectionLabel.svelte';
+import Switch from './Switch.svelte';
 import ServiceAccountRow from './ServiceAccountRow.svelte';
 import ServiceCodeDetail from './ServiceCodeDetail.svelte';
 import ServiceCodeFacts from './ServiceCodeFacts.svelte';
@@ -268,6 +269,21 @@ const cases: [string, any, Record<string, unknown>][] = [
 	['SearchInput', SearchInput, { label: 'Search certificates', onsearch: vi.fn() }],
 	['SectionLabel', SectionLabel, { children: text('Filter') }],
 	['SectionLabel (labelling a field)', SectionLabel, { for: 'x', children: text('Filter') }],
+	[
+		'Switch (on)',
+		Switch,
+		{
+			checked: true,
+			title: 'Service code created',
+			description: 'Sent when a code is created.',
+			onchange: () => undefined
+		}
+	],
+	[
+		'Switch (off, saving)',
+		Switch,
+		{ checked: false, title: 'Service code created', onchange: () => undefined, busy: true }
+	],
 	[
 		'ServiceAccountRow',
 		ServiceAccountRow,

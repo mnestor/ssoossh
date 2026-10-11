@@ -371,3 +371,39 @@ func TestUpdateNotificationsHandler_detailLevel(t *testing.T) {
 		})
 	}
 }
+
+// The page heads its kinds from the registry's groups, in the registry's
+// order, and places each kind by the group it names.
+func TestNotificationsHandler_groups(t *testing.T) {
+	settings := sampleSettings()
+	settings.Kinds[0].Group = notify.GroupServiceCodes
+	router := newNotificationRouter(t, &stubNotificationPreferences{settings: settings}, &service.Identity{Subject: "sub-1"})
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/users/me/notifications", nil))
+
+	var envelope struct {
+		Data webtypes.NotificationPreferencesResponse `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	tests := []struct {
+		name string
+		got  any
+		want any
+	}{
+		{name: "should list every registered group", got: len(envelope.Data.Groups), want: len(notify.Groups())},
+		{name: "should keep the registry's order", got: envelope.Data.Groups[0].Group, want: string(notify.Groups()[0].Group)},
+		{name: "should carry each group's title", got: envelope.Data.Groups[0].Title, want: notify.Groups()[0].Title},
+		{name: "should name the group on each kind", got: envelope.Data.Kinds[0].Group, want: string(notify.GroupServiceCodes)},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.got != tc.want {
+				t.Errorf("got %v, want %v", tc.got, tc.want)
+			}
+		})
+	}
+}

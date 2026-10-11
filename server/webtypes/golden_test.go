@@ -165,9 +165,17 @@ func fullFixtures() map[string]any {
 		"notification_preferences": webtypes.NotificationPreferencesResponse{
 			MailEnabled: true,
 			Address:     "alice@example.org",
+			Groups: []webtypes.NotificationGroupResponse{
+				{
+					Group:       "service_codes",
+					Title:       "Service codes",
+					Description: "The service codes on accounts you hold.",
+				},
+			},
 			Kinds: []webtypes.NotificationKindResponse{
 				{
 					Kind:        "service_enrollment_created",
+					Group:       "service_codes",
 					Title:       "Service code created",
 					Description: "Sent when you approve a service certificate request.",
 					Enabled:     true,

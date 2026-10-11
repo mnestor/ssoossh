@@ -992,6 +992,10 @@ export interface NotificationKindResponse {
 	 */
 	kind: string;
 	/**
+	 * Group names the NotificationGroupResponse this kind is shown under.
+	 */
+	group: string;
+	/**
 	 * Title is the short label shown beside the toggle.
 	 */
 	title: string;
@@ -1004,6 +1008,24 @@ export interface NotificationKindResponse {
 	 * never given one.
 	 */
 	enabled: boolean;
+}
+/**
+ * NotificationGroupResponse heads one group of kinds on the preferences
+ * page.
+ */
+export interface NotificationGroupResponse {
+	/**
+	 * Group is the identifier kinds name in NotificationKindResponse.Group.
+	 */
+	group: string;
+	/**
+	 * Title is the group's heading.
+	 */
+	title: string;
+	/**
+	 * Description is one sentence saying what the group's kinds are about.
+	 */
+	description: string;
 }
 /**
  * NotificationPreferencesResponse is the preferences page's whole payload.
@@ -1021,6 +1043,10 @@ export interface NotificationPreferencesResponse {
 	 * reason nothing arrives, and equally worth showing.
 	 */
 	address: string;
+	/**
+	 * Groups is every group the kinds are shown under, in page order.
+	 */
+	groups: NotificationGroupResponse[];
 	/**
 	 * Kinds is every notification the server knows how to send, in a
 	 * stable order.

@@ -158,15 +158,30 @@ func newNotificationPreferencesResponse(settings service.NotificationSettings, l
 	for _, pref := range settings.Kinds {
 		kinds = append(kinds, webtypes.NotificationKindResponse{
 			Kind:        string(pref.Kind),
+			Group:       string(pref.Group),
 			Title:       pref.Title,
 			Description: pref.Description,
 			Enabled:     pref.Enabled,
 		})
 	}
 
+	// Every registered group, in order, even one this user's kinds leave
+	// empty: the page heads each group from this list and lists the kinds
+	// that name it, so the order is the registry's and not the browser's.
+	registered := notify.Groups()
+	groups := make([]webtypes.NotificationGroupResponse, 0, len(registered))
+	for _, g := range registered {
+		groups = append(groups, webtypes.NotificationGroupResponse{
+			Group:       string(g.Group),
+			Title:       g.Title,
+			Description: g.Description,
+		})
+	}
+
 	return webtypes.NotificationPreferencesResponse{
 		MailEnabled: settings.MailEnabled,
 		Address:     settings.Address,
+		Groups:      groups,
 		Kinds:       kinds,
 		DetailLevel: level,
 	}

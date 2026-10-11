@@ -641,6 +641,14 @@ bg-surface-muted`, decorative), a short title, the sentence that says what
 - **Footer**: closes every page with the running version, a link to its
   release and links to the project, on the ground with no rule. Renders
   nothing while the version is unknown. Links are `min-h-target` targets.
+- **Switch**: a live on/off setting, `role="switch"` with `aria-checked`,
+  for a setting that applies on the press. A `rounded-md` track: on is an
+  `ink` fill with the knob right and the `check` glyph on it; off is a
+  `border-control` edge with an `ink-muted` knob left. The whole row (track,
+  title, sentence) is one `min-h-target` button, named by the title alone
+  (`aria-labelledby`) and described by the sentence (`aria-describedby`).
+  `busy` sets `aria-busy` and ignores presses while a save is in flight.
+  Never a checkbox for a live setting: a checkbox waits for a Save button.
 - **DetailToggle**: a two-segment control, "Simplified" and "Advanced", in
   the heading row of each covered page. Selected segment per Colour; writes
   the same preference as `/preferences`. Given `value` and `onselect` it is
@@ -800,6 +808,15 @@ off, and confirms through a reasonless `ConfirmModal`.
 - Labels sit above their field; a field caps its width to what it holds.
 - A reason the server records is required and validated before submit.
 - Checkbox and radio rows make the whole label the target (`min-h-target`).
+- **One save model per screen** (form-ux). A setting that applies on the
+  press is a `Switch` or a segmented toggle and saves at once; a checkbox
+  waits for a Save button. A screen never mixes the two. `/preferences` is
+  live throughout, because the Pages level is live in every covered page's
+  heading.
+- **A live setting** shows its new state at once, saves only itself, puts
+  itself back with "Not saved. Try again." beside it if the save fails, and
+  ignores a second press until the first answers. A polite live region
+  announces each save for a screen reader.
 
 ## 12. Detail levels: simplified and advanced
 
@@ -827,8 +844,8 @@ the result and drops the diagnostic detail an expert compares.
 - **Controls:** a "Display" section on `/preferences` and a `DetailToggle` in
   each covered page's heading row. Both write the same preference. The email
   level is a second `DetailToggle`, controlled through `value` and
-  `onselect`, in the "Email notifications" section, saved with the toggles
-  there.
+  `onselect`, in the "Email notifications" section. Both levels save on the
+  press, like everything on `/preferences` (see Preferences below).
 - **Scope:** a covered page calls `coverWithDetail()` once in its script.
   Components that only appear on covered pages (`ServiceCodeFacts`, the two
   service code details, `ApprovalView`) and `DetailRow` read
@@ -1031,19 +1048,19 @@ or load the app's fonts, so the templates carry these hex equivalents,
 converted from the tokens above (contrast matches the measured table to
 within 0.05):
 
-| Token | Hex |
-| --- | --- |
-| `ground` | `#f2f0ec` |
-| `surface` | `#ffffff` |
-| `border-subtle` | `#e0ddda` |
-| `ink` | `#1e1a16` |
-| `ink-muted` | `#5d5751` |
-| `accent` | `#2858cd` |
-| `accent-ink` | `#ffffff` |
+| Token            | Hex       |
+| ---------------- | --------- |
+| `ground`         | `#f2f0ec` |
+| `surface`        | `#ffffff` |
+| `border-subtle`  | `#e0ddda` |
+| `ink`            | `#1e1a16` |
+| `ink-muted`      | `#5d5751` |
+| `accent`         | `#2858cd` |
+| `accent-ink`     | `#ffffff` |
 | `danger-surface` | `#ffe7e4` |
 
 - **Type:** `'IBM Plex Sans', -apple-system, ...` and `'IBM Plex Mono',
-  ui-monospace, ...`: Plex where installed, the system face otherwise. No web
+ui-monospace, ...`: Plex where installed, the system face otherwise. No web
   font is loaded. Mono for the same values as the app.
 - **Shape:** a `surface` panel, 600px at most, on `ground`. No border, no
   shadow, no radius, no side stripe. Light only (`color-scheme: light`).

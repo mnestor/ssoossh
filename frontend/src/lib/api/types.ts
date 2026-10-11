@@ -46,6 +46,7 @@ export type {
 	EffectiveConfigResponse,
 	EnrollmentRetrievalResponse,
 	EnrollmentRetrievalsResponse,
+	NotificationGroupResponse as NotificationGroup,
 	NotificationKindResponse as NotificationKind,
 	NotificationPreferencesResponse as NotificationPreferences,
 	PageMeta,

@@ -895,6 +895,9 @@ type NotificationKindResponse struct {
 	// Kind is the stable identifier, the key the update body uses.
 	Kind string `json:"kind" validate:"required"`
 
+	// Group names the NotificationGroupResponse this kind is shown under.
+	Group string `json:"group" validate:"required"`
+
 	// Title is the short label shown beside the toggle.
 	Title string `json:"title" validate:"required"`
 
@@ -904,6 +907,19 @@ type NotificationKindResponse struct {
 	// Enabled is this user's answer, or the kind's default when they have
 	// never given one.
 	Enabled bool `json:"enabled"`
+}
+
+// NotificationGroupResponse heads one group of kinds on the preferences
+// page.
+type NotificationGroupResponse struct {
+	// Group is the identifier kinds name in NotificationKindResponse.Group.
+	Group string `json:"group" validate:"required"`
+
+	// Title is the group's heading.
+	Title string `json:"title" validate:"required"`
+
+	// Description is one sentence saying what the group's kinds are about.
+	Description string `json:"description" validate:"required"`
 }
 
 // NotificationPreferencesResponse is the preferences page's whole payload.
@@ -917,6 +933,9 @@ type NotificationPreferencesResponse struct {
 	// Empty when the identity provider releases no email claim — the other
 	// reason nothing arrives, and equally worth showing.
 	Address string `json:"address"`
+
+	// Groups is every group the kinds are shown under, in page order.
+	Groups []NotificationGroupResponse `json:"groups" validate:"required"`
 
 	// Kinds is every notification the server knows how to send, in a
 	// stable order.

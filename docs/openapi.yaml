@@ -2338,6 +2338,23 @@ components:
       - started_at
       - trigger
       type: object
+    webtypes.NotificationGroupResponse:
+      properties:
+        description:
+          description: Description is one sentence saying what the group's kinds are
+            about.
+          type: string
+        group:
+          description: Group is the identifier kinds name in NotificationKindResponse.Group.
+          type: string
+        title:
+          description: Title is the group's heading.
+          type: string
+      required:
+      - description
+      - group
+      - title
+      type: object
     webtypes.NotificationKindResponse:
       properties:
         description:
@@ -2348,6 +2365,10 @@ components:
             Enabled is this user's answer, or the kind's default when they have
             never given one.
           type: boolean
+        group:
+          description: Group names the NotificationGroupResponse this kind is shown
+            under.
+          type: string
         kind:
           description: Kind is the stable identifier, the key the update body uses.
           type: string
@@ -2356,6 +2377,7 @@ components:
           type: string
       required:
       - description
+      - group
       - kind
       - title
       type: object
@@ -2369,6 +2391,12 @@ components:
           type: string
         detail_level:
           $ref: '#/components/schemas/model.DetailLevel'
+        groups:
+          description: Groups is every group the kinds are shown under, in page order.
+          items:
+            $ref: '#/components/schemas/webtypes.NotificationGroupResponse'
+          type: array
+          uniqueItems: false
         kinds:
           description: |-
             Kinds is every notification the server knows how to send, in a
@@ -2385,6 +2413,7 @@ components:
           type: boolean
       required:
       - detail_level
+      - groups
       - kinds
       type: object
     webtypes.PageMeta:

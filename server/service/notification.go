@@ -47,6 +47,7 @@ type Notifier interface {
 // the registry's description of it, plus this user's answer.
 type KindPreference struct {
 	Kind        notify.Kind
+	Group       notify.Group
 	Title       string
 	Description string
 	Enabled     bool
@@ -227,6 +228,7 @@ func (s *NotificationService) Preferences(ctx context.Context, userID string) ([
 		}
 		prefs = append(prefs, KindPreference{
 			Kind:        def.Kind,
+			Group:       def.Group,
 			Title:       def.Title,
 			Description: def.Description,
 			Enabled:     enabled,
