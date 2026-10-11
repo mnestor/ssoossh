@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -189,6 +190,43 @@ func (b *Browser) Click(t *testing.T, selector string) {
 		b.screenshotOnFailure(t)
 		t.Fatalf("harness: clicking %s failed: %v", selector, err)
 	}
+}
+
+// ClickTestIDWithText clicks the visible element whose data-testid is testID
+// and whose text, with surrounding whitespace trimmed, is exactly text. CSS
+// cannot match on text, so this is an XPath query. It is for lists whose
+// order a test does not control, where "the first match" is whichever row
+// happened to sort first.
+func (b *Browser) ClickTestIDWithText(t *testing.T, testID, text string) {
+	t.Helper()
+
+	sel := chromedp.Search(fmt.Sprintf("//*[@data-testid=%s][normalize-space(.)=%s]",
+		xpathLiteral(t, testID), xpathLiteral(t, text)))
+
+	ctx, cancel := context.WithTimeout(b.ctx, browserWaitFor)
+	defer cancel()
+	if err := chromedp.Do(ctx,
+		chromedp.WaitVisible(sel),
+		chromedp.Click(sel),
+	); err != nil {
+		b.screenshotOnFailure(t)
+		t.Fatalf("harness: clicking [data-testid=%q] with text %q failed: %v", testID, text, err)
+	}
+}
+
+// xpathLiteral quotes s as an XPath 1.0 string literal. The language has no
+// escape sequences, so s is wrapped in whichever quote it does not contain.
+func xpathLiteral(t *testing.T, s string) string {
+	t.Helper()
+
+	switch {
+	case !strings.Contains(s, `"`):
+		return `"` + s + `"`
+	case !strings.Contains(s, "'"):
+		return "'" + s + "'"
+	}
+	t.Fatalf("harness: %q holds both quote characters, which an XPath 1.0 literal cannot", s)
+	return ""
 }
 
 // Type waits for the element matching selector and types text into it.
