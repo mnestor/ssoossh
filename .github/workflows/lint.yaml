@@ -6,7 +6,7 @@ name: lint
 # No path gate beyond the image-only skip: each job here costs about as much
 # as a gate would, so the gate was pure overhead. A PR that changes only the
 # CI image skips these jobs (they report as skipped) because the image is
-# checked by build-image.yaml instead; see pr-scope.yaml.
+# checked by build-image.yaml instead; see the changes job.
 on:
   workflow_dispatch:
   pull_request:
@@ -19,15 +19,37 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  scope:
-    uses: ./.github/workflows/pr-scope.yaml
+  # Image-only gate: a PR whose every changed file is under .github/docker/
+  # or is build-image.yaml skips the rest of CI. In some-with-excludes mode
+  # `other` matches a file under '**' and none of the negations; the positive
+  # '**' is needed, since a filter made only of negations never matches.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       pull-requests: read
+    outputs:
+      image: ${{ steps.filter.outputs.image == 'true' && 'true' || 'false' }}
+      image_only: ${{ steps.filter.outputs.image == 'true' && steps.filter.outputs.other != 'true' && 'true' || 'false' }}
+    steps:
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        if: github.event_name == 'pull_request'
+        id: filter
+        with:
+          predicate-quantifier: 'some-with-excludes'
+          filters: |
+            image:
+              - '.github/docker/**'
+              - '.github/workflows/build-image.yaml'
+            other:
+              - '**'
+              - '!.github/docker/**'
+              - '!.github/workflows/build-image.yaml'
 
   go:
     name: go
-    needs: scope
-    if: needs.scope.outputs.image_only != 'true'
+    needs: changes
+    if: needs.changes.outputs.image_only != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     container:
@@ -81,8 +103,8 @@ jobs:
         run: make lint-cross
 
   frontend:
-    needs: scope
-    if: needs.scope.outputs.image_only != 'true'
+    needs: changes
+    if: needs.changes.outputs.image_only != 'true'
     name: frontend
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -109,8 +131,8 @@ jobs:
         run: pnpm check
 
   workflows:
-    needs: scope
-    if: needs.scope.outputs.image_only != 'true'
+    needs: changes
+    if: needs.changes.outputs.image_only != 'true'
     name: workflows
     runs-on: ubuntu-latest
     timeout-minutes: 10

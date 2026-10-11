@@ -14,11 +14,10 @@ differences a test in `client/` has to be written around.
 | Windows | `client-matrix.yaml` | The same command on `windows-latest` (windows/amd64). |
 
 `client-matrix.yaml` has no Linux leg and collects no coverage. Both are
-deliberate: `codecover.yaml` has no path gate (it skips only on image-only PRs, see
-`pr-scope.yaml`), so it runs the whole unit suite on every other PR, which
-makes a Linux leg here a second run of something that already ran; and
-merging partial per-OS profiles would
-double-count or false-fail on files behind build tags. It also has no
+deliberate: `codecover.yaml` has no path gate (it skips only on image-only PRs), so it
+runs the whole unit suite on every other PR, which makes a Linux leg here a
+second run of something that already ran; and merging partial per-OS profiles
+would double-count or false-fail on files behind build tags. It also has no
 goreleaser job -- `build.yaml` owns release-pipeline validation.
 
 Static analysis of the other two builds does not need their machines.

@@ -18,16 +18,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Skips the report on a PR that changes only the CI image (the scanners
-  # then skip too; see pr-scope.yaml). The other PRs keep the report, which
-  # says which scanner did not run.
-  scope:
-    uses: ./.github/workflows/pr-scope.yaml
-    permissions:
-      pull-requests: read
-
   # Path gate; see build.yaml's changes job for the pattern. Scanners are
   # gated separately: a frontend lockfile bump doesn't need govulncheck.
+  # image_only: a PR whose every changed file is under .github/docker/ or is
+  # build-image.yaml skips the scanners and the report (see the report job).
+  # In some-with-excludes mode `other` matches '**' minus the negations; the
+  # positive '**' is needed, since a filter of only negations never matches.
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -36,11 +32,13 @@ jobs:
     outputs:
       go: ${{ steps.filter.outputs.go || 'true' }}
       frontend: ${{ steps.filter.outputs.frontend || 'true' }}
+      image_only: ${{ steps.filter.outputs.image == 'true' && steps.filter.outputs.other != 'true' && 'true' || 'false' }}
     steps:
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         if: github.event_name == 'pull_request'
         id: filter
         with:
+          predicate-quantifier: 'some-with-excludes'
           filters: |
             go:
               - '**/*.go'
@@ -51,6 +49,13 @@ jobs:
               - 'frontend/**'
               - '.semgrepignore'
               - '.github/workflows/security.yaml'
+            image:
+              - '.github/docker/**'
+              - '.github/workflows/build-image.yaml'
+            other:
+              - '**'
+              - '!.github/docker/**'
+              - '!.github/workflows/build-image.yaml'
 
   # govulncheck and pnpm audit stay advisory: both report on dependencies
   # you may not be able to fix in the same PR that surfaces them, so they
@@ -203,15 +208,17 @@ jobs:
   # place on each push rather than stacking a new comment per run. semgrep
   # is not here: it fails the build directly, so its findings are on the
   # check, not in a comment.
+  # Skips the report on a PR that changes only the CI image (the scanners
+  # then skip too). The other PRs keep it, and it says which scanner did not run.
   report:
     name: PR report
-    needs: [scope, govulncheck, pnpm-audit]
+    needs: [changes, govulncheck, pnpm-audit]
     # Same-repo PRs only. A fork's GITHUB_TOKEN is capped read-only no
     # matter what `pull-requests: write` below asks for, so `gh pr comment`
     # 403s and takes the || fallback down with it, failing the job for a
     # contributor who cannot fix it. Fork PRs still get the scan output on
     # each job's summary page.
-    if: ${{ !cancelled() && needs.scope.outputs.image_only != 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
+    if: ${{ !cancelled() && needs.changes.outputs.image_only != 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
