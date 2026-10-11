@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/bep/simplecobra"
 	"github.com/spf13/cobra"
+
+	"github.com/mnestor/ssoossh/client/config"
 )
 
 func TestSimpleCommandRun(t *testing.T) {
@@ -58,6 +61,16 @@ func TestSimpleCommandRun(t *testing.T) {
 				return nil
 			},
 			wantStderr: "Warning: load config: broken; continuing without the configuration\n",
+		},
+		{
+			name:       "should surface a broken --config file even when the command reads no configuration",
+			initErr:    fmt.Errorf("load config: %w", &config.ExplicitConfigError{Path: "x.yaml", Reason: "does not exist"}),
+			configFree: true,
+			run: func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error {
+				t.Fatal("run should not be called when the --config file is broken")
+				return nil
+			},
+			wantErr: errors.New(`load config: the config file "x.yaml" given with --config does not exist`),
 		},
 	}
 

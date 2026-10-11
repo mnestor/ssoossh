@@ -55,7 +55,7 @@ These are persistent flags: every subcommand accepts them.
 
 | Flag | Default | What it does |
 | --- | --- | --- |
-| `-c`, `--config <file>` | none | Path to the ssoossh config file. Merged after every search-path location. A file named here that is missing or unparseable is a startup error, unlike an absent search-path file. |
+| `-c`, `--config <file>` | none | Path to the ssoossh config file. Merged after every search-path location. A file named here that is missing or unparseable is a startup error for every command, `ssh config` and `host principals` included, unlike an absent search-path file. A search-path file that is there but will not parse is skipped with a warning on stderr. |
 | `--server <url>` | none | Server address including scheme, for example `https://example.com`. `https` is assumed if the scheme is omitted. Overrides `server` in the config file. |
 | `-v`, `-vv`, `-vvv` | off | Trace what the command is doing, to stderr. `-v` steps, `-vv` requests and files, `-vvv` bodies. |
 | `--debug` | off | Print the resolved configuration, its sources, and key storage to stderr. Hidden from `--help` but supported; implies `-v`. |
@@ -281,6 +281,7 @@ target account name.
 | Account found | Prints its principals in file order, then the account name if the file did not already list it, exit 0 |
 | Unknown account, or missing file | Prints the account name alone, exit 0 |
 | Unreadable or malformed file | Prints the account name alone, exit 0, and logs the failure to stderr |
+| Client configuration fails to load | Answers as above and warns on stderr, since it reads no setting; a `--config` file that is missing or malformed still fails it, exit 1 |
 
 A file that will not load is reported rather than refused. `pam_ssoossh` treats
 a map it cannot read as no map at all and falls back to the same rule, and one

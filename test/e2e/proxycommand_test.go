@@ -137,7 +137,7 @@ func TestSSHProxy_ShouldRefuseFileBasedKeyStorage(t *testing.T) {
 	if res.ExitCode == 0 {
 		t.Fatalf("expected a non-zero exit with file-based keys, got 0\nstdout:\n%s", res.Stdout)
 	}
-	if !strings.Contains(res.Stderr, "file based ssh keys are not supported for proxycommand") {
+	if !strings.Contains(res.Stderr, "ssh proxycommand needs its key in an ssh-agent") {
 		t.Errorf("expected the file-storage refusal, got:\n%s", res.Stderr)
 	}
 }

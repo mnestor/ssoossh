@@ -108,6 +108,44 @@ func TestExecute_ShouldReportTheConfigFailureFromConfigFreeCommands(t *testing.T
 	}
 }
 
+// TestExecute_ShouldFailConfigFreeCommandsOnABrokenConfigFlagFile is the
+// limit of the leniency above: a file the person named with --config that is
+// missing or broken is a typo, so even these two commands exit non-zero.
+func TestExecute_ShouldFailConfigFreeCommandsOnABrokenConfigFlagFile(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "should fail host principals when the --config file is missing", args: []string{"host", "principals", "deploy", "--file", "MAPPING"}},
+		{name: "should fail ssh config when the --config file is missing", args: []string{"ssh", "config"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newTestExec(t)
+			f.root.newConfig = func(cmd *cobra.Command) (*config.Config, error) {
+				return nil, &config.ExplicitConfigError{Path: "missing.yaml", Reason: "does not exist"}
+			}
+			f.root.cobraRoot.SetOut(&bytes.Buffer{})
+			f.root.cobraRoot.SetErr(&bytes.Buffer{})
+			args := append([]string{}, tt.args...)
+			for i, a := range args {
+				if a == "MAPPING" {
+					args[i] = filepath.Join(t.TempDir(), "principals.yaml")
+				}
+			}
+
+			var err error
+			captureStdout(t, func() { _, err = f.exec.Execute(context.Background(), args) })
+
+			var explicit *config.ExplicitConfigError
+			if !errors.As(err, &explicit) {
+				t.Errorf("err = %v, want the --config failure", err)
+			}
+		})
+	}
+}
+
 type rootExecFixture struct {
 	root *RootCommand
 	exec *simplecobra.Exec

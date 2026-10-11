@@ -163,9 +163,10 @@ func TestKeyStorage_ShouldHonourFallbackFileAgentWhenNoAgentIsReachable(t *testi
 		if _, err := os.Stat(certificate); err != nil {
 			t.Errorf("expected a certificate written to disk by the fallback: %v", err)
 		}
-		// The fallback is a downgrade from what was asked for, so it warns.
-		if !strings.Contains(login.Stderr(), "falling back to file-based storage") {
-			t.Errorf("expected a warning about the fallback, got:\n%s", login.Stderr())
+		// The fallback is configured behaviour, so it is traced at -v rather
+		// than warned about; login still says where the certificate went.
+		if !strings.Contains(login.Stderr(), "Certificate loaded into file") {
+			t.Errorf("expected login to say the certificate went to a file, got:\n%s", login.Stderr())
 		}
 	})
 

@@ -184,6 +184,20 @@ func newConfig(cmd *cobra.Command, paths searchPaths, loadPolicy func() (map[str
 	return &c, nil
 }
 
+// ExplicitConfigError reports a file named with --config that does not
+// exist or will not parse. Callers never downgrade it to a warning, not even
+// for a command that reads no setting: the person asked for that file, and a
+// run that carries on without it would succeed on settings they did not pick.
+type ExplicitConfigError struct {
+	Path   string
+	Reason string
+}
+
+// Error implements error.
+func (e *ExplicitConfigError) Error() string {
+	return fmt.Sprintf("the config file %q given with --config %s", e.Path, e.Reason)
+}
+
 // mergeConfigFiles merges the file half of the configuration chain into v
 // and returns the `enforce` target the system file named, along with the
 // outcome of every location consulted.
@@ -223,7 +237,17 @@ func mergeConfigFiles(v *viper.Viper, paths searchPaths, configFile string) (enf
 		//
 		// Same reasoning `enforce` below already fails closed on.
 		if file.label == configFlagLabel && source.Status != SourceMerged {
-			return "", nil, fmt.Errorf("the config file %q given with --config %s", file.path, source.describeFailure())
+			return "", nil, &ExplicitConfigError{Path: file.path, Reason: source.describeFailure()}
+		}
+		// A search-path file that is there but will not parse is not the
+		// normal absence above: its settings silently not applying is the
+		// same surprise, so it is reported even though the run continues.
+		if source.Status == SourceError {
+			msg := fmt.Sprintf("the %s %q could not be read, so none of its settings apply: %s", file.label, file.path, source.Err)
+			if i == 0 {
+				msg += "; that includes any enforce file it names, so no administrator lock from it is in effect"
+			}
+			slog.Warn(msg)
 		}
 	}
 	// Recorded after the loop so the chain reads in precedence order: an

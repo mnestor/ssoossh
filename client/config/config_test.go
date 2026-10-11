@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -974,13 +975,13 @@ func TestNewConfig_LoadFailureWording(t *testing.T) {
 			name:   "should say a --config file does not exist",
 			sysDir: t.TempDir(),
 			args:   []string{"--config", missing},
-			want:   `the config file "` + missing + `" given with --config does not exist`,
+			want:   fmt.Sprintf("the config file %q given with --config does not exist", missing),
 		},
 		{
 			name:   "should give the YAML error for a malformed --config file",
 			sysDir: t.TempDir(),
 			args:   []string{"--config", malformed},
-			want:   `the config file "` + malformed + `" given with --config could not be read: yaml: line 1: did not find expected ',' or ']'`,
+			want:   fmt.Sprintf("the config file %q given with --config could not be read: yaml: line 1: did not find expected ',' or ']'", malformed),
 		},
 	}
 	for _, tt := range tests {
@@ -988,6 +989,87 @@ func TestNewConfig_LoadFailureWording(t *testing.T) {
 			_, err := newConfig(newConfigCommand(t, tt.args...), testPaths(tt.sysDir), noPolicy)
 			if err == nil || err.Error() != tt.want {
 				t.Errorf("got %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
+// TestNewConfig_ShouldReturnAnExplicitConfigError pins the error type a
+// command that reads no setting uses to tell a broken --config file, which
+// must still fail it, from a broken host configuration, which must not.
+func TestNewConfig_ShouldReturnAnExplicitConfigError(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+	}{
+		{name: "should type the error for a missing --config file", path: filepath.Join(t.TempDir(), "missing.yaml")},
+		{name: "should type the error for a malformed --config file", path: writeConfig(t, "server: [unclosed\n")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := newConfig(newConfigCommand(t, "--config", tt.path), testPaths(t.TempDir()), noPolicy)
+
+			var explicit *ExplicitConfigError
+			if !errors.As(err, &explicit) || explicit.Path != tt.path {
+				t.Errorf("err = %v, want an *ExplicitConfigError for %s", err, tt.path)
+			}
+		})
+	}
+}
+
+// TestNewConfig_SearchPathParseWarnings covers a file at a search location
+// that is there but will not parse. It used to be skipped silently, so its
+// settings, and for the system file any enforce file it named, did not
+// apply with nothing said.
+func TestNewConfig_SearchPathParseWarnings(t *testing.T) {
+	const malformed = "server: [unclosed\n"
+	tests := []struct {
+		name    string
+		paths   func(t *testing.T) searchPaths
+		want    string
+		notWant string
+	}{
+		{
+			name: "should warn that a malformed user file does not apply",
+			paths: func(t *testing.T) searchPaths {
+				return searchPaths{systemDir: t.TempDir(), userFile: writeConfig(t, malformed)}
+			},
+			want: "the user file",
+		},
+		{
+			name: "should warn that a malformed system file leaves its enforce file unapplied",
+			paths: func(t *testing.T) searchPaths {
+				return searchPaths{systemDir: writeSystemConfig(t, map[string]string{"ssoossh.yaml": malformed})}
+			},
+			want: "no administrator lock from it is in effect",
+		},
+		{
+			name: "should not mention administrator locks for a malformed user file",
+			paths: func(t *testing.T) searchPaths {
+				return searchPaths{systemDir: t.TempDir(), userFile: writeConfig(t, malformed)}
+			},
+			notWant: "administrator lock",
+		},
+		{
+			name: "should stay silent about a user file that does not exist",
+			paths: func(t *testing.T) searchPaths {
+				return searchPaths{systemDir: t.TempDir(), userFile: filepath.Join(t.TempDir(), "missing.yaml")}
+			},
+			notWant: "could not be read",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			warnings := captureWarnings(t)
+
+			_, _ = newConfig(newConfigCommand(t), tt.paths(t), noPolicy)
+
+			got := warnings.String()
+			if tt.want != "" && !strings.Contains(got, tt.want) {
+				t.Errorf("warnings = %q, want them to contain %q", got, tt.want)
+			}
+			if tt.notWant != "" && strings.Contains(got, tt.notWant) {
+				t.Errorf("warnings = %q, want them not to contain %q", got, tt.notWant)
 			}
 		})
 	}
@@ -1001,7 +1083,8 @@ func TestNewConfig_ShouldSayLocksCannotBeAppliedWhenTheEnforceFileFails(t *testi
 
 	_, err := newConfig(newConfigCommand(t), testPaths(sysDir), noPolicy)
 
-	want := `the enforce file "` + filepath.Join(sysDir, "locked.yaml") + `" could not be loaded, so the settings an administrator locked cannot be applied: yaml: line 1: did not find expected ',' or ']'`
+	want := fmt.Sprintf("the enforce file %q could not be loaded, so the settings an administrator locked cannot be applied: yaml: line 1: did not find expected ',' or ']'",
+		filepath.Join(sysDir, "locked.yaml"))
 	if err == nil || err.Error() != want {
 		t.Errorf("got %v, want %q", err, want)
 	}

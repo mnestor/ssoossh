@@ -332,11 +332,9 @@ func TestService_ShouldRefuseAHalfPresentKeypair(t *testing.T) {
 	}
 }
 
-// Note the server has to be reachable for these: argument validation runs
-// inside the command, and root's PreRun fetches the CA on the way there. So
-// `ssoossh service enroll` with no --key against a down server reports the
-// connection failure rather than the usage error -- a real ordering, worth
-// pinning here so a change to it is a deliberate one.
+// Required flags are checked before root's PreRun, so a call missing one
+// exits 2 with the usage error before any config is loaded or the CA is
+// fetched, and every missing flag is named at once.
 func TestService_ShouldRequireItsMandatoryFlags(t *testing.T) {
 	f := newServiceFixture(t)
 
@@ -345,9 +343,9 @@ func TestService_ShouldRequireItsMandatoryFlags(t *testing.T) {
 		args    []string
 		wantMsg string
 	}{
-		{name: "enroll without --key", args: []string{"service", "enroll"}, wantMsg: "--key is required"},
-		{name: "retrieve without --code", args: []string{"service", "retrieve"}, wantMsg: "--code is required"},
-		{name: "retrieve without --key", args: []string{"service", "retrieve", "--code", "x"}, wantMsg: "--key is required"},
+		{name: "enroll without --key", args: []string{"service", "enroll"}, wantMsg: "missing required flag --key"},
+		{name: "retrieve without --code", args: []string{"service", "retrieve"}, wantMsg: "missing required flags --code and --key"},
+		{name: "retrieve without --key", args: []string{"service", "retrieve", "--code", "x"}, wantMsg: "missing required flag --key"},
 	}
 
 	for _, tt := range tests {

@@ -130,7 +130,7 @@ func TestInspect_ShouldReportNothingLoadedWhenTheAgentIsEmpty(t *testing.T) {
 		t.Fatalf("expected ssh inspect to succeed against an empty agent, got exit %d\nstderr:\n%s",
 			res.ExitCode, res.Stderr)
 	}
-	if !strings.Contains(res.Stdout, "No certificates") {
+	if !strings.Contains(res.Stdout, "No ssoossh certificate is loaded") {
 		t.Errorf("expected ssh inspect to say nothing is loaded, got:\n%s", res.Stdout)
 	}
 }

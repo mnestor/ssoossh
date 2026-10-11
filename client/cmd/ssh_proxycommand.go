@@ -28,12 +28,13 @@ var execCommand = handOff
 var errProxyCommandRequiresArgs = errors.New("proxycommand requires a command to exec after it, e.g. \"" +
 	version.Name + " ssh proxycommand /usr/bin/nc ...\"")
 
-// errProxyCommandNeedsAgent is returned when no ssh-agent is reachable.
-// ssh reads key files once, at startup, before ProxyCommand runs, so a
-// certificate written to disk here would never be used.
-var errProxyCommandNeedsAgent = errors.New("ssh proxycommand needs a running ssh-agent (SSH_AUTH_SOCK), " +
-	"because ssh reads key files only once at startup; start an agent, or use the Match exec " +
-	"recipe from '" + version.Name + " ssh config', which works with key files")
+// errProxyCommandNeedsAgent is returned when keys would go to files: no
+// ssh-agent is reachable, or use_agent is off although one is. ssh reads key
+// files once, at startup, before ProxyCommand runs, so a certificate written
+// to disk here would never be used.
+var errProxyCommandNeedsAgent = errors.New("ssh proxycommand needs its key in an ssh-agent, " +
+	"because ssh reads key files only once at startup; run an agent (SSH_AUTH_SOCK) with use_agent " +
+	"left on, or use the Match exec recipe from '" + version.Name + " ssh config', which works with key files")
 
 // clientOnlyFlags are ssoossh flags no relay is likely to take. Seen after
 // the relay command, they were almost certainly meant for ssoossh. -c and

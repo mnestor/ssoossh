@@ -2,11 +2,14 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/bep/simplecobra"
 	"github.com/spf13/cobra"
+
+	"github.com/mnestor/ssoossh/client/config"
 )
 
 var _ simplecobra.Commander = (*simpleCommand)(nil)
@@ -57,7 +60,9 @@ type simpleCommand struct {
 	// calls it on every login and a refusal there denies certificate logins
 	// on the host; `ssh config` because it is what someone reads when the
 	// configuration is the broken thing. No admin lock can be bypassed this
-	// way: a command that consults no setting has none to enforce.
+	// way: a command that consults no setting has none to enforce. A file
+	// named with --config that is missing or broken still fails the command
+	// (config.ExplicitConfigError): that is a typo, not a broken host.
 	configFree bool
 
 	// serverOptional marks a command whose work is local but which may ask
@@ -189,7 +194,8 @@ func (c *simpleCommand) PreRun(this, runner *simplecobra.Commandeer) error { ret
 
 // Run implements simplecobra.Commander. It fails closed with the root's
 // InitErr (if init failed) before ever reaching run, unless the command is
-// configFree, and no-ops for group commands that only exist to hold
+// configFree and the failure is not a --config file the person named, and
+// no-ops for group commands that only exist to hold
 // children.
 func (c *simpleCommand) Run(ctx context.Context, cd *simplecobra.Commandeer, args []string) error {
 	root, ok := cd.Root.Command.(*RootCommand)
@@ -197,7 +203,8 @@ func (c *simpleCommand) Run(ctx context.Context, cd *simplecobra.Commandeer, arg
 		return fmt.Errorf("simpleCommand.Run: root command is %T, not *RootCommand", cd.Root.Command)
 	}
 	if err := root.InitErr(); err != nil {
-		if !c.configFree {
+		var explicit *config.ExplicitConfigError
+		if !c.configFree || errors.As(err, &explicit) {
 			return err
 		}
 		// stderr, never stdout: sshd parses `host principals` stdout as
