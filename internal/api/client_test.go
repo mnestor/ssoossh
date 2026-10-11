@@ -26,7 +26,7 @@ func TestNewClient_TLSVerification(t *testing.T) {
 	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"data":{"ca":"ssh-ed25519 AAAA..."},"error":null}`))
+		_, _ = w.Write([]byte(`{"data":{"ca":"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIP/7mq9cQq4DRbk0doDBs9CsbCTEmTI1bSk1z8s1AdWc test-ca"},"error":null}`))
 	}))
 	// t.Cleanup, not defer: the subtests below call t.Parallel(), which
 	// pauses them and returns control to this function immediately — a
