@@ -38,6 +38,12 @@ type simpleCommand struct {
 	// pages all render.
 	argSpec string
 
+	// requiredFlags are flags the command cannot run without. checkArity
+	// reports them missing before PreRun, so a call missing --code does
+	// not load config and fetch the CA first; cobra's own required-flag
+	// check runs only after PreRun.
+	requiredFlags []string
+
 	commands []simplecobra.Commander
 
 	// offline marks a command that must complete without contacting the
@@ -73,6 +79,20 @@ type simpleCommand struct {
 // alice bob` answered for alice, and `ssh inspect garbage.txt` ignored the
 // file. Cobra runs it before PreRun, so a mistyped call loads nothing.
 func (c *simpleCommand) checkArity(cmd *cobra.Command, args []string) error {
+	var missing []string
+	for _, name := range c.requiredFlags {
+		if !cmd.Flags().Changed(name) {
+			missing = append(missing, "--"+name)
+		}
+	}
+	switch len(missing) {
+	case 0:
+	case 1:
+		return &usageError{msg: "missing required flag " + missing[0]}
+	default:
+		return &usageError{msg: "missing required flags " + strings.Join(missing[:len(missing)-1], ", ") + " and " + missing[len(missing)-1]}
+	}
+
 	minArgs, maxArgs := arity(c.argSpec)
 	switch {
 	case c.argSpec == "" && len(args) > 0:
@@ -149,7 +169,15 @@ func (c *simpleCommand) Init(cd *simplecobra.Commandeer) error {
 	// If the caller provided a custom InitFunc, use it to allow different
 	// versions/variants of simpleCommand to customize initialization.
 	if c.init != nil {
-		return c.init(cd)
+		if err := c.init(cd); err != nil {
+			return err
+		}
+	}
+	// Annotated for cobra too, so shell completion offers them first.
+	for _, name := range c.requiredFlags {
+		if err := cmd.MarkFlagRequired(name); err != nil {
+			return fmt.Errorf("mark --%s required: %w", name, err)
+		}
 	}
 	return nil
 }

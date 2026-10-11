@@ -38,7 +38,7 @@ ssoossh service enroll [flags]
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
 | `--extensions` | stringSlice |  | certificate extensions to request, comma-separated (e.g. permit-pty); none by default, and the approver may change the set |
-| `--key` | string |  | keypair path (relative or absolute); generates both if neither &lt;name&gt; nor &lt;name&gt;.pub exist, enrolls the existing &lt;name&gt;.pub otherwise |
+| `--key` | string |  | keypair path (relative or absolute; required); generates both if neither &lt;name&gt; nor &lt;name&gt;.pub exist, enrolls the existing &lt;name&gt;.pub otherwise |
 | `--retrieve` | bool | `false` | immediately redeem the code and write the certificate to &lt;name&gt;-cert.pub |
 
 ## Global options

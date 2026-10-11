@@ -425,17 +425,32 @@ Both service commands are covered in full, with worked examples, on
 
 ## `ssoossh version`
 
-Prints version, commit, and build info. Offline: it makes no network call.
+Prints version, commit, build info, and the platform (`linux/amd64`).
+Offline: it makes no network call. `ssoossh --version` prints the same line.
 
 ```bash
 ssoossh version
+ssoossh --version
 ssoossh version --json
 ```
 
-With `--json` it prints the same values as an object, plus the list of command
-paths this build implements. That list is the supported way for a deployment
-tool to tell releases apart: probing `--help` output breaks on wording no
-release promises to keep.
+With `--json` it prints the same values as an object (including `os` and
+`arch`), plus the list of command paths this build implements. That list is
+the supported way for a deployment tool to tell releases apart: probing
+`--help` output breaks on wording no release promises to keep.
+
+## Shell completion
+
+`ssoossh completion <shell>` prints a completion script for `bash`, `zsh`,
+`fish`, or `powershell`. `ssoossh completion <shell> --help` says where to put
+it. For example, for bash:
+
+```bash
+ssoossh completion bash | sudo tee /etc/bash_completion.d/ssoossh >/dev/null
+```
+
+The packages do not install a completion script, so this is a one-time step
+per machine.
 
 ## Where to go next
 

@@ -84,7 +84,8 @@ func TestDescribeTransportError_ShouldPassThroughAnUnrecognisedError(t *testing.
 	c := &HTTPClient{serverURL: "https://ssh.example.test"}
 	original := errors.New("something else")
 
-	if got := c.describeTransportError(original); got != original {
+	var transportErr *TransportError
+	if got := c.describeTransportError(original); errors.As(got, &transportErr) {
 		t.Errorf("got %v, want the original error unchanged", got)
 	}
 }

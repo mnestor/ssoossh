@@ -20,6 +20,7 @@ import (
 	sshagent "github.com/mnestor/ssoossh/internal/crypto/ssh/agent"
 	"github.com/mnestor/ssoossh/internal/crypto/ssh/keypair"
 	"github.com/mnestor/ssoossh/internal/hostinfo"
+	"github.com/mnestor/ssoossh/internal/version"
 
 	"github.com/mnestor/ssoossh/client/config"
 )
@@ -389,7 +390,7 @@ func runLogin(ctx context.Context, root *RootCommand, out io.Writer, force bool)
 
 	result, err := root.API().AwaitCertificate(ctx, pending)
 	if err != nil {
-		return describeWaitError(err)
+		return describeWaitError(err, version.Name+" ssh login")
 	}
 
 	if err := checkOutcome(result); err != nil {
@@ -489,15 +490,15 @@ func checkOutcome(result *api.CertificateResult) error {
 	switch result.Status {
 	case api.StatusApproved:
 		if result.Certificate == "" {
-			return errors.New("the request was approved but no certificate was delivered; run ssh login again")
+			return errors.New("the request was approved but no certificate was delivered; run 'ssoossh ssh login' again")
 		}
 		return nil
 	case api.StatusDenied:
 		return errors.New("the request was denied, so no certificate was issued")
 	case api.StatusExpired:
-		return errors.New("the request expired before anyone approved it; run ssh login again")
+		return errors.New("the request expired before anyone approved it; run 'ssoossh ssh login' again")
 	case api.StatusFailed:
-		return errors.New("ssoosshd could not issue the certificate; check the server logs, then run ssh login again")
+		return errors.New("ssoosshd could not issue the certificate; check the server logs, then run 'ssoossh ssh login' again")
 	case api.StatusEnrolled:
 		// A user request cannot resolve this way — enrollment belongs to the
 		// service path — so seeing it means the server sent something this
@@ -509,13 +510,14 @@ func checkOutcome(result *api.CertificateResult) error {
 }
 
 // describeWaitError translates a failure while waiting into advice. The 410
-// is worth naming: the certificate really was issued, it is simply gone —
-// they are never persisted — and running the command again is the fix rather
-// than a workaround.
-func describeWaitError(err error) error {
+// is worth naming: the result really was issued, it is simply gone — it is
+// never persisted — and running the command again is the fix rather than a
+// workaround. rerun is that command; ssh login and service enroll share
+// this, and enroll used to be told to run ssh login.
+func describeWaitError(err error, rerun string) error {
 	var respErr *api.ResponseError
 	if errors.As(err, &respErr) && respErr.StatusCode == http.StatusGone {
-		return errors.New("the certificate was issued but is no longer available for collection; run ssh login again")
+		return fmt.Errorf("the request was approved but its result is no longer available for collection; run '%s' again", rerun)
 	}
 	return fmt.Errorf("wait for approval: %w", err)
 }

@@ -22,8 +22,9 @@ func newServiceRetrieveCommand() simplecobra.Commander {
 	var grace string
 
 	cmd := &simpleCommand{
-		name:  "retrieve",
-		short: "Retrieve a service certificate using a previously issued enrollment code.",
+		name:          "retrieve",
+		requiredFlags: []string{"code", "key"},
+		short:         "Retrieve a service certificate using a previously issued enrollment code.",
 		long: "Redeems an enrollment code from `service enroll`, writing the certificate to " +
 			"<key>-cert.pub and checking local disk to avoid unnecessary server calls.\n\n" +
 			"The certificate is skipped (exit 0) if one at <key>-cert.pub is valid beyond --grace " +
@@ -49,7 +50,7 @@ func newServiceRetrieveCommand() simplecobra.Commander {
 			return nil
 		},
 		run: func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error {
-			return runServiceRetrieve(ctx, root, os.Stderr, code, keyPath, force, grace)
+			return runServiceRetrieve(ctx, root, cd.CobraCommand.ErrOrStderr(), code, keyPath, force, grace)
 		},
 	}
 	return cmd
@@ -61,11 +62,12 @@ func newServiceRetrieveCommand() simplecobra.Commander {
 // 3. degraded: retrieval failed but a valid certificate exists on disk; writes warning and returns nil
 // An error is returned only when retrieval fails AND there is no usable certificate on disk.
 func runServiceRetrieve(ctx context.Context, root *RootCommand, errOut io.Writer, code, keyPath string, force bool, graceStr string) error {
+	// checkArity has seen both flags given; these catch them given empty.
 	if code == "" {
-		return errors.New("--code is required")
+		return &usageError{msg: "--code must not be empty"}
 	}
 	if keyPath == "" {
-		return errors.New("--key is required")
+		return &usageError{msg: "--key must not be empty"}
 	}
 
 	graceDuration, err := parseGrace(graceStr)

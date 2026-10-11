@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
+	"runtime"
 
 	"github.com/bep/simplecobra"
 	"github.com/spf13/cobra"
@@ -69,7 +69,7 @@ func (c *versionCommand) PreRun(this, runner *simplecobra.Commandeer) error { re
 
 // Run implements simplecobra.Commander.
 func (c *versionCommand) Run(ctx context.Context, cd *simplecobra.Commandeer, args []string) error {
-	return writeVersion(os.Stdout, c.asJSON)
+	return writeVersion(cd.CobraCommand.OutOrStdout(), c.asJSON)
 }
 
 // versionInfo is the object --json prints. The field names are a contract
@@ -81,15 +81,24 @@ type versionInfo struct {
 	Commit       string   `json:"commit"`
 	Date         string   `json:"date"`
 	BuiltBy      string   `json:"built_by"`
+	OS           string   `json:"os"`
+	Arch         string   `json:"arch"`
 	Capabilities []string `json:"capabilities"`
+}
+
+// versionLine is the plain version output, shared by `ssoossh version` and
+// `ssoossh --version`. It names the platform because a bug report's first
+// question is which build of the client is running.
+func versionLine() string {
+	return fmt.Sprintf("%s %s (commit %s, built %s by %s, %s/%s)",
+		version.Name, version.Version, version.Commit, version.Date, version.BuiltBy, runtime.GOOS, runtime.GOARCH)
 }
 
 // writeVersion renders either form to w. Split from Run so the output can
 // be asserted without capturing the process's stdout.
 func writeVersion(w io.Writer, asJSON bool) error {
 	if !asJSON {
-		_, err := fmt.Fprintf(w, "%s %s (commit %s, built %s by %s)\n",
-			version.Name, version.Version, version.Commit, version.Date, version.BuiltBy)
+		_, err := fmt.Fprintln(w, versionLine())
 		return err
 	}
 
@@ -101,6 +110,8 @@ func writeVersion(w io.Writer, asJSON bool) error {
 		Commit:       version.Commit,
 		Date:         version.Date,
 		BuiltBy:      version.BuiltBy,
+		OS:           runtime.GOOS,
+		Arch:         runtime.GOARCH,
 		Capabilities: capabilities(),
 	}); err != nil {
 		return fmt.Errorf("encode version: %w", err)

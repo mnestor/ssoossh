@@ -340,7 +340,7 @@ func TestWriteFileAtomic_ShouldFailWhenTheDirectoryDoesNotExist(t *testing.T) {
 }
 
 // runServiceEnroll sat at 7.4% statement coverage: the only path anything
-// executed was its `--key is required` guard. Everything after it -- resolving
+// executed was its empty --key guard. Everything after it -- resolving
 // the key, creating the enrollment, printing the code, --retrieve, and the
 // ssh_config guidance -- was orchestration nothing had ever run, even though
 // its helpers were individually well covered. That is the shape where a
@@ -360,7 +360,7 @@ func TestRunServiceEnroll_ShouldGenerateAKeypairAndPrintTheCode(t *testing.T) {
 	root, keyPath := enrollFixture(t, client)
 	var out bytes.Buffer
 
-	if err := runServiceEnroll(context.Background(), root, &out, keyPath, false, nil); err != nil {
+	if err := runServiceEnroll(context.Background(), root, &out, &out, keyPath, false, nil); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -381,7 +381,7 @@ func TestRunServiceEnroll_ShouldPrintTheSshConfigGuidance(t *testing.T) {
 	root, keyPath := enrollFixture(t, client)
 	var out bytes.Buffer
 
-	if err := runServiceEnroll(context.Background(), root, &out, keyPath, false, nil); err != nil {
+	if err := runServiceEnroll(context.Background(), root, &out, &out, keyPath, false, nil); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -408,7 +408,7 @@ func TestRunServiceEnroll_ShouldNameTheApprovedAccountAndCodeExpiry(t *testing.T
 	root, keyPath := enrollFixture(t, client)
 	var out bytes.Buffer
 
-	if err := runServiceEnroll(context.Background(), root, &out, keyPath, false, nil); err != nil {
+	if err := runServiceEnroll(context.Background(), root, &out, &out, keyPath, false, nil); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -427,7 +427,7 @@ func TestRunServiceEnroll_ShouldStaySilentWhenTheServerOmitsTheDetail(t *testing
 	root, keyPath := enrollFixture(t, client)
 	var out bytes.Buffer
 
-	if err := runServiceEnroll(context.Background(), root, &out, keyPath, false, nil); err != nil {
+	if err := runServiceEnroll(context.Background(), root, &out, &out, keyPath, false, nil); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -454,7 +454,7 @@ func TestRunServiceEnroll_ShouldMatchOnTheApprovedServiceAccount(t *testing.T) {
 	root, keyPath := enrollFixture(t, client)
 	var out bytes.Buffer
 
-	if err := runServiceEnroll(context.Background(), root, &out, keyPath, false, nil); err != nil {
+	if err := runServiceEnroll(context.Background(), root, &out, &out, keyPath, false, nil); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -475,7 +475,7 @@ func TestRunServiceEnroll_ShouldKeepThePlaceholderWhenNoAccountIsReported(t *tes
 	root, keyPath := enrollFixture(t, client)
 	var out bytes.Buffer
 
-	if err := runServiceEnroll(context.Background(), root, &out, keyPath, false, nil); err != nil {
+	if err := runServiceEnroll(context.Background(), root, &out, &out, keyPath, false, nil); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -520,7 +520,7 @@ func TestRunServiceEnroll_ShouldWriteTheCertificateWhenRetrieveIsAsked(t *testin
 	root, keyPath := enrollFixture(t, client)
 	var out bytes.Buffer
 
-	if err := runServiceEnroll(context.Background(), root, &out, keyPath, true, nil); err != nil {
+	if err := runServiceEnroll(context.Background(), root, &out, &out, keyPath, true, nil); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -547,7 +547,7 @@ func TestRunServiceEnroll_ShouldKeepTheCodeVisibleWhenRetrievalFails(t *testing.
 	root, keyPath := enrollFixture(t, client)
 	var out bytes.Buffer
 
-	err := runServiceEnroll(context.Background(), root, &out, keyPath, true, nil)
+	err := runServiceEnroll(context.Background(), root, &out, &out, keyPath, true, nil)
 	if err == nil {
 		t.Fatal("expected the retrieval failure to be reported")
 	}
@@ -571,7 +571,7 @@ func TestRunServiceEnroll_ShouldRefuseANonCertificateFromTheServer(t *testing.T)
 	root, keyPath := enrollFixture(t, client)
 	var out bytes.Buffer
 
-	err = runServiceEnroll(context.Background(), root, &out, keyPath, true, nil)
+	err = runServiceEnroll(context.Background(), root, &out, &out, keyPath, true, nil)
 	if err == nil {
 		t.Fatal("expected a public key to be refused")
 	}
@@ -602,7 +602,7 @@ func TestRunServiceEnroll_ShouldEnrollAnExistingKeypair(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	if err := runServiceEnroll(context.Background(), root, &out, keyPath, false, nil); err != nil {
+	if err := runServiceEnroll(context.Background(), root, &out, &out, keyPath, false, nil); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 

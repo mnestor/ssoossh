@@ -1,15 +1,15 @@
 package cmd
 
 import (
-	"sync"
-	"strings"
-	"slices"
-	"fmt"
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
+	"slices"
 	"strconv"
+	"strings"
+	"sync"
 
 	"github.com/spf13/cobra"
 

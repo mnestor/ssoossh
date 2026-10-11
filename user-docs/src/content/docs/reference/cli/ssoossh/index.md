@@ -16,7 +16,7 @@ Documentation: https://mnestor.github.io/ssoossh/
 ## Synopsis
 
 ```
-ssoossh [command]
+ssoossh [command] [flags]
 ```
 
 ## Options
@@ -26,6 +26,7 @@ ssoossh [command]
 | `-c`, `--config` | string |  | path to an extra config file, merged after the standard locations |
 | `--server` | string |  | server address, e.g. https://ssh.example.com; https is assumed when no scheme is given |
 | `-v`, `--verbose` | count | `0` | trace what the command is doing, to stderr; repeat for more (-v steps, -vv requests and files, -vvv bodies) |
+| `--version` | bool | `false` | print the version and exit (the same as `ssoossh version`) |
 
 ## Subcommands
 

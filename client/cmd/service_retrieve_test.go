@@ -143,8 +143,8 @@ func TestServiceRetrieve_MissingCode(t *testing.T) {
 
 	var out bytes.Buffer
 	err := runServiceRetrieve(context.Background(), nil, &out, "", "/tmp/key", false, "1m")
-	if err == nil || !strings.Contains(err.Error(), "--code is required") {
-		t.Errorf("runServiceRetrieve() error = %v, want containing '--code is required'", err)
+	if err == nil || !strings.Contains(err.Error(), "--code must not be empty") {
+		t.Errorf("runServiceRetrieve() error = %v, want containing '--code must not be empty'", err)
 	}
 }
 
@@ -154,8 +154,8 @@ func TestServiceRetrieve_MissingKey(t *testing.T) {
 
 	var out bytes.Buffer
 	err := runServiceRetrieve(context.Background(), nil, &out, "code", "", false, "1m")
-	if err == nil || !strings.Contains(err.Error(), "--key is required") {
-		t.Errorf("runServiceRetrieve() error = %v, want containing '--key is required'", err)
+	if err == nil || !strings.Contains(err.Error(), "--key must not be empty") {
+		t.Errorf("runServiceRetrieve() error = %v, want containing '--key must not be empty'", err)
 	}
 }
 

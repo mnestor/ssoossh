@@ -1,9 +1,9 @@
 package cmd
 
 import (
-	"sync"
-	"log/slog"
 	"bytes"
+	"log/slog"
+	"sync"
 	"testing"
 
 	"github.com/spf13/cobra"

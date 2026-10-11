@@ -139,9 +139,10 @@ func TestExecuteEndToEnd(t *testing.T) {
 		{name: "ssh config", args: []string{"ssh", "config"}, wantNilErr: true},
 		{name: "host principals with no args", args: []string{"host", "principals"}, wantErr: errors.New("missing <username>; usage: ssoossh host principals <username>")},
 		{name: "host mapping list", args: []string{"host", "mapping", "list"}, wantNilErr: true},
-		{name: "service enroll with no key source", args: []string{"service", "enroll"}, wantErr: errors.New("--key is required")},
-		{name: "service retrieve with no code", args: []string{"service", "retrieve"}, wantErr: errors.New("--code is required")},
-		{name: "service retrieve with no key", args: []string{"service", "retrieve", "--code", "abc"}, wantErr: errors.New("--key is required")},
+		{name: "service enroll with no key source", args: []string{"service", "enroll"}, wantErr: errors.New("missing required flag --key")},
+		{name: "service retrieve with no code or key", args: []string{"service", "retrieve"}, wantErr: errors.New("missing required flags --code and --key")},
+		{name: "service retrieve with no key", args: []string{"service", "retrieve", "--code", "abc"}, wantErr: errors.New("missing required flag --key")},
+		{name: "service retrieve with an empty code", args: []string{"service", "retrieve", "--code", "", "--key", "k"}, wantErr: errors.New("--code must not be empty")},
 		{name: "version", args: []string{"version"}, wantNilErr: true},
 
 		// The arity guards live in the simplecobra wrappers rather than in

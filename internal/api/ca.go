@@ -40,7 +40,7 @@ func validateCAKeys(ca string) error {
 		if line == "" {
 			continue
 		}
-		if _, _, _, _, err := ssh.ParseAuthorizedKey([]byte(line)); err != nil { //nolint:dogsled // only whether it parses matters here.
+		if _, _, _, _, err := ssh.ParseAuthorizedKey([]byte(line)); err != nil {
 			// The line rather than the parse error, which for anything
 			// that is not a key is ssh's "no key found; last parsing
 			// error for ignored line ..." and names nothing recognisable.
