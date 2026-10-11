@@ -60,7 +60,7 @@ signed asynchronously and delivered to the waiting client over its own stream.
 Loading the page is itself the claim on the request. A second person opening
 the same link is refused before any button exists to click.
 
-![The approval page for a user certificate: a Pending chip, the principals to include as toggle chips, the account, command, host, platform, client and process ids the client reported, the lifetime, the requesting and registered addresses, the deadline, the public key, the extensions with two struck through as not permitted, a struck-through source-address critical option, a "Less than was requested" notice, and Deny and Approve buttons](../../../assets/screens/approve-user.png)
+![The approval page for a user certificate: a Pending chip, the principals to include as toggle chips, the account, command, host, platform, client and process ids the client reported, the lifetime, the requesting and registered addresses, the deadline, the public key, the extensions with two struck through as not permitted, a "Less than was requested" notice, and Deny and Approve buttons](../../../assets/screens/approve-user.png)
 
 <p class="screen-caption">A user certificate request. Everything under "reported by the client" is what the requesting machine said about itself. The struck-through entries are what this server's policy removed, and the notice at the bottom says so before you decide.</p>
 

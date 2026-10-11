@@ -78,14 +78,33 @@ describe('criticalOptionDiff', () => {
 		expect(entries).toEqual([{ label: 'force-command', value: '/bin/true', status: 'trimmed' }]);
 	});
 
-	it('should mark source-address trimmed when the server drops it', () => {
+	// The requested source_addresses is where the request came from, not a
+	// request for the option, so only the granted side produces an entry.
+	it.each([
+		{
+			name: 'no entry when only the requested side carries addresses',
+			requested: ['192.0.2.10', '198.51.100.7'],
+			granted: [],
+			want: []
+		},
+		{
+			name: 'a server-added entry when the server pins the observed address',
+			requested: ['192.0.2.10', '198.51.100.7'],
+			granted: ['198.51.100.7'],
+			want: [{ label: 'source-address', value: '198.51.100.7', status: 'added' }]
+		},
+		{
+			name: 'a server-added entry when only the granted side carries addresses',
+			requested: [],
+			granted: ['198.51.100.7'],
+			want: [{ label: 'source-address', value: '198.51.100.7', status: 'added' }]
+		}
+	])('should produce $name', ({ requested, granted, want }) => {
 		const entries = criticalOptionDiff(
-			options({ source_addresses: ['10.0.0.0/8', '192.0.2.1/32'] }),
-			options()
+			options({ source_addresses: requested }),
+			options({ source_addresses: granted })
 		);
-		expect(entries).toEqual([
-			{ label: 'source-address', value: '10.0.0.0/8, 192.0.2.1/32', status: 'trimmed' }
-		]);
+		expect(entries).toEqual(want);
 	});
 
 	it('should mark no-touch-required granted when both sides carry it', () => {
