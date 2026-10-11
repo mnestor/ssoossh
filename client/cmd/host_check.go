@@ -19,6 +19,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/mnestor/ssoossh/client/config"
+	"github.com/mnestor/ssoossh/internal/api"
 	"github.com/mnestor/ssoossh/internal/principalsmap"
 )
 
@@ -124,6 +125,13 @@ func (r *RootCommand) referenceCAKeys(ctx context.Context) ([]string, string, er
 	}
 	fetched, err := client.GetCA(ctx)
 	if err != nil {
+		// A transport error already says "cannot reach <server>"; naming
+		// the server here too read "get CA public key from https://x:
+		// cannot reach https://x: ...". The other errors do not name it.
+		var transport *api.TransportError
+		if errors.As(err, &transport) {
+			return nil, "", fmt.Errorf("get CA public key: %w", err)
+		}
 		return nil, "", fmt.Errorf("get CA public key from %s: %w", cfg.Server, err)
 	}
 	return config.SplitKeyList(fetched), cfg.Server, nil

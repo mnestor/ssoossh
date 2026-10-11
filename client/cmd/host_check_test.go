@@ -1199,6 +1199,44 @@ func TestRootCommandReferenceCAKeys(t *testing.T) {
 	})
 }
 
+// A failed CA fetch names the server exactly once: a transport error
+// already says "cannot reach <server>", and the others say nothing of it.
+func TestRootCommandReferenceCAKeysNamesTheServerOnce(t *testing.T) {
+	t.Parallel()
+
+	const server = "https://ssh.example.com"
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{
+			name: "should name the server once when it cannot be reached",
+			err:  &api.TransportError{Server: server, Reason: "connection refused", Hint: "check that ssoosshd is running"},
+		},
+		{
+			name: "should name the server when it answers with an error",
+			err:  &api.ResponseError{StatusCode: 500, Message: "internal error"},
+		},
+		{
+			name: "should name the server when its CA key is unusable",
+			err:  errors.New("the server returned an empty CA key; the server may be misconfigured"),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			root := &RootCommand{
+				cfg:          &config.Config{Server: server},
+				newAPIClient: func(*config.Config) (api.Client, error) { return &getCAClient{err: tt.err}, nil },
+			}
+			_, _, err := root.referenceCAKeys(t.Context())
+			if err == nil || strings.Count(err.Error(), server) != 1 {
+				t.Errorf("referenceCAKeys() error = %v, want %s named exactly once", err, server)
+			}
+		})
+	}
+}
+
 // Not parallel: the PATH cases change the process environment.
 func TestResolveSSHDPath(t *testing.T) {
 	t.Run("should use the path given with --sshd", func(t *testing.T) {
