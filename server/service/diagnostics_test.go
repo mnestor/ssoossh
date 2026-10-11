@@ -23,8 +23,20 @@ type fakeDoer struct {
 type fakeResp struct {
 	status  int
 	headers http.Header
+	body    string
+	// bodyErr, when set, fails the body read after body has been returned.
+	bodyErr error
 	err     error
 }
+
+// failingReader returns its error on every read.
+type failingReader struct{ err error }
+
+func (f failingReader) Read([]byte) (int, error) { return 0, f.err }
+
+// appHealthz is ssoosshd's own /healthz body, which the probe needs to see
+// before it treats the response as the app's.
+const appHealthz = `{"status":"ok"}`
 
 func (f *fakeDoer) Do(req *http.Request) (*http.Response, error) {
 	r, ok := f.byURL[req.URL.String()]
@@ -38,10 +50,14 @@ func (f *fakeDoer) Do(req *http.Request) (*http.Response, error) {
 	if h == nil {
 		h = http.Header{}
 	}
+	var body io.Reader = strings.NewReader(r.body)
+	if r.bodyErr != nil {
+		body = io.MultiReader(body, failingReader{r.bodyErr})
+	}
 	return &http.Response{
 		StatusCode: r.status,
 		Header:     h,
-		Body:       io.NopCloser(strings.NewReader("")),
+		Body:       io.NopCloser(body),
 	}, nil
 }
 
@@ -138,7 +154,7 @@ func TestDiagnostics_CORS(t *testing.T) {
 
 	corsCase := func(h http.Header) *fakeDoer {
 		return &fakeDoer{byURL: map[string]fakeResp{
-			healthURL: {status: 200, headers: http.Header{}},
+			healthURL: {status: 200, headers: http.Header{}, body: appHealthz},
 			corsURL:   {status: 200, headers: h},
 		}}
 	}
@@ -225,7 +241,7 @@ func TestDiagnostics_HeaderHygiene(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			s := NewDiagnosticsService(cfgWith(origin, nil), &fakeDoer{byURL: map[string]fakeResp{
-				healthURL: {status: 200, headers: tt.hdr},
+				healthURL: {status: 200, headers: tt.hdr, body: appHealthz},
 			}})
 			got := s.Run(context.Background(), DiagnosticsRequest{})
 			if c := findCheck(got, "header_hygiene"); c.Status != tt.want {
@@ -263,5 +279,117 @@ func TestDiagnostics_ReachabilitySkipsWhenUnreachable(t *testing.T) {
 
 	if c := findCheck(got, "reachability"); c.Status != DiagnosticSkipped {
 		t.Errorf("got %q, want skipped", c.Status)
+	}
+}
+
+func TestDiagnostics_ReachabilityWhoAnswered(t *testing.T) {
+	t.Parallel()
+
+	const origin = "https://x.example"
+	healthURL := origin + "/healthz"
+	corsURL := origin + "/.well-known/openid-configuration"
+	edgeHeaders := http.Header{
+		"Strict-Transport-Security": {"max-age=1"}, "X-Content-Type-Options": {"nosniff"},
+		"X-Frame-Options": {"DENY"}, "Referrer-Policy": {"x"},
+	}
+
+	// The second and third cases are the edge answering /healthz itself: a
+	// dev server's SPA 404 (what vite dev returns, since it proxies only
+	// /api, /auth and /.well-known) and a proxy that serves health paths
+	// with a bare 200.
+	tests := []struct {
+		name       string
+		health     fakeResp
+		wantReach  DiagnosticStatus
+		wantHeader DiagnosticStatus
+	}{
+		{
+			name:       "should be ok and grade headers when ssoosshd answers healthz",
+			health:     fakeResp{status: 200, headers: edgeHeaders, body: appHealthz},
+			wantReach:  DiagnosticOK,
+			wantHeader: DiagnosticOK,
+		},
+		{
+			name:       "should warn and skip headers when the edge answers healthz with a 404 page",
+			health:     fakeResp{status: 404, headers: edgeHeaders, body: "<!doctype html><html></html>"},
+			wantReach:  DiagnosticWarn,
+			wantHeader: DiagnosticSkipped,
+		},
+		{
+			name:       "should warn and skip headers when the healthz body is cut off part-way",
+			health:     fakeResp{status: 200, headers: edgeHeaders, body: appHealthz, bodyErr: io.ErrUnexpectedEOF},
+			wantReach:  DiagnosticWarn,
+			wantHeader: DiagnosticSkipped,
+		},
+		{
+			name:       "should warn and skip headers when the edge answers healthz with its own 200",
+			health:     fakeResp{status: 200, headers: edgeHeaders, body: "OK"},
+			wantReach:  DiagnosticWarn,
+			wantHeader: DiagnosticSkipped,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s := NewDiagnosticsService(cfgWith(origin, nil), &fakeDoer{byURL: map[string]fakeResp{
+				healthURL: tt.health,
+				corsURL:   {status: 200, headers: http.Header{"Access-Control-Allow-Origin": {"*"}}},
+			}})
+			got := s.Run(context.Background(), DiagnosticsRequest{})
+			if c := findCheck(got, "reachability"); c.Status != tt.wantReach {
+				t.Errorf("reachability got %q, want %q (summary: %s)", c.Status, tt.wantReach, c.Summary)
+			}
+			if c := findCheck(got, "header_hygiene"); c.Status != tt.wantHeader {
+				t.Errorf("header hygiene got %q, want %q (summary: %s)", c.Status, tt.wantHeader, c.Summary)
+			}
+		})
+	}
+}
+
+func TestDiagnostics_CORSRunsWhenTheEdgeAnswersHealthz(t *testing.T) {
+	t.Parallel()
+
+	// The CORS probe goes to /.well-known, which even a dev server routes to
+	// the app, so an edge-answered /healthz must not take it down too.
+	const origin = "https://x.example"
+	s := NewDiagnosticsService(cfgWith(origin, nil), &fakeDoer{byURL: map[string]fakeResp{
+		origin + "/healthz": {status: 404, body: "<!doctype html>"},
+		origin + "/.well-known/openid-configuration": {
+			status:  200,
+			headers: http.Header{"Access-Control-Allow-Credentials": {"true"}},
+		},
+	}})
+	got := s.Run(context.Background(), DiagnosticsRequest{})
+
+	if c := findCheck(got, "cors"); c.Status != DiagnosticWarn {
+		t.Errorf("got %q, want warn (summary: %s)", c.Status, c.Summary)
+	}
+}
+
+func TestIsAppHealthz(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		status int
+		body   string
+		want   bool
+	}{
+		{name: "should accept the app's 200 with status ok", status: 200, body: appHealthz, want: true},
+		{name: "should accept the app's body with surrounding whitespace", status: 200, body: " {\"status\":\"ok\"}\n", want: true},
+		{name: "should reject the app's body on a non-200 status", status: 404, body: appHealthz},
+		{name: "should reject an empty body", status: 200, body: ""},
+		{name: "should reject a plain-text OK", status: 200, body: "OK"},
+		{name: "should reject an html page", status: 200, body: "<!doctype html>"},
+		{name: "should reject json with another status", status: 200, body: `{"status":"down"}`},
+		{name: "should reject json without a status field", status: 200, body: `{}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := isAppHealthz(tt.status, []byte(tt.body)); got != tt.want {
+				t.Errorf("got %v, want %v", got, tt.want)
+			}
+		})
 	}
 }

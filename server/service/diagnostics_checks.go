@@ -9,7 +9,8 @@ import (
 // checkReachability reports whether the server could reach its own public
 // URL from where it runs. It is the precondition for the other edge checks:
 // if the probe never arrived, header hygiene and CORS could not be tested
-// and say so rather than showing a false all-clear.
+// and say so rather than showing a false all-clear. A probe that arrived but
+// was answered by the edge instead of the app warns, and header hygiene skips.
 func (s *DiagnosticsService) checkReachability(origin string, p edgeProbe) DiagnosticCheck {
 	c := DiagnosticCheck{ID: "reachability", Title: "Public URL reachability"}
 
@@ -32,9 +33,24 @@ func (s *DiagnosticsService) checkReachability(origin string, p edgeProbe) Diagn
 		return c
 	}
 
+	// Something answered, but ssoosshd answers /healthz the same way every
+	// time, so a different answer came from whatever sits in front of it.
+	// Reporting that as reachable would let the header check below grade the
+	// edge's own error page as if it were the app's response.
+	if !p.fromApp {
+		c.Status = DiagnosticWarn
+		c.Summary = fmt.Sprintf("%s/healthz answered HTTP %d, but not from ssoosshd.", origin, p.status)
+		c.Findings = append(c.Findings,
+			"ssoosshd always answers /healthz with HTTP 200 and {\"status\":\"ok\"}, so this response came from whatever sits in front of it, not from the app.",
+			"The security header check is skipped: the only response it could read was the edge's own, not the app's as browsers receive it.",
+		)
+		c.Remediation = "Route /healthz on the public URL through to ssoosshd, as /api already is. A development server (vite dev proxies only /api, /auth and /.well-known) always shows this."
+		return c
+	}
+
 	c.Status = DiagnosticOK
-	c.Summary = fmt.Sprintf("Reached %s (HTTP %d).", origin, p.status)
-	c.Findings = append(c.Findings, "The edge checks below tested this URL through whatever sits in front of the app.")
+	c.Summary = fmt.Sprintf("ssoosshd answered %s/healthz through the public URL.", origin)
+	c.Findings = append(c.Findings, "The header and CORS checks below read responses that came back through whatever sits in front of the app, so they see what browsers see.")
 	return c
 }
 
@@ -111,6 +127,9 @@ func (s *DiagnosticsService) checkHeaderHygiene(p edgeProbe) DiagnosticCheck {
 	c := DiagnosticCheck{ID: "header_hygiene", Title: "Security header hygiene"}
 	if !p.reached {
 		return skipped(c, "the public URL could not be reached")
+	}
+	if !p.fromApp {
+		return skipped(c, "/healthz on the public URL was not answered by ssoosshd, so there is no app response to read")
 	}
 
 	worst := DiagnosticOK
