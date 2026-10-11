@@ -21,10 +21,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # No `changes` path gate: the gate job costs about as much as a fraction
-  # of this job, and coverage on every PR is the point of the workflow.
+  # No path gate beyond the image-only skip: coverage on every PR is the
+  # point of the workflow. A PR that changes only the CI image skips it, as
+  # the other PR workflows do; see pr-scope.yaml.
+  scope:
+    uses: ./.github/workflows/pr-scope.yaml
+    permissions:
+      pull-requests: read
+
   coverage:
     name: codecheck
+    needs: scope
+    if: needs.scope.outputs.image_only != 'true'
     # Job-level grants for octocov, which runs on the default GITHUB_TOKEN:
     # pull-requests to comment the report, actions to store and replace the
     # baseline report in the Actions artifact datastore (upstream's own

@@ -3,6 +3,12 @@
 # images became ssoossh-specific (Go toolchain pin, PAM headers, softhsm2,
 # zig); publishing from this repo keeps the Dockerfiles next to the
 # workflows and Makefile targets that depend on their contents.
+#
+# On a pull request that touches those files, `validate` builds both images
+# under local tags, never pushed, and runs the merge gates inside the new
+# runner image. Every other PR workflow runs its jobs in the published
+# :latest image, so without this a PR's image change would be checked against
+# the old image (see #113).
 name: build-image
 on:
   push:
@@ -11,15 +17,87 @@ on:
     paths:
       - ".github/docker/**"
       - ".github/workflows/build-image.yaml"
+  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
-  push-image:
+  scope:
+    uses: ./.github/workflows/pr-scope.yaml
+    permissions:
+      pull-requests: read
+
+  validate:
+    name: validate images
+    needs: scope
+    if: needs.scope.outputs.image == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      # Git and Go see the mounted workspace, which is owned by the runner
+      # user, while the container runs as root. -buildvcs=false stops Go
+      # stamping VCS info, and the GIT_CONFIG_* pair is safe.directory.
+      GOFLAGS: -buildvcs=false
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: safe.directory
+      GIT_CONFIG_VALUE_0: /work
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build runner image (not pushed)
+        run: docker build .github/docker -f .github/docker/Dockerfile.runner --tag ssoossh-build:pr
+
+      - name: Build devcontainer image (not pushed)
+        run: docker build .github/docker -f .github/docker/Dockerfile.devcontainer --tag ssoossh-devcontainer:pr
+
+      # Everything below runs in ssoossh-build:pr, the image this PR builds,
+      # not in ghcr.io/mnestor/ssoossh-build:latest.
+      - name: Toolchain versions in the new runner image
+        run: |
+          docker run --rm ssoossh-build:pr sh -c 'go version && golangci-lint --version && actionlint --version && govulncheck -version'
+
+      - name: make lint
+        run: |
+          docker run --rm -e GOFLAGS -e GIT_CONFIG_COUNT -e GIT_CONFIG_KEY_0 -e GIT_CONFIG_VALUE_0 -e CGO_ENABLED=1 -v "$GITHUB_WORKSPACE:/work" -w /work ssoossh-build:pr make lint
+
+      - name: make lint-cross
+        run: |
+          docker run --rm -e GOFLAGS -e GIT_CONFIG_COUNT -e GIT_CONFIG_KEY_0 -e GIT_CONFIG_VALUE_0 -v "$GITHUB_WORKSPACE:/work" -w /work ssoossh-build:pr make lint-cross
+
+      - name: make openapi-lint
+        run: |
+          docker run --rm -e GOFLAGS -e GIT_CONFIG_COUNT -e GIT_CONFIG_KEY_0 -e GIT_CONFIG_VALUE_0 -v "$GITHUB_WORKSPACE:/work" -w /work ssoossh-build:pr make openapi-lint
+
+      - name: make actionlint
+        run: |
+          docker run --rm -e GOFLAGS -e GIT_CONFIG_COUNT -e GIT_CONFIG_KEY_0 -e GIT_CONFIG_VALUE_0 -v "$GITHUB_WORKSPACE:/work" -w /work ssoossh-build:pr make actionlint
+
+      # The check that the image is new enough for go.mod, the one that
+      # caught the stale image in #112.
+      - name: check Go version invariants
+        run: |
+          docker run --rm -e GOFLAGS -e GIT_CONFIG_COUNT -e GIT_CONFIG_KEY_0 -e GIT_CONFIG_VALUE_0 -v "$GITHUB_WORKSPACE:/work" -w /work ssoossh-build:pr scripts/check-go-version.sh
+
+      # Advisory, as in security.yaml: a newly published advisory against a
+      # dependency should not make an unrelated image PR red. The output
+      # still shows in the log.
+      - name: govulncheck (advisory)
+        continue-on-error: true
+        run: |
+          docker run --rm -e GOFLAGS -e GIT_CONFIG_COUNT -e GIT_CONFIG_KEY_0 -e GIT_CONFIG_VALUE_0 -v "$GITHUB_WORKSPACE:/work" -w /work ssoossh-build:pr govulncheck ./...
+
+  push-image:
+    # Pull requests never publish: the job is skipped there, and the
+    # packages: write grant below is only used by main pushes and dispatches.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     strategy:
       matrix:
         image:
