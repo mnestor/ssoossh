@@ -29,6 +29,18 @@ systemctl reload sshd
 `/etc/ssh/ca.pub` holds the CA public key in `authorized_keys` format, one key
 per line. The path is a convention, not a requirement.
 
+The client `.deb` and `.rpm` carry this line, commented, in
+`/etc/ssh/sshd_config.d/50-ssoossh.conf`. Fetch the key (below) before
+uncommenting it. `TrustedUserCAKeys` names a single file and `sshd` keeps the
+first value it reads, so where the `Include` sits at the top of `sshd_config`
+the drop-in overrides a `TrustedUserCAKeys` set there. If the host already
+trusts another CA, append the ssoossh key to that file instead.
+
+Without this line every ssoossh certificate is refused, and at the default
+`LogLevel` `sshd` logs only `Failed publickey for <user> ... CA <fingerprint>` with
+no reason. Check what `sshd` actually resolved with
+`sshd -T | grep -i trustedusercakeys`; `none` means it trusts no CA.
+
 ## Getting the CA public key
 
 Fetch it from the running server rather than copying the file you generated
@@ -126,9 +138,9 @@ commands".
 The `.deb` and `.rpm` do this part for you. They create the
 `ssoossh-principals` account, ship `/etc/ssoossh/principals.yaml` owned
 `root:ssoossh-principals` and mode `0640`, and drop a fully commented
-`/etc/ssh/sshd_config.d/50-ssoossh.conf` carrying the two lines below. Installing
-the client changes nothing about how the host accepts SSH until you uncomment
-them; the rest of this section is what the package did, and what to do if you
+`/etc/ssh/sshd_config.d/50-ssoossh.conf` carrying the two lines below alongside
+the `TrustedUserCAKeys` line. Installing the client changes nothing about how
+the host accepts SSH until you uncomment them; the rest of this section is what the package did, and what to do if you
 installed some other way.
 
 ```bash
@@ -149,14 +161,14 @@ AuthorizedPrincipalsCommandUser ssoossh-principals
 `AuthorizedPrincipalsCommandUser` is not optional. `sshd` refuses to start
 when `AuthorizedPrincipalsCommand` is set without it.
 
-:::caution[Do not point this at `/usr/local/bin`]
+:::caution[Point this at `/usr/bin/ssoossh`]
 Packages before this release installed the binary at `/usr/local/bin/ssoossh`,
-and a compatibility symlink still answers there for two more releases. Do not
-name it here. On Debian and Ubuntu `/usr/local/bin` is `root:staff` mode `2775`,
-and `sshd` refuses to run an `AuthorizedPrincipalsCommand` whose path is
-writable by group or other -- so an `sshd_config` naming the old path fails
-every certificate login, with the refusal visible only in `sshd`'s log. Point it
-at `/usr/bin/ssoossh`.
+and a compatibility symlink still answers there for two more releases. An
+`sshd_config` naming the old path works while that link exists: `sshd` resolves
+the symlink before its path-safety check, and judges `/usr/bin/ssoossh`, not the
+group-writable `/usr/local/bin` the link sits in. It stops working the release
+the link is removed, and then every certificate login fails with the reason
+only in `sshd`'s log. Point it at `/usr/bin/ssoossh` now.
 :::
 
 That is the whole setup, and no `chmod` is needed. If you would rather the
