@@ -63,12 +63,11 @@ key; a key a source does not mention is left to whatever set it below.
 3. The per-user file (`~/.config/ssoossh.yaml`)
 4. The local file (`./ssoossh.yaml`)
 5. `--config <file>`
-6. The [`enforce`](/ssoossh/reference/client-config/#enforce) file named by the
+6. Command-line flags
+7. The [`enforce`](/ssoossh/reference/client-config/#enforce) file named by the
    machine-wide file
-7. Platform-native policy: Windows Group Policy registry values, macOS managed
+8. Platform-native policy: Windows Group Policy registry values, macOS managed
    preferences
-8. Command-line flags you pass, for the settings that have one (see
-   [the flag caveat](#the-flag-caveat))
 
 Nothing is guessed about where a value came from: `--debug` prints the whole
 chain in this order, with what came of each entry, and marks the two
@@ -109,17 +108,17 @@ lock the same settings through Group Policy and managed preferences instead;
 mapping.
 :::
 
-### The flag caveat
+### Flags and locks
 
 The settings that also have command-line flags -- `--server`, `--key-type`,
-`--key-size`, and the `--no-*` extension flags -- are bound into the
-configuration as flags rather than merged as files. If the user actually passes
-one, it takes precedence over every config-file tier, including `enforce` and
-platform policy. This is the same "guardrail, not a boundary" situation as
-running your own binary.
+`--key-size`, and the `--no-*` extension flags -- follow the same order. A
+flag overrides your own config files, and an `enforce` file or platform policy
+overrides the flag. When a lock sets the value a flag would, ssoossh ignores
+the flag, prints a warning naming it, and reports it as `overridden` in the
+[`--debug`](/ssoossh/guides/diagnostics/) source chain.
 
-The one thing a flag cannot do is re-add a certificate extension that platform
-policy forbids: that subtraction happens after flags and config are resolved.
+Locks are still a guardrail rather than a security boundary: the client runs
+as you, and nothing stops you running a binary of your own.
 
 ## What you can set
 

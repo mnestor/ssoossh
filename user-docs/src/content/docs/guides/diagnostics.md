@@ -68,11 +68,11 @@ ones above it, with what came of each:
 | `absent` | The file was not there, which is normal everywhere except a file you named yourself |
 | `error` | The file existed but could not be read or parsed, so its settings are silently not in effect |
 | `not given` | An optional source was not selected at all, such as `--config` or `enforce` |
+| `overridden` | Command-line flags you passed for settings an administrator lock sets, so they had no effect; the flags are named |
 
 Entries marked with `*` are administrator locks -- the `enforce` file and
-platform-native policy -- which override every config file above them,
-including your own. A command-line flag you actually pass still wins over
-them; see [the flag caveat](/ssoossh/guides/client-config/#the-flag-caveat). The `error` status is the case this
+platform-native policy -- which override everything above them including your
+own config file and any command-line flag. The `error` status is the case this
 report exists for: a config file you believe is in effect but which was skipped.
 
 **The resolved settings**: server, TLS verification, key type and size, FIPS

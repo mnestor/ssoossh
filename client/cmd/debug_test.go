@@ -92,21 +92,6 @@ func TestWriteDebugReport_ShouldShowWhyAConfigFileWasSkipped(t *testing.T) {
 	}
 }
 
-// The lock footnote used to say a lock beats any command-line flag, which
-// is the opposite of what the config chain does.
-func TestWriteDebugReport_ShouldSayAPassedFlagStillBeatsALock(t *testing.T) {
-	cfg := &config.Config{Sources: []config.ConfigSource{
-		{Label: "enforce", Path: "/etc/ssoossh/locked.yaml", Status: config.SourceMerged, AdminLock: true},
-	}}
-
-	var out bytes.Buffer
-	writeDebugReport(&out, cfg, nil2Agent(), "ssoossh ssh login", nil)
-
-	if !strings.Contains(out.String(), "A command-line flag you pass still wins") {
-		t.Errorf("lock footnote does not say a passed flag still wins: %s", out.String())
-	}
-}
-
 func TestWriteDebugReport_ShouldDistinguishAnAbsentFileFromAFailedOne(t *testing.T) {
 	cfg := &config.Config{Sources: []config.ConfigSource{
 		{Label: "system file", Path: "/etc/ssoossh/ssoossh.yaml", Status: config.SourceAbsent},
