@@ -24,11 +24,12 @@ sets the same key:
 2. User config (`~/.config/ssoossh.yaml`, or
    `%AppData%\ssoossh\ssoossh.yaml`)
 3. Local config (`./ssoossh.yaml`, or `--config`)
-4. CLI flags (`--server`, `--key-type`, `--key-size`)
-5. The `enforce` file named by the machine-wide config
+4. The `enforce` file named by the machine-wide config
    (`/etc/ssoossh/ssoossh.yaml`, or `%ProgramData%\ssoossh\ssoossh.yaml`)
-6. Platform-native policy: the Windows registry key or the macOS managed
+5. Platform-native policy: the Windows registry key or the macOS managed
    preferences described below
+6. CLI flags the user passes, for the settings that have one (see the note
+   below)
 
 A value simply absent from a source is left to whatever the next source down
 sets. A policy source that only locks `server`, for example, leaves every other

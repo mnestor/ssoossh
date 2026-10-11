@@ -407,6 +407,45 @@ func TestNewConfig_ShouldLetPlatformPolicyOverrideTheEnforcedFile(t *testing.T) 
 	}
 }
 
+// A flag the user passes is read above every merged layer, the locks
+// included. The debug report and the docs both describe this; pinned here
+// so neither can drift from it again.
+func TestNewConfig_ShouldLetAPassedFlagBeatTheLocks(t *testing.T) {
+	sysDir := writeSystemConfig(t, map[string]string{
+		"ssoossh.yaml": "enforce: locked.yaml\n",
+		"locked.yaml":  "server: https://from-enforce-file.example.com\n",
+	})
+	cmd := newConfigCommand(t, "--server", "https://from-flag.example.com")
+	policy := func() (map[string]any, error) {
+		return map[string]any{"server": "https://from-platform-policy.example.com"}, nil
+	}
+
+	cfg, err := newConfig(cmd, testPaths(sysDir), policy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Server != "https://from-flag.example.com" {
+		t.Errorf("got server %q, want the passed flag to win over enforce and platform policy", cfg.Server)
+	}
+}
+
+// A policy that sets only ordinary keys was merged all the same. The chain
+// used to report it "not given" unless it set fips or forbade extensions.
+func TestNewConfig_ShouldReportAPolicySettingOnlyOrdinaryKeysAsMerged(t *testing.T) {
+	cmd := newConfigCommand(t)
+	policy := func() (map[string]any, error) {
+		return map[string]any{"server": "https://from-platform-policy.example.com"}, nil
+	}
+
+	cfg, err := newConfig(cmd, testPaths(writeSystemConfig(t, nil)), policy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := sourceFor(t, cfg.Sources, "platform policy").Status; got != SourceMerged {
+		t.Errorf("platform policy status = %q, want %q", got, SourceMerged)
+	}
+}
+
 // TestNewConfig_ShouldLeaveUnsetPolicyKeysToTheEnforcedFile confirms a
 // platform policy that only sets some keys doesn't clobber the rest —
 // matching how the enforce file already behaves for a partial override.
@@ -571,7 +610,8 @@ func TestNewConfig_ShouldRecordAnUnusedConfigFlagAsNotGiven(t *testing.T) {
 }
 
 // The chain is only meaningful in precedence order: a reader uses it to work
-// out which source won, and that answer is the last merged entry.
+// out which source won, and that answer is the last merged entry. Flags come
+// last because a passed flag beats every merged layer, the locks included.
 func TestNewConfig_ShouldRecordSourcesInPrecedenceOrder(t *testing.T) {
 	sysDir := writeSystemConfig(t, map[string]string{"ssoossh.yaml": "server: https://sys.example.com\n"})
 	cmd := newConfigCommand(t, "--config", writeConfig(t, "server: https://ssh.example.com\n"))
@@ -585,7 +625,7 @@ func TestNewConfig_ShouldRecordSourcesInPrecedenceOrder(t *testing.T) {
 	for _, s := range cfg.Sources {
 		labels = append(labels, s.Label)
 	}
-	want := []string{"embedded defaults", "system file", "--config", "command-line flags", "enforce", "platform policy"}
+	want := []string{"embedded defaults", "system file", "--config", "enforce", "platform policy", "command-line flags"}
 	if len(labels) != len(want) {
 		t.Fatalf("sources = %v, want %v", labels, want)
 	}

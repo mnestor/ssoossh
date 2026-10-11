@@ -111,9 +111,12 @@ func writeDebugSources(out io.Writer, sources []config.ConfigSource) {
 		fmt.Fprintln(out, line)
 	}
 
+	// Flags are listed below the locks because they do beat them: a lock
+	// holds against every file, not against a flag the user passes.
 	if anyLocked {
-		fmt.Fprintf(out, "\n  * administrator lock — overrides everything above it, including your\n")
-		fmt.Fprintf(out, "    own config file and any command-line flag.\n")
+		fmt.Fprintf(out, "\n  * administrator lock — overrides every file above it, your own config\n")
+		fmt.Fprintf(out, "    file included. A command-line flag you pass still wins, except that it\n")
+		fmt.Fprintf(out, "    cannot re-add a certificate extension platform policy forbids.\n")
 	}
 }
 

@@ -95,12 +95,6 @@ func newConfig(cmd *cobra.Command, paths searchPaths, loadPolicy func() (map[str
 	if err != nil {
 		return nil, err
 	}
-	flagSource := ConfigSource{Label: "command-line flags", Status: SourceNotGiven}
-	if len(changed) > 0 {
-		flagSource.Status = SourceMerged
-		flagSource.Detail = strings.Join(changed, ", ")
-	}
-	sources = append(sources, flagSource)
 
 	// Merged last, so it wins over every user-writable location — that is the
 	// whole point of `enforce`. A relative target resolves inside the system
@@ -132,15 +126,26 @@ func newConfig(cmd *cobra.Command, paths searchPaths, loadPolicy func() (map[str
 	// each key it sets is treated exactly like an enforce-file key.
 	// Forbidden certificate extensions are handled separately because they're
 	// not a per-key override but an unconditional floor — see extractForbiddenExtensions.
-	policySetsFIPS, policyForbiddenExtensions, err := mergePlatformPolicy(v, loadPolicy)
+	policyMerged, policySetsFIPS, policyForbiddenExtensions, err := mergePlatformPolicy(v, loadPolicy)
 	if err != nil {
 		return nil, err
 	}
 	policyStatus := SourceNotGiven
-	if policySetsFIPS || len(policyForbiddenExtensions) > 0 {
+	if policyMerged {
 		policyStatus = SourceMerged
 	}
 	sources = append(sources, ConfigSource{Label: "platform policy", Status: policyStatus, AdminLock: true})
+
+	// Recorded last although bound first: viper reads a bound flag the user
+	// passed above every merged layer, enforce and platform policy
+	// included, so this is where flags take effect in the chain. The one
+	// exception is the forbidden-extension floor, applied after all of it.
+	flagSource := ConfigSource{Label: "command-line flags", Status: SourceNotGiven}
+	if len(changed) > 0 {
+		flagSource.Status = SourceMerged
+		flagSource.Detail = strings.Join(changed, ", ")
+	}
+	sources = append(sources, flagSource)
 
 	// The hook chain is spelled out rather than left to viper's default
 	// because capubkey accepts a scalar as well as a sequence, and the
@@ -235,19 +240,20 @@ func mergeConfigFiles(v *viper.Viper, paths searchPaths, configFile string) (enf
 }
 
 // mergePlatformPolicy loads and merges the platform-native policy source
-// (see loadPlatformPolicy and its per-GOOS implementations) into v, and
-// reports whether it set fips: true — the platform-policy counterpart of
+// (see loadPlatformPolicy and its per-GOOS implementations) into v. It
+// reports whether the source set anything at all, for the debug report's
+// chain, and whether it set fips: true — the platform-policy counterpart of
 // enforceFileSets, used the same way by newConfig's FIPSEnforced
 // computation. It also extracts and returns the forbidden_certificate_extensions
 // list, which is handled separately because it's not a per-key override but
 // an unconditional floor on which extensions are allowed.
-func mergePlatformPolicy(v *viper.Viper, loadPolicy func() (map[string]any, error)) (fipsSet bool, forbiddenExtensions []string, err error) {
+func mergePlatformPolicy(v *viper.Viper, loadPolicy func() (map[string]any, error)) (merged, fipsSet bool, forbiddenExtensions []string, err error) {
 	policy, err := loadPolicy()
 	if err != nil {
-		return false, nil, fmt.Errorf("failed to load platform policy: %w", err)
+		return false, false, nil, fmt.Errorf("failed to load platform policy: %w", err)
 	}
 	if len(policy) == 0 {
-		return false, nil, nil
+		return false, false, nil, nil
 	}
 
 	// Extract forbidden extensions before merging, since it shouldn't go through
@@ -268,9 +274,9 @@ func mergePlatformPolicy(v *viper.Viper, loadPolicy func() (map[string]any, erro
 		fipsSet = fips
 	}
 	if err := v.MergeConfigMap(policy); err != nil {
-		return false, nil, fmt.Errorf("failed to merge platform policy: %w", err)
+		return false, false, nil, fmt.Errorf("failed to merge platform policy: %w", err)
 	}
-	return fipsSet, forbiddenExtensions, nil
+	return true, fipsSet, forbiddenExtensions, nil
 }
 
 // mergeConfig merges f into v and reports what happened. A missing file is

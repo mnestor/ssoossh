@@ -63,11 +63,12 @@ key; a key a source does not mention is left to whatever set it below.
 3. The per-user file (`~/.config/ssoossh.yaml`)
 4. The local file (`./ssoossh.yaml`)
 5. `--config <file>`
-6. Command-line flags
-7. The [`enforce`](/ssoossh/reference/client-config/#enforce) file named by the
+6. The [`enforce`](/ssoossh/reference/client-config/#enforce) file named by the
    machine-wide file
-8. Platform-native policy: Windows Group Policy registry values, macOS managed
+7. Platform-native policy: Windows Group Policy registry values, macOS managed
    preferences
+8. Command-line flags you pass, for the settings that have one (see
+   [the flag caveat](#the-flag-caveat))
 
 Nothing is guessed about where a value came from: `--debug` prints the whole
 chain in this order, with what came of each entry, and marks the two
