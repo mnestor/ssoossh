@@ -17,6 +17,9 @@
 		expiredCount: number;
 		/** Soonest expiry among the live codes, absent when none are live. */
 		nextExpiry?: string;
+		/** How far ahead of nextExpiry the row warns, from the server
+		 *  (expiring_soon_seconds on the enrollment list). */
+		soonSeconds: number;
 		/** Most recent redemption across every code, absent if never redeemed. */
 		lastRetrievedAt?: string;
 		/** Pinned clock, so a list of rows agrees with itself and tests can fix it. */
@@ -35,6 +38,7 @@
 		liveCount,
 		expiredCount,
 		nextExpiry,
+		soonSeconds,
 		lastRetrievedAt,
 		now = new Date(),
 		href,
@@ -63,12 +67,13 @@
 
 	const detail = $derived([codes, expiry].filter(Boolean).join(' · '));
 
-	// The expiry reminder mail goes out a week ahead by default
-	// (mail.expiry_reminder_lead), and the row says the same thing then:
-	// the job about to break should stand out before it breaks.
-	const soonMs = 7 * 24 * 60 * 60 * 1000;
+	// The row warns over the server's mail.expiry_reminder_lead, so it says
+	// "Expires soon" when the first reminder mail goes out: the job about to
+	// break should stand out before it breaks.
 	const expiringSoon = $derived(
-		liveCount > 0 && !!nextExpiry && new Date(nextExpiry).getTime() - now.getTime() < soonMs
+		liveCount > 0 &&
+			!!nextExpiry &&
+			new Date(nextExpiry).getTime() - now.getTime() < soonSeconds * 1000
 	);
 
 	// No live code on an account that had codes is the job that has

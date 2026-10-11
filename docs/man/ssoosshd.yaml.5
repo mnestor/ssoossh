@@ -1728,6 +1728,8 @@ Inside the window the reminder repeats weekly until the code is within its final
 A week by default: long enough that someone can schedule the re\-enrollment rather than drop what they are doing, short enough that the first message still describes a real deadline.
 .IP
 Each send is claimed in the database so every instance can run the sweep without any of them duplicating it. Shortening this means an enrollment past the new window gets no reminder until it re\-enters it; lengthening it picks enrollments up at the next sweep.
+.IP
+The web UI's service codes page marks an account "Expires soon" over the same window, so the page and the first reminder agree. Zero turns the reminder off but not that warning, which then uses a week.
 Default:
 .BR 168h .
 .TP

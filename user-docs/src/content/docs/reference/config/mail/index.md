@@ -100,6 +100,8 @@ A week by default: long enough that someone can schedule the re-enrollment rathe
 
 Each send is claimed in the database so every instance can run the sweep without any of them duplicating it. Shortening this means an enrollment past the new window gets no reminder until it re-enters it; lengthening it picks enrollments up at the next sweep.
 
+The web UI's service codes page marks an account "Expires soon" over the same window, so the page and the first reminder agree. Zero turns the reminder off but not that warning, which then uses a week.
+
 ```yaml
 mail:
   expiry_reminder_lead: 168h

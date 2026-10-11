@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -321,9 +322,10 @@ func newAccountHoldersResponse(holders service.AccountHolders) webtypes.AccountH
 // Enrollment.Code is present on every row this walks and is deliberately
 // not read: see webtypes.ServiceEnrollmentResponse for why the page that
 // consumes this must never be able to show it.
-func newServiceEnrollmentsResponse(enrollments []service.ServiceEnrollment) webtypes.ServiceEnrollmentsResponse {
+func newServiceEnrollmentsResponse(enrollments []service.ServiceEnrollment, expiringSoon time.Duration) webtypes.ServiceEnrollmentsResponse {
 	out := webtypes.ServiceEnrollmentsResponse{
-		Enrollments: make([]webtypes.ServiceEnrollmentResponse, 0, len(enrollments)),
+		Enrollments:         make([]webtypes.ServiceEnrollmentResponse, 0, len(enrollments)),
+		ExpiringSoonSeconds: int(expiringSoon / time.Second),
 	}
 	for _, e := range enrollments {
 		out.Enrollments = append(out.Enrollments, newServiceEnrollmentResponse(e))

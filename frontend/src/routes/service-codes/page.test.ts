@@ -57,7 +57,11 @@ function deployCode(overrides: Partial<ServiceEnrollment> = {}): ServiceEnrollme
  * heldAccounts defaults to the accounts on the codes, which is the ordinary
  * case; a test passes it explicitly to cover an account with no codes, or an
  * identity that has lost one it still has codes for. */
-function mockFetch(enrollments: ServiceEnrollment[], heldAccounts?: string[]) {
+function mockFetch(
+	enrollments: ServiceEnrollment[],
+	heldAccounts?: string[],
+	expiringSoonSeconds = 7 * 86400
+) {
 	const service_accounts = heldAccounts ?? [
 		...new Set(enrollments.map((e) => e.service_account).filter(Boolean))
 	];
@@ -66,7 +70,7 @@ function mockFetch(enrollments: ServiceEnrollment[], heldAccounts?: string[]) {
 		'fetch',
 		vi.fn((input: RequestInfo | URL) => {
 			const url = String(input);
-			let body: unknown = { enrollments };
+			let body: unknown = { enrollments, expiring_soon_seconds: expiringSoonSeconds };
 			if (url.includes('/users/me')) {
 				body = { service_accounts };
 			}
@@ -263,6 +267,22 @@ describe('Service codes page', () => {
 			render(Page);
 			await screen.findByText('svc-deploy');
 			expect(screen.getByTestId('service-account-state')).toHaveTextContent('Expires soon');
+		});
+
+		// The warning follows the server's reminder lead, not a week fixed
+		// in the page: a 30-day lead warns about a code 20 days out.
+		it.each([
+			{ lead: 30, state: 'Expires soon' },
+			{ lead: 7, state: 'Active' }
+		])('should read $state 20 days out with a $lead-day lead', async ({ lead, state }) => {
+			mockFetch(
+				[deployCode({ expires_at: new Date(Date.now() + 20 * 86400000).toISOString() })],
+				undefined,
+				lead * 86400
+			);
+			render(Page);
+			await screen.findByText('svc-deploy');
+			expect(screen.getByTestId('service-account-state')).toHaveTextContent(state);
 		});
 
 		it('should call a code far from expiry active', async () => {

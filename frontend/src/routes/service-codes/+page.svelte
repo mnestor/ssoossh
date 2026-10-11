@@ -26,6 +26,9 @@
 	// prints one once and the server keeps it only to match a redemption
 	// against.
 	let enrollments = $state<ServiceEnrollment[]>([]);
+	// How far ahead of expiry an account reads "Expires soon"; the server's
+	// reminder lead, replaced by the list's own value when it loads.
+	let expiringSoonSeconds = $state(0);
 	let heldAccounts = $state<string[]>([]);
 	let loadError = $state<string | null>(null);
 	let hasLoaded = $state(false);
@@ -152,6 +155,7 @@
 		])
 			.then(([result, user]) => {
 				enrollments = result.enrollments;
+				expiringSoonSeconds = result.expiring_soon_seconds;
 				heldAccounts = user?.service_accounts ?? [];
 				hasLoaded = true;
 			})
@@ -258,6 +262,7 @@
 					liveCount={entry.liveCount}
 					expiredCount={entry.expiredCount}
 					nextExpiry={entry.nextExpiry}
+					soonSeconds={expiringSoonSeconds}
 					lastRetrievedAt={entry.lastRetrievedAt}
 					{now}
 					href={`${resolve('service-codes')}?account=${encodeURIComponent(entry.account)}`}

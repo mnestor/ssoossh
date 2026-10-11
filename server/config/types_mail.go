@@ -114,6 +114,10 @@ type MailConfig struct {
 	// sweep without any of them duplicating it. Shortening this means an
 	// enrollment past the new window gets no reminder until it re-enters
 	// it; lengthening it picks enrollments up at the next sweep.
+	//
+	// The web UI's service codes page marks an account "Expires soon" over
+	// the same window, so the page and the first reminder agree. Zero turns
+	// the reminder off but not that warning, which then uses a week.
 	ExpiryReminderLead time.Duration `mapstructure:"expiry_reminder_lead" default:"168h"`
 
 	// ExpiredAttemptWindow rate-limits the service_enrollment_expired_attempt
@@ -205,6 +209,21 @@ type SMTPConfig struct {
 // ResolvedPassword returns the SASL password after PasswordFile resolution.
 // Valid only after Validate has run.
 func (s *SMTPConfig) ResolvedPassword() string { return s.resolvedPassword }
+
+// defaultExpiringSoon is the expiring-soon window when the reminder lead is
+// zero: the lead's own default, a week.
+const defaultExpiringSoon = 7 * 24 * time.Hour
+
+// ExpiringSoonWindow is how far ahead of an enrollment code's expiry the web
+// UI calls it expiring soon: the reminder lead, so the page warns when the
+// first reminder goes out. A zero lead switches the reminder off, not the
+// warning, so it falls back to a week.
+func (c *MailConfig) ExpiringSoonWindow() time.Duration {
+	if c.ExpiryReminderLead <= 0 {
+		return defaultExpiringSoon
+	}
+	return c.ExpiryReminderLead
+}
 
 // Validate checks the mail configuration and fills in defaults, so a
 // misconfigured relay stops the server at startup rather than being

@@ -398,6 +398,12 @@ export interface ServiceEnrollmentResponse {
  */
 export interface ServiceEnrollmentsResponse {
 	enrollments: ServiceEnrollmentResponse[];
+	/**
+	 * ExpiringSoonSeconds is how far ahead of a code's expiry the page
+	 * calls it expiring soon: mail.expiry_reminder_lead, so the page and
+	 * the first reminder mail agree, or a week when that is zero.
+	 */
+	expiring_soon_seconds: number /* int */;
 }
 /**
  * SetNotificationEmailRequestBody is the request to point an enrollment's

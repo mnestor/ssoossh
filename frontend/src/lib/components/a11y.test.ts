@@ -287,7 +287,14 @@ const cases: [string, any, Record<string, unknown>][] = [
 	[
 		'ServiceAccountRow',
 		ServiceAccountRow,
-		{ account: 'svc-deploy', liveCount: 2, expiredCount: 1, now, onclick: vi.fn() }
+		{
+			account: 'svc-deploy',
+			liveCount: 2,
+			expiredCount: 1,
+			soonSeconds: 604800,
+			now,
+			onclick: vi.fn()
+		}
 	],
 	['ServiceCodeDetail', ServiceCodeDetail, { enrollment: enrollment(), now }],
 	['ServiceCodeFacts', ServiceCodeFacts, { enrollment: enrollment(), approvedBy: 'alice', now }],

@@ -355,6 +355,10 @@ type ServiceEnrollmentResponse struct {
 // enrollments, newest first.
 type ServiceEnrollmentsResponse struct {
 	Enrollments []ServiceEnrollmentResponse `json:"enrollments" validate:"required"`
+	// ExpiringSoonSeconds is how far ahead of a code's expiry the page
+	// calls it expiring soon: mail.expiry_reminder_lead, so the page and
+	// the first reminder mail agree, or a week when that is zero.
+	ExpiringSoonSeconds int `json:"expiring_soon_seconds" validate:"required"`
 }
 
 // SetNotificationEmailRequestBody is the request to point an enrollment's

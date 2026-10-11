@@ -2782,8 +2782,15 @@ components:
             $ref: '#/components/schemas/webtypes.ServiceEnrollmentResponse'
           type: array
           uniqueItems: false
+        expiring_soon_seconds:
+          description: |-
+            ExpiringSoonSeconds is how far ahead of a code's expiry the page
+            calls it expiring soon: mail.expiry_reminder_lead, so the page and
+            the first reminder mail agree, or a week when that is zero.
+          type: integer
       required:
       - enrollments
+      - expiring_soon_seconds
       type: object
     webtypes.SetNotificationEmailRequestBody:
       properties:
