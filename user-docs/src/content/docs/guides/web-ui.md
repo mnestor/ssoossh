@@ -117,10 +117,11 @@ validity window, approver groups, lifetime-policy detail, and the redemption
 history. Facts that remain are set a size larger, and the page closes with a
 line naming what was left out and a button back to Advanced.
 
-Simplified never hides a warning. A trimmed critical option, the requesting
-machine's own policy note, a console request that reports a remote host, a
-skewed host clock, an expired or blocked request, and any error all show at
-both levels.
+Simplified never hides a warning or anything the server cut. Extensions the
+server trimmed (struck through) with the "Less than was requested" notice, a
+trimmed critical option, the requesting machine's own policy note, a console
+request that reports a remote host, a skewed host clock, an expired or
+blocked request, and any error all show at both levels.
 
 The switch on each page and the **Display** section on
 [Preferences](/ssoossh/guides/approving/#preferences) are the same setting. It

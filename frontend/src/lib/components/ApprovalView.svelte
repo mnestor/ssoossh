@@ -399,11 +399,10 @@
 		simplified ? claimedContext.filter((row) => simplifiedContextKeys.has(row.key)) : claimedContext
 	);
 
-	// What a simplified reader is told about the options. Trimmed extensions
-	// and the narrowed warning are advanced-only, since the reader still sees
-	// exactly what is issued; a trimmed critical option is never hidden and
-	// gets a line of its own.
-	const grantedExtensions = $derived(extensions.filter((entry) => entry.status !== 'trimmed'));
+	// What a simplified reader is told about the critical options: only the
+	// trimmed ones, in a line of their own. Extensions and the narrowed
+	// warning show at both levels, trimmed entries struck through, because
+	// the cut has to be visible before anyone approves (SSOOSSH.md).
 	const trimmedCriticalOptions = $derived(
 		criticalOptions.filter((entry) => entry.status === 'trimmed')
 	);
@@ -679,10 +678,7 @@
 							</span>
 						</span>
 					{:else}
-						<OptionDiffList
-							entries={simplified ? grantedExtensions : extensions}
-							emptyLabel={simplified ? 'None.' : 'No extensions requested.'}
-						/>
+						<OptionDiffList entries={extensions} emptyLabel="No extensions requested." />
 					{/if}
 				</div>
 
@@ -728,7 +724,7 @@
 				</p>
 			{/if}
 
-			{#if narrowed && !isLocalAuth && !simplified}
+			{#if narrowed && !isLocalAuth}
 				<Alert variant="warning" title="Less than was requested" testid="narrowed-warning">
 					This server does not permit everything the client asked for. The struck-through entries
 					above will not be in the certificate.

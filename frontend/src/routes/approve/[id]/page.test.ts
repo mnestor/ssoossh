@@ -466,6 +466,63 @@ describe('a trimmed critical option at the simplified level', () => {
 	});
 });
 
+// Options the config does not allow are shown struck through before
+// approval at both levels (SSOOSSH.md), so the simplified page lists a
+// trimmed extension and carries the narrowed warning too.
+describe('a trimmed extension at the simplified level', () => {
+	/** renderNarrowed opens a user request whose permit-port-forwarding
+	 * the server trimmed, at the simplified level. */
+	async function renderNarrowed() {
+		vi.stubGlobal('localStorage', { getItem: () => null, setItem: () => undefined });
+		detail.level = 'simplified';
+		mockFetch(200, {
+			id: 'req-1',
+			type: 'user',
+			status: 'pending',
+			source_ip: '198.51.100.7',
+			public_key: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5',
+			principals: [],
+			valid_seconds: 28800,
+			requested: {
+				extensions: ['permit-pty', 'permit-port-forwarding'],
+				no_touch_required: false
+			},
+			granted: { extensions: ['permit-pty'], no_touch_required: false },
+			created_at: '2026-08-14T09:00:00Z',
+			approval_url: '/approve/req-1',
+			is_owned_by_you: true,
+			already_closed: false
+		});
+		redirectIfUnauthenticated.mockReturnValue(false);
+		render(Page);
+		await screen.findByTestId('approval-view');
+	}
+
+	afterEach(() => {
+		detail.level = 'advanced';
+	});
+
+	it('should list the trimmed extension struck through', async () => {
+		await renderNarrowed();
+		expect(screen.getByTestId('option-trimmed')).toHaveTextContent('permit-port-forwarding');
+	});
+
+	it('should still list the granted extension', async () => {
+		await renderNarrowed();
+		expect(screen.getByTestId('option-granted')).toHaveTextContent('permit-pty');
+	});
+
+	it('should label the trimmed extension as not permitted', async () => {
+		await renderNarrowed();
+		expect(screen.getByText('not permitted by this server')).toBeInTheDocument();
+	});
+
+	it('should warn that less than was requested', async () => {
+		await renderNarrowed();
+		expect(screen.getByTestId('narrowed-warning')).toBeInTheDocument();
+	});
+});
+
 describe('remembered principals', () => {
 	/** userRequest is a pending user-certificate request. */
 	function userRequest() {

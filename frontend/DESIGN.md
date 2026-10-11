@@ -850,8 +850,10 @@ the result and drops the diagnostic detail an expert compares.
   Components that only appear on covered pages (`ServiceCodeFacts`, the two
   service code details, `ApprovalView`) and `DetailRow` read
   `inDetailScope()`, so the same component stays full anywhere else.
-- **Never hidden at either level:** a trimmed critical option (shown in
-  simplified as a one-line warning naming it), the client-policy forbidden
+- **Never hidden at either level:** trimmed extensions (struck through in
+  the extension list), the narrowed "Less than was requested" warning, a
+  trimmed critical option (shown in simplified as a one-line warning naming
+  it), the client-policy forbidden
   note, the console remote-host warning, the own-account notice, blocked and
   outcome alerts, action errors, the "reported by the client" marking on any
   client-reported value still shown, a skewed host clock, the pam-headless
@@ -880,10 +882,9 @@ the result and drops the diagnostic detail an expert compares.
     it sans, since it is a label, not a value.)
   - One muted line under them: the values are reported by the client;
     approve only if you just ran it.
-  - Then Principals, Valid for, the extensions the certificate will carry
-    (granted only; trimmed extensions and the narrowed warning are
-    advanced-only, because the approver still sees exactly what is
-    issued), the remaining warnings and the actions.
+  - Then Principals, Valid for, the extensions: what will be issued, with
+    any trimmed ones struck through, then the remaining warnings and the
+    actions.
   - Critical options are advanced-only unless one was trimmed.
   - "Approvable until" is advanced-only except in its last minute, when a
     live countdown sits beside the actions ("Expires in 0:42").
