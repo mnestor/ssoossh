@@ -117,9 +117,9 @@ validity window, approver groups, lifetime-policy detail, and the redemption
 history. Facts that remain are set a size larger, and the page closes with a
 line naming what was left out and a button back to Advanced.
 
-Simplified never hides a warning or anything the server cut. Extensions the
-server trimmed (struck through) with the "Less than was requested" notice, a
-trimmed critical option, the requesting machine's own policy note, a console
+Simplified never hides a warning or anything the server cut. Extensions and
+critical options the server trimmed (struck through) with the "Less than was
+requested" notice, the requesting machine's own policy note, a console
 request that reports a remote host, a skewed host clock, an expired or
 blocked request, and any error all show at both levels.
 

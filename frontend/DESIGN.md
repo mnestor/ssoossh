@@ -852,13 +852,14 @@ the result and drops the diagnostic detail an expert compares.
   `inDetailScope()`, so the same component stays full anywhere else.
 - **Never hidden at either level:** trimmed extensions (struck through in
   the extension list), the narrowed "Less than was requested" warning, a
-  trimmed critical option (shown in simplified as a one-line warning naming
-  it), the client-policy forbidden
-  note, the console remote-host warning, the own-account notice, blocked and
-  outcome alerts, action errors, the "reported by the client" marking on any
-  client-reported value still shown, a skewed host clock, the pam-headless
-  note ("this looks like a script or a service"), and expired or active
-  status. A section whose only remaining content is one of these keeps it.
+  trimmed critical option (struck through in the Critical options list,
+  which simplified renders whenever one is trimmed), the client-policy
+  forbidden note, the console remote-host warning, the own-account notice,
+  blocked and outcome alerts, action errors, the "reported by the client"
+  marking on any client-reported value still shown, a skewed host clock, the
+  pam-headless note ("this looks like a script or a service"), and expired
+  or active status. A section whose only remaining content is one of these
+  keeps it.
 - **Dropped in simplified:** request, certificate and enrollment ids; key
   ids, serials and fingerprints; public keys and host trusts; process ids,
   platform and client rows; registered IPs; request and decision timestamps
@@ -885,7 +886,8 @@ the result and drops the diagnostic detail an expert compares.
   - Then Principals, Valid for, the extensions: what will be issued, with
     any trimmed ones struck through, then the remaining warnings and the
     actions.
-  - Critical options are advanced-only unless one was trimmed.
+  - Critical options are advanced-only unless one was trimmed; then the
+    whole list shows, granted and trimmed, as at the advanced level.
   - "Approvable until" is advanced-only except in its last minute, when a
     live countdown sits beside the actions ("Expires in 0:42").
   - An expired request has its own notice: "This request expired before it

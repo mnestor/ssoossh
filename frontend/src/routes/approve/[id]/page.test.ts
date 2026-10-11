@@ -435,13 +435,16 @@ describe('at the simplified detail level', () => {
 	});
 });
 
-describe('a trimmed critical option at the simplified level', () => {
-	afterEach(() => {
-		detail.level = 'advanced';
-	});
-
-	// Never hidden: it changes what the certificate does.
-	it('should name it in a warning', async () => {
+// A trimmed critical option changes what the certificate does, so the
+// simplified page shows the Critical options list whenever one is trimmed,
+// struck through like a trimmed extension, and drops it otherwise.
+describe('critical options at the simplified level', () => {
+	/** renderCritical opens a user request at the simplified level with the
+	 * given requested and granted critical options. */
+	async function renderCritical(
+		requested: Record<string, unknown>,
+		granted: Record<string, unknown>
+	) {
 		vi.stubGlobal('localStorage', { getItem: () => null, setItem: () => undefined });
 		detail.level = 'simplified';
 		mockFetch(200, {
@@ -452,8 +455,8 @@ describe('a trimmed critical option at the simplified level', () => {
 			public_key: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5',
 			principals: [],
 			valid_seconds: 28800,
-			requested: { extensions: [], no_touch_required: false, force_command: 'backup.sh' },
-			granted: { extensions: [], no_touch_required: false },
+			requested: { extensions: [], no_touch_required: false, ...requested },
+			granted: { extensions: [], no_touch_required: false, ...granted },
 			created_at: '2026-08-14T09:00:00Z',
 			approval_url: '/approve/req-1',
 			is_owned_by_you: true,
@@ -461,8 +464,43 @@ describe('a trimmed critical option at the simplified level', () => {
 		});
 		redirectIfUnauthenticated.mockReturnValue(false);
 		render(Page);
+		await screen.findByTestId('approval-view');
+	}
 
-		expect(await screen.findByTestId('trimmed-critical-warning')).toBeInTheDocument();
+	/** One requested force-command trimmed, one source address granted. */
+	const narrowed = (): Promise<void> =>
+		renderCritical(
+			{ force_command: 'backup.sh', source_addresses: ['10.0.0.0/8'] },
+			{ source_addresses: ['10.0.0.0/8'] }
+		);
+
+	afterEach(() => {
+		detail.level = 'advanced';
+	});
+
+	it('should show the Critical options section when one is trimmed', async () => {
+		await narrowed();
+		expect(screen.getByText('Critical options')).toBeInTheDocument();
+	});
+
+	it('should list the trimmed critical option struck through', async () => {
+		await narrowed();
+		expect(screen.getByTestId('option-trimmed')).toHaveTextContent('force-command: backup.sh');
+	});
+
+	it('should list the granted critical option beside it', async () => {
+		await narrowed();
+		expect(screen.getByTestId('option-granted')).toHaveTextContent('source-address: 10.0.0.0/8');
+	});
+
+	it('should warn that less than was requested', async () => {
+		await narrowed();
+		expect(screen.getByTestId('narrowed-warning')).toBeInTheDocument();
+	});
+
+	it('should drop the Critical options section when nothing is trimmed', async () => {
+		await renderCritical({ force_command: 'backup.sh' }, { force_command: 'backup.sh' });
+		expect(screen.queryByText('Critical options')).not.toBeInTheDocument();
 	});
 });
 
