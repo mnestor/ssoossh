@@ -3,9 +3,10 @@ name: lint
 # Static analysis for the three things that are not tests: Go, the frontend,
 # and the workflow files themselves. Every job here is a merge gate.
 #
-# No `changes` path gate: each job here costs about as much as the gate job
-# that would guard it, so the gate was pure overhead. The expensive
-# workflows (build, e2e, client-matrix) keep theirs.
+# No path gate beyond the image-only skip: each job here costs about as much
+# as a gate would, so the gate was pure overhead. A PR that changes only the
+# CI image skips these jobs (they report as skipped) because the image is
+# checked by build-image.yaml instead; see the changes job.
 on:
   workflow_dispatch:
   pull_request:
@@ -18,8 +19,37 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Image-only gate: a PR whose every changed file is under .github/docker/
+  # or is build-image.yaml skips the rest of CI. In some-with-excludes mode
+  # `other` matches a file under '**' and none of the negations; the positive
+  # '**' is needed, since a filter made only of negations never matches.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+    outputs:
+      image: ${{ steps.filter.outputs.image == 'true' && 'true' || 'false' }}
+      image_only: ${{ steps.filter.outputs.image == 'true' && steps.filter.outputs.other != 'true' && 'true' || 'false' }}
+    steps:
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        if: github.event_name == 'pull_request'
+        id: filter
+        with:
+          predicate-quantifier: 'some-with-excludes'
+          filters: |
+            image:
+              - '.github/docker/**'
+              - '.github/workflows/build-image.yaml'
+            other:
+              - '**'
+              - '!.github/docker/**'
+              - '!.github/workflows/build-image.yaml'
+
   go:
     name: go
+    needs: changes
+    if: needs.changes.outputs.image_only != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     container:
@@ -73,6 +103,8 @@ jobs:
         run: make lint-cross
 
   frontend:
+    needs: changes
+    if: needs.changes.outputs.image_only != 'true'
     name: frontend
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -99,6 +131,8 @@ jobs:
         run: pnpm check
 
   workflows:
+    needs: changes
+    if: needs.changes.outputs.image_only != 'true'
     name: workflows
     runs-on: ubuntu-latest
     timeout-minutes: 10
