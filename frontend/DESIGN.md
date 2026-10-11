@@ -391,7 +391,7 @@ vocabulary; an unmapped name renders a visible red `?`.
   `moon` / `device-laptop` theme states (a laptop, because a monitor is what
   a console certificate is), `menu-2` drawer trigger, `layout-sidebar` rail
   width, `chevron-down/left/right/up`, `arrow-right` forward in a primary
-  action, `search`, `x` clear.
+  action, `arrow-up-right` a link that leaves the app in a new tab, `search`, `x` clear.
 - **Detail rows:** `user` a person, `clock` a span of time.
 - **Fallback:** `help-circle` for a certificate type outside the four. It
   marks a contract break.

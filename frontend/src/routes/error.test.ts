@@ -40,11 +40,39 @@ describe('error page', () => {
 		);
 	});
 
-	it('should prefer the error message the router carries', () => {
+	// SvelteKit's own defaults name the status, not the cause; the page's
+	// explanation used to be hidden behind them.
+	it('should explain a server failure instead of repeating the router default', () => {
 		pageState.status = 500;
 		pageState.error = { message: 'Internal Error' };
 		render(ErrorPage);
-		expect(screen.getByText(/Internal Error/)).toBeInTheDocument();
+		expect(screen.getByText(/The server did not answer as expected/)).toBeInTheDocument();
+	});
+
+	it('should explain a missing page instead of saying Not Found twice', () => {
+		pageState.status = 404;
+		pageState.error = { message: 'Not Found' };
+		render(ErrorPage);
+		expect(screen.getByText(/The link may be incomplete/)).toBeInTheDocument();
+	});
+
+	it('should keep a message the app wrote itself', () => {
+		pageState.status = 500;
+		pageState.error = { message: 'The signer is unreachable.' };
+		render(ErrorPage);
+		expect(screen.getByText(/The signer is unreachable\./)).toBeInTheDocument();
+	});
+
+	it('should offer Reload for a server failure', () => {
+		pageState.status = 500;
+		render(ErrorPage);
+		expect(screen.getByTestId('error-reload')).toBeInTheDocument();
+	});
+
+	it('should not offer Reload for a missing page', () => {
+		pageState.status = 404;
+		render(ErrorPage);
+		expect(screen.queryByTestId('error-reload')).not.toBeInTheDocument();
 	});
 
 	it('should always lead back to the dashboard', () => {

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	import Button from '#lib/components/Button.svelte';
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import PageShell from '#lib/components/PageShell.svelte';
 
@@ -38,6 +39,20 @@
 	}
 
 	const copy = $derived(describeStatus(page.status));
+
+	// SvelteKit fills in a message of its own for every error ("Not Found",
+	// "Internal Error"), which names the status rather than the cause, so the
+	// explanation above never showed. Any other message is one this app
+	// wrote, and is kept.
+	const generic = ['Not Found', 'Internal Error'];
+	const detail = $derived(
+		page.error?.message && !generic.includes(page.error.message)
+			? page.error.message
+			: copy.fallback
+	);
+
+	// A server failure says to reload; the page should offer the button.
+	const canReload = $derived(page.status >= 500);
 </script>
 
 <svelte:head><title>{copy.tab} · ssoossh</title></svelte:head>
@@ -54,10 +69,15 @@
 			     wrong, so it reads as the first half of the sentence that
 			     explains it. -->
 			{#snippet sub()}
-				Error {page.status}. {page.error?.message ?? copy.fallback}
+				Error {page.status}. {detail}
 			{/snippet}
 		</PageHeading>
-		<p class="mt-4 text-sm">
+		<p class="mt-4 flex flex-wrap items-center gap-3 text-sm">
+			{#if canReload}
+				<Button variant="ghost" onclick={() => location.reload()} testid="error-reload"
+					>Reload</Button
+				>
+			{/if}
 			<a
 				class="inline-flex min-h-target items-center text-accent hover:underline"
 				href={resolve('dashboard')}

@@ -73,7 +73,7 @@ describe('Account page', () => {
 		it('should show the subject', async () => {
 			mockFetch(aliceUser());
 			render(Page);
-			expect(await screen.findByText('sub-alice')).toBeInTheDocument();
+			expect(await screen.findByTestId('account-subject')).toHaveAccessibleName(/sub-alice/);
 		});
 
 		it('should show the human-readable name', async () => {
@@ -88,7 +88,7 @@ describe('Account page', () => {
 		it('should omit the name row when nothing supplied one', async () => {
 			mockFetch(aliceUser({ name: '' }));
 			render(Page);
-			await screen.findByText('sub-alice');
+			await screen.findByTestId('account-subject');
 			expect(screen.queryByText('Name')).not.toBeInTheDocument();
 		});
 
@@ -117,7 +117,7 @@ describe('Account page', () => {
 		it('should not show any access badge when the session holds no role', async () => {
 			mockFetch(aliceUser());
 			render(Page);
-			await screen.findByText('sub-alice');
+			await screen.findByTestId('account-subject');
 			expect(screen.queryByTestId('access-roles')).not.toBeInTheDocument();
 		});
 
@@ -191,7 +191,7 @@ describe('Account page', () => {
 			mockFetch(aliceUser({ extra: {} }));
 			render(Page);
 			// Page should render without errors even with no extra fields.
-			expect(await screen.findByText('sub-alice')).toBeInTheDocument();
+			expect(await screen.findByTestId('account-subject')).toHaveAccessibleName(/sub-alice/);
 		});
 	});
 
@@ -221,5 +221,38 @@ describe('Account page', () => {
 			render(Page);
 			expect(await screen.findByText('Could not load your account')).toBeInTheDocument();
 		});
+	});
+});
+
+describe('Account page wording', () => {
+	it('should say the principals are offered for user, PAM and console requests', async () => {
+		mockFetch(aliceUser());
+		render(Page);
+		expect(await screen.findByTestId('principals-section')).toHaveTextContent(
+			'Principals you can approve with'
+		);
+	});
+
+	it('should say a missing claim was not provided rather than flag the account', async () => {
+		mockFetch(aliceUser({ extra: { department: '' } }));
+		render(Page);
+		expect(await screen.findByTestId('extra-field-department')).toHaveTextContent(
+			'not provided by your identity provider'
+		);
+	});
+
+	it('should render an object-valued claim as JSON', async () => {
+		mockFetch(
+			aliceUser({ extra: { address: { city: 'Leeds' } } as unknown as CurrentUser['extra'] })
+		);
+		render(Page);
+		expect(await screen.findByTestId('extra-field-address')).toHaveTextContent('{"city":"Leeds"}');
+	});
+
+	it('should render a group that arrives twice rather than failing', async () => {
+		mockFetch(aliceUser({ groups: ['ops', 'ops'] }));
+		render(Page);
+		await screen.findByTestId('account-subject');
+		expect(screen.getAllByText('ops')).toHaveLength(2);
 	});
 });

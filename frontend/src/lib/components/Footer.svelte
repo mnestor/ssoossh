@@ -5,6 +5,7 @@
 	   /api/version payload, which the lint rule cannot see through. */
 	/* eslint-disable svelte/no-navigation-without-resolve */
 	import type { BrandingResponse, VersionResponse } from '#lib/api/generated/webtypes.js';
+	import Icon from './Icon.svelte';
 
 	// The bar closing every page: what build is running, and where the
 	// project lives. Presentational on purpose — the caller supplies the
@@ -52,32 +53,38 @@
 	});
 </script>
 
-{#if version}
-	<footer>
-		<div
-			class="flex flex-col items-center justify-between gap-3 px-8 py-4 text-xs text-ink-muted sm:flex-row"
-		>
-			<p>
-				<span>ssoossh</span>
-				{#if version.release_url}
-					<a
-						href={version.release_url}
-						target="_blank"
-						rel="noopener noreferrer"
-						class="inline-flex min-h-target items-center hover:text-ink"
-						title={commit ? `commit ${commit}` : undefined}>{label}</a
-					>
-				{:else}
-					<span title={commit ? `commit ${commit}` : undefined}>{label}</span>
-				{/if}
-			</p>
+<!-- Always rendered: the support contact lives here, and a version fetch
+     that failed used to take it off every page along with the build label.
+     Only the parts that come from /api/version wait for it. -->
+<footer>
+	<div
+		class="flex flex-col items-center justify-between gap-3 px-8 py-4 text-xs text-ink-muted sm:flex-row"
+	>
+		<p>
+			<span>ssoossh</span>
+			{#if version?.release_url}
+				<a
+					href={version.release_url}
+					target="_blank"
+					rel="noopener noreferrer"
+					class="inline-flex min-h-target items-center gap-0.5 underline underline-offset-2 hover:text-ink"
+					title={commit ? `commit ${commit}` : undefined}
+					>{label}<Icon name="arrow-up-right" size="xs" /><span class="sr-only"
+						>(opens in a new tab)</span
+					></a
+				>
+			{:else if label}
+				<span title={commit ? `commit ${commit}` : undefined}>{label}</span>
+			{/if}
+		</p>
 
-			<nav aria-label="Project links" class="flex items-center gap-4">
+		<nav aria-label="Project links" class="flex items-center gap-4">
+			{#if version}
 				<a
 					href={version.github_url}
 					target="_blank"
 					rel="noopener noreferrer"
-					class="flex min-h-target items-center gap-1.5 hover:text-ink"
+					class="flex min-h-target items-center gap-1.5 underline underline-offset-2 hover:text-ink"
 				>
 					<!-- The GitHub mark, inline. Tabler does ship brand-github and
 					     brand-github-filled, but both are redrawn on its own grid;
@@ -96,21 +103,26 @@
 						/>
 					</svg>
 					GitHub
+					<Icon name="arrow-up-right" size="xs" /><span class="sr-only">(opens in a new tab)</span>
 				</a>
-				{#if supportEmail}
-					<a
-						href={`mailto:${supportEmail}`}
-						class="inline-flex min-h-target items-center hover:text-ink">{supportLabel}</a
-					>
-				{:else}
-					<a
-						href={`${version.github_url}/issues`}
-						target="_blank"
-						rel="noopener noreferrer"
-						class="inline-flex min-h-target items-center hover:text-ink">Report an issue</a
-					>
-				{/if}
-			</nav>
-		</div>
-	</footer>
-{/if}
+			{/if}
+			{#if supportEmail}
+				<a
+					href={`mailto:${supportEmail}`}
+					class="inline-flex min-h-target items-center underline underline-offset-2 hover:text-ink"
+					>{supportLabel}</a
+				>
+			{:else if version}
+				<a
+					href={`${version.github_url}/issues`}
+					target="_blank"
+					rel="noopener noreferrer"
+					class="inline-flex min-h-target items-center gap-0.5 underline underline-offset-2 hover:text-ink"
+					>Report an issue<Icon name="arrow-up-right" size="xs" /><span class="sr-only"
+						>(opens in a new tab)</span
+					></a
+				>
+			{/if}
+		</nav>
+	</div>
+</footer>

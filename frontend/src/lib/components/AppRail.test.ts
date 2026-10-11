@@ -253,7 +253,7 @@ describe('app rail', () => {
 
 		render(AppRail, { onsignout: () => {} });
 
-		expect(screen.getByTestId('rail-user-trigger')).toHaveAccessibleName('alice@example.com');
+		expect(screen.getByTestId('rail-user-trigger')).toHaveAccessibleName('Account menu, alice@example.com');
 	});
 
 	// An identity with no address still has to be nameable, or the rail's
@@ -264,7 +264,7 @@ describe('app rail', () => {
 
 		render(AppRail, { onsignout: () => {} });
 
-		expect(screen.getByTestId('rail-user-trigger')).toHaveAccessibleName('alice');
+		expect(screen.getByTestId('rail-user-trigger')).toHaveAccessibleName('Account menu, alice');
 	});
 
 	it('should raise the sign-out request when sign out is pressed', async () => {
