@@ -63,16 +63,30 @@ fi
 echo "building the frontend (server/bootstrap tests need dist/index.html)"
 ( cd "$path/frontend" && CI=true pnpm install --frozen-lockfile >/dev/null && CI=true pnpm build >/dev/null )
 
+# Commits are signed when the git config says so. Sign a throwaway object
+# now, so a key that cannot be used is reported before the first commit
+# instead of being worked around with --no-gpg-sign, which leaves unsigned
+# commits on the branch.
+signing="not signed (commit.gpgsign is off)"
+if [[ "$(git -C "$path" config --bool --get commit.gpgsign || true)" == true ]]; then
+    if git -C "$path" commit-tree -S -m "signing probe" "$(git -C "$path" rev-parse 'HEAD^{tree}')" >/dev/null 2>&1; then
+        signing="signed"
+    else
+        signing="SIGNING FAILS: fix user.signingkey before committing"
+        echo "warning: commit.gpgsign is on but a test signature failed; fix the key, do not pass --no-gpg-sign" >&2
+    fi
+fi
+
 cat <<INFO
 
 worktree ready
-  path    $path
-  branch  $branch (from $base)
+  path     $path
+  branch   $branch (from $base)
+  commits  $signing
 
   cd $path
   make verify        # lint, lint-tagged, test, check-generated
 
-Notes: every go command needs CGO_ENABLED=1 (the Makefile sets it), and
-commits need --no-gpg-sign in this container -- start a rebase with
---no-gpg-sign too, or the sequencer records a signing option it cannot use.
+Notes: every go command needs CGO_ENABLED=1 (the Makefile sets it).
+Commits and rebases sign as the git config says; never pass --no-gpg-sign.
 INFO
