@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -916,5 +917,42 @@ func TestNewConfig_ShouldReadAnEnforceFileWithNoExtension(t *testing.T) {
 
 	if _, err := newConfig(cmd, testPaths(sysDir), noPolicy); err != nil {
 		t.Errorf("newConfig() error = %v, want an extensionless enforce file to load", err)
+	}
+}
+
+// TestNewConfig_RequestTimeout pins the request_timeout default and the
+// refusal of a value that would disable or invert it.
+func TestNewConfig_RequestTimeout(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  string
+		want    time.Duration
+		wantErr bool
+	}{
+		{name: "should default request_timeout to two minutes", config: "", want: 2 * time.Minute},
+		{name: "should read request_timeout from a config file", config: "request_timeout: 45s\n", want: 45 * time.Second},
+		{name: "should reject a zero request_timeout", config: "request_timeout: 0s\n", wantErr: true},
+		{name: "should reject a negative request_timeout", config: "request_timeout: -1s\n", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := newConfigCommand(t, "--config", writeConfig(t, tt.config))
+
+			cfg, err := newConfig(cmd, testPaths(t.TempDir()), noPolicy)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected an error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if cfg.RequestTimeout != tt.want {
+				t.Errorf("RequestTimeout = %s, want %s", cfg.RequestTimeout, tt.want)
+			}
+		})
 	}
 }

@@ -1,6 +1,10 @@
 package config
 
-import "github.com/mnestor/ssoossh/internal/fipsmode"
+import (
+	"time"
+
+	"github.com/mnestor/ssoossh/internal/fipsmode"
+)
 
 type Config struct {
 	Server string `mapstructure:"server"`
@@ -57,6 +61,13 @@ type Config struct {
 	Username string `mapstructure:"username"`
 
 	TryOpenBrowser bool `mapstructure:"try_open_browser"`
+
+	// RequestTimeout bounds each ordinary call to the server, from connect
+	// to the last byte of the response, so a server that accepts the
+	// connection and never answers cannot hang ssh's Match exec. It does
+	// not apply to the wait for approval, which is bounded by the server's
+	// own cert_options.client_timeout.
+	RequestTimeout time.Duration `mapstructure:"request_timeout"`
 
 	// FIPS steers key generation toward algorithms accepted by SSH
 	// implementations running in FIPS mode. When it's in effect, a

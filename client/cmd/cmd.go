@@ -284,8 +284,9 @@ func (r *RootCommand) InitErr() error { return r.initErr }
 // to happen on this side).
 func newAPIClientFromConfig(cfg *config.Config) (api.Client, error) {
 	return api.NewClient(api.Config{
-		ServerURL:     cfg.Server,
-		SkipVerifySSL: cfg.SkipVerifySSL,
+		ServerURL:      cfg.Server,
+		SkipVerifySSL:  cfg.SkipVerifySSL,
+		RequestTimeout: cfg.RequestTimeout,
 		// The client is a terminal program, so its tracing belongs on the
 		// handler installed by installTracing. pam_ssoossh deliberately
 		// passes no logger — see api.Config.Logger.

@@ -85,6 +85,12 @@ type Config struct {
 	// additional pinning.
 	SkipVerifySSL bool
 
+	// RequestTimeout bounds each ordinary (non-streaming) call, from
+	// connect to the last byte of the response. Zero means
+	// DefaultRequestTimeout. The events stream is not affected: ssoosshd
+	// sends no headers there until the request is decided.
+	RequestTimeout time.Duration
+
 	// Logger receives per-request tracing. Nil means none, and the caller
 	// that wants tracing has to say so: defaulting to slog.Default() would
 	// put this package's tracing on the host process's stderr by accident,
@@ -124,11 +130,20 @@ type HTTPClient struct {
 
 	userAgent string
 
+	// timeout is the http client's Timeout, kept to name it in the error
+	// a timed-out call returns.
+	timeout time.Duration
+
 	// log is Config.Logger, nil when the caller asked for no tracing.
 	log *slog.Logger
 }
 
 var _ Client = (*HTTPClient)(nil)
+
+// DefaultRequestTimeout is Config.RequestTimeout when none is given. Long
+// enough to cover a service retrieval's signing wait, which ssoosshd bounds
+// at a tenth of its cert_options.client_timeout (30s by default).
+const DefaultRequestTimeout = 2 * time.Minute
 
 // NewClient builds an HTTPClient talking to cfg.ServerURL.
 func NewClient(cfg Config) (*HTTPClient, error) {
@@ -144,12 +159,19 @@ func NewClient(cfg Config) (*HTTPClient, error) {
 		return nil, err
 	}
 
+	timeout := cfg.RequestTimeout
+	if timeout <= 0 {
+		timeout = DefaultRequestTimeout
+	}
+
 	return &HTTPClient{
-		// No Client.Timeout: it would apply to the whole request including
-		// the body, which is wrong for an events stream that legitimately
-		// stays open until a human approves. Every call here takes a
-		// context, and that is what bounds it.
-		http:      &http.Client{Transport: newTransport(tlsConfig)},
+		// A whole-request timeout is safe here because this client serves
+		// only doJSON's ordinary calls. The events stream, which stays open
+		// until a human decides, builds a client of its own (see sse.go).
+		// Without it a server that accepts the connection and never answers
+		// hangs the caller, which under ssh's Match exec means ssh itself.
+		http:      &http.Client{Transport: newTransport(tlsConfig), Timeout: timeout},
+		timeout:   timeout,
 		serverURL: normalizeServerURL(cfg.ServerURL),
 		tlsConfig: tlsConfig,
 		userAgent: fmt.Sprintf("%s/%s (%s)", version.Name, version.Version, version.Github),
@@ -209,7 +231,7 @@ func (c *HTTPClient) doJSON(ctx context.Context, method, path string, body, out 
 	start := time.Now()
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return err
+		return c.describeTransportError(err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -218,7 +240,7 @@ func (c *HTTPClient) doJSON(ctx context.Context, method, path string, body, out 
 	// body.
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("read response body: %w", err)
+		return fmt.Errorf("read response body: %w", c.describeTransportError(err))
 	}
 	c.traceResponse(ctx, resp, respBody, time.Since(start))
 

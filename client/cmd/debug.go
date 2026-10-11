@@ -148,6 +148,7 @@ func writeDebugSettings(out io.Writer, cfg *config.Config, ssh agentDescriber) {
 	for _, row := range [][2]string{
 		{"Server", orNone(cfg.Server)},
 		{"TLS verification", enabledDisabled(!cfg.SkipVerifySSL)},
+		{"Request timeout", cfg.RequestTimeout.String()},
 		{"Key type", keyDescription},
 		{"FIPS steering", enabledDisabled(cfg.FIPSEnabled())},
 		{"Storage", storageDescription(ssh)},

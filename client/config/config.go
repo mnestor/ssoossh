@@ -168,6 +168,10 @@ func newConfig(cmd *cobra.Command, paths searchPaths, loadPolicy func() (map[str
 		slog.Warn(w)
 	}
 
+	if c.RequestTimeout <= 0 {
+		return nil, fmt.Errorf("request_timeout must be a positive duration such as 2m, got %s", c.RequestTimeout)
+	}
+
 	if err := c.ResolvePaths(); err != nil {
 		return nil, fmt.Errorf("failed to resolve config paths: %w", err)
 	}

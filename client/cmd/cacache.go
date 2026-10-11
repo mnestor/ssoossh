@@ -26,8 +26,8 @@ const caCacheTTL = 24 * time.Hour
 // runs from ssh_config's Match exec, so this delay lands in front of an SSH
 // connection: better to keep yesterday's key set and move on than to hold a
 // terminal open while an unreachable server times out. It applies only to
-// the refresh — the first fetch, with nothing cached to fall back to, uses
-// the API client's own timeout.
+// the refresh — the first fetch, with nothing cached to fall back to, is
+// bounded by the API client's request_timeout instead.
 const caRefreshTimeout = 2 * time.Second
 
 // caCache is the on-disk cache of the CA public keys fetched from the
