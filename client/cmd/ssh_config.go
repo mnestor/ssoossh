@@ -17,6 +17,8 @@ func newSSHConfigCommand() simplecobra.Commander {
 		// reading it. See offlineCommander in offline.go.
 		offline:    true,
 		configFree: true,
+		example: "  # Print the recipes, then paste the one you want into ~/.ssh/config\n" +
+			"  ssoossh ssh config",
 		long: "Prints the ssh_config recipes that make `ssh` invoke ssoossh, with the " +
 			"rules that decide which one you want. Contacts nothing and reads nothing " +
 			"but this text, so it answers before a server is configured and keeps " +
@@ -24,8 +26,8 @@ func newSSHConfigCommand() simplecobra.Commander {
 			sshConfigGuidance +
 			"\nFor what this machine actually resolved — the config files that were " +
 			"merged and what came of each, the settings that resulted, where the key " +
-			"files are and whether they exist — add --debug to the command you are " +
-			"actually running. That is the one place those are reported, so there is " +
+			"files are and whether they exist — add --debug (or set SSOOSSH_DEBUG=1) to the " +
+			"command you are actually running. That is the one place those are reported, so there is " +
 			"no second version of the truth to keep in step with this one.",
 		run: func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error {
 			return runConfig(cd.CobraCommand.OutOrStdout())

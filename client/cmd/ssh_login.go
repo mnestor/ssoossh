@@ -104,23 +104,32 @@ func newSSHLoginCommand() simplecobra.Commander {
 
 	return &simpleCommand{
 		name:  "login",
-		short: "Authenticate via OIDC and load a signed SSH certificate into the agent (or files).",
+		short: "Sign in through the browser and load a signed SSH certificate into the agent (or files).",
 		long: "Generates a fresh keypair, sends the public key to the ssoossh server, opens " +
-			"the browser for OIDC approval, and waits over SSE for the signed certificate. " +
-			"Used from ssh_config's `Match exec`, or interactively before a session.\n\n" +
+			"your browser so you can sign in and approve, and waits for the server to deliver " +
+			"the signed certificate. Used from ssh_config's `Match exec`, or by hand before a " +
+			"session.\n\n" +
 			"A certificate that is already loaded and still valid is reused rather than " +
 			"replaced, so one approval covers every connection until it expires. Pass " +
 			"--force to replace it with a new one.",
+		example: "  # Get a certificate, or reuse the valid one already loaded\n" +
+			"  ssoossh ssh login\n\n" +
+			"  # Replace the loaded certificate with a new one\n" +
+			"  ssoossh ssh login --force\n\n" +
+			"  # An RSA key, and no agent forwarding on the certificate\n" +
+			"  ssoossh ssh login --key-type rsa --key-size 4096 --no-agent-forwarding",
 		init: func(cd *simplecobra.Commandeer) error {
 			cd.CobraCommand.Flags().BoolVar(&force, "force", false,
 				"request a new certificate even if a valid one is already loaded")
-			// --key-type/--key-size are local to ssh login: it's the only
-			// command that generates a keypair. Bound to sshkey.type/size
-			// in config.go's newConfig, same mechanism as --server.
+			// --key-type/--key-size are local to ssh login. Bound to
+			// sshkey.type/size in config.go's newConfig, same mechanism as
+			// --server. service enroll generates keypairs too, but from
+			// the config file's sshkey settings alone.
 			cd.CobraCommand.Flags().String("key-type", "",
-				"ssh key algorithm to generate: ed25519, ecdsa, or rsa (default depends on FIPS mode)")
+				"key algorithm to generate: ecdsa (the default), ed25519, or rsa")
 			cd.CobraCommand.Flags().Int("key-size", 0,
-				"ssh key size (bits for rsa, curve for ecdsa; ignored for ed25519)")
+				"key size: the curve for ecdsa (256, 384 or 521; default 384) or bits for rsa "+
+					"(at least 2048; default 3072); ignored for ed25519")
 			// Certificate extension flags: opt out of requested extensions.
 			// Bound to certificate_extensions.* in config.go's newConfig.
 			cd.CobraCommand.Flags().Bool("no-pty", false,

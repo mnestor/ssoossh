@@ -23,6 +23,16 @@ With --retrieve, the command immediately redeems the code once, writing the cert
 ssoossh service enroll [flags] [args]
 ```
 
+## Examples
+
+```bash
+# Generate a keypair and enroll it; prints the enrollment code once
+  ssoossh service enroll --key /var/lib/deploy/.ssh/id_deploy
+
+  # Enroll and fetch the first certificate straight away
+  ssoossh service enroll --key ~/.ssh/id_deploy --retrieve
+```
+
 ## Options
 
 | Flag | Type | Default | Description |
@@ -37,8 +47,8 @@ Inherited from [`ssoossh`](/ssoossh/reference/cli/ssoossh/) and its parents.
 
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
-| `-c`, `--config` | string |  | path to the ssoossh config file |
-| `--server` | string |  | server address including scheme (e.g. "https://example.com") assumes https if omited. |
+| `-c`, `--config` | string |  | path to an extra config file, merged after the standard locations |
+| `--server` | string |  | server address, e.g. https://ssh.example.com; https is assumed when no scheme is given |
 | `-v`, `--verbose` | count | `0` | trace what the command is doing, to stderr; repeat for more (-v steps, -vv requests and files, -vvv bodies) |
 
 ## See also

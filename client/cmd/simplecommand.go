@@ -19,6 +19,10 @@ type simpleCommand struct {
 	short string
 	long  string
 
+	// example is cobra's Example: invocations shown under "Examples:" in
+	// --help, indented two spaces, with a comment line above each.
+	example string
+
 	// argSpec names the positional arguments in the usage line, in the
 	// conventional notation: "<account> <principal>", "<account>
 	// [principal]", "<command> [args...]". Leave empty for a command that
@@ -88,6 +92,7 @@ func (c *simpleCommand) Init(cd *simplecobra.Commandeer) error {
 	cmd := cd.CobraCommand
 	cmd.Short = c.short
 	cmd.Long = c.long
+	cmd.Example = c.example
 	if c.argSpec != "" {
 		// Cobra appends "[flags]" to the usage line itself, so the spec
 		// carries only the positional arguments.

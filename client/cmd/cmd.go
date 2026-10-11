@@ -78,20 +78,24 @@ func (r *RootCommand) Init(cd *simplecobra.Commandeer) error {
 	cmd.Args = rejectUnknownSubcommand
 	cmd.SetUsageTemplate(usageTemplate)
 	cmd.SetHelpCommand(newHelpCommand())
-	cmd.Short = "The ssoossh client — turns an OIDC login into a short-lived SSH certificate, from your ssh_config."
-	cmd.Long = "The ssoossh client wires SSO into your existing SSH workflow. Configured " +
-		"as a ProxyCommand or Match exec in ssh_config, it generates a fresh keypair, " +
-		"hands the public key to the ssoossh server, opens your browser for OIDC " +
-		"authentication, and loads the signed certificate into your ssh-agent — or writes " +
-		"key and certificate files when no agent is available. Private keys never leave " +
-		"the machine. Valid certificates are reused until they expire, so authenticating " +
-		"once could cover a workday rather than every connection. Runs on macOS, Linux, " +
-		"and Windows, and also handles local principal mapping for " +
-		"AuthorizedPrincipalsCommand and service-account certificates for unattended " +
-		"jobs."
+	cmd.Short = "The ssoossh client: turns a browser sign-in into a short-lived SSH certificate, from your ssh_config."
+	cmd.Long = "The ssoossh client turns a browser sign-in into a short-lived SSH certificate. " +
+		"ssh runs it for you, from ssh_config: it generates a fresh keypair, sends the public " +
+		"key to the ssoossh server, opens your browser so you can sign in and approve, and " +
+		"loads the signed certificate into your ssh-agent, or writes key files when there is " +
+		"no agent. Private keys never leave this machine, and a valid certificate is reused " +
+		"until it expires. It also answers sshd's AuthorizedPrincipalsCommand on hosts " +
+		"(`host`) and gets certificates for unattended jobs (`service`).\n\n" +
+		"Start with `ssoossh ssh config`, which prints the ssh_config lines to add.\n\n" +
+		"Configuration is read from /etc/ssoossh/ssoossh.yaml, then ~/.config/ssoossh.yaml, " +
+		"then the file named by --config (on Windows, %ProgramData%\\ssoossh\\ssoossh.yaml " +
+		"and %AppData%\\ssoossh\\ssoossh.yaml). Flags override the files, except for settings " +
+		"an administrator has locked. -v traces what a command does; --debug prints the " +
+		"resolved settings and where each one came from.\n\n" +
+		"Documentation: https://mnestor.github.io/ssoossh/"
 
-	cmd.PersistentFlags().StringP("config", "c", "", "path to the ssoossh config file")
-	cmd.PersistentFlags().String("server", "", "server address including scheme (e.g. \"https://example.com\") assumes https if omited.")
+	cmd.PersistentFlags().StringP("config", "c", "", "path to an extra config file, merged after the standard locations")
+	cmd.PersistentFlags().String("server", "", "server address, e.g. https://ssh.example.com; https is assumed when no scheme is given")
 
 	// Hidden: a diagnostic aid, not part of the command's advertised
 	// surface. $SSOOSSH_DEBUG does the same thing for invocations whose

@@ -8,10 +8,11 @@ func newHostCommand() simplecobra.Commander {
 	return &simpleCommand{
 		name:  "host",
 		short: "Manage local sshd principal mapping, and check sshd's setup.",
-		long: "Configures the principal mapping used when sshd asks for authorized principals " +
-			"via AuthorizedPrincipalsCommand, and checks that this host's sshd will accept " +
-			"ssoossh certificates. The mapping is managed locally and never fetched from " +
-			"the server.",
+		long: "Configures the local principal mapping sshd consults through " +
+			"AuthorizedPrincipalsCommand: which certificate principals may log in as which " +
+			"local account. The mapping is a file on this host; nothing about it is stored " +
+			"on, or synced from, the server. Also checks that this host's sshd will accept " +
+			"ssoossh certificates.",
 		init: func(cd *simplecobra.Commandeer) error {
 			cd.CobraCommand.PersistentFlags().StringVar(&mappingFile, "file", defaultMappingPath,
 				"path to the local principal mapping file (YAML: local account -> list of principals)")

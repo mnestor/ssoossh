@@ -231,3 +231,58 @@ func TestCobraCommandTree_ShouldDocumentPositionalArgumentsInUsageLines(t *testi
 		})
 	}
 }
+
+// TestCommandTree_ShouldDescribeEveryCommandAtLength guards the help gap
+// where ca, ssh, service and host mapping list had only a one-line summary.
+func TestCommandTree_ShouldDescribeEveryCommandAtLength(t *testing.T) {
+	root, err := CobraCommandForManpage()
+	if err != nil {
+		t.Fatalf("build tree: %v", err)
+	}
+
+	var walk func(cmd *cobra.Command)
+	walk = func(cmd *cobra.Command) {
+		if cmd.Long == "" {
+			t.Errorf("%s has no long description", cmd.CommandPath())
+		}
+		for _, sub := range cmd.Commands() {
+			walk(sub)
+		}
+	}
+	walk(root)
+}
+
+// TestCommandTree_ShouldShowExamples pins the commands a new user is most
+// likely to read the help of, each of which now shows how it is invoked.
+func TestCommandTree_ShouldShowExamples(t *testing.T) {
+	root, err := CobraCommandForManpage()
+	if err != nil {
+		t.Fatalf("build tree: %v", err)
+	}
+
+	for _, path := range [][]string{
+		{"ca"},
+		{"ssh", "login"},
+		{"ssh", "config"},
+		{"host", "principals"},
+		{"service", "enroll"},
+		{"service", "retrieve"},
+	} {
+		t.Run("should show an example for "+strings.Join(path, " "), func(t *testing.T) {
+			if cmd := findCommand(root, path...); cmd.Example == "" {
+				t.Errorf("%s has no Example", cmd.CommandPath())
+			}
+		})
+	}
+}
+
+// The root help is where a new user lands, so it must say where to start.
+func TestRootHelp_ShouldPointAtTheFirstStep(t *testing.T) {
+	root, err := CobraCommandForManpage()
+	if err != nil {
+		t.Fatalf("build tree: %v", err)
+	}
+	if !strings.Contains(root.Long, "Start with `ssoossh ssh config`") {
+		t.Errorf("root Long does not name the first step:\n%s", root.Long)
+	}
+}

@@ -47,6 +47,10 @@ func newServiceEnrollCommand() simplecobra.Commander {
 			"for is a request, not a grant — the approver sees it, can change it, and the " +
 			"server bounds the result by cert_options.service.extensions either way, so this " +
 			"flag cannot obtain anything the deployment has not permitted.",
+		example: "  # Generate a keypair and enroll it; prints the enrollment code once\n" +
+			"  ssoossh service enroll --key /var/lib/deploy/.ssh/id_deploy\n\n" +
+			"  # Enroll and fetch the first certificate straight away\n" +
+			"  ssoossh service enroll --key ~/.ssh/id_deploy --retrieve",
 		init: func(cd *simplecobra.Commandeer) error {
 			cd.CobraCommand.Flags().StringVar(&keyPath, "key", "",
 				"keypair path (relative or absolute); generates both if neither <name> nor <name>.pub "+
@@ -327,7 +331,7 @@ func generateServiceKeypair(cfg *config.Config, privateKeyPath string) (string, 
 	publicKeyPath := publicKeyPathFor(privateKeyPath)
 	for _, path := range []string{privateKeyPath, publicKeyPath} {
 		if _, err := os.Stat(path); err == nil {
-			return "", fmt.Errorf("%s already exists; remove it or choose another path for --generate", path)
+			return "", fmt.Errorf("%s already exists; remove it or choose another path with --key", path)
 		} else if !errors.Is(err, os.ErrNotExist) {
 			return "", fmt.Errorf("check %s: %w", path, err)
 		}

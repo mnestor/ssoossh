@@ -33,6 +33,10 @@ func newServiceRetrieveCommand() simplecobra.Commander {
 			"no readable, valid certificate does an error return a non-zero exit.\n\n" +
 			"The key files follow OpenSSH naming: the private key is <name>, the public key is " +
 			"<name>.pub, and the certificate is <name>-cert.pub.",
+		example: "  # From cron or a systemd timer: refresh only when the certificate is about to expire\n" +
+			"  ssoossh service retrieve --code \"$ENROLLMENT_CODE\" --key /var/lib/deploy/.ssh/id_deploy\n\n" +
+			"  # Fetch a new certificate even if the one on disk is still valid\n" +
+			"  ssoossh service retrieve --code \"$ENROLLMENT_CODE\" --key /var/lib/deploy/.ssh/id_deploy --force",
 		init: func(cd *simplecobra.Commandeer) error {
 			cd.CobraCommand.Flags().StringVar(&code, "code", "",
 				"enrollment code (required)")
@@ -41,8 +45,7 @@ func newServiceRetrieveCommand() simplecobra.Commander {
 			cd.CobraCommand.Flags().BoolVar(&force, "force", false,
 				"retrieve a new certificate even if a valid one exists on disk")
 			cd.CobraCommand.Flags().StringVar(&grace, "grace", "1m",
-				"duration of additional validity required before refreshing (default 1m); "+
-					"e.g. 30s, 5m, 1h")
+				"how much validity a certificate on disk must still have to be kept, e.g. 30s, 5m, 1h")
 			return nil
 		},
 		run: func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error {

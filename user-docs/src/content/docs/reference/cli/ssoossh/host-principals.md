@@ -13,15 +13,25 @@ Implements AuthorizedPrincipalsCommand. Called on every login attempt, and must 
 ssoossh host principals <username>
 ```
 
+## Examples
+
+```bash
+# In sshd_config:
+  #   AuthorizedPrincipalsCommand /usr/bin/ssoossh host principals %u
+  #   AuthorizedPrincipalsCommandUser ssoossh-principals
+  # By hand, to see what sshd will be told for alice:
+  ssoossh host principals alice
+```
+
 ## Global options
 
 Inherited from [`ssoossh`](/ssoossh/reference/cli/ssoossh/) and its parents.
 
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
-| `-c`, `--config` | string |  | path to the ssoossh config file |
+| `-c`, `--config` | string |  | path to an extra config file, merged after the standard locations |
 | `--file` | string | `/etc/ssoossh/principals.yaml` | path to the local principal mapping file (YAML: local account -&gt; list of principals) |
-| `--server` | string |  | server address including scheme (e.g. "https://example.com") assumes https if omited. |
+| `--server` | string |  | server address, e.g. https://ssh.example.com; https is assumed when no scheme is given |
 | `-v`, `--verbose` | count | `0` | trace what the command is doing, to stderr; repeat for more (-v steps, -vv requests and files, -vvv bodies) |
 
 ## See also

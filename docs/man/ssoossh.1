@@ -2,7 +2,7 @@
 .TH "SSOOSSH" "1" "Aug 2026" "ssoossh" ""
 
 .SH NAME
-ssoossh - The ssoossh client — turns an OIDC login into a short-lived SSH certificate, from your ssh_config.
+ssoossh - The ssoossh client: turns a browser sign-in into a short-lived SSH certificate, from your ssh_config.
 
 
 .SH SYNOPSIS
@@ -10,12 +10,21 @@ ssoossh - The ssoossh client — turns an OIDC login into a short-lived SSH cert
 
 
 .SH DESCRIPTION
-The ssoossh client wires SSO into your existing SSH workflow. Configured as a ProxyCommand or Match exec in ssh_config, it generates a fresh keypair, hands the public key to the ssoossh server, opens your browser for OIDC authentication, and loads the signed certificate into your ssh-agent — or writes key and certificate files when no agent is available. Private keys never leave the machine. Valid certificates are reused until they expire, so authenticating once could cover a workday rather than every connection. Runs on macOS, Linux, and Windows, and also handles local principal mapping for AuthorizedPrincipalsCommand and service-account certificates for unattended jobs.
+The ssoossh client turns a browser sign-in into a short-lived SSH certificate. ssh runs it for you, from ssh_config: it generates a fresh keypair, sends the public key to the ssoossh server, opens your browser so you can sign in and approve, and loads the signed certificate into your ssh-agent, or writes key files when there is no agent. Private keys never leave this machine, and a valid certificate is reused until it expires. It also answers sshd's AuthorizedPrincipalsCommand on hosts (\fBhost\fR) and gets certificates for unattended jobs (\fBservice\fR).
+
+.PP
+Start with \fBssoossh ssh config\fR, which prints the ssh_config lines to add.
+
+.PP
+Configuration is read from /etc/ssoossh/ssoossh.yaml, then ~/.config/ssoossh.yaml, then the file named by --config (on Windows, %ProgramData%\\ssoossh\\ssoossh.yaml and %AppData%\\ssoossh\\ssoossh.yaml). Flags override the files, except for settings an administrator has locked. -v traces what a command does; --debug prints the resolved settings and where each one came from.
+
+.PP
+Documentation: https://mnestor.github.io/ssoossh/
 
 
 .SH OPTIONS
 \fB-c\fP, \fB--config\fP=""
-	path to the ssoossh config file
+	path to an extra config file, merged after the standard locations
 
 .PP
 \fB-h\fP, \fB--help\fP[=false]
@@ -23,7 +32,7 @@ The ssoossh client wires SSO into your existing SSH workflow. Configured as a Pr
 
 .PP
 \fB--server\fP=""
-	server address including scheme (e.g. "https://example.com") assumes https if omited.
+	server address, e.g. https://ssh.example.com; https is assumed when no scheme is given
 
 .PP
 \fB-v\fP, \fB--verbose\fP[=0]

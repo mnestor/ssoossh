@@ -25,6 +25,11 @@ func newHostPrincipalsCommand(mappingFileFunc func() string) simplecobra.Command
 		// It reads only --file, never a configuration setting, so a broken
 		// config must not stop it answering sshd.
 		configFree: true,
+		example: "  # In sshd_config:\n" +
+			"  #   AuthorizedPrincipalsCommand /usr/bin/ssoossh host principals %u\n" +
+			"  #   AuthorizedPrincipalsCommandUser ssoossh-principals\n" +
+			"  # By hand, to see what sshd will be told for alice:\n" +
+			"  ssoossh host principals alice",
 		long: "Implements AuthorizedPrincipalsCommand. Called on every login attempt, and " +
 			"must never touch the network -- it answers only from whatever local mapping " +
 			"files were written. It needs no privilege beyond read access to the mapping " +

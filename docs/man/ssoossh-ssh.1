@@ -10,7 +10,7 @@ ssoossh-ssh - Manage interactive SSH certificates.
 
 
 .SH DESCRIPTION
-Manage interactive SSH certificates.
+Certificates for people. \fBlogin\fR gets one (or reuses a valid one), \fBlogout\fR removes it, \fBinspect\fR shows what is loaded, \fBproxycommand\fR gets one and then hands the connection to a relay, and \fBconfig\fR prints the ssh_config lines that make ssh run all this for you. Start with \fBssoossh ssh config\fR\&.
 
 
 .SH OPTIONS
@@ -20,11 +20,11 @@ Manage interactive SSH certificates.
 
 .SH OPTIONS INHERITED FROM PARENT COMMANDS
 \fB-c\fP, \fB--config\fP=""
-	path to the ssoossh config file
+	path to an extra config file, merged after the standard locations
 
 .PP
 \fB--server\fP=""
-	server address including scheme (e.g. "https://example.com") assumes https if omited.
+	server address, e.g. https://ssh.example.com; https is assumed when no scheme is given
 
 .PP
 \fB-v\fP, \fB--verbose\fP[=0]

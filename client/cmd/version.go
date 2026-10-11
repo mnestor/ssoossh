@@ -49,7 +49,7 @@ func (c *versionCommand) Init(cd *simplecobra.Commandeer) error {
 		"deployment tool to tell releases apart: the command tree has changed shape " +
 		"across versions, and probing it by running --help and matching free text " +
 		"breaks on wording no release promises to keep."
-	cd.CobraCommand.Flags().BoolVar(&c.asJSON, "json", false, "Print version and capability information as JSON.")
+	cd.CobraCommand.Flags().BoolVar(&c.asJSON, "json", false, "print version and capability information as JSON")
 	return nil
 }
 

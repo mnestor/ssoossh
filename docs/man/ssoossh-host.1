@@ -10,7 +10,7 @@ ssoossh-host - Manage local sshd principal mapping, and check sshd's setup.
 
 
 .SH DESCRIPTION
-Configures the principal mapping used when sshd asks for authorized principals via AuthorizedPrincipalsCommand, and checks that this host's sshd will accept ssoossh certificates. The mapping is managed locally and never fetched from the server.
+Configures the local principal mapping sshd consults through AuthorizedPrincipalsCommand: which certificate principals may log in as which local account. The mapping is a file on this host; nothing about it is stored on, or synced from, the server. Also checks that this host's sshd will accept ssoossh certificates.
 
 
 .SH OPTIONS
@@ -24,11 +24,11 @@ Configures the principal mapping used when sshd asks for authorized principals v
 
 .SH OPTIONS INHERITED FROM PARENT COMMANDS
 \fB-c\fP, \fB--config\fP=""
-	path to the ssoossh config file
+	path to an extra config file, merged after the standard locations
 
 .PP
 \fB--server\fP=""
-	server address including scheme (e.g. "https://example.com") assumes https if omited.
+	server address, e.g. https://ssh.example.com; https is assumed when no scheme is given
 
 .PP
 \fB-v\fP, \fB--verbose\fP[=0]

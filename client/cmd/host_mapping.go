@@ -32,8 +32,11 @@ func newHostMappingCommand(mappingFileFunc func() string) simplecobra.Commander 
 
 func newHostMappingListCommand(mappingFileFunc func() string) simplecobra.Commander {
 	return &simpleCommand{
-		name:    "list",
-		short:   "Print the current principal mapping.",
+		name:  "list",
+		short: "Print the current principal mapping.",
+		long: "Prints the mapping file named by --file as YAML, in the form it is stored in, so " +
+			"the output can be redirected back into a file. Prints nothing when the mapping is " +
+			"empty or the file does not exist yet.",
 		offline: true,
 		run: func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error {
 			return runHostMappingList(ctx, mappingFileFunc())

@@ -104,7 +104,7 @@ func newConfig(cmd *cobra.Command, paths searchPaths, loadPolicy func() (map[str
 	// that wasn't passed contributes its empty default at the lowest
 	// priority and does not clobber a configured value. --key-type/
 	// --key-size and certificate extension flags are local to `ssh login`
-	// (the only command that generates a keypair and requests extensions),
+	// (service enroll also generates a keypair, but from sshkey.* alone),
 	// so Lookup returns nil and binding them no-ops for every other
 	// command's cmd.
 	locked := make(map[string]bool, len(enforceKeys)+len(policy.keys))
