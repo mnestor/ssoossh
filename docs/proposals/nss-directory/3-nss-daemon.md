@@ -446,10 +446,31 @@ systemd as PID 1 covers socket activation across a restart.
 - Code needing a live `SO_PEERCRED`, `/proc` or `LISTEN_FDS` carries a
   `not covered:` comment only where a fake cannot reach it.
 
+## User docs
+
+Written with the implementation, in the same PRs, not before. Until then
+the proposal is the only description.
+
+| Page (`user-docs/src/content/docs/`) | Content |
+| --- | --- |
+| `project/roadmap.md` (line 69 today) | Still says "four parts ... an NSS daemon and an NSS module". Change to three parts and the userdb design when the first daemon PR lands; remove the entry when NSS ships |
+| `hosts/nss.md` (new) | Platform floor (systemd 245+, glibc, `systemd` on `passwd:`/`group:`; RHEL 8 and musl unsupported), install, enabling `ssoosshd-nss.socket`, `nss.yaml` reference, fleet key file, SELinux package |
+| `hosts/nss.md`, behaviour | A directory outage shows as "user not found" (README U3); a first login while the server is slow can fail once (U5); disabled users are `locked` with `nologin` (U6); the `UsePAM no` outcome of open check 1 (U7); group changes reach a host on the next sshd login or at cache expiry |
+| `hosts/nss.md`, troubleshooting | `ssoosshd-nss status`, `ssoosshd-nss lookup`, `userdbctl user NAME`, `getent passwd NAME` |
+| `concepts/security-model.md` | Fleet key exposure model; never write deny rules (sudoers `!%group`) against directory groups (README threat model item 6, U9) |
+| `operations/` (new NSS page) | Server side: `nss.*` config, fleet keys, rotation report, roles. `reference/config` regenerates from `make confdocs` |
+| `packages.md` | The `ssoosshd-nss` and `ssoossh-nss-selinux` packages and their dependencies |
+| `internals/architecture.md` | The daemon, the userdb socket, and why there is no NSS module of our own |
+| `project/decisions.md` | Declined on purpose: an NSS module of our own, HTTP inside an NSS module, the sssd proxy provider |
+
+`SSOOSSH.md` lists "NSS directory (4 parts)" under "Not built yet". That
+list changes only with the owner's explicit say-so: ask at the first daemon
+PR, and move NSS into the shipped sections when it ships.
+
 ## Done when
 
 `go test ./...` and `golangci-lint run` pass on Linux; `GOOS=darwin go
 build ./client/...` still passes (client imports `internal/varlink` only);
 `getent passwd <user>` resolves through `nss-systemd` against a Part 1
 server in the integration container; README open checks 1 to 6 have
-recorded results.
+recorded results; the [user docs](#user-docs) pages are merged.
