@@ -75,10 +75,19 @@ describe('Pager', () => {
 		expect(container.querySelector('nav')).toBeNull();
 	});
 
-	it('should disable every control while a page is loading', () => {
+	// Disabling the button just pressed took keyboard focus away from it;
+	// the callers already discard a stale answer.
+	it('should keep the controls usable while a page is loading', () => {
 		render(Pager, { meta: meta({ offset: 50, page: 3 }), onpage: vi.fn(), busy: true });
-		expect(screen.getByRole('button', { name: /previous/i })).toBeDisabled();
-		expect(screen.getByRole('button', { name: /next/i })).toBeDisabled();
+		expect(screen.getByRole('button', { name: /next/i })).toBeEnabled();
+	});
+
+	it('should mark itself busy while a page is loading', () => {
+		render(Pager, { meta: meta({ offset: 50, page: 3 }), onpage: vi.fn(), busy: true });
+		expect(screen.getByRole('navigation', { name: /pagination/i })).toHaveAttribute(
+			'aria-busy',
+			'true'
+		);
 	});
 
 	it('should name itself for assistive technology', () => {
