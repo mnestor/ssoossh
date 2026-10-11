@@ -453,7 +453,7 @@ is the only way to see what your configured filter really sends:
 ```
 config   (&(objectClass=person)(uid={{.Username}}))
 binding  Username = "o'brien)"
-sent     (&(objectClass=person)(uid=o'brien9))
+sent     (&(objectClass=person)(uid=o'brien\29))
 ```
 
 In **literal** mode the string is sent exactly as typed. Nothing is

@@ -58,7 +58,8 @@ an in-process transport by default. See
 
 SQLite for a single instance (the default; put the file in
 `/var/lib/ssoossh/` under systemd). PostgreSQL is required for multi-instance,
-because SQLite is single-connection and cannot be shared between processes.
+because a SQLite file cannot be shared safely between processes on different
+hosts.
 [Database](/ssoossh/operations/database/).
 
 ## What happens if NATS goes down, or an instance crashes?
@@ -81,9 +82,12 @@ serial, principals, fingerprint -- as the audit record of an issuance. See
 
 ## Where does the CA private key live?
 
-In one of two places: inline in `ssoosshd.yaml` as
-[`ssh_key`](/ssoossh/reference/config/top-level/#ssh_key), or in a PKCS#11
-token that it never leaves ([HSM and PKCS#11](/ssoossh/operations/hsm/)).
+In exactly one of four places: inline in `ssoosshd.yaml` as
+[`ssh_key`](/ssoossh/reference/config/top-level/#ssh_key), in a file named by
+[`ssh_key_file`](/ssoossh/reference/config/top-level/#ssh_key_file), in an
+`ssh-agent` named by [`ssh_key_agent`](/ssoossh/operations/ssh-agent/), or in
+a PKCS#11 token that it never leaves
+([HSM and PKCS#11](/ssoossh/operations/hsm/)).
 Either way, only a signing process loads it: run the signer as its own
 `ssoosshd sign` process and the web tier holds no private key at all, learning
 the CA *public* key from the signer's announcement instead. Cloud KMS signing
@@ -101,8 +105,10 @@ trail. A compromised web tier can deny service, not escalate.
 ## How do I take someone's access away right now?
 
 Disable them in the identity provider so they cannot authenticate, and disable
-them in `ssoosshd` so an existing session stops working at its next check --
-that check is fail-closed, and it requires a recorded reason. Certificates
+them in `ssoosshd` so they cannot sign in again -- that check, at login, is
+fail-closed, and the disable requires a recorded reason. A web session already
+open keeps working until it expires, so shorten that window if it matters (see
+[the session lifetime](/ssoossh/operations/roles/#the-session-lifetime-is-the-revocation-window)). Certificates
 they already hold expire on their own, which is why there is no revocation
 list. Note that role membership is read at login, so the session lifetime
 (default: 30m idle under a 9h absolute cap) is the window on a *role* change.
@@ -155,8 +161,10 @@ than a process that refuses to start.
 
 Migrations are guarded against version skew: if the schema is newer than the
 running build supports, the server stops rather than operating against a
-schema it does not understand. `ALLOW_DOWNGRADE=true` in the environment turns
-the refusal into a warning. [Database](/ssoossh/operations/database/).
+schema it does not understand. `ALLOW_DOWNGRADE=true` in the environment lets
+it go ahead, and it then migrates the schema **down** to the version the build
+knows, running the newer migrations' down steps. Back up first.
+[Database](/ssoossh/operations/database/).
 
 ## Do I have to configure email?
 

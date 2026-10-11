@@ -142,8 +142,8 @@ Each of these fails at startup, not at the first signature:
 | Key | Error |
 | --- | --- |
 | Ed25519 | `find CA key pair in HSM: unsupported key type: 40` |
-| ECDSA on a non-NIST curve | `unsupported ECDSA curve "..." for HSM CA key` |
-| RSA below 2048 | `HSM CA RSA key is 1024 bits, must be at least 2048` |
+| ECDSA on a non-NIST curve | `unsupported ECDSA curve "..." for CA key` |
+| RSA below 2048 | `CA RSA key is 1024 bits, must be at least 2048` |
 | Ed25519 via `ssh_key`, under `fips: true` | `CA key algorithm "ssh-ed25519" is not FIPS-approved` |
 
 :::caution
@@ -448,7 +448,7 @@ reason to have a musl variant at all: it runs on Alpine like anywhere else.
 ```bash
 docker run -v /usr/lib/softhsm/libsofthsm2.so:/usr/lib/softhsm/libsofthsm2.so:ro \
   -v /var/lib/softhsm/tokens/:/var/lib/softhsm/tokens/:rw \
-  -v /etc/ssoossh/ssoosshd.yaml:/etc/ssoosshd.yaml:ro \
+  -v /etc/ssoossh/ssoosshd.yaml:/etc/ssoossh/ssoosshd.yaml:ro \
   ghcr.io/mnestor/ssoossh-server:<version>-pkcs11
 ```
 

@@ -34,12 +34,16 @@ A value simply absent from a source is left to whatever the next source down
 sets. A policy source that only locks `server`, for example, leaves every other
 setting free.
 
-:::note[The three flags outrank everything]
-`server`, `sshkey.type` and `sshkey.size` are also the three settings
-`ssh login` accepts as CLI flags (`--server`, `--key-type`, `--key-size`).
-Those flags are bound as flags rather than merged as config, so they take
-precedence over every config-file-tier source above -- including `enforce` and
-platform policy -- if the user actually passes them.
+:::note[The command-line flags outrank everything]
+Eight settings are also `ssh login` flags: `server`, `sshkey.type` and
+`sshkey.size` (`--server`, `--key-type`, `--key-size`), and the five
+`certificate_extensions` switches (`--no-pty`, `--no-agent-forwarding`,
+`--no-port-forwarding`, `--no-x11-forwarding`, `--no-user-rc`). Those flags
+are bound as flags rather than merged as config, so they take precedence over
+every config-file-tier source above -- including `enforce` and platform
+policy -- if the user actually passes them. The one thing a flag cannot do is
+re-add an extension that platform policy forbids: that subtraction happens
+after flags and config are resolved.
 
 That is pre-existing behaviour, not something these mechanisms change, and it
 is the same "guardrail, not a boundary" situation as running your own binary.
