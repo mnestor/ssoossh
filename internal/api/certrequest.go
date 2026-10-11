@@ -96,8 +96,9 @@ func (c *HTTPClient) AwaitCertificate(ctx context.Context, req *PendingRequest) 
 // reason.
 func (c *HTTPClient) create(ctx context.Context, path string, body any) (*PendingRequest, error) {
 	var created apitypes.Envelope[apitypes.CreateRequestResponse]
+	// Unwrapped, as in GetCA: the caller names the action.
 	if err := c.doJSON(ctx, http.MethodPost, path, body, &created); err != nil {
-		return nil, fmt.Errorf("failed to create certificate request: %w", err)
+		return nil, err
 	}
 
 	approvalURL, err := joinServerPath(c.serverURL, "approval_url", created.Data.ApprovalURL)
@@ -136,7 +137,7 @@ func (c *HTTPClient) create(ctx context.Context, path string, body any) (*Pendin
 // fully-qualified URL fails loudly in both clients rather than only in one.
 func joinServerPath(serverURL, field, path string) (string, error) {
 	if !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") {
-		return "", fmt.Errorf("server returned a %s that is not an absolute path: %q", field, path)
+		return "", fmt.Errorf("the server returned an %s that is not an absolute path (%q); the server may be misconfigured", field, path)
 	}
 	return serverURL + path, nil
 }

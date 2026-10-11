@@ -103,8 +103,8 @@ func TestDoJSON_ShouldErrorWhenTheResponseIsNotJSON(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an error decoding a non-JSON 200, got nil")
 	}
-	if !strings.Contains(err.Error(), "decode response body") {
-		t.Errorf("got %q, want an error naming the failed decode", err)
+	if !strings.Contains(err.Error(), "check that the server address points at ssoosshd") {
+		t.Errorf("got %q, want an error pointing at the server address", err)
 	}
 }
 

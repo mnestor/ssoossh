@@ -20,7 +20,7 @@ func newCACommand() simplecobra.Commander {
 		run: func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error {
 			ca, err := root.api.GetCA(ctx)
 			if err != nil {
-				return err
+				return fmt.Errorf("get CA public key: %w", err)
 			}
 			fmt.Println(ca)
 

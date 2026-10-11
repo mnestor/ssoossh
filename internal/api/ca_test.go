@@ -83,17 +83,17 @@ func TestGetCA_ShouldRejectAnUnusableAnswer(t *testing.T) {
 		{
 			name: "should reject an empty CA key",
 			ca:   "",
-			want: "failed to get CA public key: the server returned an empty CA key; the server may be misconfigured",
+			want: "the server returned an empty CA key; the server may be misconfigured",
 		},
 		{
 			name: "should reject a CA key of only whitespace",
 			ca:   "  \\n ",
-			want: "failed to get CA public key: the server returned an empty CA key; the server may be misconfigured",
+			want: "the server returned an empty CA key; the server may be misconfigured",
 		},
 		{
 			name: "should reject a CA key that does not parse",
 			ca:   "not a key",
-			want: "failed to get CA public key: the server returned a CA key that is not an SSH public key (\"not a key\"); the server may be misconfigured",
+			want: "the server returned a CA key that is not an SSH public key (\"not a key\"); the server may be misconfigured",
 		},
 	}
 

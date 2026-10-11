@@ -19,9 +19,19 @@ func TestResponseError_Error(t *testing.T) {
 		want string
 	}{
 		{
-			name: "should name the status alone when there is no message",
+			name: "should suspect a proxy when a 5xx has no message",
 			err:  ResponseError{StatusCode: http.StatusInternalServerError},
-			want: "ssoosshd returned status 500",
+			want: "the server answered status 500 with no explanation; ssoosshd, or a proxy in front of it, failed",
+		},
+		{
+			name: "should suspect the server address when a 404 has no message",
+			err:  ResponseError{StatusCode: http.StatusNotFound},
+			want: "the server answered 404 Not Found; check that the server address points at ssoosshd",
+		},
+		{
+			name: "should name the status alone for any other status with no message",
+			err:  ResponseError{StatusCode: http.StatusTeapot},
+			want: "the server answered status 418 with no explanation",
 		},
 		{
 			name: "should include the server's message when there is one",

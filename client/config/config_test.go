@@ -956,3 +956,53 @@ func TestNewConfig_RequestTimeout(t *testing.T) {
 		})
 	}
 }
+
+// TestNewConfig_LoadFailureWording pins the messages for a --config file or
+// an enforce file that will not load, without viper's "While parsing
+// config:" prefix.
+func TestNewConfig_LoadFailureWording(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing.yaml")
+	malformed := writeConfig(t, "server: [unclosed\n")
+
+	tests := []struct {
+		name   string
+		sysDir string
+		args   []string
+		want   string
+	}{
+		{
+			name:   "should say a --config file does not exist",
+			sysDir: t.TempDir(),
+			args:   []string{"--config", missing},
+			want:   `the config file "` + missing + `" given with --config does not exist`,
+		},
+		{
+			name:   "should give the YAML error for a malformed --config file",
+			sysDir: t.TempDir(),
+			args:   []string{"--config", malformed},
+			want:   `the config file "` + malformed + `" given with --config could not be read: yaml: line 1: did not find expected ',' or ']'`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := newConfig(newConfigCommand(t, tt.args...), testPaths(tt.sysDir), noPolicy)
+			if err == nil || err.Error() != tt.want {
+				t.Errorf("got %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestNewConfig_ShouldSayLocksCannotBeAppliedWhenTheEnforceFileFails(t *testing.T) {
+	sysDir := writeSystemConfig(t, map[string]string{
+		"ssoossh.yaml": "enforce: locked.yaml\n",
+		"locked.yaml":  "server: [unclosed\n",
+	})
+
+	_, err := newConfig(newConfigCommand(t), testPaths(sysDir), noPolicy)
+
+	want := `the enforce file "` + filepath.Join(sysDir, "locked.yaml") + `" could not be loaded, so the settings an administrator locked cannot be applied: yaml: line 1: did not find expected ',' or ']'`
+	if err == nil || err.Error() != want {
+		t.Errorf("got %v, want %q", err, want)
+	}
+}

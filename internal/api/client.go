@@ -252,7 +252,7 @@ func (c *HTTPClient) doJSON(ctx context.Context, method, path string, body, out 
 		return decodeResponseError(resp.StatusCode, respBody)
 	}
 	if err := json.Unmarshal(respBody, out); err != nil {
-		return fmt.Errorf("decode response body: %w", err)
+		return &undecodableError{contentType: resp.Header.Get("Content-Type"), err: err}
 	}
 	return nil
 }

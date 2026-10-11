@@ -222,7 +222,7 @@ func mergeConfigFiles(v *viper.Viper, paths searchPaths, configFile string) (enf
 		//
 		// Same reasoning `enforce` below already fails closed on.
 		if file.label == configFlagLabel && source.Status != SourceMerged {
-			return "", nil, fmt.Errorf("failed to load the config file %q given with --config: %s", file.path, source.describeFailure())
+			return "", nil, fmt.Errorf("the config file %q given with --config %s", file.path, source.describeFailure())
 		}
 	}
 	// Recorded after the loop so the chain reads in precedence order: an
@@ -255,13 +255,21 @@ func mergeEnforceFile(v *viper.Viper, paths searchPaths, enforce string) (enforc
 	// (which is exactly what the control exists to prevent).
 	v.SetConfigFile(enforce)
 	if err := v.MergeInConfig(); err != nil {
-		return enforceFile{}, ConfigSource{}, fmt.Errorf("failed to load enforce file %q: %w", enforce, err)
+		return enforceFile{}, ConfigSource{}, enforceLoadError(enforce, err)
 	}
 	found, err := readEnforceFile(enforce)
 	if err != nil {
-		return enforceFile{}, ConfigSource{}, fmt.Errorf("failed to load enforce file %q: %w", enforce, err)
+		return enforceFile{}, ConfigSource{}, enforceLoadError(enforce, err)
 	}
 	return found, ConfigSource{Label: "enforce", Path: enforce, Status: SourceMerged, AdminLock: true}, nil
+}
+
+// enforceLoadError reports an enforce file that would not load. It says why
+// the command stops rather than carrying on: the locks in it cannot be
+// applied, and running without them is what the fail-closed rule forbids.
+func enforceLoadError(path string, err error) error {
+	return fmt.Errorf("the enforce file %q could not be loaded, so the settings an administrator "+
+		"locked cannot be applied: %s", path, parseErrorText(err))
 }
 
 // enforceFile is what readEnforceFile found in the enforce file.
@@ -392,8 +400,19 @@ func mergeConfig(v *viper.Viper, label, f string) ConfigSource {
 	case isNotExist(err):
 		return ConfigSource{Label: label, Path: f, Status: SourceAbsent}
 	default:
-		return ConfigSource{Label: label, Path: f, Status: SourceError, Err: err.Error()}
+		return ConfigSource{Label: label, Path: f, Status: SourceError, Err: parseErrorText(err)}
 	}
+}
+
+// parseErrorText is err's message without viper's "While parsing config: "
+// prefix, which arrives capitalised in the middle of a sentence and adds
+// nothing the YAML parser's own "yaml: line 3: ..." does not say.
+func parseErrorText(err error) string {
+	var parseErr viper.ConfigParseError
+	if errors.As(err, &parseErr) && errors.Unwrap(parseErr) != nil {
+		return errors.Unwrap(parseErr).Error()
+	}
+	return err.Error()
 }
 
 // isNotExist reports whether err is viper's or the OS's "no such file". A

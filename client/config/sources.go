@@ -59,9 +59,9 @@ type ConfigSource struct {
 // Status is not SourceMerged.
 func (s ConfigSource) describeFailure() string {
 	if s.Status == SourceError {
-		return s.Err
+		return "could not be read: " + s.Err
 	}
-	return "no such file"
+	return "does not exist"
 }
 
 // String renders one line of the merge chain.

@@ -15,11 +15,14 @@ import (
 // GetCA implements Client.
 func (c *HTTPClient) GetCA(ctx context.Context) (string, error) {
 	var result apitypes.Envelope[apitypes.CAResponse]
+	// Returned unwrapped: the caller names the action ("get CA public
+	// key: ..."), and a second layer here read "get CA public key: failed
+	// to get CA public key: ...".
 	if err := c.doJSON(ctx, http.MethodGet, "/ca", nil, &result); err != nil {
-		return "", fmt.Errorf("failed to get CA public key: %w", err)
+		return "", err
 	}
 	if err := validateCAKeys(result.Data.CA); err != nil {
-		return "", fmt.Errorf("failed to get CA public key: %w", err)
+		return "", err
 	}
 
 	return result.Data.CA, nil

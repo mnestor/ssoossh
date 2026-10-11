@@ -66,8 +66,8 @@ func TestConfigSource_ShouldDescribeWhyItDidNotContribute(t *testing.T) {
 		source ConfigSource
 		want   string
 	}{
-		{name: "absent", source: ConfigSource{Status: SourceAbsent}, want: "no such file"},
-		{name: "error", source: ConfigSource{Status: SourceError, Err: "yaml: line 1: bad"}, want: "yaml: line 1: bad"},
+		{name: "absent", source: ConfigSource{Status: SourceAbsent}, want: "does not exist"},
+		{name: "error", source: ConfigSource{Status: SourceError, Err: "yaml: line 1: bad"}, want: "could not be read: yaml: line 1: bad"},
 	}
 
 	for _, tt := range tests {

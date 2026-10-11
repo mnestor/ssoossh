@@ -276,7 +276,7 @@ func (r *RootCommand) resolveAgent(cfg *config.Config) (agent.Agent, error) {
 	slog.Warn("failed to connect to ssh-agent, falling back to file-based storage", "error", err)
 	a, err = r.newFileAgent(cfg.Filename)
 	if err != nil {
-		return nil, fmt.Errorf("open ssh agent: %w", err)
+		return nil, fmt.Errorf("no ssh-agent, and key file storage failed too: %w", err)
 	}
 	return a, nil
 }
