@@ -66,20 +66,20 @@ func StartBrowserWithUserAgent(t *testing.T, userAgent string) *Browser {
 		chromedp.Flag("disable-dev-shm-usage", true),
 	)
 	if os.Getenv("SSOOSSH_E2E_HEADED") != "" {
-		opts = append(opts, chromedp.Flag("headless", false))
+		opts = append(opts, chromedp.VisibleWindow)
 	}
 
 	allocCtx, cancelAlloc := chromedp.NewExecAllocator(context.Background(), opts...)
 	ctx, cancelCtx := chromedp.NewContext(allocCtx)
 
-	// The first Run on a fresh chromedp context allocates the browser and
+	// The first Do on a fresh chromedp context allocates the browser and
 	// binds the target's session lifetime to whatever context object it's
 	// given — chromedp.Run's own doc comment warns against wrapping that
 	// specific call in a timeout, since the target tears down the moment
 	// that context is later canceled, timeout or not. ctx itself is
 	// unbounded and torn down by t.Cleanup below; a hang here is instead
 	// caught by the test's own -timeout.
-	if err := chromedp.Run(ctx); err != nil {
+	if err := chromedp.Do(ctx); err != nil {
 		cancelCtx()
 		cancelAlloc()
 		t.Fatalf("harness: failed to start the browser (is chromium/chrome installed?): %v", err)
@@ -99,9 +99,9 @@ func (b *Browser) Navigate(t *testing.T, url, waitVisibleSelector string) {
 
 	ctx, cancel := context.WithTimeout(b.ctx, browserWaitFor)
 	defer cancel()
-	if err := chromedp.Run(ctx,
+	if err := chromedp.Do(ctx,
 		chromedp.Navigate(url),
-		chromedp.WaitVisible(waitVisibleSelector, chromedp.ByQuery),
+		chromedp.WaitVisible(chromedp.CSS(waitVisibleSelector)),
 	); err != nil {
 		b.screenshotOnFailure(t)
 		t.Fatalf("harness: browser navigation to %s (waiting for %s) failed: %v", url, waitVisibleSelector, err)
@@ -114,7 +114,7 @@ func (b *Browser) WaitVisible(t *testing.T, selector string) {
 
 	ctx, cancel := context.WithTimeout(b.ctx, browserWaitFor)
 	defer cancel()
-	if err := chromedp.Run(ctx, chromedp.WaitVisible(selector, chromedp.ByQuery)); err != nil {
+	if err := chromedp.Do(ctx, chromedp.WaitVisible(chromedp.CSS(selector))); err != nil {
 		b.screenshotOnFailure(t)
 		t.Fatalf("harness: waiting for %s failed: %v", selector, err)
 	}
@@ -130,11 +130,8 @@ func (b *Browser) Text(t *testing.T, selector string) string {
 	ctx, cancel := context.WithTimeout(b.ctx, browserWaitFor)
 	defer cancel()
 
-	var text string
-	if err := chromedp.Run(ctx,
-		chromedp.WaitVisible(selector, chromedp.ByQuery),
-		chromedp.Text(selector, &text, chromedp.ByQuery),
-	); err != nil {
+	text, err := chromedp.Run(ctx, chromedp.Text(chromedp.CSS(selector), chromedp.NodeVisible))
+	if err != nil {
 		b.screenshotOnFailure(t)
 		t.Fatalf("harness: reading the text of %s failed: %v", selector, err)
 	}
@@ -149,16 +146,12 @@ func (b *Browser) Attribute(t *testing.T, selector, name string) (string, bool) 
 	ctx, cancel := context.WithTimeout(b.ctx, browserWaitFor)
 	defer cancel()
 
-	var value string
-	var ok bool
-	if err := chromedp.Run(ctx,
-		chromedp.WaitVisible(selector, chromedp.ByQuery),
-		chromedp.AttributeValue(selector, name, &value, &ok, chromedp.ByQuery),
-	); err != nil {
+	attr, err := chromedp.Run(ctx, chromedp.AttributeValue(chromedp.CSS(selector), name, chromedp.NodeVisible))
+	if err != nil {
 		b.screenshotOnFailure(t)
 		t.Fatalf("harness: reading %s of %s failed: %v", name, selector, err)
 	}
-	return value, ok
+	return attr.Value, attr.Exists
 }
 
 // Ctx exposes the browser context so a diagnostic can drive chromedp
@@ -169,12 +162,12 @@ func (b *Browser) Ctx() context.Context { return b.ctx }
 func (b *Browser) AssertNotPresent(t *testing.T, selector string) {
 	t.Helper()
 
-	var nodeCount int
 	ctx, cancel := context.WithTimeout(b.ctx, browserWaitFor)
 	defer cancel()
-	if err := chromedp.Run(ctx, chromedp.EvaluateAsDevTools(
-		fmt.Sprintf("document.querySelectorAll(%q).length", selector), &nodeCount,
-	)); err != nil {
+	nodeCount, err := chromedp.Run(ctx, chromedp.EvaluateAsDevTools[int](
+		fmt.Sprintf("document.querySelectorAll(%q).length", selector),
+	))
+	if err != nil {
 		t.Fatalf("harness: checking for absence of %s failed: %v", selector, err)
 	}
 	if nodeCount != 0 {
@@ -189,9 +182,9 @@ func (b *Browser) Click(t *testing.T, selector string) {
 
 	ctx, cancel := context.WithTimeout(b.ctx, browserWaitFor)
 	defer cancel()
-	if err := chromedp.Run(ctx,
-		chromedp.WaitVisible(selector, chromedp.ByQuery),
-		chromedp.Click(selector, chromedp.ByQuery),
+	if err := chromedp.Do(ctx,
+		chromedp.WaitVisible(chromedp.CSS(selector)),
+		chromedp.Click(chromedp.CSS(selector)),
 	); err != nil {
 		b.screenshotOnFailure(t)
 		t.Fatalf("harness: clicking %s failed: %v", selector, err)
@@ -206,9 +199,9 @@ func (b *Browser) Type(t *testing.T, selector, text string) {
 
 	ctx, cancel := context.WithTimeout(b.ctx, browserWaitFor)
 	defer cancel()
-	if err := chromedp.Run(ctx,
-		chromedp.WaitVisible(selector, chromedp.ByQuery),
-		chromedp.SendKeys(selector, text, chromedp.ByQuery),
+	if err := chromedp.Do(ctx,
+		chromedp.WaitVisible(chromedp.CSS(selector)),
+		chromedp.SendKeys(chromedp.CSS(selector), text),
 	); err != nil {
 		b.screenshotOnFailure(t)
 		t.Fatalf("harness: typing into %s failed: %v", selector, err)
@@ -222,13 +215,12 @@ func (b *Browser) Type(t *testing.T, selector, text string) {
 func (b *Browser) ClickIfPresent(t *testing.T, selector string) bool {
 	t.Helper()
 
-	var clicked bool
 	ctx, cancel := context.WithTimeout(b.ctx, browserWaitFor)
 	defer cancel()
-	if err := chromedp.Run(ctx, chromedp.EvaluateAsDevTools(
+	clicked, err := chromedp.Run(ctx, chromedp.EvaluateAsDevTools[bool](
 		fmt.Sprintf("(() => { const el = document.querySelector(%q); if (!el) { return false; } el.click(); return true; })()", selector),
-		&clicked,
-	)); err != nil {
+	))
+	if err != nil {
 		t.Fatalf("harness: clicking %s if present failed: %v", selector, err)
 	}
 	return clicked
@@ -260,12 +252,11 @@ func waitForLoginRedirects(ctx context.Context) error {
 	var last string
 	stable := 0
 	for {
-		var current string
+		current, err := chromedp.Run(ctx, chromedp.Location())
 		var done bool
-		err := chromedp.Run(ctx,
-			chromedp.Location(&current),
-			chromedp.Evaluate(`document.readyState === 'complete' && document.querySelector('[data-testid="idp-login-form"]') === null`, &done),
-		)
+		if err == nil {
+			done, err = chromedp.Run(ctx, chromedp.Evaluate[bool](`document.readyState === 'complete' && document.querySelector('[data-testid="idp-login-form"]') === null`))
+		}
 		switch {
 		case err != nil:
 			stable = 0
@@ -296,10 +287,10 @@ func (b *Browser) CompleteIdPLogin(t *testing.T, username string) {
 
 	ctx, cancel := context.WithTimeout(b.ctx, browserWaitFor)
 	defer cancel()
-	if err := chromedp.Run(ctx,
-		chromedp.WaitVisible(`[data-testid="idp-login-form"]`, chromedp.ByQuery),
-		chromedp.SendKeys(`[data-testid="idp-username"]`, username, chromedp.ByQuery),
-		chromedp.Click(`[data-testid="idp-submit"]`, chromedp.ByQuery),
+	if err := chromedp.Do(ctx,
+		chromedp.WaitVisible(chromedp.CSS(`[data-testid="idp-login-form"]`)),
+		chromedp.SendKeys(chromedp.CSS(`[data-testid="idp-username"]`), username),
+		chromedp.Click(chromedp.CSS(`[data-testid="idp-submit"]`)),
 	); err != nil {
 		b.screenshotOnFailure(t)
 		t.Fatalf("harness: completing the IdP login form failed: %v", err)
@@ -326,18 +317,18 @@ func (b *Browser) CompleteIdPLoginWithExtraClaims(t *testing.T, username string,
 
 	ctx, cancel := context.WithTimeout(b.ctx, browserWaitFor)
 	defer cancel()
-	if err := chromedp.Run(ctx,
-		chromedp.WaitVisible(`[data-testid="idp-login-form"]`, chromedp.ByQuery),
-		chromedp.SendKeys(`[data-testid="idp-username"]`, username, chromedp.ByQuery),
+	if err := chromedp.Do(ctx,
+		chromedp.WaitVisible(chromedp.CSS(`[data-testid="idp-login-form"]`)),
+		chromedp.SendKeys(chromedp.CSS(`[data-testid="idp-username"]`), username),
 		// Inject a hidden extra_claims field into the form before submission.
-		chromedp.Evaluate(fmt.Sprintf(`
+		chromedp.Evaluate[chromedp.Void](fmt.Sprintf(`
 			var input = document.createElement('input');
 			input.type = 'hidden';
 			input.name = 'extra_claims';
 			input.value = '%s';
 			document.querySelector('[data-testid="idp-login-form"]').appendChild(input);
-		`, string(extraJSON)), nil),
-		chromedp.Click(`[data-testid="idp-submit"]`, chromedp.ByQuery),
+		`, string(extraJSON))),
+		chromedp.Click(chromedp.CSS(`[data-testid="idp-submit"]`)),
 	); err != nil {
 		b.screenshotOnFailure(t)
 		t.Fatalf("harness: completing the IdP login form with extra claims failed: %v", err)
@@ -365,9 +356,9 @@ func (b *Browser) CompleteIdPLoginWithGroups(t *testing.T, username string, grou
 	defer cancel()
 
 	// Build the actions: fill username and groups, then submit
-	actions := []chromedp.Action{
-		chromedp.WaitVisible(`[data-testid="idp-login-form"]`, chromedp.ByQuery),
-		chromedp.SendKeys(`[data-testid="idp-username"]`, username, chromedp.ByQuery),
+	actions := []chromedp.Action[chromedp.Void]{
+		chromedp.WaitVisible(chromedp.CSS(`[data-testid="idp-login-form"]`)),
+		chromedp.SendKeys(chromedp.CSS(`[data-testid="idp-username"]`), username),
 	}
 
 	// Send groups: if any are provided, fill the groups field with the first one.
@@ -377,13 +368,13 @@ func (b *Browser) CompleteIdPLoginWithGroups(t *testing.T, username string, grou
 	// form currently only supports one input field. If multiple groups are needed,
 	// the form would need to create additional input fields.
 	if len(groups) > 0 {
-		actions = append(actions, chromedp.SendKeys(`[data-testid="idp-groups"]`, groups[0], chromedp.ByQuery))
+		actions = append(actions, chromedp.SendKeys(chromedp.CSS(`[data-testid="idp-groups"]`), groups[0]))
 	}
 
 	// Click submit
-	actions = append(actions, chromedp.Click(`[data-testid="idp-submit"]`, chromedp.ByQuery))
+	actions = append(actions, chromedp.Click(chromedp.CSS(`[data-testid="idp-submit"]`)))
 
-	if err := chromedp.Run(ctx, actions...); err != nil {
+	if err := chromedp.Do(ctx, actions...); err != nil {
 		b.screenshotOnFailure(t)
 		t.Fatalf("harness: completing the IdP login form with groups failed: %v", err)
 	}
@@ -397,17 +388,21 @@ func (b *Browser) CompleteIdPLoginWithGroups(t *testing.T, username string, grou
 // screenshotOnFailure best-effort captures a screenshot and the current URL
 // to the test's artifact directory — debugging a browser failure from an
 // assertion message alone isn't realistic.
+//
+// Derived from the browser's own context: a chromedp action needs a chromedp
+// context, and the context.Background() this used before made every capture
+// fail with "invalid context".
 func (b *Browser) screenshotOnFailure(t *testing.T) {
 	t.Helper()
 
-	var buf []byte
-	var currentURL string
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(b.ctx, 5*time.Second)
 	defer cancel()
-	if err := chromedp.Run(ctx,
-		chromedp.Location(&currentURL),
-		chromedp.CaptureScreenshot(&buf),
-	); err != nil {
+	currentURL, err := chromedp.Run(ctx, chromedp.Location())
+	var buf []byte
+	if err == nil {
+		buf, err = chromedp.Run(ctx, chromedp.CaptureScreenshot())
+	}
+	if err != nil {
 		t.Logf("harness: failed to capture failure screenshot: %v", err)
 		return
 	}
