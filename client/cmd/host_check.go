@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -828,7 +829,11 @@ func (c *hostChecker) unsafePath(real string) (problem string, checked bool) {
 		return fmt.Sprintf("bad ownership or modes for file %s (owner uid %d, mode %04o)", real, st.uid, uint32(st.mode.Perm())), true
 	}
 
-	for dir := filepath.Dir(real); ; dir = filepath.Dir(dir) {
+	// path.Dir, not filepath.Dir: the walk runs only where owners are known,
+	// and there paths are slash-separated as sshd's own dirname() sees them.
+	// filepath.Dir would turn the fake hosts' /usr/bin into \usr\bin when the
+	// tests run on Windows.
+	for dir := path.Dir(real); ; dir = path.Dir(dir) {
 		st, err := c.sys.Stat(dir)
 		if err != nil {
 			return fmt.Sprintf("cannot stat directory %s: %v", dir, err), true
@@ -836,7 +841,7 @@ func (c *hostChecker) unsafePath(real string) (problem string, checked bool) {
 		if st.uid != 0 || st.mode.Perm()&0o022 != 0 {
 			return fmt.Sprintf("bad ownership or modes for directory %s (owner uid %d, mode %04o)", dir, st.uid, uint32(st.mode.Perm())), true
 		}
-		if filepath.Dir(dir) == dir {
+		if path.Dir(dir) == dir {
 			return "", true
 		}
 	}
