@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
-	"syscall"
 
 	"github.com/bep/simplecobra"
 
@@ -14,11 +14,12 @@ import (
 	"github.com/mnestor/ssoossh/internal/version"
 )
 
-// execCommand replaces this process with the relay. A variable so tests can
-// observe what argv is handed over — calling the real thing would replace
-// the test binary itself, which is also why the argv[0] bug below went
-// unnoticed.
-var execCommand = syscall.Exec
+// execCommand hands the connection to the relay: handOff, which replaces
+// this process where the platform can and runs the relay as a child where
+// it cannot (Windows). A variable so tests can observe what argv is handed
+// over — calling the real thing would replace the test binary itself, which
+// is also why the argv[0] bug below went unnoticed.
+var execCommand = handOff
 
 // errProxyCommandRequiresArgs is returned when "ssh proxycommand" is
 // invoked with nothing to exec after it.
@@ -59,8 +60,10 @@ func newSSHProxyCommandCommand() simplecobra.Commander {
 				return err
 			}
 
-			// We are handing off our process and stepping out of the way. User configuration
-			// of ProxyCommand should use nc like the ssh_config example shows.
+			// We hand the connection to the relay and step out of the way:
+			// replacing this process, or on Windows waiting on it as its
+			// parent. User configuration of ProxyCommand should use nc like
+			// the ssh_config example shows.
 			// TODO: Decide if we should try to find nc first? If we don't then proxy the
 			//  connection ourselves instead of getting out of the way?
 			// args is cobra's already-parsed positional args (everything after
@@ -72,13 +75,21 @@ func newSSHProxyCommandCommand() simplecobra.Commander {
 			// its first real argument as its own name and silently receives
 			// one fewer than it was given.
 			//
-			// Exec only returns on failure. Naming the command in the error
-			// matters more here than elsewhere: ssh reports this as a bare
-			// "Connection closed", so a naked "no such file or directory"
-			// leaves nothing at all to go on.
+			// The hand-off returns only on failure, or on Windows once the
+			// relay has exited. Naming the command in the error matters more
+			// here than elsewhere: ssh reports this as a bare "Connection
+			// closed", so a naked "no such file or directory" leaves nothing
+			// at all to go on.
 			// Executing caller-supplied arguments is the entire purpose here:
 			// this is ssh's own ProxyCommand line, and the user configured it.
-			if err := execCommand(args[0], args, os.Environ()); err != nil {
+			err := execCommand(args[0], args, os.Environ())
+			var exitErr *exec.ExitError
+			switch {
+			case errors.As(err, &exitErr):
+				// The relay ran and failed, and has already said why on
+				// stderr. Only a child relay can get here.
+				return fmt.Errorf("the proxy command %q exited with status %d", args[0], exitErr.ExitCode())
+			case err != nil:
 				return fmt.Errorf("failed to run the proxy command %q: %w", args[0], err)
 			}
 			return nil

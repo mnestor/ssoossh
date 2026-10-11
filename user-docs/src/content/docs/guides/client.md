@@ -172,7 +172,12 @@ relays stdio to the target host. The arguments after it mirror exactly what you
 would have written without ssoossh.
 
 No flags beyond the global ones; everything after the command name is the relay
-command and its arguments.
+command and its arguments. The relay is found on `PATH`, as `ssh` would find
+it, so `nc` works as well as `/usr/bin/nc`.
+
+On Linux and macOS ssoossh replaces itself with the relay once the certificate
+is in place. Windows cannot do that, so there ssoossh starts the relay with its
+own stdin and stdout and stays running as its parent until the connection ends.
 
 ```ssh-config
 # before
