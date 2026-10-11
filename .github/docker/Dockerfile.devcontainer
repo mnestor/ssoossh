@@ -22,7 +22,7 @@ ARG VERSION=local
 # whatever is newest when unpinned, which is how a devcontainer starts
 # reporting findings CI does not, or misses ones it does. It must also stay
 # v2.x: .golangci.yml is a `version: "2"` config, which v1 cannot parse.
-ARG GOLANGCI_LINT_VERSION=2.13.1
+ARG GOLANGCI_LINT_VERSION=2.14.0
 ARG ACTIONLINT_VERSION=v1.7.12
 ARG GOTESTSUM_VERSION=v1.13.0
 ARG GOVULNCHECK_VERSION=v1.7.0

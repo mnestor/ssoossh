@@ -31,8 +31,11 @@ ARG RCLONE_VERSION=1.75.1
 #                  which pulled a second Go toolchain down with it
 # Bumping one here is the whole change; nothing pins them a second time.
 # golangci-lint must stay v2.x: .golangci.yml is a `version: "2"` config,
-# which v1 cannot parse at all.
-ARG GOLANGCI_LINT_VERSION=2.13.1
+# which v1 cannot parse at all. It must also read the export data of
+# GO_VERSION below: 2.13.1 cannot read go1.27.2's ("export data version 5
+# is greater than maximum supported version 4") and fails every package
+# with a typecheck error, so bump the two together.
+ARG GOLANGCI_LINT_VERSION=2.14.0
 ARG GOVULNCHECK_VERSION=v1.7.0
 ARG REDOCLY_VERSION=1.28.1
 ARG ACTIONLINT_VERSION=v1.7.12
