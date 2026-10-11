@@ -3426,6 +3426,7 @@ paths:
         Returns a paginated list of users, searchable by name,
         username, email, or subject, and filterable by account state.
         Useful for user directory and audit.
+        Ordered by name ignoring case (users with no name last, by username), then username, then id.
       parameters:
       - description: Page size (default 25, max 100)
         example: 25
