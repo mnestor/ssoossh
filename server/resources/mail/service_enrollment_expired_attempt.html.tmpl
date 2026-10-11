@@ -1,41 +1,40 @@
-<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:15px;line-height:1.55;color:#1c1e21;max-width:640px">
-  <p style="background:#fdeced;border-left:3px solid #c0392b;padding:10px 14px;margin:0 0 18px">
-    An expired enrollment code was presented for redemption. It was refused and no certificate was
-    issued.
-  </p>
-  <p>
-    Two things cause this, and they need opposite responses. Either a job you still want is failing
-    on schedule and needs re-enrolling, or a credential you thought was gone is still in
-    circulation. If the address below is not a host you recognize, treat the code as leaked and
-    audit what it was used for while it was still live.
-  </p>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
+<meta name="supported-color-schemes" content="light">
+</head>
+<body style="margin:0;padding:0;background:#f2f0ec">
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#f2f0ec"><tr><td align="center" style="padding:24px 12px">
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width:600px;background:#ffffff"><tr><td style="padding:28px 24px;font-family:'IBM Plex Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#1e1a16">
 
-  <h3 style="margin:24px 0 8px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:#6b7280">The attempt</h3>
-  <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;font-size:14px">
-    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Attempted at</td><td style="padding:4px 0">{{ datetime .AttemptedAt }}</td></tr>
-    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Source address</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .SourceIP }}</td></tr>
-    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Code expired</td><td style="padding:4px 0">{{ datetime .CodeExpiredAt }}</td></tr>
-  </table>
+<p style="margin:0 0 8px;font-size:16px;line-height:1.5;color:#1e1a16">An expired service code for <span style="font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">{{ if .ServiceAccount }}{{ .ServiceAccount }}{{ else }}{{ join .Principals ", " }}{{ end }}</span> was presented from <span style="font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">{{ .SourceIP }}</span> and refused. No certificate was issued.</p>
+<p style="margin:0 0 24px;font-size:14px;line-height:1.5;color:#5d5751">Either a job you still want is failing and needs enrolling again, or a code you thought was gone is still in use. If you do not recognise that address, treat the code as leaked.</p>
 
-  <h3 style="margin:24px 0 8px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:#6b7280">The code itself</h3>
-  <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;font-size:14px">
-    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Principal</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ if .ServiceAccount }}{{ .ServiceAccount }}{{ else }}{{ join .Principals ", " }}{{ end }}</td></tr>
-    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Key ID</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .KeyID }}</td></tr>
-    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Bound key</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all">{{ .PublicKeyType }} {{ .PublicKeyFingerprint }}</td></tr>
-    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Enrollment ID</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .EnrollmentID }}</td></tr>
-    {{ if .RequestID }}<tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Request ID</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .RequestID }}</td></tr>{{ end }}
-  </table>
-  <p style="color:#6b7280;font-size:13px">
-    The caller was told only that the code is unknown: an expired code and one that never existed
-    answer identically, so whoever holds it learns nothing from the refusal. You will not get
-    another message about this enrollment for a while, however often the attempt repeats.
-  </p>
+{{ if .ServerURL }}<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 28px"><tr><td style="background:#2858cd"><a href="{{ .ServerURL }}/service-codes/{{ .EnrollmentID }}" style="display:inline-block;padding:12px 20px;font-family:'IBM Plex Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:14px;font-weight:500;line-height:20px;color:#ffffff;text-decoration:none">Review this code</a></td></tr></table>{{ end }}
 
-  {{ if .ServerURL }}<p style="font-size:13px"><a href="{{ .ServerURL }}/service-codes/{{ .EnrollmentID }}" style="color:#1d4ed8">This code, and every redemption of it</a>.</p>{{ end }}
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse">
+  <tr><td style="padding:12px 16px 12px 0;border-bottom:1px solid #e0ddda;font-size:14px;line-height:1.375;color:#5d5751;white-space:nowrap;vertical-align:top;width:1%">Attempted at</td><td style="padding:12px 0;border-bottom:1px solid #e0ddda;font-size:16px;line-height:1.375;color:#1e1a16;vertical-align:top;word-break:break-word;font-variant-numeric:tabular-nums">{{ datetime .AttemptedAt }}</td></tr>
+  <tr><td style="padding:12px 16px 12px 0;border-bottom:1px solid #e0ddda;font-size:14px;line-height:1.375;color:#5d5751;white-space:nowrap;vertical-align:top;width:1%">Code expired</td><td style="padding:12px 0;border-bottom:1px solid #e0ddda;font-size:16px;line-height:1.375;color:#1e1a16;vertical-align:top;word-break:break-word;font-variant-numeric:tabular-nums">{{ datetime .CodeExpiredAt }}</td></tr>
+</table>
 
-  <p style="margin-top:28px;padding-top:14px;border-top:1px solid #e5e7eb;color:#9099a8;font-size:12px">
-    Sent because "Expired enrollment code used" is on in your
-    {{ if .ServerURL }}<a href="{{ .ServerURL }}/preferences" style="color:#6b7280">notification preferences</a>{{ else }}notification preferences{{ end }},
-    or because this address is set as the enrollment's notification address.
-  </p>
-</div>
+{{ if .Advanced }}
+<p style="margin:32px 0 4px;font-size:11px;font-weight:600;line-height:1.25;letter-spacing:.06em;text-transform:uppercase;color:#5d5751">Details</p>
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse">
+  <tr><td style="padding:8px 16px 8px 0;border-bottom:1px solid #e0ddda;font-size:13px;line-height:1.25;color:#5d5751;white-space:nowrap;vertical-align:top;width:1%">Bound key</td><td style="padding:8px 0;border-bottom:1px solid #e0ddda;font-size:13px;line-height:1.25;color:#1e1a16;vertical-align:top;word-break:break-word;font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">{{ .PublicKeyType }} {{ .PublicKeyFingerprint }}</td></tr>
+  <tr><td style="padding:8px 16px 8px 0;border-bottom:1px solid #e0ddda;font-size:13px;line-height:1.25;color:#5d5751;white-space:nowrap;vertical-align:top;width:1%">Key ID</td><td style="padding:8px 0;border-bottom:1px solid #e0ddda;font-size:13px;line-height:1.25;color:#1e1a16;vertical-align:top;word-break:break-word;font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">{{ .KeyID }}</td></tr>
+</table>
+{{ end }}
+
+<p style="margin:24px 0 0;font-size:14px;line-height:1.5;color:#5d5751">You will not hear about this code again for a while, however often the attempt repeats.</p>
+
+<p style="margin:32px 0 0;padding-top:16px;border-top:1px solid #e0ddda;font-size:12px;line-height:1.5;color:#5d5751">
+Sent because &ldquo;Expired service code used&rdquo; is on in your {{ if .ServerURL }}<a href="{{ .ServerURL }}/preferences" style="color:#2858cd">notification preferences</a>{{ else }}notification preferences{{ end }}, or because this address is the service code's notification address.
+</p>
+
+</td></tr></table>
+</td></tr></table>
+</body>
+</html>

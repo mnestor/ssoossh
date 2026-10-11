@@ -93,30 +93,11 @@ func NewRenderer(templateDir, subjectPrefix string) (*Renderer, error) {
 	}
 
 	for _, def := range notify.Definitions() {
-		parsed := &kindTemplates{}
-		for _, part := range templateParts {
-			name := TemplateName(def.Kind, part)
-
-			body, overridden, err := templateBody(name, overrides)
-			if err != nil {
-				return nil, err
-			}
-			if overridden {
-				r.overrides = append(r.overrides, name)
-			}
-
-			if err := parsed.parse(part, name, body); err != nil {
-				return nil, err
-			}
+		parsed, overridden, err := loadKind(def, overrides)
+		if err != nil {
+			return nil, err
 		}
-
-		// Execute once against a zero payload. text/template errors on a
-		// field the data does not have, so this is what turns a typo'd
-		// {{ .ServiceAcount }} into a startup failure.
-		if err := parsed.checkExecutable(def.NewPayload()); err != nil {
-			return nil, fmt.Errorf("notification template for %s: %w", def.Kind, err)
-		}
-
+		r.overrides = append(r.overrides, overridden...)
 		r.kinds[def.Kind] = parsed
 	}
 
@@ -138,6 +119,43 @@ func NewRenderer(templateDir, subjectPrefix string) (*Renderer, error) {
 	return r, nil
 }
 
+// loadKind parses the three parts for def, preferring overrides (and
+// consuming the ones it uses), and checks them against a zero payload. It
+// returns the names of the parts an override supplied.
+func loadKind(def notify.Definition, overrides map[string]string) (*kindTemplates, []string, error) {
+	parsed := &kindTemplates{}
+	var overridden []string
+	for _, part := range templateParts {
+		name := TemplateName(def.Kind, part)
+
+		body, isOverride, err := templateBody(name, overrides)
+		if err != nil {
+			return nil, nil, err
+		}
+		if isOverride {
+			overridden = append(overridden, name)
+		}
+
+		if err := parsed.parse(part, name, body); err != nil {
+			return nil, nil, err
+		}
+	}
+
+	// Execute against a zero payload at both detail levels. text/template
+	// errors on a field the data does not have, so this is what turns a
+	// typo'd {{ .ServiceAcount }} into a startup failure, and running both
+	// levels reaches the typo inside an {{ if .Advanced }} block that one
+	// run alone would skip.
+	for _, advanced := range []bool{false, true} {
+		payload := def.NewPayload()
+		setAdvanced(payload, advanced)
+		if err := parsed.checkExecutable(payload); err != nil {
+			return nil, nil, fmt.Errorf("notification template for %s: %w", def.Kind, err)
+		}
+	}
+	return parsed, overridden, nil
+}
+
 // TemplateName is the file name for one part of one kind's template. The
 // single authority for the naming convention — the docs, the loader, and
 // the override check all read it from here.
@@ -155,12 +173,15 @@ func (r *Renderer) Overrides() []string {
 }
 
 // Render produces the message for kind from data, which must be the
-// payload type the kind's Definition builds.
-func (r *Renderer) Render(kind notify.Kind, data any) (Rendered, error) {
+// payload type the kind's Definition builds, at the recipient's email
+// detail level. advanced is written onto data (see notify.Reader) before
+// rendering, so one decoded payload serves both levels in turn.
+func (r *Renderer) Render(kind notify.Kind, data any, advanced bool) (Rendered, error) {
 	templates, ok := r.kinds[kind]
 	if !ok {
 		return Rendered{}, fmt.Errorf("no template for notification kind %q", kind)
 	}
+	setAdvanced(data, advanced)
 
 	subject, err := executeText(templates.subject, data)
 	if err != nil {
@@ -181,6 +202,21 @@ func (r *Renderer) Render(kind notify.Kind, data any) (Rendered, error) {
 		Text:    text,
 		HTML:    htmlBuf.String(),
 	}, nil
+}
+
+// advancedSetter is what every payload has through its embedded
+// notify.Reader.
+type advancedSetter interface {
+	SetAdvanced(advanced bool)
+}
+
+// setAdvanced records the detail level on payload when it can carry one. A
+// payload without notify.Reader renders as simplified, which is also what a
+// template that never reads .Advanced produces.
+func setAdvanced(payload any, advanced bool) {
+	if p, ok := payload.(advancedSetter); ok {
+		p.SetAdvanced(advanced)
+	}
 }
 
 // parse compiles one part into the right template engine for its medium.
@@ -313,12 +349,14 @@ func htmlFuncs() htmltemplate.FuncMap {
 
 // formatDateTime renders a timestamp for a human, in the server's local
 // zone with the zone named — a recipient reading "15:04" with no zone has
-// to guess, and these messages are about credential windows.
+// to guess, and these messages are about credential windows. To the
+// minute: a time here is read, not compared, and the serial and key ID are
+// what match a host's logs.
 func formatDateTime(t time.Time) string {
 	if t.IsZero() {
 		return "not set"
 	}
-	return t.Local().Format("2006-01-02 15:04:05 MST")
+	return t.Local().Format("2006-01-02 15:04 MST")
 }
 
 // formatDate renders just the day.

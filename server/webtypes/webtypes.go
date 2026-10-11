@@ -117,6 +117,23 @@ type CurrentUserResponse struct {
 	IsAdmin   bool `json:"is_admin" validate:"required"`
 	IsSOC     bool `json:"is_soc" validate:"required"`
 	IsAuditor bool `json:"is_auditor" validate:"required"`
+
+	// DetailLevel is how much of the covered pages this person sees:
+	// "simplified" or "advanced". Stored on the server so it follows the
+	// person between browsers; the email level is separate and travels with
+	// the notification preferences.
+	DetailLevel model.DetailLevel `json:"detail_level" enums:"simplified,advanced" validate:"required"`
+}
+
+// DisplayPreferencesResponse is the body of PUT /api/users/me/display: the
+// web UI detail level as stored.
+type DisplayPreferencesResponse struct {
+	DetailLevel model.DetailLevel `json:"detail_level" enums:"simplified,advanced" validate:"required"`
+}
+
+// UpdateDisplayPreferencesBody changes the caller's web UI detail level.
+type UpdateDisplayPreferencesBody struct {
+	DetailLevel model.DetailLevel `json:"detail_level" enums:"simplified,advanced" validate:"required"`
 }
 
 // ApproveRequestBody is the optional body of the approve endpoint. For a
@@ -878,6 +895,9 @@ type NotificationKindResponse struct {
 	// Kind is the stable identifier, the key the update body uses.
 	Kind string `json:"kind" validate:"required"`
 
+	// Group names the NotificationGroupResponse this kind is shown under.
+	Group string `json:"group" validate:"required"`
+
 	// Title is the short label shown beside the toggle.
 	Title string `json:"title" validate:"required"`
 
@@ -887,6 +907,19 @@ type NotificationKindResponse struct {
 	// Enabled is this user's answer, or the kind's default when they have
 	// never given one.
 	Enabled bool `json:"enabled"`
+}
+
+// NotificationGroupResponse heads one group of kinds on the preferences
+// page.
+type NotificationGroupResponse struct {
+	// Group is the identifier kinds name in NotificationKindResponse.Group.
+	Group string `json:"group" validate:"required"`
+
+	// Title is the group's heading.
+	Title string `json:"title" validate:"required"`
+
+	// Description is one sentence saying what the group's kinds are about.
+	Description string `json:"description" validate:"required"`
 }
 
 // NotificationPreferencesResponse is the preferences page's whole payload.
@@ -901,9 +934,17 @@ type NotificationPreferencesResponse struct {
 	// reason nothing arrives, and equally worth showing.
 	Address string `json:"address"`
 
+	// Groups is every group the kinds are shown under, in page order.
+	Groups []NotificationGroupResponse `json:"groups" validate:"required"`
+
 	// Kinds is every notification the server knows how to send, in a
 	// stable order.
 	Kinds []NotificationKindResponse `json:"kinds" validate:"required"`
+
+	// DetailLevel is how much each notification email carries: "simplified"
+	// or "advanced". Separate from the web UI's level, because short mail
+	// and a full approval page are a common pairing.
+	DetailLevel model.DetailLevel `json:"detail_level" enums:"simplified,advanced" validate:"required"`
 }
 
 // UpdateNotificationPreferencesBody is the preferences page's save. Only
@@ -914,6 +955,11 @@ type UpdateNotificationPreferencesBody struct {
 	// unknown key is rejected rather than ignored: silently dropping it
 	// would report success for a preference that was never stored.
 	Kinds map[string]bool `json:"kinds" validate:"required"`
+
+	// DetailLevel, when present, changes the email detail level in the same
+	// save. Absent leaves it alone, so a page that predates the field cannot
+	// reset it.
+	DetailLevel *model.DetailLevel `json:"detail_level,omitempty" enums:"simplified,advanced"`
 }
 
 // AdminUserSummary is one row in the paginated auditor user list view,

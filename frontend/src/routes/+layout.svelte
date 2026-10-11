@@ -52,9 +52,15 @@
 	// theme, so it runs here rather than in app.html.
 	$effect(() => rail.start());
 
-	// The detail level for the approval and information pages, read the same
-	// way: one frame of the default is accepted.
+	// The detail level for the approval and information pages: painted from
+	// this browser's cache first, then the account's stored level once the
+	// session loads, which is the one that counts.
 	$effect(() => detail.start());
+	$effect(() => {
+		if (session.user) {
+			detail.adopt(session.user.detail_level);
+		}
+	});
 
 	const branding = $derived(getBranding());
 	const version = $derived(getVersion());

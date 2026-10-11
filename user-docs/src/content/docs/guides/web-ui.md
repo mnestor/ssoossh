@@ -109,22 +109,28 @@ opened from.
 ## Simplified and Advanced
 
 The approval page and the three detail pages each carry a **Simplified /
-Advanced** switch in their heading. Advanced, the default, is the whole page.
-Simplified keeps what you need to decide or to understand the result and
+Advanced** switch in their heading. Advanced is the whole page. Simplified
+keeps what you need to decide or to understand the result and
 leaves out what an expert compares: ids, key ids, serials and fingerprints,
 public keys, process ids, the reporting client, timestamps other than the
 validity window, approver groups, lifetime-policy detail, and the redemption
 history. Facts that remain are set a size larger, and the page closes with a
 line naming what was left out and a button back to Advanced.
 
-Simplified never hides a warning. A trimmed critical option, the requesting
-machine's own policy note, a console request that reports a remote host, a
-skewed host clock, an expired or blocked request, and any error all show at
-both levels.
+Simplified never hides a warning or anything the server cut. Extensions and
+critical options the server trimmed (struck through) with the "Less than was
+requested" notice, the requesting machine's own policy note, a console
+request that reports a remote host, a skewed host clock, an expired or
+blocked request, and any error all show at both levels.
 
 The switch on each page and the **Display** section on
 [Preferences](/ssoossh/guides/approving/#preferences) are the same setting. It
-is kept in this browser, not on your account.
+is saved to your account, so it follows you to any browser. Your first sign-in
+sets it: Advanced if you are in the SOC or admin group, Simplified otherwise.
+Changing groups later does not change it; only you do.
+
+Emails have a level of their own, set under **Email notifications** on the same
+page, so you can keep the full pages and still get short mail.
 
 ## When something does not load
 

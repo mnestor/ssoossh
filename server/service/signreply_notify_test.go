@@ -101,6 +101,52 @@ func TestResolveSuccess_shouldNotifyTheOwnerOfAUserCertificate(t *testing.T) {
 	}
 }
 
+// The email links to the certificate itself, so the payload has to carry
+// the record the reply was stored as, including on a redelivered reply,
+// where the stored row predates this delivery's generated id.
+func TestResolveSuccess_shouldCarryTheStoredCertificateID(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		deliveries int
+	}{
+		{name: "should carry the id of the row it stored on a first delivery", deliveries: 1},
+		{name: "should carry the id of the existing row on a redelivery", deliveries: 2},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			h, notifier, svc, requestID, _ := issuedReplyFixture(t, model.CertificateTypeUser)
+			reply := successfulReply(requestID, model.CertificateTypeUser)
+			for range tc.deliveries {
+				if err := h.resolveSuccess(context.Background(), reply); err != nil {
+					t.Fatalf("resolveSuccess: %v", err)
+				}
+			}
+
+			var stored model.Certificate
+			if err := svc.db.First(&stored, "serial_number = ?", reply.Serial).Error; err != nil {
+				t.Fatalf("failed to read the stored certificate: %v", err)
+			}
+			events := notifier.captured()
+			if len(events) != tc.deliveries {
+				t.Fatalf("captured %d notifications, want %d", len(events), tc.deliveries)
+			}
+			for _, event := range events {
+				payload, ok := event.Payload.(*notify.CertificateIssued)
+				if !ok {
+					t.Fatalf("payload is %T, want *notify.CertificateIssued", event.Payload)
+				}
+				if payload.CertificateID != stored.ID {
+					t.Errorf("CertificateID = %q, want the stored row %q", payload.CertificateID, stored.ID)
+				}
+			}
+		})
+	}
+}
+
 // Two kinds rather than one with a type field, so a user who runs sudo forty
 // times a day and logs in twice can keep the login signal alone.
 func TestResolveSuccess_shouldNotifyUnderThePAMKindForAPAMCertificate(t *testing.T) {

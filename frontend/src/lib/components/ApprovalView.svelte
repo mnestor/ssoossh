@@ -399,11 +399,11 @@
 		simplified ? claimedContext.filter((row) => simplifiedContextKeys.has(row.key)) : claimedContext
 	);
 
-	// What a simplified reader is told about the options. Trimmed extensions
-	// and the narrowed warning are advanced-only, since the reader still sees
-	// exactly what is issued; a trimmed critical option is never hidden and
-	// gets a line of its own.
-	const grantedExtensions = $derived(extensions.filter((entry) => entry.status !== 'trimmed'));
+	// Whether the simplified page shows the critical options. It drops them
+	// when nothing was trimmed, but a trimmed one changes what the
+	// certificate does, so then the whole list shows, struck through like
+	// the extensions: the cut has to be visible before anyone approves
+	// (SSOOSSH.md), and the narrowed warning points at it.
 	const trimmedCriticalOptions = $derived(
 		criticalOptions.filter((entry) => entry.status === 'trimmed')
 	);
@@ -679,29 +679,15 @@
 							</span>
 						</span>
 					{:else}
-						<OptionDiffList
-							entries={simplified ? grantedExtensions : extensions}
-							emptyLabel={simplified ? 'None.' : 'No extensions requested.'}
-						/>
+						<OptionDiffList entries={extensions} emptyLabel="No extensions requested." />
 					{/if}
 				</div>
 
-				{#if !simplified}
+				{#if !simplified || trimmedCriticalOptions.length > 0}
 					<div>
 						<SectionLabel>Critical options</SectionLabel>
 						<OptionDiffList entries={criticalOptions} emptyLabel="No critical options requested." />
 					</div>
-				{:else if trimmedCriticalOptions.length > 0}
-					<!-- Never hidden: a critical option the server will not
-					     grant changes what the certificate does, so a
-					     simplified reader is told in one line. -->
-					<Alert variant="warning" testid="trimmed-critical-warning">
-						Not permitted, so not in the certificate:
-						{#each trimmedCriticalOptions as option, i (option.label)}<code class="font-mono"
-								>{option.label}</code
-							>{#if i < trimmedCriticalOptions.length - 1},
-							{/if}{/each}.
-					</Alert>
 				{/if}
 			{/if}
 
@@ -728,7 +714,7 @@
 				</p>
 			{/if}
 
-			{#if narrowed && !isLocalAuth && !simplified}
+			{#if narrowed && !isLocalAuth}
 				<Alert variant="warning" title="Less than was requested" testid="narrowed-warning">
 					This server does not permit everything the client asked for. The struck-through entries
 					above will not be in the certificate.

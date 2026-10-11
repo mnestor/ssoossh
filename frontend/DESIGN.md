@@ -641,9 +641,18 @@ bg-surface-muted`, decorative), a short title, the sentence that says what
 - **Footer**: closes every page with the running version, a link to its
   release and links to the project, on the ground with no rule. Renders
   nothing while the version is unknown. Links are `min-h-target` targets.
-- **DetailToggle** (to build): a two-segment control, "Simplified" and
-  "Advanced", in the heading row of each covered page. Selected segment per
-  Colour; writes the same preference as `/preferences`.
+- **Switch**: a live on/off setting, `role="switch"` with `aria-checked`,
+  for a setting that applies on the press. A `rounded-md` track: on is an
+  `ink` fill with the knob right and the `check` glyph on it; off is a
+  `border-control` edge with an `ink-muted` knob left. The whole row (track,
+  title, sentence) is one `min-h-target` button, named by the title alone
+  (`aria-labelledby`) and described by the sentence (`aria-describedby`).
+  `busy` sets `aria-busy` and ignores presses while a save is in flight.
+  Never a checkbox for a live setting: a checkbox waits for a Save button.
+- **DetailToggle**: a two-segment control, "Simplified" and "Advanced", in
+  the heading row of each covered page. Selected segment per Colour; writes
+  the same preference as `/preferences`. Given `value` and `onselect` it is
+  a plain controlled control instead (the email level).
 
 ### Composites
 
@@ -799,31 +808,58 @@ off, and confirms through a reasonless `ConfirmModal`.
 - Labels sit above their field; a field caps its width to what it holds.
 - A reason the server records is required and validated before submit.
 - Checkbox and radio rows make the whole label the target (`min-h-target`).
+- **One save model per screen** (form-ux). A setting that applies on the
+  press is a `Switch` or a segmented toggle and saves at once; a checkbox
+  waits for a Save button. A screen never mixes the two. `/preferences` is
+  live throughout, because the Pages level is live in every covered page's
+  heading.
+- **A live setting** shows its new state at once, saves only itself, puts
+  itself back with "Not saved. Try again." beside it if the save fails, and
+  ignores a second press until the first answers. A polite live region
+  announces each save for a screen reader.
 
 ## 12. Detail levels: simplified and advanced
 
 A per-reader preference for the approval page and the three information
 pages (certificate, service code, admin service code). `advanced` is the
-default and is the full page. `simplified` keeps what a reader needs to
-decide or to understand the result and drops the diagnostic detail an expert
-compares.
+full page. `simplified` keeps what a reader needs to decide or to understand
+the result and drops the diagnostic detail an expert compares.
 
-- **Store:** `src/lib/detail.svelte.ts`, localStorage `ssoossh:detail`,
-  modelled on `rail.svelte.ts` (one frame of the default before it is read
-  is accepted).
+- **Stored on the server,** per person, as two settings: the web UI level
+  (`users.web_detail_level`) and the email level
+  (`users.email_detail_level`, see Email below). Split because short mail and
+  a full approval page are a common pairing (product owner, 2026-10-11).
+- **Default:** fixed once, at the person's first login after the setting
+  existed: `advanced` for SOC and admin, `simplified` for everyone else
+  (`service.DefaultDetailLevel`). A later change of groups never moves it. A
+  mail recipient with no stored level, and an enrollment's bare notification
+  address, read `simplified`.
+- **Store:** `src/lib/detail.svelte.ts`. The level arrives with `/users/me`
+  (`detail_level`) and the root layout adopts it; a change is shown at once
+  and saved with `PUT /users/me/display`, and a failed save puts the old
+  level back with a "Not saved. Try again." line beside the toggle.
+  localStorage `ssoossh:detail` caches the last level the server reported,
+  for first paint only. Before anything is known the store reads
+  `simplified`.
 - **Controls:** a "Display" section on `/preferences` and a `DetailToggle` in
-  each covered page's heading row. Both write the same preference.
+  each covered page's heading row. Both write the same preference. The email
+  level is a second `DetailToggle`, controlled through `value` and
+  `onselect`, in the "Email notifications" section. Both levels save on the
+  press, like everything on `/preferences` (see Preferences below).
 - **Scope:** a covered page calls `coverWithDetail()` once in its script.
   Components that only appear on covered pages (`ServiceCodeFacts`, the two
   service code details, `ApprovalView`) and `DetailRow` read
   `inDetailScope()`, so the same component stays full anywhere else.
-- **Never hidden at either level:** a trimmed critical option (shown in
-  simplified as a one-line warning naming it), the client-policy forbidden
-  note, the console remote-host warning, the own-account notice, blocked and
-  outcome alerts, action errors, the "reported by the client" marking on any
-  client-reported value still shown, a skewed host clock, the pam-headless
-  note ("this looks like a script or a service"), and expired or active
-  status. A section whose only remaining content is one of these keeps it.
+- **Never hidden at either level:** trimmed extensions (struck through in
+  the extension list), the narrowed "Less than was requested" warning, a
+  trimmed critical option (struck through in the Critical options list,
+  which simplified renders whenever one is trimmed), the client-policy
+  forbidden note, the console remote-host warning, the own-account notice,
+  blocked and outcome alerts, action errors, the "reported by the client"
+  marking on any client-reported value still shown, a skewed host clock, the
+  pam-headless note ("this looks like a script or a service"), and expired
+  or active status. A section whose only remaining content is one of these
+  keeps it.
 - **Dropped in simplified:** request, certificate and enrollment ids; key
   ids, serials and fingerprints; public keys and host trusts; process ids,
   platform and client rows; registered IPs; request and decision timestamps
@@ -847,11 +883,11 @@ compares.
     it sans, since it is a label, not a value.)
   - One muted line under them: the values are reported by the client;
     approve only if you just ran it.
-  - Then Principals, Valid for, the extensions the certificate will carry
-    (granted only; trimmed extensions and the narrowed warning are
-    advanced-only, because the approver still sees exactly what is
-    issued), the remaining warnings and the actions.
-  - Critical options are advanced-only unless one was trimmed.
+  - Then Principals, Valid for, the extensions: what will be issued, with
+    any trimmed ones struck through, then the remaining warnings and the
+    actions.
+  - Critical options are advanced-only unless one was trimmed; then the
+    whole list shows, granted and trimmed, as at the advanced level.
   - "Approvable until" is advanced-only except in its last minute, when a
     live countdown sits beside the actions ("Expires in 0:42").
   - An expired request has its own notice: "This request expired before it
@@ -1006,6 +1042,41 @@ beneath it.
 - **Build-time environment:** only Vite development settings, chiefly
   `DEVELOPMENT_BACKEND_URL` from `.env` / `.env.local` (see
   `frontend/README.md`). Branding is never build-time.
+
+### Email
+
+Notification emails (`server/resources/mail`) follow this file as far as a
+mail client allows. Extension, 2026-10-11: mail clients do not render OKLCH
+or load the app's fonts, so the templates carry these hex equivalents,
+converted from the tokens above (contrast matches the measured table to
+within 0.05):
+
+| Token            | Hex       |
+| ---------------- | --------- |
+| `ground`         | `#f2f0ec` |
+| `surface`        | `#ffffff` |
+| `border-subtle`  | `#e0ddda` |
+| `ink`            | `#1e1a16` |
+| `ink-muted`      | `#5d5751` |
+| `accent`         | `#2858cd` |
+| `accent-ink`     | `#ffffff` |
+| `danger-surface` | `#ffe7e4` |
+
+- **Type:** `'IBM Plex Sans', -apple-system, ...` and `'IBM Plex Mono',
+ui-monospace, ...`: Plex where installed, the system face otherwise. No web
+  font is loaded. Mono for the same values as the app.
+- **Shape:** a `surface` panel, 600px at most, on `ground`. No border, no
+  shadow, no radius, no side stripe. Light only (`color-scheme: light`).
+- **Order:** one sentence of what happened (16px, `ink`); one muted line
+  saying what to do if it was not you; one cobalt link-button to the page
+  where the reader acts (`/certs/<id>`, `/service-codes/<id>`); the
+  essential facts at simplified size; at the advanced email level a "Details"
+  section of dense rows; the footer naming the preference that sent it.
+- **Levels:** the email level decides only whether "Details" appears.
+  Diagnostic rows the web page keeps for the record (machine id, client,
+  platform, process ids, request ids, a throwaway key's fingerprint) are
+  in no email at either level; the link reaches them.
+- **Claimed values** carry a muted "claimed" after them, as on the pages.
 
 ## 16. Voice
 

@@ -73,11 +73,57 @@ type Field struct {
 	Description string
 }
 
+// Group is a set of kinds the preferences page shows together. Owned here,
+// with the kinds, so a new kind lands in a group without a frontend change.
+type Group string
+
+const (
+	// GroupServiceCodes is everything about the service codes on accounts
+	// the reader holds.
+	GroupServiceCodes Group = "service_codes"
+	// GroupCertificates is the "was this you?" mail: one message per
+	// certificate issued in the reader's name.
+	GroupCertificates Group = "certificates"
+)
+
+// GroupDefinition is how the preferences page heads and explains a group.
+type GroupDefinition struct {
+	Group       Group
+	Title       string
+	Description string
+}
+
+// groups is the group registry, in the order the preferences page shows
+// them.
+var groups = []GroupDefinition{
+	{
+		Group:       GroupServiceCodes,
+		Title:       "Service codes",
+		Description: "The service codes on accounts you hold: when one is created, used, close to expiring, or presented after it expired.",
+	},
+	{
+		Group:       GroupCertificates,
+		Title:       "Certificates issued to you",
+		Description: "One email for every login, sudo or console login, so these are off by default. Turn one on to hear about every certificate issued in your name.",
+	},
+}
+
+// Groups returns the registered groups in preferences-page order. The
+// returned slice is a copy, like Definitions.
+func Groups() []GroupDefinition {
+	out := make([]GroupDefinition, len(groups))
+	copy(out, groups)
+	return out
+}
+
 // Definition is everything the rest of the server needs to know about one
 // notification kind without hardcoding it.
 type Definition struct {
 	// Kind is the stable identifier, persisted and sent to the UI.
 	Kind Kind
+
+	// Group is the set the preferences page shows this kind in.
+	Group Group
 
 	// Title and Description are shown on the preferences page and in the
 	// generated documentation.
@@ -106,8 +152,9 @@ type Definition struct {
 var definitions = []Definition{
 	{
 		Kind:           KindServiceEnrollmentCreated,
-		Title:          "Service enrollment created",
-		Description:    "Sent when you approve a service certificate request and an enrollment code is created for it.",
+		Group:          GroupServiceCodes,
+		Title:          "Service code created",
+		Description:    "Sent when you approve a service certificate request and a service code is created for it.",
 		DefaultEnabled: true,
 		NewPayload:     func() any { return &ServiceEnrollmentCreated{} },
 		Fields: []Field{
@@ -131,12 +178,14 @@ var definitions = []Definition{
 			{"CodeExpiresAt", "time.Time", "When the enrollment code stops being redeemable. Re-enroll before this to keep an unattended job running."},
 			{"CertificateLifetime", "time.Duration", "How long each certificate redeemed from this code is valid for, measured from each redemption."},
 			{"ServerURL", "string", "The server's public origin, for links back to the request."},
+			readerField,
 		},
 	},
 	{
 		Kind:           KindServiceEnrollmentRedeemed,
-		Title:          "Service enrollment redeemed",
-		Description:    "Sent every time one of your enrollment codes is redeemed for a certificate, including failed attempts.",
+		Group:          GroupServiceCodes,
+		Title:          "Service code redeemed",
+		Description:    "Sent every time one of your service codes is redeemed for a certificate, including failed attempts.",
 		DefaultEnabled: true,
 		NewPayload:     func() any { return &ServiceEnrollmentRedeemed{} },
 		Fields: []Field{
@@ -154,12 +203,14 @@ var definitions = []Definition{
 			{"FirstRedemption", "bool", "True when this was the first time the code was redeemed."},
 			{"CodeExpiresAt", "time.Time", "When the code itself stops being redeemable."},
 			{"ServerURL", "string", "The server's public origin, for links back to the retrieval log."},
+			readerField,
 		},
 	},
 	{
 		Kind:           KindServiceEnrollmentExpiring,
-		Title:          "Service enrollment expiring",
-		Description:    "Sent while one of your enrollment codes is close to expiring, so an unattended job can be re-enrolled before it starts failing: weekly inside the reminder window, then daily over the final week.",
+		Group:          GroupServiceCodes,
+		Title:          "Service code expiring",
+		Description:    "Sent while one of your service codes is close to expiring, so an unattended job can be enrolled again before it starts failing: weekly inside the reminder window, then daily over the final week.",
 		DefaultEnabled: true,
 		NewPayload:     func() any { return &ServiceEnrollmentExpiring{} },
 		Fields: []Field{
@@ -174,12 +225,14 @@ var definitions = []Definition{
 			{"CodeExpiresAt", "time.Time", "When the code stops being redeemable. Re-enroll before this."},
 			{"Daily", "bool", "True once the code is inside its final week and reminders come daily; false while they are still weekly."},
 			{"ServerURL", "string", "The server's public origin, for links back to the enrollment."},
+			readerField,
 		},
 	},
 	{
 		Kind:           KindServiceEnrollmentExpiredAttempt,
-		Title:          "Expired enrollment code used",
-		Description:    "Sent when an expired enrollment code is presented for redemption: either a job is still trying to use it, or someone is replaying a credential that should no longer exist.",
+		Group:          GroupServiceCodes,
+		Title:          "Expired service code used",
+		Description:    "Sent when an expired service code is presented for redemption: either a job is still trying to use it, or someone is replaying a credential that should no longer exist.",
 		DefaultEnabled: true,
 		NewPayload:     func() any { return &ServiceEnrollmentExpiredAttempt{} },
 		Fields: []Field{
@@ -194,10 +247,12 @@ var definitions = []Definition{
 			{"AttemptedAt", "time.Time", "When the expired code was presented."},
 			{"CodeExpiredAt", "time.Time", "When the code stopped being redeemable."},
 			{"ServerURL", "string", "The server's public origin, for links back to the enrollment."},
+			readerField,
 		},
 	},
 	{
 		Kind:           KindUserCertificateIssued,
+		Group:          GroupCertificates,
 		Title:          "User certificate issued",
 		Description:    "Sent every time an interactive SSH certificate is signed for you. Off by default: this is one message per login, for people who want to see every one.",
 		DefaultEnabled: false,
@@ -206,6 +261,7 @@ var definitions = []Definition{
 	},
 	{
 		Kind:           KindPAMCertificateIssued,
+		Group:          GroupCertificates,
 		Title:          "PAM certificate issued",
 		Description:    "Sent every time a certificate is signed for a local sudo or su on your behalf. Off by default: this is one message per sudo.",
 		DefaultEnabled: false,
@@ -214,6 +270,7 @@ var definitions = []Definition{
 	},
 	{
 		Kind:           KindConsoleCertificateIssued,
+		Group:          GroupCertificates,
 		Title:          "Console certificate issued",
 		Description:    "Sent every time a certificate is signed for a console login you approved with a typed code. Off by default: this is one message per login.",
 		DefaultEnabled: false,
@@ -228,6 +285,7 @@ var definitions = []Definition{
 var certificateIssuedFields = []Field{
 	{"CertificateType", "string", "The certificate type: \"user\", \"pam\" or \"console\"."},
 	{"RequestID", "string", "The certificate request this certificate was issued for."},
+	{"CertificateID", "string", "The certificate's own record, for a link to /certs/<id>. Empty if the record could not be read back."},
 	{"KeyID", "string", "The SSH certificate key ID."},
 	{"Principals", "[]string", "The accounts this certificate may log in as."},
 	{"Serial", "uint64", "The certificate serial, matching the entry in your certificate history."},
@@ -261,7 +319,11 @@ var certificateIssuedFields = []Field{
 	{"SourceAddresses", "[]string", "The source-address critical option, or empty if unrestricted."},
 	{"NoTouchRequired", "bool", "Whether the certificate waives the hardware-key touch, which makes it a weaker credential than one that does not."},
 	{"ServerURL", "string", "The server's public origin, for links back to the certificate."},
+	readerField,
 }
+
+// readerField documents Reader's one field, which every payload embeds.
+var readerField = Field{"Advanced", "bool", "True when the recipient chose the advanced email detail level, false for simplified. Set per recipient at delivery; a template that ignores it sends the same message at both levels."}
 
 // Definitions returns the registered kinds in preferences-page order. The
 // returned slice is a copy, so a caller sorting or filtering it cannot

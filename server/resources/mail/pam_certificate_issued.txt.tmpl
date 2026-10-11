@@ -1,55 +1,30 @@
-A certificate was issued to authenticate a local operation as you: a `sudo`, a
-`su`, or another PAM-guarded command on the machine below.
+{{ if .PAMService }}A {{ .PAMService }}{{ else }}A PAM authentication{{ end }}{{ if .LocalHostname }} on {{ .LocalHostname }}{{ end }} was approved with your account.
 
-If you just ran that command and answered the prompt, this is it.
-
-If you did not, someone completed a PAM authentication in your name, which
-means they were already at a shell on that machine. Tell whoever runs it.
-
-CERTIFICATE
-
-A PAM certificate authorizes one local operation and is deliberately
-short-lived. It is not an SSH login credential and cannot open a session.
-
-  Principals            {{ join .Principals ", " }}
-  Key ID                {{ .KeyID }}
-  Serial number         {{ .Serial }}
-  Key fingerprint       {{ .PublicKeyFingerprint }}
-  Valid period          {{ datetime .IssuedAt }} - {{ datetime .ExpiresAt }} ({{ remaining .ExpiresAt }})
-{{ if or .Extensions .NoTouchRequired }}  Extensions            {{ join .Extensions ", " }}{{ if .NoTouchRequired }}{{ if .Extensions }}, {{ end }}no-touch-required{{ end }}
-{{ end }}{{ if .ForceCommand }}  Critical options      force-command = {{ .ForceCommand }}
-{{ end }}{{ if .SourceAddresses }}                        source-address = {{ join .SourceAddresses ", " }}
-{{ end }}
-DECISION
-
-{{ if .ApprovedByUsername }}  Approved by           {{ .ApprovedByUsername }}{{ if .ApprovedByEmail }} <{{ .ApprovedByEmail }}>{{ end }}{{ if not .ApprovedAt.IsZero }} at {{ datetime .ApprovedAt }}{{ end }}
-{{ else }}  Approved by           not recorded
-{{ end }}{{ if .ApprovedByName }}  Name                  {{ .ApprovedByName }}
-{{ end }}{{ if .ApproverSourceIP }}  Source address        {{ .ApproverSourceIP }}
-{{ end }}{{ if .ApproverUserAgent }}  Browser               {{ .ApproverUserAgent }}
-{{ end }}
-If that address is not one you were at, the approving account was not being
-used by you.
-
-WHAT ASKED FOR IT
-
-Reported by the requesting host and never verified. Only the address is what
-the server observed.
-
-{{ if or .LocalUsername .LocalHostname }}  Reported as           {{ .LocalUsername }}{{ if and .LocalUsername .LocalHostname }}@{{ end }}{{ .LocalHostname }}
-{{ end }}{{ if .PAMService }}  Service               {{ .PAMService }}
-{{ end }}{{ if .TTY }}  Terminal              {{ .TTY }}
-{{ end }}{{ if .RemoteHost }}  Remote host           {{ .RemoteHost }}
-{{ end }}{{ if .RequestingUser }}  Invoked by            {{ .RequestingUser }}
-{{ end }}{{ if .Process }}  Command               {{ .Process }}
-{{ end }}{{ if .MachineID }}  Machine ID            {{ .MachineID }}
-{{ end }}{{ if .Client }}  Client                {{ .Client }}{{ if .ClientMode }} (mode={{ .ClientMode }}){{ end }}
-{{ end }}{{ if .OS }}  Platform              {{ .OS }}
-{{ end }}{{ if or .CallerUID .CallerPID }}  Process ids           {{ if .CallerUID }}uid {{ .CallerUID }}{{ if .CallerGID }}, gid {{ .CallerGID }}{{ end }}{{ if .CallerPID }}, {{ end }}{{ end }}{{ if .CallerPID }}pid {{ .CallerPID }}{{ if .CallerPPID }}, ppid {{ .CallerPPID }}{{ end }}{{ end }}
-{{ end }}  Requested from        {{ .SourceIP }}
-  Request ID            {{ .RequestID }}
+Not you? Whoever did this was already at a shell on that machine. Tell
+whoever runs it.
 {{ if .ServerURL }}
-Your certificate history: {{ .ServerURL }}/logs/me
-{{ end }}
+{{ if .CertificateID }}View this certificate: {{ .ServerURL }}/certs/{{ .CertificateID }}
+{{ else }}View your certificate history: {{ .ServerURL }}/logs/me
+{{ end }}{{ end }}
+{{ if .LocalUsername }}  Account           {{ .LocalUsername }} (claimed)
+{{ end }}{{ if .RequestingUser }}  Invoked by        {{ .RequestingUser }} (claimed)
+{{ end }}{{ if .ApproverSourceIP }}  Approved from     {{ .ApproverSourceIP }}
+{{ end }}{{ if .Advanced }}
+DETAILS
+
+  Principals        {{ join .Principals ", " }}
+  Key ID            {{ .KeyID }}
+  Serial            {{ .Serial }}
+  Valid from        {{ datetime .IssuedAt }}
+  Valid until       {{ datetime .ExpiresAt }} ({{ remaining .ExpiresAt }})
+{{ if .Process }}  Command           {{ .Process }} (claimed)
+{{ end }}{{ if .TTY }}  Terminal          {{ .TTY }} (claimed)
+{{ end }}{{ if .RemoteHost }}  Remote host       {{ .RemoteHost }} (claimed)
+{{ end }}  Requested from    {{ .SourceIP }}
+  Extensions        {{ if .Extensions }}{{ join .Extensions ", " }}{{ if .NoTouchRequired }}, no-touch-required{{ end }}{{ else if .NoTouchRequired }}no-touch-required{{ else }}none{{ end }}
+{{ if .ForceCommand }}  Force command     {{ .ForceCommand }}
+{{ end }}{{ if .SourceAddresses }}  Source address    {{ join .SourceAddresses ", " }}
+{{ end }}{{ if .ApproverUserAgent }}  Approved in       {{ .ApproverUserAgent }}
+{{ end }}{{ end }}
 Sent because "PAM certificate issued" is on in your notification preferences{{ if .ServerURL }}
-({{ .ServerURL }}/preferences){{ end }}. It is off by default.
+({{ .ServerURL }}/preferences){{ end }}.

@@ -1,59 +1,39 @@
-<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:15px;line-height:1.55;color:#1c1e21;max-width:640px">
-  {{ if .Succeeded }}
-  <p>An enrollment code you approved was redeemed for a certificate.</p>
-  {{ else }}
-  <p style="background:#fdeced;border-left:3px solid #c0392b;padding:10px 14px;margin:0 0 18px">
-    An enrollment code you approved was presented and accepted, but the certificate could not be
-    <strong>signed</strong>. The reason is in the server log. If an unattended job depends on this,
-    it is currently without a valid certificate.
-  </p>
-  {{ end }}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
+<meta name="supported-color-schemes" content="light">
+</head>
+<body style="margin:0;padding:0;background:#f2f0ec">
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#f2f0ec"><tr><td align="center" style="padding:24px 12px">
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width:600px;background:#ffffff"><tr><td style="padding:28px 24px;font-family:'IBM Plex Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#1e1a16">
 
-  {{ if .FirstRedemption }}
-  <p style="background:#eef5ff;border-left:3px solid #1d4ed8;padding:10px 14px;margin:18px 0">
-    This was the <strong>first</strong> redemption of this code, which an operator setting up a new
-    job expects to see once. Every later one is routine.
-  </p>
-  {{ end }}
+<p style="margin:0 0 8px;font-size:16px;line-height:1.5;color:#1e1a16">{{ if .Succeeded }}The service code for <span style="font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">{{ if .ServiceAccount }}{{ .ServiceAccount }}{{ else }}{{ join .Principals ", " }}{{ end }}</span> was redeemed from <span style="font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">{{ .SourceIP }}</span>{{ if .FirstRedemption }} for the first time{{ end }}.{{ else }}The service code for <span style="font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">{{ if .ServiceAccount }}{{ .ServiceAccount }}{{ else }}{{ join .Principals ", " }}{{ end }}</span> was presented from <span style="font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">{{ .SourceIP }}</span> and accepted, but the certificate could not be signed.{{ end }}</p>
+{{ if .Succeeded }}<p style="margin:0 0 24px;font-size:14px;line-height:1.5;color:#5d5751">Not a host you recognise? Expire the code: it stays redeemable until it expires.</p>{{ else }}<p style="margin:0 0 24px;padding:12px 16px;font-size:14px;line-height:1.5;color:#1e1a16;background:#ffe7e4">A job that depends on this code has no valid certificate now. The reason is in the server log.</p>{{ end }}
 
-  <h3 style="margin:24px 0 8px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:#6b7280">Redemption</h3>
-  <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;font-size:14px">
-    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Redeemed at</td><td style="padding:4px 0">{{ datetime .RetrievedAt }}</td></tr>
-    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Source address</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .SourceIP }}</td></tr>
-    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Principal</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ if .ServiceAccount }}{{ .ServiceAccount }}{{ else }}{{ join .Principals ", " }}{{ end }}</td></tr>
-    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Result</td><td style="padding:4px 0">{{ if .Succeeded }}certificate issued{{ else }}signing failed{{ end }}</td></tr>
-  </table>
-  <p style="color:#6b7280;font-size:13px">
-    If you do not recognize that address, the code is in hands you did not intend. It stays
-    redeemable until it expires, so treat it as a credential to revoke rather than something to
-    watch.
-  </p>
+{{ if .ServerURL }}<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 28px"><tr><td style="background:#2858cd"><a href="{{ .ServerURL }}/service-codes/{{ .EnrollmentID }}" style="display:inline-block;padding:12px 20px;font-family:'IBM Plex Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:14px;font-weight:500;line-height:20px;color:#ffffff;text-decoration:none">Review this code</a></td></tr></table>{{ end }}
 
-  <h3 style="margin:24px 0 8px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:#6b7280">Certificate</h3>
-  <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;font-size:14px">
-    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Principals</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ join .Principals ", " }}</td></tr>
-    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Key ID</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .KeyID }}</td></tr>
-    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Serial number</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .CertificateSerial }}</td></tr>
-    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Valid period</td><td style="padding:4px 0">{{ datetime .RetrievedAt }} &ndash; {{ datetime .CertificateExpiresAt }} <span style="color:#6b7280">({{ remaining .CertificateExpiresAt }})</span></td></tr>
-  </table>
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse">
+  <tr><td style="padding:12px 16px 12px 0;border-bottom:1px solid #e0ddda;font-size:14px;line-height:1.375;color:#5d5751;white-space:nowrap;vertical-align:top;width:1%">Redeemed at</td><td style="padding:12px 0;border-bottom:1px solid #e0ddda;font-size:16px;line-height:1.375;color:#1e1a16;vertical-align:top;word-break:break-word;font-variant-numeric:tabular-nums">{{ datetime .RetrievedAt }}</td></tr>
+  <tr><td style="padding:12px 16px 12px 0;border-bottom:1px solid #e0ddda;font-size:14px;line-height:1.375;color:#5d5751;white-space:nowrap;vertical-align:top;width:1%">Code expires</td><td style="padding:12px 0;border-bottom:1px solid #e0ddda;font-size:16px;line-height:1.375;color:#1e1a16;vertical-align:top;word-break:break-word;font-variant-numeric:tabular-nums">{{ datetime .CodeExpiresAt }} ({{ remaining .CodeExpiresAt }})</td></tr>
+</table>
 
-  <h3 style="margin:24px 0 8px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:#6b7280">The code itself</h3>
-  <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;font-size:14px">
-    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Code expires</td><td style="padding:4px 0">{{ datetime .CodeExpiresAt }} <span style="color:#6b7280">({{ remaining .CodeExpiresAt }})</span></td></tr>
-    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Enrollment ID</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .EnrollmentID }}</td></tr>
-    {{ if .RequestID }}<tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Request ID</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .RequestID }}</td></tr>{{ end }}
-    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Retrieval ID</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .RetrievalID }}</td></tr>
-  </table>
-  <p style="color:#6b7280;font-size:13px">
-    The code is reusable until it expires, so an unattended job will keep redeeming it. Enroll
-    again before then to keep that job running.
-  </p>
+{{ if .Advanced }}
+<p style="margin:32px 0 4px;font-size:11px;font-weight:600;line-height:1.25;letter-spacing:.06em;text-transform:uppercase;color:#5d5751">Details</p>
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse">
+  {{ if .Succeeded }}<tr><td style="padding:8px 16px 8px 0;border-bottom:1px solid #e0ddda;font-size:13px;line-height:1.25;color:#5d5751;white-space:nowrap;vertical-align:top;width:1%">Certificate until</td><td style="padding:8px 0;border-bottom:1px solid #e0ddda;font-size:13px;line-height:1.25;color:#1e1a16;vertical-align:top;word-break:break-word;font-variant-numeric:tabular-nums">{{ datetime .CertificateExpiresAt }} ({{ remaining .CertificateExpiresAt }})</td></tr>{{ end }}
+  <tr><td style="padding:8px 16px 8px 0;border-bottom:1px solid #e0ddda;font-size:13px;line-height:1.25;color:#5d5751;white-space:nowrap;vertical-align:top;width:1%">Key ID</td><td style="padding:8px 0;border-bottom:1px solid #e0ddda;font-size:13px;line-height:1.25;color:#1e1a16;vertical-align:top;word-break:break-word;font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">{{ .KeyID }}</td></tr>
+  {{ if .Succeeded }}<tr><td style="padding:8px 16px 8px 0;border-bottom:1px solid #e0ddda;font-size:13px;line-height:1.25;color:#5d5751;white-space:nowrap;vertical-align:top;width:1%">Serial</td><td style="padding:8px 0;border-bottom:1px solid #e0ddda;font-size:13px;line-height:1.25;color:#1e1a16;vertical-align:top;word-break:break-word;font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">{{ .CertificateSerial }}</td></tr>{{ end }}
+</table>
+{{ end }}
 
-  {{ if .ServerURL }}<p style="font-size:13px"><a href="{{ .ServerURL }}/service-codes/{{ .EnrollmentID }}" style="color:#1d4ed8">This code, and every redemption of it</a>.</p>{{ end }}
+<p style="margin:32px 0 0;padding-top:16px;border-top:1px solid #e0ddda;font-size:12px;line-height:1.5;color:#5d5751">
+Sent because &ldquo;Service code redeemed&rdquo; is on in your {{ if .ServerURL }}<a href="{{ .ServerURL }}/preferences" style="color:#2858cd">notification preferences</a>{{ else }}notification preferences{{ end }}, or because this address is the service code's notification address.
+</p>
 
-  <p style="margin-top:28px;padding-top:14px;border-top:1px solid #e5e7eb;color:#9099a8;font-size:12px">
-    Sent because "Service enrollment redeemed" is on in your
-    {{ if .ServerURL }}<a href="{{ .ServerURL }}/preferences" style="color:#6b7280">notification preferences</a>{{ else }}notification preferences{{ end }},
-    or because this address is set as the enrollment's notification address.
-  </p>
-</div>
+</td></tr></table>
+</td></tr></table>
+</body>
+</html>

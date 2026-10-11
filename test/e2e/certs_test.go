@@ -8,40 +8,57 @@ import (
 	"github.com/mnestor/ssoossh/test/e2e/harness"
 )
 
-// TestCertificateDetail_ApproverCanViewCertificate tests that the approver
-// can navigate to a certificate detail page and see full details.
-func TestCertificateDetail_ApproverCanViewCertificate(t *testing.T) {
-	f := newFixture(t)
-	browser := harness.StartBrowser(t)
+// issueCertificate runs a login through approval by alice and returns the
+// issued certificate's ID.
+func issueCertificate(t *testing.T, f *fixture) string {
+	t.Helper()
 
-	// Start a login and approve a certificate request
 	login := harness.StartLogin(t, f.SsoosshBin, f.Server.BaseURL, f.Agent.Socket)
-	approvalURL := login.ApprovalURL(t, waitFor)
+	requestID := requestIDFromApprovalURL(t, login.ApprovalURL(t, waitFor))
+	approve(t, newBrowserClient(t), f.Server.BaseURL, requestID, "alice", nil)
 
-	// Extract request ID and approve it
-	requestID := requestIDFromApprovalURL(t, approvalURL)
-	approveClient := newBrowserClient(t)
-	approve(t, approveClient, f.Server.BaseURL, requestID, "alice", nil)
-
-	// Wait for certificate to be issued
 	cert, err := login.AwaitCertificate(t, waitFor, f.Server.BaseURL, f.Agent)
 	if err != nil {
 		t.Fatalf("failed to await certificate: %v", err)
 	}
+	return cert.ID
+}
 
-	// Navigate to the certificate detail page using the certificate ID
-	// The certificate ID should be available from the login.AwaitCertificate response
-	certDetailURL := f.Server.BaseURL + "/certs/" + cert.ID
-	// Navigate to cert page; it will redirect to login since we're not authenticated yet
-	browser.Navigate(t, certDetailURL, `[data-testid="login-view"]`)
-	// Click the sign-in button
+// openCertificateAsAlice signs the browser in as alice from the certificate
+// page and waits for the redirect back to it. alice is neither SOC nor
+// admin, so her first login sets the simplified level.
+func openCertificateAsAlice(t *testing.T, f *fixture, browser *harness.Browser, certID string) {
+	t.Helper()
+
+	browser.Navigate(t, f.Server.BaseURL+"/certs/"+certID, `[data-testid="login-view"]`)
 	browser.Click(t, `[data-testid="sign-in-button"]`)
-	// Complete the IdP login as alice
 	browser.CompleteIdPLogin(t, "alice")
-	// Wait for the post-login redirect chain to settle. After completing IdP login,
-	// the browser is redirected back to the cert page. Wait for cert-details to
-	// appear before continuing.
 	browser.WaitVisible(t, `[data-testid="cert-details"]`)
+}
+
+// TestCertificateDetail_ApproverCanViewCertificate: the approver reaches
+// the certificate page at the simplified level, which leaves the key ID
+// and serial to the advanced level.
+func TestCertificateDetail_ApproverCanViewCertificate(t *testing.T) {
+	f := newFixture(t)
+	browser := harness.StartBrowser(t)
+
+	openCertificateAsAlice(t, f, browser, issueCertificate(t, f))
+
+	browser.WaitVisible(t, `[data-testid="detail-toggle-simplified"][aria-pressed="true"]`)
+	browser.AssertNotPresent(t, `[data-testid="cert-serial-number"]`)
+	browser.AssertNotPresent(t, `[data-testid="cert-key-id"]`)
+}
+
+// TestCertificateDetail_ApproverSeesKeyIDAndSerialAtTheAdvancedLevel: the
+// switch in the page heading brings back the ids an expert compares.
+func TestCertificateDetail_ApproverSeesKeyIDAndSerialAtTheAdvancedLevel(t *testing.T) {
+	f := newFixture(t)
+	browser := harness.StartBrowser(t)
+
+	openCertificateAsAlice(t, f, browser, issueCertificate(t, f))
+
+	browser.Click(t, `[data-testid="detail-toggle-advanced"]`)
 	browser.WaitVisible(t, `[data-testid="cert-serial-number"]`)
 	browser.WaitVisible(t, `[data-testid="cert-key-id"]`)
 }
@@ -96,31 +113,18 @@ func TestCertificateDetail_AuditorCanViewCertificate(t *testing.T) {
 	})
 	browser := harness.StartBrowser(t)
 
-	// Start a login and approve a certificate request as alice
-	login := harness.StartLogin(t, f.SsoosshBin, f.Server.BaseURL, f.Agent.Socket)
-	approvalURL := login.ApprovalURL(t, waitFor)
+	certID := issueCertificate(t, f)
 
-	requestID := requestIDFromApprovalURL(t, approvalURL)
-	approveClient := newBrowserClient(t)
-	approve(t, approveClient, f.Server.BaseURL, requestID, "alice", nil)
-
-	cert, err := login.AwaitCertificate(t, waitFor, f.Server.BaseURL, f.Agent)
-	if err != nil {
-		t.Fatalf("failed to await certificate: %v", err)
-	}
-
-	// Access the certificate as an auditor
-	certDetailURL := f.Server.BaseURL + "/certs/" + cert.ID
-	// Navigate to cert page; it will redirect to login since we're not authenticated yet
-	browser.Navigate(t, certDetailURL, `[data-testid="login-view"]`)
-	// Click the sign-in button
+	// Access the certificate as an auditor. The page redirects to login
+	// first, then back here once the IdP login completes.
+	browser.Navigate(t, f.Server.BaseURL+"/certs/"+certID, `[data-testid="login-view"]`)
 	browser.Click(t, `[data-testid="sign-in-button"]`)
-	// Complete login as an auditor (with auditor group)
 	browser.CompleteIdPLoginWithGroups(t, "auditor", []string{e2eAuditorGroup})
-	// Wait for the post-login redirect chain to settle. After completing IdP login,
-	// the browser is redirected back to the cert page. Wait for cert-details to
-	// appear before continuing.
 	browser.WaitVisible(t, `[data-testid="cert-details"]`)
+
+	// Auditor is not SOC, so the first login sets simplified; the serial,
+	// which proves this is alice's certificate, is advanced-only.
+	browser.Click(t, `[data-testid="detail-toggle-advanced"]`)
 	browser.WaitVisible(t, `[data-testid="cert-serial-number"]`)
 }
 

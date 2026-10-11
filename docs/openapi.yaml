@@ -429,6 +429,29 @@ components:
       - CertificateTypeService
       - CertificateTypePAM
       - CertificateTypeConsole
+    model.DetailLevel:
+      description: |-
+        DetailLevel is how much of the covered pages this person sees:
+        "simplified" or "advanced". Stored on the server so it follows the
+        person between browsers; the email level is separate and travels with
+        the notification preferences.
+      enum:
+      - simplified
+      - advanced
+      - simplified
+      - advanced
+      - simplified
+      - advanced
+      - simplified
+      - advanced
+      - simplified
+      - advanced
+      - simplified
+      - advanced
+      type: string
+      x-enum-varnames:
+      - DetailLevelSimplified
+      - DetailLevelAdvanced
     openapidoc.AccountHoldersEnvelope:
       properties:
         data:
@@ -523,6 +546,15 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/apitypes.DenyResponse'
+        error:
+          type: string
+      required:
+      - data
+      type: object
+    openapidoc.DisplayPreferencesEnvelope:
+      properties:
+        data:
+          $ref: '#/components/schemas/webtypes.DisplayPreferencesResponse'
         error:
           type: string
       required:
@@ -1632,6 +1664,8 @@ components:
             type: string
           type: array
           uniqueItems: false
+        detail_level:
+          $ref: '#/components/schemas/model.DetailLevel'
         email:
           type: string
         extra:
@@ -1710,6 +1744,7 @@ components:
           type: string
       required:
       - approvable_service_accounts
+      - detail_level
       - email
       - extra
       - groups
@@ -1860,6 +1895,13 @@ components:
           type: string
       required:
       - reason
+      type: object
+    webtypes.DisplayPreferencesResponse:
+      properties:
+        detail_level:
+          $ref: '#/components/schemas/model.DetailLevel'
+      required:
+      - detail_level
       type: object
     webtypes.EffectiveConfigResponse:
       properties:
@@ -2296,6 +2338,23 @@ components:
       - started_at
       - trigger
       type: object
+    webtypes.NotificationGroupResponse:
+      properties:
+        description:
+          description: Description is one sentence saying what the group's kinds are
+            about.
+          type: string
+        group:
+          description: Group is the identifier kinds name in NotificationKindResponse.Group.
+          type: string
+        title:
+          description: Title is the group's heading.
+          type: string
+      required:
+      - description
+      - group
+      - title
+      type: object
     webtypes.NotificationKindResponse:
       properties:
         description:
@@ -2306,6 +2365,10 @@ components:
             Enabled is this user's answer, or the kind's default when they have
             never given one.
           type: boolean
+        group:
+          description: Group names the NotificationGroupResponse this kind is shown
+            under.
+          type: string
         kind:
           description: Kind is the stable identifier, the key the update body uses.
           type: string
@@ -2314,6 +2377,7 @@ components:
           type: string
       required:
       - description
+      - group
       - kind
       - title
       type: object
@@ -2325,6 +2389,14 @@ components:
             Empty when the identity provider releases no email claim — the other
             reason nothing arrives, and equally worth showing.
           type: string
+        detail_level:
+          $ref: '#/components/schemas/model.DetailLevel'
+        groups:
+          description: Groups is every group the kinds are shown under, in page order.
+          items:
+            $ref: '#/components/schemas/webtypes.NotificationGroupResponse'
+          type: array
+          uniqueItems: false
         kinds:
           description: |-
             Kinds is every notification the server knows how to send, in a
@@ -2340,6 +2412,8 @@ components:
             the page says out loud rather than leaving the user to infer.
           type: boolean
       required:
+      - detail_level
+      - groups
       - kinds
       type: object
     webtypes.PageMeta:
@@ -2715,8 +2789,17 @@ components:
             an empty one.
           type: string
       type: object
+    webtypes.UpdateDisplayPreferencesBody:
+      properties:
+        detail_level:
+          $ref: '#/components/schemas/model.DetailLevel'
+      required:
+      - detail_level
+      type: object
     webtypes.UpdateNotificationPreferencesBody:
       properties:
+        detail_level:
+          $ref: '#/components/schemas/model.DetailLevel'
         kinds:
           additionalProperties:
             type: boolean
@@ -4547,13 +4630,62 @@ paths:
       summary: The caller's own identity
       tags:
       - web
+  /api/users/me/display:
+    put:
+      description: |-
+        Sets how much of the approval and information pages the caller sees:
+        "simplified" or "advanced". Stored on the server, so it follows the
+        caller between browsers. The email detail level is separate (see
+        /api/users/me/notifications).
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/webtypes.UpdateDisplayPreferencesBody'
+                description: The new level
+                summary: request
+        description: The new level
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.DisplayPreferencesEnvelope'
+          description: The level after saving
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Malformed body or an unknown level
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No valid session
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: The session has no user record
+      security:
+      - sessionCookie: []
+      summary: Update the caller's own web UI detail level
+      tags:
+      - web
   /api/users/me/notifications:
     get:
       description: |-
         Every notification kind this server knows how to send, with the
         caller's answer for each. Kinds the caller has never answered report
         the kind's own default. Also reports whether the server is configured
-        to send mail at all, and the address it would send to.
+        to send mail at all, the address it would send to, and how much
+        each message carries (the email detail level).
       responses:
         "200":
           content:
@@ -4583,6 +4715,7 @@ paths:
         Sets the caller's answer for each notification kind named in the body,
         leaving every other kind unchanged. An unrecognized kind is rejected
         rather than ignored, and nothing is stored when one is present.
+        detail_level, when present, sets the email detail level in the same save.
       requestBody:
         content:
           application/json:
@@ -4606,7 +4739,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
-          description: Malformed body or an unrecognized notification kind
+          description: Malformed body, an unrecognized notification kind, or an unknown
+            detail level
         "401":
           content:
             application/json:

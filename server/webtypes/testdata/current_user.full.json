@@ -28,5 +28,6 @@
   },
   "is_admin": true,
   "is_soc": true,
-  "is_auditor": true
+  "is_auditor": true,
+  "detail_level": "advanced"
 }

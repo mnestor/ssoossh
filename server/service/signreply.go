@@ -195,6 +195,10 @@ type certificateOrigin struct {
 	UserID    *string
 	RequestID *string
 
+	// CertificateID is the certificates row this reply was recorded as,
+	// which the issued notification links to.
+	CertificateID string
+
 	SourceIP      string
 	LocalUsername string
 	LocalHostname string
@@ -319,13 +323,30 @@ func (h *SignedReplyHandler) recordCertificate(ctx context.Context, reply certms
 	// already present and skips it rather than failing on the unique
 	// constraint. This is what makes it safe for resolveSuccess to nack on a
 	// later markResolved failure: the retry cannot duplicate the audit row.
-	if err := h.db.WithContext(ctx).
+	created := h.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "serial_number"}},
 			DoNothing: true,
 		}).
-		Create(&cert).Error; err != nil {
-		return origin, fmt.Errorf("failed to persist certificate audit record: %w", err)
+		Create(&cert)
+	if created.Error != nil {
+		return origin, fmt.Errorf("failed to persist certificate audit record: %w", created.Error)
+	}
+	origin.CertificateID = cert.ID
+	if created.RowsAffected == 0 {
+		// A redelivered reply: the row was written on the first delivery
+		// under a different generated id, so that one is the id to link to.
+		// Best effort, like the owner lookup above: a miss leaves the email
+		// linking to the history instead of to this certificate.
+		origin.CertificateID = ""
+		var existing model.Certificate
+		if err := h.db.WithContext(ctx).Select("id").
+			First(&existing, "serial_number = ?", reply.Serial).Error; err != nil {
+			slog.Warn("could not read back a redelivered certificate's record",
+				"request_id", reply.RequestID, "error", err)
+		} else {
+			origin.CertificateID = existing.ID
+		}
 	}
 
 	// Shipped log only, never the table: the UI already has certificate
@@ -404,6 +425,7 @@ func (h *SignedReplyHandler) notifyIssued(ctx context.Context, reply certmsg.Sig
 	payload := &notify.CertificateIssued{
 		CertificateType:      string(reply.Type),
 		RequestID:            reply.RequestID,
+		CertificateID:        origin.CertificateID,
 		KeyID:                reply.KeyID,
 		Principals:           reply.Principals,
 		Serial:               reply.Serial,

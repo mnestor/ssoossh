@@ -1,34 +1,49 @@
 <script lang="ts">
+	import { SvelteSet } from 'svelte/reactivity';
+
 	import { getNotificationPreferences, updateNotificationPreferences } from '#lib/api/endpoints.js';
-	import type { NotificationPreferences } from '#lib/api/types.js';
+	import type { DetailLevel, NotificationPreferences } from '#lib/api/types.js';
 	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
 	import Alert from '#lib/components/Alert.svelte';
-	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
-	import Button from '#lib/components/Button.svelte';
 	import DetailToggle from '#lib/components/DetailToggle.svelte';
-	import MonoChip from '#lib/components/MonoChip.svelte';
+	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import PageSection from '#lib/components/PageSection.svelte';
 	import PageShell from '#lib/components/PageShell.svelte';
+	import SectionLabel from '#lib/components/SectionLabel.svelte';
+	import Switch from '#lib/components/Switch.svelte';
+
+	// Every setting on this page is live: it applies on the press and is
+	// saved at once, with no Save button anywhere (form-ux: one save model
+	// per screen, and a toggle applies at once). The Pages level also sits
+	// in the heading of every covered page, where it has to be live, which
+	// is what decided the model for the rest.
 
 	// The list of notifications is served, not hardcoded here: adding a
-	// notification kind is a server-side change (see server/notify), and this
-	// page renders whatever it is given so a new one needs no frontend edit.
+	// notification kind or group is a server-side change (see server/notify),
+	// and this page renders whatever it is given.
 	let preferences = $state<NotificationPreferences | null>(null);
 	let loadError = $state<string | null>(null);
 	let hasLoaded = $state(false);
 	// Bumped by Try again; the load below reads it, so a bump re-runs it.
 	let attempt = $state(0);
 
-	// pending holds only the toggles the user has actually moved. Sending
-	// just those is what stops a tab loaded before an upgrade from resetting
-	// kinds it has never heard of.
-	let pending = $state<Record<string, boolean>>({});
-	let saving = $state(false);
-	let saveError = $state<string | null>(null);
-	let saved = $state(false);
+	// Per kind: the value shown while its save is in flight, the kinds whose
+	// save is in flight (a second press waits for the first to answer, so
+	// two saves of one kind can never land out of order), and the kinds
+	// whose last save failed.
+	let shown = $state<Record<string, boolean>>({});
+	const inFlight = new SvelteSet<string>();
+	const failed = new SvelteSet<string>();
 
-	const hasChanges = $derived(Object.keys(pending).length > 0);
+	// The email detail level, held the same way.
+	let emailLevelChoice = $state<DetailLevel | null>(null);
+	let emailLevelError = $state(false);
+	const emailLevel = $derived(emailLevelChoice ?? preferences?.detail_level ?? 'simplified');
+
+	// What a screen reader hears after a save lands. The switch's own state
+	// change is the visible confirmation.
+	let liveMessage = $state('');
 
 	// The way out of a failed load: back to the loading shape, then the
 	// same request again.
@@ -58,51 +73,68 @@
 		return () => controller.abort();
 	});
 
-	/** enabledFor is the value a toggle should show: the pending edit if there is one, otherwise what the server said. */
+	/** enabledFor is what a switch shows: its in-flight value, otherwise what the server said. */
 	function enabledFor(kind: string, stored: boolean): boolean {
-		return kind in pending ? pending[kind] : stored;
+		return kind in shown ? shown[kind] : stored;
 	}
 
 	/**
-	 * toggle records an edit, or drops it again when the user puts a toggle
-	 * back where it started — so returning to the loaded state leaves nothing
-	 * to save rather than saving a no-op.
+	 * setKind saves one kind the moment it is pressed. Only that kind is
+	 * sent, so a tab loaded before an upgrade cannot reset kinds it has never
+	 * heard of. A failed save puts the switch back and says so beside it.
 	 */
-	function toggle(kind: string, stored: boolean) {
-		saved = false;
-		const next = !enabledFor(kind, stored);
-		if (next === stored) {
-			const rest = { ...pending };
-			delete rest[kind];
-			pending = rest;
+	async function setKind(kind: string, title: string, next: boolean) {
+		if (inFlight.has(kind)) {
 			return;
 		}
-		pending = { ...pending, [kind]: next };
-	}
-
-	async function save() {
-		if (!hasChanges) {
-			return;
-		}
-
-		saving = true;
-		saveError = null;
-		saved = false;
+		inFlight.add(kind);
+		failed.delete(kind);
+		shown = { ...shown, [kind]: next };
 		try {
-			// The server answers with the preferences as stored, so the page
-			// shows what was actually saved rather than what it submitted.
-			preferences = await updateNotificationPreferences(pending);
-			pending = {};
-			saved = true;
+			const stored = await updateNotificationPreferences({ [kind]: next });
+			// Kinds only: a level change in flight keeps its own state.
+			if (preferences) {
+				preferences = { ...preferences, kinds: stored.kinds };
+			}
+			liveMessage = `${title} ${next ? 'on' : 'off'}. Saved.`;
 		} catch (cause) {
 			if (redirectIfUnauthenticated(cause)) {
 				return;
 			}
-			// The edit is deliberately kept: losing someone's unsaved change
-			// to report that saving failed makes the failure worse.
-			saveError = errorMessage(cause);
+			failed.add(kind);
 		} finally {
-			saving = false;
+			const rest = { ...shown };
+			delete rest[kind];
+			shown = rest;
+			inFlight.delete(kind);
+		}
+	}
+
+	/** chooseEmailLevel saves the email detail level the moment it is pressed. */
+	async function chooseEmailLevel(level: DetailLevel) {
+		if (!preferences || level === emailLevel) {
+			return;
+		}
+		emailLevelChoice = level;
+		emailLevelError = false;
+		try {
+			// An empty kinds map changes no kind.
+			const stored = await updateNotificationPreferences({}, level);
+			if (preferences) {
+				preferences = { ...preferences, detail_level: stored.detail_level };
+			}
+			liveMessage = `Email detail ${level}. Saved.`;
+		} catch (cause) {
+			if (redirectIfUnauthenticated(cause)) {
+				return;
+			}
+			emailLevelError = true;
+		} finally {
+			// Back to what the server holds, unless a newer press replaced
+			// this one while it was in flight.
+			if (emailLevelChoice === level) {
+				emailLevelChoice = null;
+			}
 		}
 	}
 </script>
@@ -110,24 +142,30 @@
 <svelte:head><title>Preferences · ssoossh</title></svelte:head>
 
 <PageShell width="wide">
-	<!-- "Preferences", not "Notification preferences": the page now holds
-	     the display level as well, and will hold the login shell. -->
+	<!-- "Preferences", not "Notification preferences": the page holds the
+	     display level as well, and will hold the login shell. -->
 	<PageHeading title="Preferences" />
+
+	<div aria-live="polite" aria-atomic="true" class="sr-only" data-testid="preferences-status">
+		{liveMessage}
+	</div>
 
 	{#if loadError}
 		<Alert
 			variant="error"
-			title="Could not load your preferences"
+			title="Could not load your notification settings"
 			onretry={retry}
 			testid="preferences-error"
 		>
 			{loadError}
 		</Alert>
 	{:else if !hasLoaded}
+		<!-- One row for the email detail and one per kind, so the page does
+		     not jump when they arrive. -->
 		<LoadingBlock
 			shape="lines"
-			count={4}
-			label="Loading your preferences…"
+			count={8}
+			label="Loading your notification settings…"
 			testid="preferences-loading"
 		/>
 	{:else if preferences}
@@ -145,33 +183,80 @@
 
 		<PageSection
 			title="Email notifications"
-			description="Choose which events ssoossh emails you about. These are notifications about your own certificates and enrollments."
+			description="Choose which events ssoossh emails you about and how much each email carries. These are about your own certificates and service codes. Changes save as you make them."
 		>
-			<!-- The card is the page's width; the toggles are not. Each row is
-			     a title and a sentence explaining when the notification
-			     fires, and a sentence set 1100px wide is one the eye loses
-			     its place in on the way back to the left. -->
+			<!-- The card is the page's width; the rows are not. Each row is a
+			     title and a sentence explaining when the notification fires,
+			     and a sentence set 1100px wide is one the eye loses its place
+			     in on the way back to the left. -->
 			<div class="flex max-w-[70ch] flex-col gap-4">
 				{#if preferences.address}
 					<p class="text-dense text-ink-muted">
-						Sent to <MonoChip>{preferences.address}</MonoChip>
+						Sent to <span class="text-ink">{preferences.address}</span>
 					</p>
 				{/if}
 
-				{#each preferences.kinds as kind (kind.kind)}
-					<label class="flex min-h-target cursor-pointer items-start gap-3">
-						<input
-							type="checkbox"
-							checked={enabledFor(kind.kind, kind.enabled)}
-							onchange={() => toggle(kind.kind, kind.enabled)}
-							data-testid={`notification-${kind.kind}`}
-							class="mt-0.5 size-4 shrink-0"
+				<div class="flex flex-col gap-2" data-testid="email-detail">
+					<span class="text-sm font-medium text-ink">Email detail</span>
+					<div class="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
+						<DetailToggle
+							testid="email-detail-toggle"
+							label="Email detail"
+							value={emailLevel}
+							onselect={chooseEmailLevel}
 						/>
-						<span class="flex flex-col gap-0.5">
-							<span class="text-sm font-medium text-ink">{kind.title}</span>
-							<span class="text-dense text-ink-muted">{kind.description}</span>
-						</span>
-					</label>
+						{#if emailLevelError}
+							<!-- The selection has already snapped back; this says why. -->
+							<span role="alert" class="text-xs text-danger" data-testid="email-detail-error">
+								Not saved. Try again.
+							</span>
+						{/if}
+					</div>
+					<p class="text-dense text-ink-muted">
+						Simplified sends what you need to recognise the event and act. Advanced adds key IDs,
+						serials and certificate options.
+					</p>
+				</div>
+
+				{#each preferences.groups as group (group.group)}
+					{@const kinds = preferences.kinds.filter((kind) => kind.group === group.group)}
+					{#if kinds.length > 0}
+						<!-- A SectionLabel opens a sub-group inside a panel (DESIGN.md,
+						     "Planes"); role=group names the set for a screen reader. -->
+						<div
+							role="group"
+							aria-label={group.title}
+							class="flex flex-col gap-3"
+							data-testid="notification-group-{group.group}"
+						>
+							<div>
+								<SectionLabel>{group.title}</SectionLabel>
+								<p class="text-dense text-ink-muted">{group.description}</p>
+							</div>
+							{#each kinds as kind (kind.kind)}
+								<div class="flex flex-col gap-1">
+									<Switch
+										checked={enabledFor(kind.kind, kind.enabled)}
+										title={kind.title}
+										description={kind.description}
+										busy={inFlight.has(kind.kind)}
+										onchange={(next) => setKind(kind.kind, kind.title, next)}
+										testid={`notification-${kind.kind}`}
+									/>
+									{#if failed.has(kind.kind)}
+										<!-- The switch has already snapped back; this says why. -->
+										<span
+											role="alert"
+											class="pl-12 text-xs text-danger"
+											data-testid={`notification-${kind.kind}-error`}
+										>
+											Not saved. Try again.
+										</span>
+									{/if}
+								</div>
+							{/each}
+						</div>
+					{/if}
 				{/each}
 
 				{#if preferences.kinds.length === 0}
@@ -179,33 +264,18 @@
 				{/if}
 			</div>
 		</PageSection>
-
-		{#if saveError}
-			<Alert variant="error" title="Could not save your preferences">{saveError}</Alert>
-		{:else if saved}
-			<Alert variant="info" title="Preferences saved">
-				Your notification choices are up to date.
-			</Alert>
-		{/if}
-
-		<div class="flex justify-end">
-			<Button onclick={save} disabled={!hasChanges} busy={saving} testid="save-preferences">
-				{saving ? 'Saving…' : 'Save notifications'}
-			</Button>
-		</div>
 	{/if}
 
-	<!-- Outside the notification load: it lives in this browser, not on the
-	     server, so a failed read of the notification settings must not take
-	     it with it. It applies at once, unlike the notifications above, and
-	     says so, since the Save button belongs to those alone. -->
+	<!-- Outside the notification load: the pages' level arrives with the
+	     session, so a failed read of the notification settings must not take
+	     it with it. Live like everything else on the page. -->
 	<PageSection
 		title="Display"
-		description="How much the approval, certificate and service code pages show. Takes effect at once, in this browser."
+		description="How much the approval, certificate and service code pages show. Changes save as you make them, and apply in every browser you sign in to."
 		testid="display-preferences"
 	>
 		<div class="flex max-w-[70ch] flex-col gap-3">
-			<DetailToggle testid="display-detail" />
+			<DetailToggle testid="display-detail" label="Page detail" />
 			<dl class="flex flex-col gap-1 text-dense">
 				<div>
 					<dt class="inline font-medium text-ink">Simplified</dt>

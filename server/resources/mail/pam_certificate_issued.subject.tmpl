@@ -1,1 +1,1 @@
-PAM authentication approved{{ if .LocalHostname }} on {{ .LocalHostname }}{{ end }}
+{{ if .PAMService }}{{ .PAMService }}{{ else }}PAM authentication{{ end }} approved{{ if .LocalHostname }} on {{ .LocalHostname }}{{ end }}

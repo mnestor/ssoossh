@@ -64,6 +64,9 @@ function mockFetch(enrollments: ServiceEnrollment[]) {
 beforeEach(() => {
 	resetFakePage('http://localhost/service-codes/enr-1');
 	fakePage.params = { id: 'enr-1' };
+	// The full page unless a case says otherwise: simplified is the new
+	// default, and these cases describe what advanced shows.
+	detail.level = 'advanced';
 });
 
 afterEach(() => {

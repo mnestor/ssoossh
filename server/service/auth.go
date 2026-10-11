@@ -376,6 +376,10 @@ func (s *AuthService) HandleCallback(ctx context.Context, code string, nonce str
 	// input — see https://mnestor.github.io/ssoossh/internals/invariants/.
 	s.captureOIDCGroups(ctx, identity, user.ID)
 
+	// After enrichment, so the default reads the roles this session will
+	// actually hold. Only fills an unset level; see DefaultDetailLevel.
+	s.fillDetailLevelsAtLogin(ctx, identity)
+
 	subject := AuditSubjectFromIdentity(identity, user.ID)
 
 	// Check if the user has been disabled by an admin

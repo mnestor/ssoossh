@@ -1,20 +1,16 @@
 import { browser } from '$app/env';
 import { getContext, setContext } from 'svelte';
 
-/** Where the detail level is kept. Read after first paint, like the rail:
- * one frame of the default is a smaller cost than blocking paint on a
- * storage read. */
-export const DETAIL_STORAGE_KEY = 'ssoossh:detail';
+import { updateDisplayPreferences } from '#lib/api/endpoints.js';
+import type { DetailLevel } from '#lib/api/types.js';
 
-/**
- * How much of the approval and information pages a reader sees.
- *
- * `advanced` is the full page and the default, so nobody loses detail
- * without choosing to. `simplified` keeps what a reader needs to decide or
- * to understand the result, and drops the diagnostic detail an expert
- * compares (DESIGN.md, "Detail levels").
- */
-export type DetailLevel = 'simplified' | 'advanced';
+export type { DetailLevel };
+
+/** Where the last level the server reported is cached, so a reload paints
+ * at that level instead of flashing the default until /users/me answers.
+ * A cache only: the server holds the preference (DESIGN.md, "Detail
+ * levels"). */
+export const DETAIL_STORAGE_KEY = 'ssoossh:detail';
 
 /** isDetailLevel narrows a stored string to a level, so anything else
  * stored under the key reads as no preference. */
@@ -23,13 +19,21 @@ function isDetailLevel(value: string | null): value is DetailLevel {
 }
 
 /**
- * The reader's detail preference: one value, shared by the "Display"
- * section on /preferences and the toggle in each covered page's heading,
- * so both always agree.
+ * The reader's web UI detail level: one value, shared by the "Display"
+ * section on /preferences and the toggle in each covered page's heading, so
+ * both always agree.
+ *
+ * Stored on the server and delivered with /users/me, so it follows the
+ * person between browsers. `simplified` is the default until the server
+ * says otherwise; the server's own default is advanced for SOC and admin
+ * and simplified for everyone else, fixed at their first login.
  */
 class Detail {
-	/** The current level. Persisted. */
-	level = $state<DetailLevel>('advanced');
+	/** The current level. */
+	level = $state<DetailLevel>('simplified');
+
+	/** Set when the last change could not be saved, cleared by the next. */
+	saveError = $state<string | null>(null);
 
 	/** True when the simplified pages are showing, for the many readers. */
 	get simplified(): boolean {
@@ -37,7 +41,8 @@ class Detail {
 	}
 
 	/**
-	 * start loads the stored preference. Called once by the root layout.
+	 * start paints from the cached level until the session arrives. Called
+	 * once by the root layout.
 	 *
 	 * Guarded like the rail and the theme: a browser with site data blocked
 	 * throws on read, and a display preference is not worth failing a page
@@ -48,25 +53,54 @@ class Detail {
 			return;
 		}
 		try {
-			const stored = localStorage.getItem(DETAIL_STORAGE_KEY);
-			if (isDetailLevel(stored)) {
-				this.level = stored;
+			const cached = localStorage.getItem(DETAIL_STORAGE_KEY);
+			if (isDetailLevel(cached)) {
+				this.level = cached;
 			}
 		} catch {
-			// Site data blocked. The default holds.
+			// Site data blocked. The default holds until the session loads.
 		}
 	}
 
-	/** set changes the level and remembers it. */
-	set(level: DetailLevel): void {
+	/**
+	 * adopt takes the level the server reported, which wins over the cache.
+	 * Called by the root layout whenever the session's identity loads.
+	 */
+	adopt(level: DetailLevel): void {
 		this.level = level;
+		this.cache(level);
+	}
+
+	/**
+	 * set changes the level at once and saves it to the account. A failed
+	 * save puts the previous level back and says so in saveError, rather
+	 * than leaving a page showing a choice the next load will not.
+	 */
+	async set(level: DetailLevel): Promise<void> {
+		const previous = this.level;
+		this.level = level;
+		this.saveError = null;
+		try {
+			const stored = await updateDisplayPreferences(level);
+			this.adopt(stored.detail_level);
+		} catch (cause) {
+			// Only undo when nothing newer has replaced this choice.
+			if (this.level === level) {
+				this.level = previous;
+			}
+			this.saveError = cause instanceof Error ? cause.message : 'the server did not answer';
+		}
+	}
+
+	/** cache remembers level for the next first paint in this browser. */
+	private cache(level: DetailLevel): void {
 		if (!browser) {
 			return;
 		}
 		try {
 			localStorage.setItem(DETAIL_STORAGE_KEY, level);
 		} catch {
-			// Site data blocked: the choice holds for this page, not beyond it.
+			// Site data blocked: the next load paints the default first.
 		}
 	}
 }

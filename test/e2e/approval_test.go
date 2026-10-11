@@ -30,7 +30,18 @@ func TestApproval_UnauthenticatedVisitorIsSentToTheLoginScreen(t *testing.T) {
 	browser.AssertNotPresent(t, `[data-testid="approve-button"]`)
 }
 
-func TestApproval_TrimmedOptionsShownStruckThroughBeforeApproval(t *testing.T) {
+// The client asks for more extensions than the harness server config
+// permits (see login_test.go's extensions assertion), so every approval
+// here is narrowed. Trimmed options are shown struck through before
+// approval at both detail levels (SSOOSSH.md). alice is neither SOC nor
+// admin, so her first login sets the simplified level; each level gets its
+// own test.
+
+// TestApproval_TrimmedOptionsShownStruckThroughAtTheAdvancedLevel: at the
+// advanced level the trimmed extensions show struck through (see
+// OptionDiffList.svelte), with the narrowing warning, before anyone
+// approves.
+func TestApproval_TrimmedOptionsShownStruckThroughAtTheAdvancedLevel(t *testing.T) {
 	f := newFixture(t)
 	browser := harness.StartBrowser(t)
 
@@ -41,11 +52,33 @@ func TestApproval_TrimmedOptionsShownStruckThroughBeforeApproval(t *testing.T) {
 	browser.Click(t, `[data-testid="sign-in-button"]`)
 	browser.CompleteIdPLogin(t, "alice")
 
-	// The client asks for more extensions than the harness server config
-	// permits (see login_test.go's extensions assertion) — some must show
-	// as trimmed (struck through — see OptionDiffList.svelte) before
-	// anyone approves.
+	// The approve button needs the request and the session, so the level
+	// the session carries has landed before the switch is pressed.
 	browser.WaitVisible(t, `[data-testid="approval-view"]`)
+	browser.WaitVisible(t, `[data-testid="approve-button"]`)
+	browser.Click(t, `[data-testid="detail-toggle-advanced"]`)
+
+	browser.WaitVisible(t, `[data-testid="option-trimmed"]`)
+	browser.WaitVisible(t, `[data-testid="narrowed-warning"]`)
+	browser.WaitVisible(t, `[data-testid="approve-button"]`)
+}
+
+// TestApproval_TrimmedOptionsShownStruckThroughAtTheSimplifiedLevel: the
+// simplified level, where most approvers land, shows the cut too.
+func TestApproval_TrimmedOptionsShownStruckThroughAtTheSimplifiedLevel(t *testing.T) {
+	f := newFixture(t)
+	browser := harness.StartBrowser(t)
+
+	login := harness.StartLogin(t, f.SsoosshBin, f.Server.BaseURL, f.Agent.Socket)
+	approvalURL := login.ApprovalURL(t, waitFor)
+
+	browser.Navigate(t, approvalURL, `[data-testid="sign-in-button"]`)
+	browser.Click(t, `[data-testid="sign-in-button"]`)
+	browser.CompleteIdPLogin(t, "alice")
+
+	browser.WaitVisible(t, `[data-testid="approval-view"]`)
+	browser.WaitVisible(t, `[data-testid="detail-toggle-simplified"][aria-pressed="true"]`)
+	browser.WaitVisible(t, `[data-testid="option-granted"]`)
 	browser.WaitVisible(t, `[data-testid="option-trimmed"]`)
 	browser.WaitVisible(t, `[data-testid="narrowed-warning"]`)
 	browser.WaitVisible(t, `[data-testid="approve-button"]`)

@@ -14,6 +14,8 @@ import type {
 	CertificateResponse,
 	CurrentUser,
 	DenyResult,
+	DetailLevel,
+	DisplayPreferences,
 	DiagnosticsResponse,
 	DisableUserConsequences,
 	AuditEventsResponse,
@@ -51,13 +53,23 @@ export function getNotificationPreferences(signal?: AbortSignal): Promise<Notifi
  * Sends only the kinds being changed. The server leaves every other kind
  * alone, so a tab loaded before an upgrade cannot reset preferences for
  * kinds it has never heard of, and answers with the preferences as stored.
+ * detailLevel, when given, changes the email detail level in the same save.
  */
 export function updateNotificationPreferences(
-	kinds: Record<string, boolean>
+	kinds: Record<string, boolean>,
+	detailLevel?: DetailLevel
 ): Promise<NotificationPreferences> {
 	return request<NotificationPreferences>('/users/me/notifications', {
 		method: 'PUT',
-		body: { kinds }
+		body: detailLevel ? { kinds, detail_level: detailLevel } : { kinds }
+	});
+}
+
+/** PUT /api/users/me/display — the caller's web UI detail level, answered as stored. */
+export function updateDisplayPreferences(detailLevel: DetailLevel): Promise<DisplayPreferences> {
+	return request<DisplayPreferences>('/users/me/display', {
+		method: 'PUT',
+		body: { detail_level: detailLevel }
 	});
 }
 

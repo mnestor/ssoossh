@@ -107,10 +107,11 @@ Coverage is currently unmeasurable (no provider configured).
 5. `TestLogin_SecondLoginReusesValidCertificateWithoutNewApproval` — certificate reuse
 6. `TestLogout_RemovesOnlySsoosshCertificateLeavingUnrelatedKeyUntouched` — logout only removes our cert
 
-**Tier 2 (browser, 3 tests)**:
+**Tier 2 (browser, 4 tests)**:
 1. `TestApproval_UnauthenticatedVisitorSeesSignInNotApprove` — unauthenticated sees login button ✓ (exists)
-2. `TestApproval_TrimmedOptionsShownStruckThroughBeforeApproval` — narrowed extensions shown struck-through ✓ (exists)
-3. `TestApproval_SecondIdentityOpeningSameLinkIsRefused` — second user on same link denied ✓ (exists)
+2. `TestApproval_TrimmedOptionsShownStruckThroughAtTheAdvancedLevel` — narrowed extensions shown struck-through at the advanced level ✓ (exists)
+3. `TestApproval_TrimmedOptionsShownStruckThroughAtTheSimplifiedLevel` — narrowed extensions shown struck-through at the simplified level ✓ (exists)
+4. `TestApproval_SecondIdentityOpeningSameLinkIsRefused` — second user on same link denied ✓ (exists)
 
 **Tier 3 (sshd, 2 tests)**:
 1. `TestSSH_SshdAcceptsTheIssuedCertificate` — certificate authenticates session

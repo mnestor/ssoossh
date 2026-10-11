@@ -626,6 +626,61 @@ func TestNotifyServiceAccount_shouldDeliverToEveryHolder(t *testing.T) {
 	}
 }
 
+// Each recipient reads at their own email detail level: one who chose
+// advanced gets the details section, and one who never chose gets the
+// simplified message.
+func TestNotifyServiceAccount_shouldRenderEachHolderAtTheirOwnLevel(t *testing.T) {
+	f := newNotificationFixture(t)
+	bob := f.seedHolder(t, "bob", "deploy-bot")
+	f.seedHolder(t, "carol", "deploy-bot")
+	advanced := model.DetailLevelAdvanced
+	if err := f.db.Model(&bob).Update("email_detail_level", advanced).Error; err != nil {
+		t.Fatalf("failed to set bob's level: %v", err)
+	}
+
+	f.svc.NotifyServiceAccount(context.Background(),
+		notify.KindServiceEnrollmentCreated, "deploy-bot", sampleCreated())
+
+	tests := []struct {
+		name string
+		to   string
+		want bool
+	}{
+		{name: "should send the details to a holder who chose advanced", to: "bob@example.com", want: true},
+		{name: "should leave the details out for a holder who never chose", to: "carol@example.com", want: false},
+	}
+	msgs := f.waitForMessages(t, 2)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, msg := range msgs {
+				if msg.To != tc.to {
+					continue
+				}
+				if got := strings.Contains(msg.Text, "DETAILS"); got != tc.want {
+					t.Errorf("message to %s carries the details = %v, want %v", tc.to, got, tc.want)
+				}
+				return
+			}
+			t.Fatalf("no message to %s", tc.to)
+		})
+	}
+}
+
+// A bare notification address has nobody behind it to have chosen a level,
+// so it reads simplified.
+func TestNotifyEnrollment_shouldSendTheAddressTheSimplifiedMessage(t *testing.T) {
+	f := newNotificationFixture(t)
+	f.seedEnrollment(t, "enr-1", "deploy-bot", "deploys@example.com")
+
+	f.svc.NotifyEnrollment(context.Background(),
+		notify.KindServiceEnrollmentCreated, "enr-1", "deploy-bot", sampleCreated())
+
+	msgs := f.waitForMessages(t, 1)
+	if strings.Contains(msgs[0].Text, "DETAILS") {
+		t.Error("the enrollment's address received the advanced message")
+	}
+}
+
 // A holder is somebody who holds the account, not somebody whose stored JSON
 // happens to contain the name: the quoted match is what stops "deploy" from
 // reaching the holders of "deploy-bot".

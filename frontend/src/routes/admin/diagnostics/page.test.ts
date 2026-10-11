@@ -60,7 +60,8 @@ function signedIn(isAdmin = true) {
 		extra: {},
 		is_admin: isAdmin,
 		is_soc: isAdmin,
-		is_auditor: true
+		is_auditor: true,
+		detail_level: 'advanced' as const
 	};
 	session.resolved = true;
 }

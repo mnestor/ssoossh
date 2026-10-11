@@ -86,6 +86,33 @@ func TestDefinitions_shouldDocumentOnlyRealPayloadFields(t *testing.T) {
 	}
 }
 
+// The preferences page shows kinds by group, so a kind whose group is not
+// registered would not appear on it at all.
+func TestDefinitions_shouldPlaceEveryKindInARegisteredGroup(t *testing.T) {
+	registered := map[Group]bool{}
+	for _, g := range Groups() {
+		registered[g.Group] = true
+	}
+	for _, def := range Definitions() {
+		if !registered[def.Group] {
+			t.Errorf("%s is in group %q, which is not registered", def.Kind, def.Group)
+		}
+	}
+}
+
+// An empty group would be a heading over nothing on the preferences page.
+func TestGroups_shouldEachHoldAKind(t *testing.T) {
+	used := map[Group]bool{}
+	for _, def := range Definitions() {
+		used[def.Group] = true
+	}
+	for _, g := range Groups() {
+		if !used[g.Group] {
+			t.Errorf("group %q holds no kind", g.Group)
+		}
+	}
+}
+
 func TestLookup_shouldReportUnknownKinds(t *testing.T) {
 	if _, ok := Lookup("nope"); ok {
 		t.Error("Lookup reported an unregistered kind as known")
@@ -226,13 +253,25 @@ func payloadFieldNames(t *testing.T, p any) map[string]bool {
 	}
 
 	names := map[string]bool{}
-	typ := v.Type()
+	collectFieldNames(v.Type(), names)
+	return names
+}
+
+// collectFieldNames adds typ's exported field names to names, flattening
+// embedded structs into their promoted fields: a template writes
+// {{ .Advanced }}, not {{ .Reader.Advanced }}, so the promoted name is the
+// one the documentation has to list.
+func collectFieldNames(typ reflect.Type, names map[string]bool) {
 	for i := range typ.NumField() {
-		if f := typ.Field(i); f.IsExported() {
+		f := typ.Field(i)
+		if f.Anonymous && f.Type.Kind() == reflect.Struct {
+			collectFieldNames(f.Type, names)
+			continue
+		}
+		if f.IsExported() {
 			names[f.Name] = true
 		}
 	}
-	return names
 }
 
 // hasField reports whether fields documents name.
