@@ -8,6 +8,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -183,7 +184,7 @@ func (r *RootCommand) PreRun(this, runner *simplecobra.Commandeer) error {
 
 	apiClient, err := r.newAPIClient(cfg)
 	if err != nil {
-		r.initErr = fmt.Errorf("build API client: %w", err)
+		r.initErr = describeAPIClientError(err)
 		return nil
 	}
 	r.api = apiClient
@@ -212,6 +213,16 @@ func (r *RootCommand) PreRun(this, runner *simplecobra.Commandeer) error {
 	r.initErr = r.ssh.SetCA(cfg.CAPubkey...)
 
 	return nil
+}
+
+// describeAPIClientError says which setting to fix when the API client
+// cannot be built. "build API client: server URL is required" named an
+// internal step and no setting.
+func describeAPIClientError(err error) error {
+	if errors.Is(err, api.ErrNoServerURL) {
+		return errors.New("no server configured; set server in your ssoossh.yaml or pass --server")
+	}
+	return fmt.Errorf("%w; set it with --server or the server setting", err)
 }
 
 // caCacheFile returns where the CA key cache lives, or "" when no seam is

@@ -6,6 +6,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -135,22 +136,38 @@ func TestDoJSON_ShouldErrorWhenTheResponseBodyIsTruncated(t *testing.T) {
 	}
 }
 
-// normalizeServerURL passes a URL through unvalidated, so a value that no
-// URL parser accepts has to fail when the request is built rather than
-// panicking or sending something malformed.
-func TestDoJSON_ShouldErrorOnAServerURLThatCannotBeARequest(t *testing.T) {
+// TestNewClient_ShouldRejectAnUnusableServerURL covers the addresses that
+// used to be normalised into a request to somewhere else, or into one no
+// URL parser accepts.
+func TestNewClient_ShouldRejectAnUnusableServerURL(t *testing.T) {
 	t.Parallel()
 
-	c, err := NewClient(Config{ServerURL: "http://exa\x7fmple.com"})
-	if err != nil {
-		t.Fatalf("unexpected error building client: %v", err)
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "should reject a scheme other than http or https", in: "ftp://x", want: `invalid server "ftp://x": the scheme must be http or https`},
+		{name: "should reject a scheme with no host", in: "https://", want: `invalid server "https://": it names no host`},
+		{name: "should reject an address with a space in the host", in: "not a url", want: `invalid server "not a url": not a valid URL`},
+		{name: "should reject a control character in the host", in: "http://exa\x7fmple.com", want: "invalid server \"http://exa\\x7fmple.com\": not a valid URL"},
 	}
 
-	_, err = c.GetCA(context.Background())
-	if err == nil {
-		t.Fatal("expected an error for a server URL that cannot be parsed, got nil")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := NewClient(Config{ServerURL: tt.in})
+			if err == nil || err.Error() != tt.want {
+				t.Errorf("got %v, want %q", err, tt.want)
+			}
+		})
 	}
-	if !strings.Contains(err.Error(), "build GET") {
-		t.Errorf("got %q, want an error naming the request it could not build", err)
+}
+
+func TestNewClient_ShouldTreatAWhitespaceServerURLAsMissing(t *testing.T) {
+	t.Parallel()
+
+	if _, err := NewClient(Config{ServerURL: "   "}); !errors.Is(err, ErrNoServerURL) {
+		t.Errorf("got %v, want ErrNoServerURL", err)
 	}
 }

@@ -411,7 +411,6 @@ func TestNewClient_ShouldAssumeHTTPSWhenTheServerURLHasNoScheme(t *testing.T) {
 		{name: "trailing slash", in: "https://ssh.example.com/", want: "https://ssh.example.com"},
 		{name: "explicit http is kept", in: "http://127.0.0.1:8080", want: "http://127.0.0.1:8080"},
 		{name: "surrounding space", in: "  ssh.example.com  ", want: "https://ssh.example.com"},
-		{name: "only space, which NewClient's own emptiness check cannot see", in: "   ", want: ""},
 	}
 
 	for _, tt := range tests {

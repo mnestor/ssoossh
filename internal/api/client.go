@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -147,8 +148,11 @@ const DefaultRequestTimeout = 2 * time.Minute
 
 // NewClient builds an HTTPClient talking to cfg.ServerURL.
 func NewClient(cfg Config) (*HTTPClient, error) {
-	if cfg.ServerURL == "" {
-		return nil, errors.New("server URL is required")
+	if strings.TrimSpace(cfg.ServerURL) == "" {
+		return nil, ErrNoServerURL
+	}
+	if err := validateServerURL(cfg.ServerURL); err != nil {
+		return nil, err
 	}
 
 	tlsConfig, err := buildTLSConfig(cfg)
@@ -327,6 +331,30 @@ func logHeaders(ctx context.Context, log *slog.Logger, msg string, headers http.
 // promised ("assumes https if omitted"). Without this a bare "example.com"
 // produces requests that cannot be sent and an approval URL no browser can
 // open.
+// ErrNoServerURL is NewClient's error when Config.ServerURL is empty.
+var ErrNoServerURL = errors.New("server URL is required")
+
+// validateServerURL refuses a server address normalizeServerURL would turn
+// into a request to somewhere else. It used to accept anything: "ftp://x"
+// became https://ftp//x and failed with a DNS lookup of "ftp", and
+// "https://" became a request to a host named "https".
+func validateServerURL(raw string) error {
+	s := strings.TrimSpace(raw)
+	if scheme, rest, found := strings.Cut(s, "://"); found {
+		if scheme != "http" && scheme != "https" {
+			return fmt.Errorf("invalid server %q: the scheme must be http or https", raw)
+		}
+		if strings.Trim(rest, "/") == "" {
+			return fmt.Errorf("invalid server %q: it names no host", raw)
+		}
+	}
+	u, err := url.Parse(normalizeServerURL(s))
+	if err != nil || u.Hostname() == "" {
+		return fmt.Errorf("invalid server %q: not a valid URL", raw)
+	}
+	return nil
+}
+
 func normalizeServerURL(raw string) string {
 	trimmed := strings.TrimRight(strings.TrimSpace(raw), "/")
 	if trimmed == "" {
