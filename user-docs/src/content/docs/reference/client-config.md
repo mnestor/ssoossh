@@ -353,7 +353,7 @@ try_open_browser: true
 `string`, default `empty`
 
 Names another YAML file whose settings a user cannot override: it is merged
-after the per-user file, the local file, and `--config`.
+after the per-user file and `--config`.
 
 Only honored when read from the machine-wide file
 (`/etc/ssoossh/ssoossh.yaml`, or `%ProgramData%\ssoossh\ssoossh.yaml` on
