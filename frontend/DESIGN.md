@@ -641,9 +641,10 @@ bg-surface-muted`, decorative), a short title, the sentence that says what
 - **Footer**: closes every page with the running version, a link to its
   release and links to the project, on the ground with no rule. Renders
   nothing while the version is unknown. Links are `min-h-target` targets.
-- **DetailToggle** (to build): a two-segment control, "Simplified" and
-  "Advanced", in the heading row of each covered page. Selected segment per
-  Colour; writes the same preference as `/preferences`.
+- **DetailToggle**: a two-segment control, "Simplified" and "Advanced", in
+  the heading row of each covered page. Selected segment per Colour; writes
+  the same preference as `/preferences`. Given `value` and `onselect` it is
+  a plain controlled control instead (the email level).
 
 ### Composites
 
@@ -804,15 +805,30 @@ off, and confirms through a reasonless `ConfirmModal`.
 
 A per-reader preference for the approval page and the three information
 pages (certificate, service code, admin service code). `advanced` is the
-default and is the full page. `simplified` keeps what a reader needs to
-decide or to understand the result and drops the diagnostic detail an expert
-compares.
+full page. `simplified` keeps what a reader needs to decide or to understand
+the result and drops the diagnostic detail an expert compares.
 
-- **Store:** `src/lib/detail.svelte.ts`, localStorage `ssoossh:detail`,
-  modelled on `rail.svelte.ts` (one frame of the default before it is read
-  is accepted).
+- **Stored on the server,** per person, as two settings: the web UI level
+  (`users.web_detail_level`) and the email level
+  (`users.email_detail_level`, see Email below). Split because short mail and
+  a full approval page are a common pairing (product owner, 2026-10-11).
+- **Default:** fixed once, at the person's first login after the setting
+  existed: `advanced` for SOC and admin, `simplified` for everyone else
+  (`service.DefaultDetailLevel`). A later change of groups never moves it. A
+  mail recipient with no stored level, and an enrollment's bare notification
+  address, read `simplified`.
+- **Store:** `src/lib/detail.svelte.ts`. The level arrives with `/users/me`
+  (`detail_level`) and the root layout adopts it; a change is shown at once
+  and saved with `PUT /users/me/display`, and a failed save puts the old
+  level back with a "Not saved. Try again." line beside the toggle.
+  localStorage `ssoossh:detail` caches the last level the server reported,
+  for first paint only. Before anything is known the store reads
+  `simplified`.
 - **Controls:** a "Display" section on `/preferences` and a `DetailToggle` in
-  each covered page's heading row. Both write the same preference.
+  each covered page's heading row. Both write the same preference. The email
+  level is a second `DetailToggle`, controlled through `value` and
+  `onselect`, in the "Email notifications" section, saved with the toggles
+  there.
 - **Scope:** a covered page calls `coverWithDetail()` once in its script.
   Components that only appear on covered pages (`ServiceCodeFacts`, the two
   service code details, `ApprovalView`) and `DetailRow` read
@@ -1006,6 +1022,41 @@ beneath it.
 - **Build-time environment:** only Vite development settings, chiefly
   `DEVELOPMENT_BACKEND_URL` from `.env` / `.env.local` (see
   `frontend/README.md`). Branding is never build-time.
+
+### Email
+
+Notification emails (`server/resources/mail`) follow this file as far as a
+mail client allows. Extension, 2026-10-11: mail clients do not render OKLCH
+or load the app's fonts, so the templates carry these hex equivalents,
+converted from the tokens above (contrast matches the measured table to
+within 0.05):
+
+| Token | Hex |
+| --- | --- |
+| `ground` | `#f2f0ec` |
+| `surface` | `#ffffff` |
+| `border-subtle` | `#e0ddda` |
+| `ink` | `#1e1a16` |
+| `ink-muted` | `#5d5751` |
+| `accent` | `#2858cd` |
+| `accent-ink` | `#ffffff` |
+| `danger-surface` | `#ffe7e4` |
+
+- **Type:** `'IBM Plex Sans', -apple-system, ...` and `'IBM Plex Mono',
+  ui-monospace, ...`: Plex where installed, the system face otherwise. No web
+  font is loaded. Mono for the same values as the app.
+- **Shape:** a `surface` panel, 600px at most, on `ground`. No border, no
+  shadow, no radius, no side stripe. Light only (`color-scheme: light`).
+- **Order:** one sentence of what happened (16px, `ink`); one muted line
+  saying what to do if it was not you; one cobalt link-button to the page
+  where the reader acts (`/certs/<id>`, `/service-codes/<id>`); the
+  essential facts at simplified size; at the advanced email level a "Details"
+  section of dense rows; the footer naming the preference that sent it.
+- **Levels:** the email level decides only whether "Details" appears.
+  Diagnostic rows the web page keeps for the record (machine id, client,
+  platform, process ids, request ids, a throwaway key's fingerprint) are
+  in no email at either level; the link reaches them.
+- **Claimed values** carry a muted "claimed" after them, as on the pages.
 
 ## 16. Voice
 

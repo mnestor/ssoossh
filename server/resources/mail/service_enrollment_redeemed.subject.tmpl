@@ -1,7 +1,7 @@
 {{- if not .Succeeded -}}
-Service enrollment redemption FAILED{{ if .ServiceAccount }} for {{ .ServiceAccount }}{{ end }}
+Service code redemption failed{{ if .ServiceAccount }} for {{ .ServiceAccount }}{{ end }}
 {{- else if .FirstRedemption -}}
-Service enrollment first redeemed{{ if .ServiceAccount }} for {{ .ServiceAccount }}{{ end }}
+Service code{{ if .ServiceAccount }} for {{ .ServiceAccount }}{{ end }} redeemed for the first time
 {{- else -}}
-Service enrollment redeemed{{ if .ServiceAccount }} for {{ .ServiceAccount }}{{ end }}
+Service code{{ if .ServiceAccount }} for {{ .ServiceAccount }}{{ end }} redeemed from {{ .SourceIP }}
 {{- end -}}

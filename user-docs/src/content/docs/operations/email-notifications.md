@@ -25,10 +25,12 @@ about. It is shown once, in the terminal that ran `ssoossh service enroll`,
 and stored nowhere else the recipient can reach.
 :::
 
-The "service enrollment created" notification deliberately carries everything
-else that command printed -- the service account, the key fingerprint, the
-expiry, the `ssh_config` recipe -- so the message is actionable without being
-redeemable. There is a test asserting the code does not appear in a rendered
+The "service code created" notification carries what the recipient needs to
+recognise the code -- the service account, when it expires, who approved it and
+from where, and at the advanced level the bound key's fingerprint -- so the
+message is actionable without being redeemable. The `ssh_config` recipe stays in
+the terminal, which prints it with the real code and key path; a copy in mail
+could only carry placeholders. There is a test asserting the code does not appear in a rendered
 message, and another asserting it never reaches the notification payload; both
 cover every registered kind, so adding a field later is a decision rather than
 an accident.
@@ -45,36 +47,43 @@ deciding whether a certificate in their name was theirs. "A certificate was
 issued" is not answerable. What is answerable is *what asked* and *who let it
 happen*, so every message carries both.
 
-**What asked** is the host context the requester reported -- the account and
-machine, who invoked it, the command line, the terminal, the peer address if
-the request came from over a network, the machine's stable id, its platform,
-the client implementation and version, and the process ids. It is the same set
-the approval page showed and every `cert.*` audit event carries; see
+**What asked** is the part of the host context a person recognises: the account
+and machine, who invoked it, and the address the request came from. A console
+login also always shows its terminal and, when there is one, the remote host it
+reports. At the advanced level the command line and terminal follow. The rest
+of the host context -- the machine's stable id, its platform, the client
+implementation and version, the process ids -- stays on the certificate's page,
+which the message links to; see
 [Host context](/ssoossh/internals/host-context/) for where each value comes
 from.
 
 :::caution[None of it is verified]
 Every one of those fields is self-reported by an unauthenticated caller, and
 none of it decided anything: principals come from the approver's own accounts
-and the lifetime from policy. The shipped templates say so in a line above the
-block, and an override that renders them should keep that line or say the same
-thing. `SourceIP` and `ApproverSourceIP` are the exceptions -- the server
+and the lifetime from policy. The shipped templates mark each such value
+"claimed", as the web UI does, and an override that renders them should do the
+same. `SourceIP` and `ApproverSourceIP` are the exceptions -- the server
 observed both.
 :::
 
-**Who let it happen** is the approval: the account that approved, its email,
-the address and browser it approved from, and when. This is the part that
-distinguishes the two bad outcomes from each other. A certificate you do not
-recognize approved from an address you were at is a machine you should look
-at; the same certificate approved from an address you have never used is an
-account someone else was driving. A certificate whose decision record has gone
-renders as "not recorded" rather than as nobody.
+**Who let it happen** is the approval, and the fact that answers it is the
+address it was approved from (the browser follows at the advanced level). The
+approver is the recipient, so the message does not name them back to
+themselves. This is the part that distinguishes the two bad outcomes from each
+other. A certificate you do not recognize approved from an address you were at
+is a machine you should look at; the same certificate approved from an address
+you have never used is an account someone else was driving.
 
-`service_enrollment_created` carries the approver too, for the same reason and
-more urgently: it announces a credential that mints certificates unattended
-for as long as the code lives. `RequestSourceIP` there is the requester's
-address and `ApproverSourceIP` the approver's -- two different questions that
-are easy to conflate.
+`service_enrollment_created` names the approver, because its recipients are the
+account's holders rather than the approver alone, and the address they
+approved from: it announces a credential that mints certificates unattended
+for as long as the code lives. `RequestSourceIP` there (advanced level) is the
+requester's address and `ApproverSourceIP` the approver's -- two different
+questions that are easy to conflate.
+
+Each message leads with one sentence of what happened, one line of what to do
+if it was not you, and one link to the page where you act on it: the
+certificate, or the service code, whose page has the expire control.
 
 ## Configuring the relay
 
@@ -284,6 +293,22 @@ by someone else.
 The preference is read at delivery rather than at publication, so a
 notification queued moments before someone opts out is not delivered anyway.
 
+### Email detail level
+
+Each user also chooses how much every message carries, on the same page:
+**Simplified** or **Advanced**. Simplified is the sentence, the link, and the
+few facts a person checks: when it stops being valid, where it was requested
+and approved from. Advanced adds a Details section with key IDs, serials,
+certificate options, the bound key, and the claimed command and terminal.
+
+The level is the user's own, stored on their account, and separate from the
+web UI's Simplified / Advanced setting. It is set once, at the user's first
+login after it existed: Advanced for members of the SOC or admin group,
+Simplified for everyone else. A later change of groups does not move it. A user
+who has not logged in since, and an enrollment's notification address, which
+has no account behind it, get Simplified. A fan-out renders each level once and
+sends each holder their own.
+
 Two things stop delivery regardless of the toggle, and the page says so rather
 than leaving the user to work it out:
 [`mail.enabled`](/ssoossh/reference/config/mail/#enabled) being false, and an
@@ -296,7 +321,7 @@ Seven kinds. Every one ships three templates, named
 
 | Kind | Trigger | Recipients | Default |
 | --- | --- | --- | --- |
-| `service_enrollment_created` | you approve a service certificate request and an enrollment code is created | every holder of the service account, or the notification address | on |
+| `service_enrollment_created` | you approve a service certificate request and a service code is created | every holder of the service account, or the notification address | on |
 | `service_enrollment_redeemed` | one of the codes is redeemed for a certificate, including failed attempts | every holder, or the notification address | on |
 | `service_enrollment_expiring` | a code is close to expiring: weekly inside the reminder window, then daily over the final week | every holder, or the notification address | on |
 | `service_enrollment_expired_attempt` | an expired code is presented for redemption | every holder, or the notification address | on |
@@ -306,11 +331,11 @@ Seven kinds. Every one ships three templates, named
 
 <!-- BEGIN GENERATED NOTIFICATION REFERENCE -->
 
-### Service enrollment created
+### Service code created
 
 `service_enrollment_created`
 
-Sent when you approve a service certificate request and an enrollment code is created for it.
+Sent when you approve a service certificate request and a service code is created for it.
 
 Default: **on**.
 
@@ -342,13 +367,14 @@ Templates:
 | `.CodeExpiresAt` | `time.Time` | When the enrollment code stops being redeemable. Re-enroll before this to keep an unattended job running. |
 | `.CertificateLifetime` | `time.Duration` | How long each certificate redeemed from this code is valid for, measured from each redemption. |
 | `.ServerURL` | `string` | The server's public origin, for links back to the request. |
+| `.Advanced` | `bool` | True when the recipient chose the advanced email detail level, false for simplified. Set per recipient at delivery; a template that ignores it sends the same message at both levels. |
 
 
-### Service enrollment redeemed
+### Service code redeemed
 
 `service_enrollment_redeemed`
 
-Sent every time one of your enrollment codes is redeemed for a certificate, including failed attempts.
+Sent every time one of your service codes is redeemed for a certificate, including failed attempts.
 
 Default: **on**.
 
@@ -374,13 +400,14 @@ Templates:
 | `.FirstRedemption` | `bool` | True when this was the first time the code was redeemed. |
 | `.CodeExpiresAt` | `time.Time` | When the code itself stops being redeemable. |
 | `.ServerURL` | `string` | The server's public origin, for links back to the retrieval log. |
+| `.Advanced` | `bool` | True when the recipient chose the advanced email detail level, false for simplified. Set per recipient at delivery; a template that ignores it sends the same message at both levels. |
 
 
-### Service enrollment expiring
+### Service code expiring
 
 `service_enrollment_expiring`
 
-Sent while one of your enrollment codes is close to expiring, so an unattended job can be re-enrolled before it starts failing: weekly inside the reminder window, then daily over the final week.
+Sent while one of your service codes is close to expiring, so an unattended job can be enrolled again before it starts failing: weekly inside the reminder window, then daily over the final week.
 
 Default: **on**.
 
@@ -403,13 +430,14 @@ Templates:
 | `.CodeExpiresAt` | `time.Time` | When the code stops being redeemable. Re-enroll before this. |
 | `.Daily` | `bool` | True once the code is inside its final week and reminders come daily; false while they are still weekly. |
 | `.ServerURL` | `string` | The server's public origin, for links back to the enrollment. |
+| `.Advanced` | `bool` | True when the recipient chose the advanced email detail level, false for simplified. Set per recipient at delivery; a template that ignores it sends the same message at both levels. |
 
 
-### Expired enrollment code used
+### Expired service code used
 
 `service_enrollment_expired_attempt`
 
-Sent when an expired enrollment code is presented for redemption: either a job is still trying to use it, or someone is replaying a credential that should no longer exist.
+Sent when an expired service code is presented for redemption: either a job is still trying to use it, or someone is replaying a credential that should no longer exist.
 
 Default: **on**.
 
@@ -432,6 +460,7 @@ Templates:
 | `.AttemptedAt` | `time.Time` | When the expired code was presented. |
 | `.CodeExpiredAt` | `time.Time` | When the code stopped being redeemable. |
 | `.ServerURL` | `string` | The server's public origin, for links back to the enrollment. |
+| `.Advanced` | `bool` | True when the recipient chose the advanced email detail level, false for simplified. Set per recipient at delivery; a template that ignores it sends the same message at both levels. |
 
 
 ### User certificate issued
@@ -452,6 +481,7 @@ Templates:
 | --- | --- | --- |
 | `.CertificateType` | `string` | The certificate type: "user", "pam" or "console". |
 | `.RequestID` | `string` | The certificate request this certificate was issued for. |
+| `.CertificateID` | `string` | The certificate's own record, for a link to /certs/<id>. Empty if the record could not be read back. |
 | `.KeyID` | `string` | The SSH certificate key ID. |
 | `.Principals` | `[]string` | The accounts this certificate may log in as. |
 | `.Serial` | `uint64` | The certificate serial, matching the entry in your certificate history. |
@@ -485,6 +515,7 @@ Templates:
 | `.SourceAddresses` | `[]string` | The source-address critical option, or empty if unrestricted. |
 | `.NoTouchRequired` | `bool` | Whether the certificate waives the hardware-key touch, which makes it a weaker credential than one that does not. |
 | `.ServerURL` | `string` | The server's public origin, for links back to the certificate. |
+| `.Advanced` | `bool` | True when the recipient chose the advanced email detail level, false for simplified. Set per recipient at delivery; a template that ignores it sends the same message at both levels. |
 
 
 ### PAM certificate issued
@@ -505,6 +536,7 @@ Templates:
 | --- | --- | --- |
 | `.CertificateType` | `string` | The certificate type: "user", "pam" or "console". |
 | `.RequestID` | `string` | The certificate request this certificate was issued for. |
+| `.CertificateID` | `string` | The certificate's own record, for a link to /certs/<id>. Empty if the record could not be read back. |
 | `.KeyID` | `string` | The SSH certificate key ID. |
 | `.Principals` | `[]string` | The accounts this certificate may log in as. |
 | `.Serial` | `uint64` | The certificate serial, matching the entry in your certificate history. |
@@ -538,6 +570,7 @@ Templates:
 | `.SourceAddresses` | `[]string` | The source-address critical option, or empty if unrestricted. |
 | `.NoTouchRequired` | `bool` | Whether the certificate waives the hardware-key touch, which makes it a weaker credential than one that does not. |
 | `.ServerURL` | `string` | The server's public origin, for links back to the certificate. |
+| `.Advanced` | `bool` | True when the recipient chose the advanced email detail level, false for simplified. Set per recipient at delivery; a template that ignores it sends the same message at both levels. |
 
 
 ### Console certificate issued
@@ -558,6 +591,7 @@ Templates:
 | --- | --- | --- |
 | `.CertificateType` | `string` | The certificate type: "user", "pam" or "console". |
 | `.RequestID` | `string` | The certificate request this certificate was issued for. |
+| `.CertificateID` | `string` | The certificate's own record, for a link to /certs/<id>. Empty if the record could not be read back. |
 | `.KeyID` | `string` | The SSH certificate key ID. |
 | `.Principals` | `[]string` | The accounts this certificate may log in as. |
 | `.Serial` | `uint64` | The certificate serial, matching the entry in your certificate history. |
@@ -591,6 +625,7 @@ Templates:
 | `.SourceAddresses` | `[]string` | The source-address critical option, or empty if unrestricted. |
 | `.NoTouchRequired` | `bool` | Whether the certificate waives the hardware-key touch, which makes it a weaker credential than one that does not. |
 | `.ServerURL` | `string` | The server's public origin, for links back to the certificate. |
+| `.Advanced` | `bool` | True when the recipient chose the advanced email detail level, false for simplified. Set per recipient at delivery; a template that ignores it sends the same message at both levels. |
 
 <!-- END GENERATED NOTIFICATION REFERENCE -->
 
@@ -646,7 +681,7 @@ In addition, these functions are available in every template:
 
 | Function | Example | Renders |
 | --- | --- | --- |
-| `datetime` | `{{ datetime .ApprovedAt }}` | `2026-08-24 15:04:05 CEST`, or `not set` for a zero time |
+| `datetime` | `{{ datetime .ApprovedAt }}` | `2026-08-24 15:04 CEST`, or `not set` for a zero time |
 | `date` | `{{ date .CodeExpiresAt }}` | `2026-11-22`, or `not set` |
 | `approx` | `{{ approx .CertificateLifetime }}` | `8 hours`, `90 days` -- the largest unit that still says something, rounded to the nearest one |
 | `until` | `{{ until .CodeExpiresAt }}` | `89 days`, or `already elapsed` |
@@ -657,9 +692,12 @@ Timestamps render in the server's local zone, with the zone named.
 
 ### Overrides are checked at startup
 
-Every override is parsed **and executed against an empty payload** when the
-server starts. A syntax error, or a reference to a field that does not exist,
-stops the server rather than producing mail that silently stops arriving. A
+Every override is parsed **and executed against an empty payload, at both
+detail levels,** when the server starts. A syntax error, or a reference to a
+field that does not exist, stops the server rather than producing mail that
+silently stops arriving -- including one inside an `{{ if .Advanced }}` block,
+which a single run would skip. An override that never reads `.Advanced` sends
+the same message at both levels. A
 file in the directory whose name matches no notification is also a startup
 error -- a misspelled override would otherwise appear to do nothing. Files
 that are not `*.tmpl` are ignored, so a README or an editor backup beside your

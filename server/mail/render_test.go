@@ -1,6 +1,7 @@
 package mail
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -93,6 +94,7 @@ func samplePayload(t *testing.T, kind notify.Kind) any {
 		return &notify.CertificateIssued{
 			CertificateType:      certType,
 			RequestID:            "req-123",
+			CertificateID:        "cert-321",
 			KeyID:                "alice@example.com",
 			Principals:           []string{"alice", "deploy"},
 			Serial:               42,
@@ -124,7 +126,7 @@ func TestNewRenderer_shouldRenderEveryRegisteredKind(t *testing.T) {
 
 	for _, def := range notify.Definitions() {
 		t.Run(string(def.Kind), func(t *testing.T) {
-			out, err := r.Render(def.Kind, samplePayload(t, def.Kind))
+			out, err := r.Render(def.Kind, samplePayload(t, def.Kind), false)
 			if err != nil {
 				t.Fatalf("Render: %v", err)
 			}
@@ -153,7 +155,7 @@ func TestNewRenderer_shouldRenderEveryKindFromAZeroPayload(t *testing.T) {
 
 	for _, def := range notify.Definitions() {
 		t.Run(string(def.Kind), func(t *testing.T) {
-			if _, err := r.Render(def.Kind, def.NewPayload()); err != nil {
+			if _, err := r.Render(def.Kind, def.NewPayload(), false); err != nil {
 				t.Errorf("Render on a zero payload: %v", err)
 			}
 		})
@@ -165,7 +167,7 @@ func TestRender_shouldRejectAnUnregisteredKind(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRenderer: %v", err)
 	}
-	if _, err := r.Render("nope", struct{}{}); err == nil {
+	if _, err := r.Render("nope", struct{}{}, false); err == nil {
 		t.Error("Render accepted an unregistered kind")
 	}
 }
@@ -180,7 +182,7 @@ func TestRender_shouldNotCarryAnEnrollmentCode(t *testing.T) {
 	}
 
 	for _, def := range notify.Definitions() {
-		out, err := r.Render(def.Kind, samplePayload(t, def.Kind))
+		out, err := r.Render(def.Kind, samplePayload(t, def.Kind), false)
 		if err != nil {
 			t.Fatalf("Render %s: %v", def.Kind, err)
 		}
@@ -199,7 +201,7 @@ func TestRender_shouldApplyTheSubjectPrefix(t *testing.T) {
 		t.Fatalf("NewRenderer: %v", err)
 	}
 
-	out, err := r.Render(notify.KindServiceEnrollmentCreated, samplePayload(t, notify.KindServiceEnrollmentCreated))
+	out, err := r.Render(notify.KindServiceEnrollmentCreated, samplePayload(t, notify.KindServiceEnrollmentCreated), false)
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
@@ -219,7 +221,7 @@ func TestRender_shouldCollapseNewlinesInTheSubject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRenderer: %v", err)
 	}
-	out, err := r.Render(notify.KindServiceEnrollmentCreated, samplePayload(t, notify.KindServiceEnrollmentCreated))
+	out, err := r.Render(notify.KindServiceEnrollmentCreated, samplePayload(t, notify.KindServiceEnrollmentCreated), false)
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
@@ -241,7 +243,7 @@ func TestNewRenderer_shouldPreferALocalOverride(t *testing.T) {
 		t.Fatalf("NewRenderer: %v", err)
 	}
 
-	out, err := r.Render(notify.KindServiceEnrollmentCreated, samplePayload(t, notify.KindServiceEnrollmentCreated))
+	out, err := r.Render(notify.KindServiceEnrollmentCreated, samplePayload(t, notify.KindServiceEnrollmentCreated), false)
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
@@ -260,7 +262,7 @@ func TestNewRenderer_shouldFallBackToTheEmbeddedTemplateForUnoverriddenParts(t *
 		t.Fatalf("NewRenderer: %v", err)
 	}
 
-	out, err := r.Render(notify.KindServiceEnrollmentCreated, samplePayload(t, notify.KindServiceEnrollmentCreated))
+	out, err := r.Render(notify.KindServiceEnrollmentCreated, samplePayload(t, notify.KindServiceEnrollmentCreated), false)
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
@@ -352,7 +354,7 @@ func TestRender_shouldEscapeHTMLButNotText(t *testing.T) {
 	payload := samplePayload(t, notify.KindServiceEnrollmentCreated).(*notify.ServiceEnrollmentCreated)
 	payload.ServiceAccount = `<script>alert("x")</script>`
 
-	out, err := r.Render(notify.KindServiceEnrollmentCreated, payload)
+	out, err := r.Render(notify.KindServiceEnrollmentCreated, payload, false)
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
@@ -379,7 +381,7 @@ func TestTemplateFuncs_shouldFormatTheValuesTemplatesActuallyUse(t *testing.T) {
 		CertificateLifetime: 8 * time.Hour,
 		Principals:          []string{"a", "b"},
 	}
-	out, err := r.Render(notify.KindServiceEnrollmentCreated, payload)
+	out, err := r.Render(notify.KindServiceEnrollmentCreated, payload, false)
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
@@ -412,7 +414,7 @@ func TestTemplateFuncs_shouldRenderAZeroTimeAsUnset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRenderer: %v", err)
 	}
-	out, err := r.Render(notify.KindServiceEnrollmentCreated, &notify.ServiceEnrollmentCreated{})
+	out, err := r.Render(notify.KindServiceEnrollmentCreated, &notify.ServiceEnrollmentCreated{}, false)
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
@@ -529,7 +531,7 @@ func TestTemplateFuncs_shouldRenderADateOnDemand(t *testing.T) {
 
 	out, err := r.Render(notify.KindServiceEnrollmentCreated, &notify.ServiceEnrollmentCreated{
 		CodeExpiresAt: time.Date(2026, 11, 22, 15, 4, 5, 0, time.UTC),
-	})
+	}, false)
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
@@ -601,7 +603,7 @@ func TestRender_shouldReportAPayloadTheTemplateCannotRead(t *testing.T) {
 			// A struct with none of the payload's fields, which is what a
 			// mismatched NewPayload would hand over.
 			err = func() error {
-				_, err := r.Render(notify.KindServiceEnrollmentCreated, struct{ Unrelated string }{})
+				_, err := r.Render(notify.KindServiceEnrollmentCreated, struct{ Unrelated string }{}, false)
 				return err
 			}()
 			if err == nil {
@@ -629,43 +631,131 @@ func TestNewRenderer_shouldFailOnAnHTMLOverrideNamingAnUnknownField(t *testing.T
 	}
 }
 
-// The emailed ssh_config recipe mirrors what `ssoossh service enroll`
-// prints, which names the approved service account on the Match line
-// because that account is the certificate's sole principal. A placeholder
-// there would have to be edited before the recipe works.
-func TestRender_shouldNameTheServiceAccountInTheRecipe(t *testing.T) {
+// The ssh_config recipe belongs to the terminal that ran `ssoossh service
+// enroll`, which prints it with the real code and key path. A copy in the
+// email could only carry placeholders.
+func TestRender_shouldLeaveTheSetupRecipeToTheTerminal(t *testing.T) {
 	r, err := NewRenderer("", "")
 	if err != nil {
 		t.Fatalf("NewRenderer: %v", err)
 	}
 
-	out, err := r.Render(notify.KindServiceEnrollmentCreated, samplePayload(t, notify.KindServiceEnrollmentCreated))
-	if err != nil {
-		t.Fatalf("Render: %v", err)
-	}
-
-	for name, body := range map[string]string{"text": out.Text, "html": out.HTML} {
-		if !strings.Contains(body, "Match user deploy-bot") {
-			t.Errorf("%s body does not name the service account on the Match line", name)
+	for _, advanced := range []bool{false, true} {
+		out, err := r.Render(notify.KindServiceEnrollmentCreated, samplePayload(t, notify.KindServiceEnrollmentCreated), advanced)
+		if err != nil {
+			t.Fatalf("Render: %v", err)
+		}
+		for name, body := range map[string]string{"text": out.Text, "html": out.HTML} {
+			if strings.Contains(body, "Match user") {
+				t.Errorf("%s body (advanced=%v) carries the ssh_config recipe", name, advanced)
+			}
 		}
 	}
 }
 
-// A payload with no service account — an older row, or an enrollment the
-// field never reached — keeps the placeholder rather than emitting a Match
-// line that silently matches nothing.
-func TestRender_shouldKeepThePlaceholderWithoutAServiceAccount(t *testing.T) {
+// The simplified message keeps what the reader needs to recognise the event;
+// the key ID is one of the ids only the advanced one carries, in every kind.
+func TestRender_shouldCarryTheKeyIDOnlyAtTheAdvancedLevel(t *testing.T) {
 	r, err := NewRenderer("", "")
 	if err != nil {
 		t.Fatalf("NewRenderer: %v", err)
 	}
 
-	out, err := r.Render(notify.KindServiceEnrollmentCreated, &notify.ServiceEnrollmentCreated{})
+	for _, def := range notify.Definitions() {
+		for _, tc := range []struct {
+			advanced bool
+			want     bool
+		}{
+			{advanced: false, want: false},
+			{advanced: true, want: true},
+		} {
+			t.Run(fmt.Sprintf("%s/advanced=%v", def.Kind, tc.advanced), func(t *testing.T) {
+				out, err := r.Render(def.Kind, samplePayload(t, def.Kind), tc.advanced)
+				if err != nil {
+					t.Fatalf("Render: %v", err)
+				}
+				for name, body := range map[string]string{"text": out.Text, "html": out.HTML} {
+					if got := strings.Contains(body, "alice@example.com"); got != tc.want {
+						t.Errorf("%s body carries the key ID = %v, want %v", name, got, tc.want)
+					}
+				}
+			})
+		}
+	}
+}
+
+// Diagnostic rows the web page keeps for the record are not mail at either
+// level: the email links to that page instead.
+func TestRender_shouldLeaveDiagnosticRowsOutOfCertificateMail(t *testing.T) {
+	r, err := NewRenderer("", "")
 	if err != nil {
-		t.Fatalf("Render: %v", err)
+		t.Fatalf("NewRenderer: %v", err)
 	}
 
-	if !strings.Contains(out.Text, "Match user USERNAME") {
-		t.Error("text body dropped the placeholder when no service account is known")
+	payload := samplePayload(t, notify.KindUserCertificateIssued).(*notify.CertificateIssued)
+	machineID := "machine-0f3a"
+	pid := int64(4242)
+	payload.MachineID = machineID
+	payload.CallerPID = &pid
+	payload.OS = "Linux 6.12"
+
+	for _, kind := range []notify.Kind{notify.KindUserCertificateIssued, notify.KindPAMCertificateIssued, notify.KindConsoleCertificateIssued} {
+		out, err := r.Render(kind, payload, true)
+		if err != nil {
+			t.Fatalf("Render %s: %v", kind, err)
+		}
+		for _, absent := range []string{machineID, "4242", "Linux 6.12", "SHA256:abcdef", "req-123"} {
+			if strings.Contains(out.Text, absent) || strings.Contains(out.HTML, absent) {
+				t.Errorf("%s carries %q", kind, absent)
+			}
+		}
+	}
+}
+
+// The action a certificate email offers is the certificate itself, and the
+// history when the record id could not be read back.
+func TestRender_shouldLinkToTheCertificate(t *testing.T) {
+	r, err := NewRenderer("", "")
+	if err != nil {
+		t.Fatalf("NewRenderer: %v", err)
+	}
+
+	tests := []struct {
+		name          string
+		certificateID string
+		want          string
+	}{
+		{name: "should link to the certificate when its id is known", certificateID: "cert-321", want: "https://ssoossh.example.com/certs/cert-321"},
+		{name: "should link to the history when the id is missing", certificateID: "", want: "https://ssoossh.example.com/logs/me"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			payload := samplePayload(t, notify.KindUserCertificateIssued).(*notify.CertificateIssued)
+			payload.CertificateID = tc.certificateID
+
+			out, err := r.Render(notify.KindUserCertificateIssued, payload, false)
+			if err != nil {
+				t.Fatalf("Render: %v", err)
+			}
+			if !strings.Contains(out.Text, tc.want) || !strings.Contains(out.HTML, tc.want) {
+				t.Errorf("message does not link to %s", tc.want)
+			}
+		})
+	}
+}
+
+// Startup runs every template at both levels, so a typo inside an
+// {{ if .Advanced }} block in an override fails there rather than in the
+// first advanced recipient's delivery.
+func TestNewRenderer_shouldFailOnAnUnknownFieldInsideTheAdvancedBlock(t *testing.T) {
+	dir := t.TempDir()
+	name := TemplateName(notify.KindServiceEnrollmentCreated, "txt")
+	body := "{{ if .Advanced }}{{ .ServiceAcount }}{{ end }}"
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+		t.Fatalf("write override: %v", err)
+	}
+
+	if _, err := NewRenderer(dir, ""); err == nil {
+		t.Fatal("NewRenderer accepted an override with a typo inside the advanced block")
 	}
 }

@@ -1,44 +1,21 @@
-{{ if .Succeeded -}}
-An enrollment code you approved was redeemed for a certificate.
-{{- else -}}
-An enrollment code you approved was presented and accepted, but the certificate
-could not be signed. The reason is in the server log. If an unattended job
-depends on this, it is currently without a valid certificate.
-{{- end }}
-{{ if .FirstRedemption }}
-This was the first redemption of this code, which an operator setting up a new
-job expects to see once. Every later one is routine.
-{{ end }}
-REDEMPTION
+{{ if .Succeeded }}The service code for {{ if .ServiceAccount }}{{ .ServiceAccount }}{{ else }}{{ join .Principals ", " }}{{ end }} was redeemed from {{ .SourceIP }}{{ if .FirstRedemption }} for the first time{{ end }}.{{ else }}The service code for {{ if .ServiceAccount }}{{ .ServiceAccount }}{{ else }}{{ join .Principals ", " }}{{ end }} was presented from {{ .SourceIP }}
+and accepted, but the certificate could not be signed.{{ end }}
 
-  Redeemed at           {{ datetime .RetrievedAt }}
-  Source address        {{ .SourceIP }}
-  Principal             {{ if .ServiceAccount }}{{ .ServiceAccount }}{{ else }}{{ join .Principals ", " }}{{ end }}
-  Result                {{ if .Succeeded }}certificate issued{{ else }}signing failed{{ end }}
-
-If you do not recognize that address, the code is in hands you did not intend.
-It stays redeemable until it expires, so treat it as a credential to revoke
-rather than something to watch.
-
-CERTIFICATE
-
-  Principals            {{ join .Principals ", " }}
-  Key ID                {{ .KeyID }}
-  Serial number         {{ .CertificateSerial }}
-  Valid period          {{ datetime .RetrievedAt }} - {{ datetime .CertificateExpiresAt }} ({{ remaining .CertificateExpiresAt }})
-
-THE CODE ITSELF
-
-  Code expires          {{ datetime .CodeExpiresAt }} ({{ remaining .CodeExpiresAt }})
-  Enrollment ID         {{ .EnrollmentID }}
-{{ if .RequestID }}  Request ID            {{ .RequestID }}
-{{ end }}  Retrieval ID          {{ .RetrievalID }}
-
-The code is reusable until it expires, so an unattended job will keep redeeming
-it. Enroll again before then to keep that job running.
+{{ if .Succeeded }}Not a host you recognise? Expire the code: it stays redeemable until it
+expires.{{ else }}A job that depends on this code has no valid certificate now. The reason
+is in the server log.{{ end }}
 {{ if .ServerURL }}
-This code, and every redemption of it: {{ .ServerURL }}/service-codes/{{ .EnrollmentID }}
+Review this code: {{ .ServerURL }}/service-codes/{{ .EnrollmentID }}
 {{ end }}
-Sent because "Service enrollment redeemed" is on in your notification
-preferences{{ if .ServerURL }} ({{ .ServerURL }}/preferences){{ end }}, or because this
-address is the enrollment's notification address.
+  Redeemed at       {{ datetime .RetrievedAt }}
+  Code expires      {{ datetime .CodeExpiresAt }} ({{ remaining .CodeExpiresAt }})
+{{ if .Advanced }}
+DETAILS
+
+{{ if .Succeeded }}  Certificate until {{ datetime .CertificateExpiresAt }} ({{ remaining .CertificateExpiresAt }})
+{{ end }}  Key ID            {{ .KeyID }}
+{{ if .Succeeded }}  Serial            {{ .CertificateSerial }}
+{{ end }}{{ end }}
+Sent because "Service code redeemed" is on in your notification preferences{{ if .ServerURL }}
+({{ .ServerURL }}/preferences){{ end }},
+or because this address is the service code's notification address.

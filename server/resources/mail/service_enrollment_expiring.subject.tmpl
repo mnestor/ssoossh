@@ -1,1 +1,1 @@
-Service enrollment expires in {{ until .CodeExpiresAt }}{{ if .ServiceAccount }} for {{ .ServiceAccount }}{{ end }}
+Service code{{ if .ServiceAccount }} for {{ .ServiceAccount }}{{ end }} expires in {{ until .CodeExpiresAt }}

@@ -240,10 +240,10 @@ with **Save notifications**.
 
 | Notification | Default |
 | --- | --- |
-| Service enrollment created | on |
-| Service enrollment redeemed | on |
-| Service enrollment expiring | on |
-| Expired enrollment code used | on |
+| Service code created | on |
+| Service code redeemed | on |
+| Service code expiring | on |
+| Expired service code used | on |
 | User certificate issued | **off** |
 | PAM certificate issued | **off** |
 | Console certificate issued | **off** |
@@ -252,6 +252,15 @@ The three "was this you?" kinds default off because they are one message per
 login, per `sudo`, and per console login respectively. They are separate kinds
 so someone who runs `sudo` forty times a day can keep the login signal without
 drowning in the rest. Nothing turns them on for you.
+
+**Email detail** sets how much each message carries. Simplified sends what you
+need to recognise the event and act: what happened, when it stops being valid,
+where it was requested and approved from, and a link to the page where you can
+act on it. Advanced adds a Details section with key IDs, serials and
+certificate options. It is separate from the Display level below and is saved
+with **Save notifications**. Your first sign-in sets it the same way: Advanced
+for SOC and admin, Simplified for everyone else. A service code's own
+notification address has no account behind it and always gets Simplified.
 
 Your choice is read at delivery rather than when the event happens, so opting
 out also stops something already queued. In a service-account fan-out each
@@ -268,9 +277,10 @@ The enrollment code is in no message and must not be added to one.
 The **Display** section sets the level the approval page and the
 certificate and service code pages open at: **Simplified** or **Advanced**
 (see [Simplified and Advanced](/ssoossh/guides/web-ui/#simplified-and-advanced)).
-It takes effect at once, needs no saving, and is kept in this browser rather
-than on your account. The switch in each of those pages' headings is the same
-setting.
+It takes effect at once, needs no saving, and is saved to your account, so it
+follows you to any browser. The switch in each of those pages' headings is the
+same setting. Your first sign-in picks it: Advanced for SOC and admin,
+Simplified for everyone else.
 
 ## What administrators can do to your account
 

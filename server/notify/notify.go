@@ -106,8 +106,8 @@ type Definition struct {
 var definitions = []Definition{
 	{
 		Kind:           KindServiceEnrollmentCreated,
-		Title:          "Service enrollment created",
-		Description:    "Sent when you approve a service certificate request and an enrollment code is created for it.",
+		Title:          "Service code created",
+		Description:    "Sent when you approve a service certificate request and a service code is created for it.",
 		DefaultEnabled: true,
 		NewPayload:     func() any { return &ServiceEnrollmentCreated{} },
 		Fields: []Field{
@@ -131,12 +131,13 @@ var definitions = []Definition{
 			{"CodeExpiresAt", "time.Time", "When the enrollment code stops being redeemable. Re-enroll before this to keep an unattended job running."},
 			{"CertificateLifetime", "time.Duration", "How long each certificate redeemed from this code is valid for, measured from each redemption."},
 			{"ServerURL", "string", "The server's public origin, for links back to the request."},
+			readerField,
 		},
 	},
 	{
 		Kind:           KindServiceEnrollmentRedeemed,
-		Title:          "Service enrollment redeemed",
-		Description:    "Sent every time one of your enrollment codes is redeemed for a certificate, including failed attempts.",
+		Title:          "Service code redeemed",
+		Description:    "Sent every time one of your service codes is redeemed for a certificate, including failed attempts.",
 		DefaultEnabled: true,
 		NewPayload:     func() any { return &ServiceEnrollmentRedeemed{} },
 		Fields: []Field{
@@ -154,12 +155,13 @@ var definitions = []Definition{
 			{"FirstRedemption", "bool", "True when this was the first time the code was redeemed."},
 			{"CodeExpiresAt", "time.Time", "When the code itself stops being redeemable."},
 			{"ServerURL", "string", "The server's public origin, for links back to the retrieval log."},
+			readerField,
 		},
 	},
 	{
 		Kind:           KindServiceEnrollmentExpiring,
-		Title:          "Service enrollment expiring",
-		Description:    "Sent while one of your enrollment codes is close to expiring, so an unattended job can be re-enrolled before it starts failing: weekly inside the reminder window, then daily over the final week.",
+		Title:          "Service code expiring",
+		Description:    "Sent while one of your service codes is close to expiring, so an unattended job can be enrolled again before it starts failing: weekly inside the reminder window, then daily over the final week.",
 		DefaultEnabled: true,
 		NewPayload:     func() any { return &ServiceEnrollmentExpiring{} },
 		Fields: []Field{
@@ -174,12 +176,13 @@ var definitions = []Definition{
 			{"CodeExpiresAt", "time.Time", "When the code stops being redeemable. Re-enroll before this."},
 			{"Daily", "bool", "True once the code is inside its final week and reminders come daily; false while they are still weekly."},
 			{"ServerURL", "string", "The server's public origin, for links back to the enrollment."},
+			readerField,
 		},
 	},
 	{
 		Kind:           KindServiceEnrollmentExpiredAttempt,
-		Title:          "Expired enrollment code used",
-		Description:    "Sent when an expired enrollment code is presented for redemption: either a job is still trying to use it, or someone is replaying a credential that should no longer exist.",
+		Title:          "Expired service code used",
+		Description:    "Sent when an expired service code is presented for redemption: either a job is still trying to use it, or someone is replaying a credential that should no longer exist.",
 		DefaultEnabled: true,
 		NewPayload:     func() any { return &ServiceEnrollmentExpiredAttempt{} },
 		Fields: []Field{
@@ -194,6 +197,7 @@ var definitions = []Definition{
 			{"AttemptedAt", "time.Time", "When the expired code was presented."},
 			{"CodeExpiredAt", "time.Time", "When the code stopped being redeemable."},
 			{"ServerURL", "string", "The server's public origin, for links back to the enrollment."},
+			readerField,
 		},
 	},
 	{
@@ -228,6 +232,7 @@ var definitions = []Definition{
 var certificateIssuedFields = []Field{
 	{"CertificateType", "string", "The certificate type: \"user\", \"pam\" or \"console\"."},
 	{"RequestID", "string", "The certificate request this certificate was issued for."},
+	{"CertificateID", "string", "The certificate's own record, for a link to /certs/<id>. Empty if the record could not be read back."},
 	{"KeyID", "string", "The SSH certificate key ID."},
 	{"Principals", "[]string", "The accounts this certificate may log in as."},
 	{"Serial", "uint64", "The certificate serial, matching the entry in your certificate history."},
@@ -261,7 +266,11 @@ var certificateIssuedFields = []Field{
 	{"SourceAddresses", "[]string", "The source-address critical option, or empty if unrestricted."},
 	{"NoTouchRequired", "bool", "Whether the certificate waives the hardware-key touch, which makes it a weaker credential than one that does not."},
 	{"ServerURL", "string", "The server's public origin, for links back to the certificate."},
+	readerField,
 }
+
+// readerField documents Reader's one field, which every payload embeds.
+var readerField = Field{"Advanced", "bool", "True when the recipient chose the advanced email detail level, false for simplified. Set per recipient at delivery; a template that ignores it sends the same message at both levels."}
 
 // Definitions returns the registered kinds in preferences-page order. The
 // returned slice is a copy, so a caller sorting or filtering it cannot

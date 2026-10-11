@@ -1,33 +1,23 @@
-An expired enrollment code was presented for redemption. It was refused and no
-certificate was issued.
+An expired service code for {{ if .ServiceAccount }}{{ .ServiceAccount }}{{ else }}{{ join .Principals ", " }}{{ end }} was presented from {{ .SourceIP }}
+and refused. No certificate was issued.
 
-Two things cause this, and they need opposite responses. Either a job you still
-want is failing on schedule and needs re-enrolling, or a credential you thought
-was gone is still in circulation. If the address below is not a host you
-recognize, treat the code as leaked and audit what it was used for while it was
-still live.
-
-THE ATTEMPT
-
-  Attempted at          {{ datetime .AttemptedAt }}
-  Source address        {{ .SourceIP }}
-  Code expired          {{ datetime .CodeExpiredAt }}
-
-THE CODE ITSELF
-
-  Principal             {{ if .ServiceAccount }}{{ .ServiceAccount }}{{ else }}{{ join .Principals ", " }}{{ end }}
-  Key ID                {{ .KeyID }}
-  Bound key             {{ .PublicKeyType }} {{ .PublicKeyFingerprint }}
-  Enrollment ID         {{ .EnrollmentID }}
-{{ if .RequestID }}  Request ID            {{ .RequestID }}
-{{ end }}
-The caller was told only that the code is unknown: an expired code and one that
-never existed answer identically, so whoever holds it learns nothing from the
-refusal. You will not get another message about this enrollment for a while,
-however often the attempt repeats.
+Either a job you still want is failing and needs enrolling again, or a code
+you thought was gone is still in use. If you do not recognise that address,
+treat the code as leaked.
 {{ if .ServerURL }}
-This code, and every redemption of it: {{ .ServerURL }}/service-codes/{{ .EnrollmentID }}
+Review this code: {{ .ServerURL }}/service-codes/{{ .EnrollmentID }}
 {{ end }}
-Sent because "Expired enrollment code used" is on in your notification
-preferences{{ if .ServerURL }} ({{ .ServerURL }}/preferences){{ end }}, or because this
-address is the enrollment's notification address.
+  Attempted at      {{ datetime .AttemptedAt }}
+  Code expired      {{ datetime .CodeExpiredAt }}
+{{ if .Advanced }}
+DETAILS
+
+  Bound key         {{ .PublicKeyType }} {{ .PublicKeyFingerprint }}
+  Key ID            {{ .KeyID }}
+{{ end }}
+You will not hear about this code again for a while, however often the
+attempt repeats.
+
+Sent because "Expired service code used" is on in your notification preferences{{ if .ServerURL }}
+({{ .ServerURL }}/preferences){{ end }},
+or because this address is the service code's notification address.

@@ -2,6 +2,22 @@ package notify
 
 import "time"
 
+// Reader is the per-recipient half of every payload, embedded in each one.
+// The rest of a payload describes the event and is the same for everyone it
+// reaches; this describes the person reading it, so it is set at delivery,
+// once per recipient, and never travels on the queue.
+type Reader struct {
+	// Advanced is true when the recipient chose the advanced email detail
+	// level. Templates branch on it: the simplified message keeps what the
+	// reader needs to recognise the event and act, and the advanced one adds
+	// the ids and options an expert compares.
+	Advanced bool `json:"-"`
+}
+
+// SetAdvanced records the recipient's email detail level. Promoted to every
+// payload, so delivery can set it without knowing the payload's type.
+func (r *Reader) SetAdvanced(advanced bool) { r.Advanced = advanced }
+
 // ServiceEnrollmentCreated is the payload for
 // KindServiceEnrollmentCreated: everything `ssoossh service enroll` reports
 // to the operator's terminal, minus the code itself.
@@ -18,6 +34,8 @@ import "time"
 // Fields list on this kind's Definition, which a test keeps in step with
 // this struct.
 type ServiceEnrollmentCreated struct {
+	Reader
+
 	ServiceAccount string   `json:"service_account"`
 	RequestID      string   `json:"request_id"`
 	EnrollmentID   string   `json:"enrollment_id"`
@@ -70,6 +88,8 @@ type ServiceEnrollmentCreated struct {
 // to hear about, and staying quiet about it would make this notification a
 // success log rather than an alarm.
 type ServiceEnrollmentRedeemed struct {
+	Reader
+
 	ServiceAccount string `json:"service_account"`
 	RequestID      string `json:"request_id,omitempty"`
 	EnrollmentID   string `json:"enrollment_id"`
@@ -108,6 +128,8 @@ type ServiceEnrollmentRedeemed struct {
 // No code, same as every other kind. Re-enrolling means running
 // `ssoossh service enroll` again, not reusing anything in this message.
 type ServiceEnrollmentExpiring struct {
+	Reader
+
 	ServiceAccount string   `json:"service_account"`
 	RequestID      string   `json:"request_id,omitempty"`
 	EnrollmentID   string   `json:"enrollment_id"`
@@ -146,6 +168,8 @@ type ServiceEnrollmentExpiring struct {
 // Attempts with genuinely unknown codes send nothing: there is no row, so
 // there is no one to tell.
 type ServiceEnrollmentExpiredAttempt struct {
+	Reader
+
 	ServiceAccount string   `json:"service_account"`
 	RequestID      string   `json:"request_id,omitempty"`
 	EnrollmentID   string   `json:"enrollment_id"`
@@ -181,12 +205,19 @@ type ServiceEnrollmentExpiredAttempt struct {
 // One struct for three kinds because they describe the same object; the
 // kinds are separate so the preferences can be.
 type CertificateIssued struct {
+	Reader
+
 	// CertificateType is "user", "pam" or "console", matching the kind.
 	// Carried in the payload as well as the kind so one shared template can
 	// name it.
 	CertificateType string `json:"certificate_type"`
 
 	RequestID string `json:"request_id"`
+
+	// CertificateID is the certificate's own record, what the email links
+	// to (/certs/<id>). Empty when the record could not be read back, in
+	// which case the link falls back to the certificate history.
+	CertificateID string `json:"certificate_id,omitempty"`
 
 	KeyID      string   `json:"key_id"`
 	Principals []string `json:"principals"`

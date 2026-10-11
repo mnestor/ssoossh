@@ -471,20 +471,13 @@ func (h *NotificationHandler) handle(msg *message.Message) error {
 		return nil
 	}
 
-	// Rendered once for everyone: the payload describes the event, not the
-	// reader, so N recipients get N copies of one message.
-	rendered, err := h.renderer.Render(event.Kind, payload)
-	if err != nil {
-		// A template that does not render will not render on redelivery
-		// either: every template is parsed and executed at startup, so
-		// reaching here means the payload itself is the problem.
-		h.log.ErrorContext(ctx, "discarding a notification that could not be rendered",
-			"kind", event.Kind, "error", err)
+	rendered, ok := h.renderByLevel(ctx, event.Kind, payload, wanted)
+	if !ok {
 		return nil
 	}
 
 	for _, send := range wanted {
-		if err := h.sender.Send(ctx, mail.Outgoing{To: send.Address, Rendered: rendered}); err != nil {
+		if err := h.sender.Send(ctx, mail.Outgoing{To: send.Address, Rendered: rendered[send.Advanced]}); err != nil {
 			return fmt.Errorf("failed to send the %s notification: %w", event.Kind, err)
 		}
 		// The address itself is never logged: a send to an enrollment's
@@ -500,16 +493,56 @@ func (h *NotificationHandler) handle(msg *message.Message) error {
 	return nil
 }
 
-// delivery is one resolved send: the address it goes to, and the user whose
-// per-kind preference gates it.
+// renderByLevel renders payload once per detail level the recipients in
+// wanted read at, rather than once per recipient: the payload describes the
+// event, and the level is the only thing about the reader a message varies
+// by, so N recipients cost at most two renders.
+//
+// ok is false when a render failed, which is logged here and acknowledged
+// by the caller: every template is parsed and executed at startup, so a
+// failure means the payload itself is the problem, and redelivery would
+// fail the same way.
+func (h *NotificationHandler) renderByLevel(ctx context.Context, kind notify.Kind, payload any, wanted []delivery) (map[bool]mail.Rendered, bool) {
+	rendered := make(map[bool]mail.Rendered, 2)
+	for _, send := range wanted {
+		if _, done := rendered[send.Advanced]; done {
+			continue
+		}
+		message, err := h.renderer.Render(kind, payload, send.Advanced)
+		if err != nil {
+			h.log.ErrorContext(ctx, "discarding a notification that could not be rendered",
+				"kind", kind, "advanced", send.Advanced, "error", err)
+			return nil, false
+		}
+		rendered[send.Advanced] = message
+	}
+	return rendered, true
+}
+
+// delivery is one resolved send: the address it goes to, the user whose
+// per-kind preference gates it, and the detail level it is rendered at.
 //
 // UserID empty means ungated — an enrollment's own notification address,
 // which has no owning user to hold a preference. Splitting this out of
 // model.User is what lets the two recipient shapes (a users row, a bare
 // configured address) travel through one delivery loop.
+//
+// Advanced is the user's email detail level. A bare address has no person
+// behind it to have chosen, so it reads simplified, as does a user who has
+// not logged in since the level was introduced.
 type delivery struct {
-	Address string
-	UserID  string
+	Address  string
+	UserID   string
+	Advanced bool
+}
+
+// deliveryFor builds the delivery for a users row.
+func deliveryFor(user model.User) delivery {
+	return delivery{
+		Address:  user.Email,
+		UserID:   user.ID,
+		Advanced: model.OrSimplified(user.EmailDetailLevel) == model.DetailLevelAdvanced,
+	}
 }
 
 // recipients resolves where an event should go: the enrollment's own
@@ -549,7 +582,7 @@ func (h *NotificationHandler) recipients(ctx context.Context, event notify.Event
 		}
 		sends := make([]delivery, 0, len(holders))
 		for _, user := range holders {
-			sends = append(sends, delivery{Address: user.Email, UserID: user.ID})
+			sends = append(sends, deliveryFor(user))
 		}
 		return sends, nil
 	}
@@ -570,7 +603,7 @@ func (h *NotificationHandler) recipients(ctx context.Context, event notify.Event
 			"kind", event.Kind, "user_id", event.UserID)
 		return nil, nil
 	}
-	return []delivery{{Address: user.Email, UserID: user.ID}}, nil
+	return []delivery{deliveryFor(user)}, nil
 }
 
 // enrollmentAddress reads the notification address of the enrollment an

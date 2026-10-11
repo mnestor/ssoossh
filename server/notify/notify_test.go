@@ -226,13 +226,25 @@ func payloadFieldNames(t *testing.T, p any) map[string]bool {
 	}
 
 	names := map[string]bool{}
-	typ := v.Type()
+	collectFieldNames(v.Type(), names)
+	return names
+}
+
+// collectFieldNames adds typ's exported field names to names, flattening
+// embedded structs into their promoted fields: a template writes
+// {{ .Advanced }}, not {{ .Reader.Advanced }}, so the promoted name is the
+// one the documentation has to list.
+func collectFieldNames(typ reflect.Type, names map[string]bool) {
 	for i := range typ.NumField() {
-		if f := typ.Field(i); f.IsExported() {
+		f := typ.Field(i)
+		if f.Anonymous && f.Type.Kind() == reflect.Struct {
+			collectFieldNames(f.Type, names)
+			continue
+		}
+		if f.IsExported() {
 			names[f.Name] = true
 		}
 	}
-	return names
 }
 
 // hasField reports whether fields documents name.
