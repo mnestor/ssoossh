@@ -8,11 +8,11 @@ ARG DEBIAN_FRONTEND=noninteractive
 # zig cross-compiles ssoosshd's cgo build -- server-linux-pkcs11-build, the
 # only one that needs it -- against a pinned glibc 2.28 floor. The default
 # server build is CGO_ENABLED=0 and needs no cross-toolchain at all. Keep in
-# sync with the zig version pinned in ssoossh's release workflow. 0.16 is
-# kept as the floor because that pin is shared, not because the musl
-# reasoning that first chose it still applies: there is no musl server build
-# any more.
-ARG ZIG_VERSION=0.16.0
+# sync with the zig version pinned in ssoossh's release workflow
+# (build.yaml's ZIG_VERSION): that pin is shared, and the musl reasoning that
+# first chose a version no longer applies, since there is no musl server
+# build any more.
+ARG ZIG_VERSION=0.17.0
 # bomutils has not cut a tag since 2014; see the install step below for why
 # this is a commit rather than a version.
 ARG BOMUTILS_COMMIT=c247002e2f49878bab32dd0fcf805810ae0992cb
@@ -36,8 +36,9 @@ ARG RCLONE_VERSION=1.75.1
 # is greater than maximum supported version 4") and fails every package
 # with a typecheck error, so bump the two together.
 ARG GOLANGCI_LINT_VERSION=2.14.0
-ARG GOVULNCHECK_VERSION=v1.7.0
-ARG REDOCLY_VERSION=1.28.1
+ARG GOVULNCHECK_VERSION=v1.8.0
+ARG REDOCLY_VERSION=2.57.0
+ARG GOTESTSUM_VERSION=v1.13.0
 ARG ACTIONLINT_VERSION=v1.7.12
 # Must be >= the `go` directive in go.mod, and should track the same pin as
 # Dockerfile.devcontainer. GOTOOLCHAIN=auto covers `go build`/`go test` by
@@ -123,7 +124,7 @@ RUN echo "deb [trusted=yes] https://repo.goreleaser.com/apt/ /" > /etc/apt/sourc
   && curl -sL https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz | tar -C /usr/local -xz \
   && curl -sL https://ziglang.org/download/${ZIG_VERSION}/zig-x86_64-linux-${ZIG_VERSION}.tar.xz | tar -C /usr/local -xJ \
   && ln -s /usr/local/zig-x86_64-linux-${ZIG_VERSION}/zig /usr/local/bin/zig \
-  && /usr/local/go/bin/go install gotest.tools/gotestsum@v1.13.0 \
+  && /usr/local/go/bin/go install gotest.tools/gotestsum@${GOTESTSUM_VERSION} \
   && /usr/local/go/bin/go install golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION} \
   && /usr/local/go/bin/go install github.com/rhysd/actionlint/cmd/actionlint@${ACTIONLINT_VERSION} \
   # The release tarball rather than `go install`: it is the artifact
