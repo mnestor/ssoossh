@@ -255,3 +255,59 @@ func TestExecute_HelpCommand(t *testing.T) {
 		})
 	}
 }
+
+// TestExecute_FlagValueErrors runs bad flag values through the real tree,
+// where the root's FlagErrorFunc rewords pflag's strconv messages.
+func TestExecute_FlagValueErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "should say a number flag takes a whole number",
+			args: []string{"ssh", "login", "--key-size", "abc"},
+			want: `invalid value "abc" for --key-size: expected a whole number`,
+		},
+		{
+			name: "should say a boolean flag takes true or false",
+			args: []string{"ssh", "login", "--force=maybe"},
+			want: `invalid value "maybe" for --force: expected true or false`,
+		},
+		{
+			name: "should keep pflag's wording for an unknown flag",
+			args: []string{"ca", "--bogus"},
+			want: "unknown flag: --bogus",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newTestExec(t)
+
+			_, err := f.exec.Execute(context.Background(), tt.args)
+
+			var usage *usageError
+			if !errors.As(unwrapCommandError(err), &usage) || usage.Error() != tt.want {
+				t.Errorf("got %v, want usage error %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestDescribeFlagType(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{"int", "a whole number"},
+		{"count", "a whole number"},
+		{"bool", "true or false"},
+		{"duration", "a duration such as 30s or 5m"},
+		{"stringSlice", "a stringSlice"},
+	}
+	for _, tt := range tests {
+		t.Run("should describe "+tt.in, func(t *testing.T) {
+			if got := describeFlagType(tt.in); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

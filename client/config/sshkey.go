@@ -3,6 +3,8 @@ package config
 import (
 	"fmt"
 	"slices"
+	"strconv"
+	"strings"
 
 	"github.com/mnestor/ssoossh/internal/fipsmode"
 )
@@ -37,7 +39,7 @@ func (c *Config) ResolveSSHKey() (algorithm string, size int, warnings []string,
 		keyType = fipsmode.DefaultSSHKeyType()
 	} else if fips && !fipsmode.IsApprovedInFIPS(keyType) {
 		return "", 0, warnings, fmt.Errorf(
-			"sshkey.type %q is not FIPS-approved; approved types are %q and %q",
+			"key type %q (--key-type or sshkey.type) is not FIPS-approved while fips is on; use %s or %s",
 			keyType, fipsmode.SSHKeyTypeECDSA, fipsmode.SSHKeyTypeRSA)
 	}
 
@@ -49,7 +51,7 @@ func (c *Config) ResolveSSHKey() (algorithm string, size int, warnings []string,
 		// configured value silently, so nobody believes they tuned it.
 		if size != 0 {
 			warnings = append(warnings, fmt.Sprintf(
-				"sshkey.size %d is ignored for ed25519, which has a single fixed key size", size))
+				"key size %d (--key-size or sshkey.size) is ignored for ed25519, which has a single fixed key size", size))
 		}
 		return string(SSHKeyTypeEd25519), 0, warnings, nil
 
@@ -59,7 +61,8 @@ func (c *Config) ResolveSSHKey() (algorithm string, size int, warnings []string,
 		}
 		validSizes := fipsmode.ValidECDSASizes()
 		if !slices.Contains(validSizes, size) {
-			return "", 0, warnings, fmt.Errorf("sshkey.size %d is not a valid ECDSA curve, expected one of %v", size, validSizes)
+			return "", 0, warnings, fmt.Errorf("key size %d (--key-size or sshkey.size) is not an ECDSA curve; use one of %s",
+				size, joinInts(validSizes))
 		}
 		return string(SSHKeyTypeECDSA), size, warnings, nil
 
@@ -68,12 +71,25 @@ func (c *Config) ResolveSSHKey() (algorithm string, size int, warnings []string,
 			size = fipsmode.DefaultSizeForAlgorithm(SSHKeyTypeRSA)
 		}
 		if size < fipsmode.MinRSASize() {
-			return "", 0, warnings, fmt.Errorf("sshkey.size %d is too small for RSA, minimum is %d", size, fipsmode.MinRSASize())
+			return "", 0, warnings, fmt.Errorf("key size %d (--key-size or sshkey.size) is too small for RSA; the minimum is %d",
+				size, fipsmode.MinRSASize())
 		}
 		return string(SSHKeyTypeRSA), size, warnings, nil
 
 	default:
-		return "", 0, warnings, fmt.Errorf("unsupported sshkey.type %q, expected one of %q, %q, or %q",
-			keyType, SSHKeyTypeEd25519, SSHKeyTypeECDSA, SSHKeyTypeRSA)
+		return "", 0, warnings, fmt.Errorf("unsupported key type %q (--key-type or sshkey.type); use %s, %s or %s",
+			keyType, SSHKeyTypeECDSA, SSHKeyTypeEd25519, SSHKeyTypeRSA)
 	}
+}
+
+// joinInts lists sizes for an error message: "256, 384 or 521".
+func joinInts(values []int) string {
+	parts := make([]string, len(values))
+	for i, v := range values {
+		parts[i] = strconv.Itoa(v)
+	}
+	if len(parts) < 2 {
+		return strings.Join(parts, "")
+	}
+	return strings.Join(parts[:len(parts)-1], ", ") + " or " + parts[len(parts)-1]
 }

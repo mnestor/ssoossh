@@ -148,7 +148,7 @@ func newConfig(cmd *cobra.Command, paths searchPaths, loadPolicy func() (map[str
 		mapstructure.StringToTimeDurationHookFunc(),
 		mapstructure.StringToSliceHookFunc(","),
 	))); err != nil {
-		return nil, fmt.Errorf("failed to parse config: %w", err)
+		return nil, describeDecodeError(err)
 	}
 	c.FIPSEnforced = (enforceKeys["fips"] || policy.fipsSet) && c.FIPS != nil && *c.FIPS
 	// Both locked sources contribute, so an enforce file is enough on a
@@ -162,7 +162,9 @@ func newConfig(cmd *cobra.Command, paths searchPaths, loadPolicy func() (map[str
 	// for validation and for emitting the warnings exactly once.
 	_, _, warnings, err := c.ResolveSSHKey()
 	if err != nil {
-		return nil, fmt.Errorf("invalid ssh key configuration: %w", err)
+		// Unwrapped: ResolveSSHKey's messages name the flag and the
+		// setting already.
+		return nil, err
 	}
 	for _, w := range warnings {
 		slog.Warn(w)

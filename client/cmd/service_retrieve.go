@@ -68,9 +68,9 @@ func runServiceRetrieve(ctx context.Context, root *RootCommand, errOut io.Writer
 		return errors.New("--key is required")
 	}
 
-	graceDuration, err := time.ParseDuration(graceStr)
+	graceDuration, err := parseGrace(graceStr)
 	if err != nil {
-		return fmt.Errorf("invalid --grace duration: %w", err)
+		return err
 	}
 
 	certPath := certificatePathFor(keyPath)
@@ -180,4 +180,19 @@ func describeRetrieveError(err error) error {
 		msg = fmt.Sprintf("the server rejected the retrieval (%s)", detail)
 	}
 	return &retrieveError{msg: msg, err: err}
+}
+
+// parseGrace reads --grace. time.ParseDuration's own errors ("time: missing
+// unit in duration \"5\"") name the parser rather than the flag, and it
+// accepts a negative duration, which would make an expired certificate
+// count as fresh.
+func parseGrace(value string) (time.Duration, error) {
+	d, err := time.ParseDuration(value)
+	if err != nil {
+		return 0, &usageError{msg: fmt.Sprintf("invalid value %q for --grace: use a number with a unit, e.g. 30s, 5m or 1h", value)}
+	}
+	if d < 0 {
+		return 0, &usageError{msg: fmt.Sprintf("invalid value %q for --grace: it must not be negative", value)}
+	}
+	return d, nil
 }

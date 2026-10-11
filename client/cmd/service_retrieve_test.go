@@ -159,14 +159,30 @@ func TestServiceRetrieve_MissingKey(t *testing.T) {
 	}
 }
 
-// should reject invalid --grace duration.
+// should reject an unusable --grace as a usage error that says what the
+// flag takes.
 func TestServiceRetrieve_InvalidGrace(t *testing.T) {
 	t.Parallel()
 
-	var out bytes.Buffer
-	err := runServiceRetrieve(context.Background(), nil, &out, "code", "/tmp/key", false, "invalid")
-	if err == nil || !strings.Contains(err.Error(), "invalid --grace duration") {
-		t.Errorf("runServiceRetrieve() error = %v, want containing 'invalid --grace duration'", err)
+	tests := []struct {
+		name  string
+		grace string
+		want  string
+	}{
+		{name: "should reject a value that is not a duration", grace: "invalid", want: `invalid value "invalid" for --grace: use a number with a unit, e.g. 30s, 5m or 1h`},
+		{name: "should reject a number with no unit", grace: "5", want: `invalid value "5" for --grace: use a number with a unit, e.g. 30s, 5m or 1h`},
+		{name: "should reject a negative duration", grace: "-1s", want: `invalid value "-1s" for --grace: it must not be negative`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var out bytes.Buffer
+			err := runServiceRetrieve(context.Background(), nil, &out, "code", "/tmp/key", false, tt.grace)
+			var usage *usageError
+			if !errors.As(err, &usage) || usage.Error() != tt.want {
+				t.Errorf("got %v, want usage error %q", err, tt.want)
+			}
+		})
 	}
 }
 

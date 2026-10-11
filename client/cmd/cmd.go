@@ -78,6 +78,7 @@ func (r *RootCommand) Init(cd *simplecobra.Commandeer) error {
 	cmd.Args = rejectUnknownSubcommand
 	cmd.SetUsageTemplate(usageTemplate)
 	cmd.SetHelpCommand(newHelpCommand())
+	cmd.SetFlagErrorFunc(describeFlagError)
 	cmd.Short = "The ssoossh client: turns a browser sign-in into a short-lived SSH certificate, from your ssh_config."
 	cmd.Long = "The ssoossh client turns a browser sign-in into a short-lived SSH certificate. " +
 		"ssh runs it for you, from ssh_config: it generates a fresh keypair, sends the public " +

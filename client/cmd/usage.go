@@ -8,6 +8,7 @@ import (
 
 	"github.com/bep/simplecobra"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 // rejectUnknownSubcommand is the Args validator for the root and every
@@ -159,5 +160,32 @@ func newHelpCommand() *cobra.Command {
 			cmd.InitDefaultHelpFlag()
 			return cmd.Help()
 		},
+	}
+}
+
+// describeFlagError is the root's FlagErrorFunc, which every subcommand
+// inherits. A flag given a value of the wrong kind reached the terminal in
+// strconv's words ("strconv.ParseInt: parsing \"abc\": invalid syntax");
+// this says what the flag takes instead. Every flag error is a usage error.
+func describeFlagError(_ *cobra.Command, err error) error {
+	var invalid *pflag.InvalidValueError
+	if errors.As(err, &invalid) {
+		return &usageError{msg: fmt.Sprintf("invalid value %q for --%s: expected %s",
+			invalid.GetValue(), invalid.GetFlag().Name, describeFlagType(invalid.GetFlag().Value.Type()))}
+	}
+	return &usageError{msg: err.Error()}
+}
+
+// describeFlagType names what a flag of pflag type t accepts.
+func describeFlagType(t string) string {
+	switch t {
+	case "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64", "count":
+		return "a whole number"
+	case "bool":
+		return "true or false"
+	case "duration":
+		return "a duration such as 30s or 5m"
+	default:
+		return "a " + t
 	}
 }
