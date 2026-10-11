@@ -35,9 +35,17 @@ internal/tools/gendocs          71.0
 internal/tools/genwirecontract  76.0
 internal/tracelog               93.0
 
-server/bootstrap                86.0
+# server/bootstrap lowered 86.0 -> 85.0 and server/cmd 76.0 -> 74.0 on
+# 2026-10-11. Not a regression in what is tested: no code or test changed.
+# go1.27.0's coverage instrumentation over-counted statements in covered
+# blocks (the three statements at the top of server/cmd's RootCommand.Init
+# counted as eight), and go1.27.2, which the build image moved to in #109,
+# counts them right. Same suite, same commit: server/cmd 79.6% -> 74.9%,
+# server/bootstrap 87.2% -> 85.6% in CI. These are the corrected values
+# less the usual margin.
+server/bootstrap                85.0
 server/certmsg                 100.0
-server/cmd                      76.0
+server/cmd                      74.0
 server/config                   92.0
 server/config/tlsutils          98.0
 server/controller               84.0

@@ -520,7 +520,7 @@ openapi-check:
 # pinned one (see .github/docker/Dockerfile.runner, REDOCLY_VERSION) so CI
 # does not fetch it per run -- and falls back to npx for a developer who has
 # not got it. Keep the npx pin in step with the image's.
-REDOCLY ?= $(shell command -v redocly 2>/dev/null || echo "npx @redocly/cli@1.28.1")
+REDOCLY ?= $(shell command -v redocly 2>/dev/null || echo "npx @redocly/cli@2.57.0")
 
 openapi-lint:
 	$(REDOCLY) lint docs/openapi.yaml --config .redoclyrc.yaml
