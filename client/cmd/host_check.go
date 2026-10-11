@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 
@@ -745,13 +746,35 @@ func (c *hostChecker) checkPrincipalsCommand(sshd sshdConfig, command string) []
 	return append(results, c.checkMapping(inv.mappingPath, runAs)...)
 }
 
+// sshdPathAbsolute is the test the sshd built for goos applies to a
+// command's path: path_absolute() in OpenSSH's misc.c. Upstream wants a
+// leading '/'. Win32-OpenSSH (is_absolute_path) skips one leading quote and
+// also takes '\', a drive letter or its __PROGRAMDATA__ token, which Go's
+// filepath.IsAbs would reject for a path like /usr/bin/ssoossh.
+func sshdPathAbsolute(goos, path string) bool {
+	if goos != "windows" {
+		return strings.HasPrefix(path, "/")
+	}
+	if path != "" && (path[0] == '"' || path[0] == '\'') {
+		path = path[1:]
+	}
+	switch {
+	case strings.HasPrefix(path, "/"), strings.HasPrefix(path, `\`), strings.HasPrefix(path, "__PROGRAMDATA__"):
+		return true
+	case len(path) >= 2 && path[1] == ':':
+		c := path[0] | 0x20
+		return c >= 'a' && c <= 'z'
+	}
+	return false
+}
+
 // checkCommandPath applies sshd's rule for running a command: an absolute
 // path whose resolved file, and every directory above it, is owned by root
 // and writable by neither group nor other (safe_path in OpenSSH's misc.c).
 // Anything else, and sshd refuses to run it with the reason only in its log.
 func (c *hostChecker) checkCommandPath(path string) checkResult {
 	const name = "principals-command"
-	if !filepath.IsAbs(path) {
+	if !sshdPathAbsolute(runtime.GOOS, path) {
 		return checkResult{status: checkFail, name: name, detail: fmt.Sprintf("AuthorizedPrincipalsCommand %s is not an absolute path, and sshd refuses to run it", path)}
 	}
 	real, err := c.sys.Realpath(path)

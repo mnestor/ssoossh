@@ -479,6 +479,42 @@ func TestCheckPlainKeys(t *testing.T) {
 	}
 }
 
+func TestSSHDPathAbsolute(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		goos string
+		path string
+		want bool
+	}{
+		{name: "should accept a leading slash on Unix", goos: "linux", path: "/usr/bin/ssoossh", want: true},
+		{name: "should refuse a relative path on Unix", goos: "linux", path: "ssoossh", want: false},
+		{name: "should refuse an empty path on Unix", goos: "darwin", path: "", want: false},
+		{name: "should refuse a drive letter on Unix", goos: "linux", path: `C:\ssoossh.exe`, want: false},
+		{name: "should refuse a backslash on Unix", goos: "linux", path: `\ssoossh`, want: false},
+		{name: "should accept a leading slash on Windows", goos: "windows", path: "/usr/bin/ssoossh", want: true},
+		{name: "should accept a leading backslash on Windows", goos: "windows", path: `\ssoossh\ssoossh.exe`, want: true},
+		{name: "should accept a drive letter on Windows", goos: "windows", path: `C:\ssoossh\ssoossh.exe`, want: true},
+		{name: "should accept a lower-case drive letter on Windows", goos: "windows", path: "c:/ssoossh.exe", want: true},
+		{name: "should accept a quoted drive path on Windows", goos: "windows", path: `"C:\Program`, want: true},
+		{name: "should accept a single-quoted path on Windows", goos: "windows", path: `'/ssoossh`, want: true},
+		{name: "should accept the PROGRAMDATA token on Windows", goos: "windows", path: `__PROGRAMDATA__\ssh\ssoossh.exe`, want: true},
+		{name: "should refuse a relative path on Windows", goos: "windows", path: `ssoossh.exe`, want: false},
+		{name: "should refuse a non-letter before a colon on Windows", goos: "windows", path: `1:\ssoossh.exe`, want: false},
+		{name: "should refuse a lone quote on Windows", goos: "windows", path: `"`, want: false},
+		{name: "should refuse an empty path on Windows", goos: "windows", path: "", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := sshdPathAbsolute(tt.goos, tt.path); got != tt.want {
+				t.Errorf("sshdPathAbsolute(%q, %q) = %v, want %v", tt.goos, tt.path, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestParsePrincipalsCommand(t *testing.T) {
 	t.Parallel()
 
