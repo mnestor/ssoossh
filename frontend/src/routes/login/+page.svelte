@@ -1,14 +1,17 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { logout } from '#lib/api/endpoints.js';
 	import { startLogin } from '#lib/auth.js';
 	import { getBranding } from '#lib/branding.svelte.js';
 	import BrandMark from '#lib/components/BrandMark.svelte';
+	import Alert from '#lib/components/Alert.svelte';
 	import Button from '#lib/components/Button.svelte';
 	import ConsentModal from '#lib/components/ConsentModal.svelte';
 	import Icon from '#lib/components/Icon.svelte';
 	import PageShell from '#lib/components/PageShell.svelte';
 	import { isInternalPath } from '#lib/paths.js';
 	import { session } from '#lib/session.svelte.js';
+	import { describeSignInFailure } from '#lib/signin.js';
 
 	// Where to land after login. Carried in ?return_to= so a redirect here
 	// from /approve/<id> comes back to that approval page rather than
@@ -38,6 +41,46 @@
 	// which is not true of the footer's nav link (see Footer.svelte).
 	const supportEmail = $derived(branding.support_email ?? '');
 	const supportLabel = $derived(branding.support_label || supportEmail);
+
+	// Why the last sign-in did not complete, when the callback sent the
+	// browser back here instead of finishing it (server/controller/auth.go).
+	// The button below is the retry, so the alert needs no button of its own.
+	const failure = $derived(describeSignInFailure(page.url.searchParams.get('error')));
+
+	// What the sign-in is for, when the person arrived from a link a
+	// terminal or a console printed. Saying so is also the first place to
+	// tell a reader who did not start anything that they are about to.
+	const purpose = $derived(
+		returnTo.startsWith('/approve/')
+			? 'Sign in to review the certificate request your terminal opened.'
+			: returnTo.startsWith('/c/')
+				? 'Sign in to review the console login waiting on that code.'
+				: ''
+	);
+
+	// Pressed, the button hands the browser to the identity provider, which
+	// can take a moment to answer; busy says the press registered.
+	let leaving = $state(false);
+	function signIn() {
+		leaving = true;
+		startLogin(returnTo);
+	}
+
+	// For someone signed in as the wrong account: end this session and come
+	// back here, still carrying where they were going.
+	let signingOut = $state(false);
+	let signOutError = $state<string | null>(null);
+	async function signOutAndRetry() {
+		signingOut = true;
+		signOutError = null;
+		try {
+			await logout();
+			window.location.assign(`/login?return_to=${encodeURIComponent(returnTo)}`);
+		} catch {
+			signOutError = 'Sign-out did not complete. You are still signed in. Try again.';
+			signingOut = false;
+		}
+	}
 </script>
 
 <svelte:head><title>Sign in · ssoossh</title></svelte:head>
@@ -67,18 +110,49 @@
 				</p>
 			{:else}
 				<p class="text-sm text-ink-muted">
-					Certificates are issued through your organization's identity provider.
+					You'll sign in with your organization's identity provider.
 				</p>
+				{#if purpose}
+					<p class="mt-2 text-sm text-ink" data-testid="login-purpose">{purpose}</p>
+				{/if}
 			{/if}
 		</div>
 
+		{#if failure}
+			<div class="w-full text-left">
+				<Alert variant="error" title={failure.title} testid="login-error">{failure.message}</Alert>
+			</div>
+		{/if}
+
 		{#if session.signedIn}
-			<!-- Not resolve()d: this is a caller-supplied path, not a route id
-			     known at build time. isInternalPath is what keeps it same-origin. -->
-			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
-			<a class="text-sm font-medium text-accent hover:underline" href={returnTo}>Continue</a>
+			<div class="flex w-full flex-col items-center gap-3">
+				<!-- Not resolve()d: this is a caller-supplied path, not a route id
+				     known at build time. isInternalPath is what keeps it same-origin. -->
+				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
+				<a
+					class="inline-flex min-h-target w-full items-center justify-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-ink transition duration-100 hover:bg-accent-hover"
+					href={returnTo}
+					data-testid="login-continue"
+				>
+					Continue
+					<Icon name="arrow-right" size="sm" />
+				</a>
+				<p class="text-xs text-ink-muted">
+					Not you?
+					<button
+						type="button"
+						class="inline-flex min-h-target items-center font-medium text-accent hover:underline disabled:opacity-50"
+						disabled={signingOut}
+						onclick={signOutAndRetry}
+						data-testid="login-sign-out">{signingOut ? 'Signing out…' : 'Sign out'}</button
+					>
+				</p>
+				{#if signOutError}
+					<p class="text-xs text-danger" role="alert">{signOutError}</p>
+				{/if}
+			</div>
 		{:else}
-			<Button testid="sign-in-button" full disabled={blocked} onclick={() => startLogin(returnTo)}>
+			<Button testid="sign-in-button" full disabled={blocked} busy={leaving} onclick={signIn}>
 				Continue with SSO
 				<Icon name="arrow-right" size="sm" />
 			</Button>

@@ -4782,7 +4782,9 @@ paths:
       description: |-
         Checks `state` against the value stored at login, exchanges the code,
         establishes the session, and redirects to the captured `return_to` (or
-        `/`).
+        `/`). A failure redirects to `/login?error=<reason>` (`expired`,
+        `refused`, `session` or `failed`), or for a claims echo to
+        `/admin/identity/echo?error=<reason>`.
       parameters:
       - description: Authorization code from the identity provider
         in: query
@@ -4802,13 +4804,8 @@ paths:
             application/json:
               schema:
                 type: string
-          description: Redirect back into the app
-        "401":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
-          description: State mismatch, or the provider rejected the exchange
+          description: Redirect back into the app, or to the page that explains a
+            failure
       summary: OIDC callback
       tags:
       - auth

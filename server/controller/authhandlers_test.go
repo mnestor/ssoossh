@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -236,9 +237,7 @@ func TestCallbackHandler_ShouldRejectAStateMismatch(t *testing.T) {
 	callbackReq := httptest.NewRequest(http.MethodGet, "/callback?code=auth-code-1&state=wrong-state", nil)
 	callbackResp := doRequest(r, callbackReq, loginResp)
 
-	if callbackResp.Code != http.StatusUnauthorized {
-		t.Errorf("got status %d, want %d, body: %s", callbackResp.Code, http.StatusUnauthorized, callbackResp.Body.String())
-	}
+	assertSignInFailure(t, callbackResp, "/login", "expired")
 }
 
 func TestCallbackHandler_ShouldRejectAMissingState(t *testing.T) {
@@ -252,9 +251,7 @@ func TestCallbackHandler_ShouldRejectAMissingState(t *testing.T) {
 	callbackReq := httptest.NewRequest(http.MethodGet, "/callback?code=auth-code-1&state=", nil)
 	callbackResp := doRequest(r, callbackReq, nil)
 
-	if callbackResp.Code != http.StatusUnauthorized {
-		t.Errorf("got status %d, want %d, body: %s", callbackResp.Code, http.StatusUnauthorized, callbackResp.Body.String())
-	}
+	assertSignInFailure(t, callbackResp, "/login", "expired")
 }
 
 func TestCallbackHandler_ShouldSurfaceAHandleCallbackError(t *testing.T) {
@@ -272,9 +269,7 @@ func TestCallbackHandler_ShouldSurfaceAHandleCallbackError(t *testing.T) {
 	callbackReq := httptest.NewRequest(http.MethodGet, "/callback?code=auth-code-1&state="+state, nil)
 	callbackResp := doRequest(r, callbackReq, loginResp)
 
-	if callbackResp.Code == http.StatusFound {
-		t.Fatalf("expected an error response, got a redirect to %q", callbackResp.Header().Get("Location"))
-	}
+	assertSignInFailure(t, callbackResp, "/login", "failed")
 }
 
 // TestCallbackHandler_ShouldFallBackToRootWithoutAReturnURL covers a login
@@ -411,9 +406,7 @@ func TestCallbackHandler_ShouldSurfaceASessionWriteError(t *testing.T) {
 
 	w := doRequest(r, httptest.NewRequest(http.MethodGet, "/callback?code=c&state=s", nil), nil)
 
-	if w.Code == http.StatusFound {
-		t.Fatalf("expected an error response when the session fails to save, got a redirect to %q", w.Header().Get("Location"))
-	}
+	assertSignInFailure(t, w, "/login", "failed")
 }
 
 func TestRandomState_ShouldReturnDistinctURLSafeValues(t *testing.T) {
@@ -462,19 +455,86 @@ func TestCallbackHandler_ShouldExplainAnUnsavableIdentitySession(t *testing.T) {
 
 	w := doRequest(r, httptest.NewRequest(http.MethodGet, "/callback?code=c&state="+state, nil), loginResp)
 
-	if w.Code == http.StatusFound {
-		t.Fatalf("expected an error response when the identity session cannot be saved, got a redirect to %q", w.Header().Get("Location"))
-	}
-	body := w.Body.String()
-	if strings.Contains(body, "internal server error") {
-		t.Errorf("the response still carries the generic message; got: %s", body)
-	}
-	if !strings.Contains(body, "the session could not be saved") {
-		t.Errorf("expected the response to say which step failed; got: %s", body)
-	}
+	assertSignInFailure(t, w, "/login", "session")
 	// The store's own message names sizes and libraries, and it is the
 	// operator's to read in the log, not the caller's.
-	if strings.Contains(body, "securecookie") {
-		t.Errorf("the response leaks the underlying store error; got: %s", body)
+	if strings.Contains(w.Header().Get("Location")+w.Body.String(), "securecookie") {
+		t.Errorf("the response leaks the underlying store error; got Location %q", w.Header().Get("Location"))
+	}
+}
+
+// assertSignInFailure checks that a failed callback sent the browser to
+// the page that explains it, naming the reason, rather than rendering an
+// error body a navigating browser would show raw.
+func assertSignInFailure(t *testing.T, w *httptest.ResponseRecorder, wantPath, wantReason string) {
+	t.Helper()
+	if w.Code != http.StatusFound {
+		t.Fatalf("got status %d, want a redirect; body: %s", w.Code, w.Body.String())
+	}
+	loc, err := url.Parse(w.Header().Get("Location"))
+	if err != nil {
+		t.Fatalf("unparseable Location %q: %v", w.Header().Get("Location"), err)
+	}
+	if loc.Path != wantPath {
+		t.Errorf("got redirect path %q, want %q", loc.Path, wantPath)
+	}
+	if got := loc.Query().Get("error"); got != wantReason {
+		t.Errorf("got error=%q, want %q", got, wantReason)
+	}
+}
+
+func TestCallbackHandler_ShouldReportAProviderRefusalAsRefused(t *testing.T) {
+	t.Parallel()
+
+	svc := &fakeAuthService{authURL: "https://idp.example.com/authorize", nonce: "n-1"}
+	r := newAuthTestRouter(svc, passthrough)
+
+	loginResp := doRequest(r, httptest.NewRequest(http.MethodGet, "/login", nil), nil)
+	state, err := extractSetOIDCState(r, loginResp)
+	if err != nil {
+		t.Fatalf("failed to recover state: %v", err)
+	}
+
+	w := doRequest(r, httptest.NewRequest(http.MethodGet, "/callback?error=access_denied&state="+state, nil), loginResp)
+
+	assertSignInFailure(t, w, "/login", "refused")
+}
+
+func TestCallbackHandler_ShouldNotExchangeACodeAfterAProviderRefusal(t *testing.T) {
+	t.Parallel()
+
+	svc := &fakeAuthService{authURL: "https://idp.example.com/authorize", nonce: "n-1"}
+	r := newAuthTestRouter(svc, passthrough)
+
+	loginResp := doRequest(r, httptest.NewRequest(http.MethodGet, "/login", nil), nil)
+	state, err := extractSetOIDCState(r, loginResp)
+	if err != nil {
+		t.Fatalf("failed to recover state: %v", err)
+	}
+
+	doRequest(r, httptest.NewRequest(http.MethodGet, "/callback?error=access_denied&state="+state, nil), loginResp)
+
+	if svc.gotCode != "" || svc.gotCallbackNonc != "" {
+		t.Errorf("HandleCallback was called after the provider refused; got code %q", svc.gotCode)
+	}
+}
+
+func TestCallbackHandler_ShouldKeepReturnToOnAFailedSignIn(t *testing.T) {
+	t.Parallel()
+
+	svc := &fakeAuthService{authURL: "https://idp.example.com/authorize", nonce: "n-1", handleCbErr: errors.New("token exchange failed")}
+	r := newAuthTestRouter(svc, passthrough)
+
+	loginResp := doRequest(r, httptest.NewRequest(http.MethodGet, "/login?return_to=/approve/req-1", nil), nil)
+	state, err := extractSetOIDCState(r, loginResp)
+	if err != nil {
+		t.Fatalf("failed to recover state: %v", err)
+	}
+
+	w := doRequest(r, httptest.NewRequest(http.MethodGet, "/callback?code=c&state="+state, nil), loginResp)
+
+	loc, _ := url.Parse(w.Header().Get("Location"))
+	if got := loc.Query().Get("return_to"); got != "/approve/req-1" {
+		t.Errorf("got return_to=%q, want %q", got, "/approve/req-1")
 	}
 }

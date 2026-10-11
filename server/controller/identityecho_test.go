@@ -3,6 +3,7 @@ package controller
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -363,4 +364,31 @@ func oidcStateFromSession(t *testing.T, r *gin.Engine, from *httptest.ResponseRe
 		t.Fatal("no OIDC state was stored by the echo start endpoint")
 	}
 	return state
+}
+
+// TestIdentityEcho_ShouldSendAFailedEchoBackToTheEchoPage covers the echo's
+// failure path: a navigating browser shown a JSON error body had no way
+// back, so the callback returns it to the echo page with the reason.
+func TestIdentityEcho_ShouldSendAFailedEchoBackToTheEchoPage(t *testing.T) {
+	t.Parallel()
+
+	svc := &fakeAuthService{
+		echoURL: "https://idp.example.com/authorize?prompt=login",
+		nonce:   "nonce-1", pkceVerifier: "verifier-1",
+		echoCbErr: errors.New("token verification failed"),
+	}
+	identity := &service.Identity{Subject: "sub-alice", Groups: []string{"ssh-admins"}}
+	r := echoTestRouter(t, svc, identity)
+
+	start := httptest.NewRecorder()
+	r.ServeHTTP(start, httptest.NewRequest(http.MethodPost, "/admin/identity/echo/start", nil))
+	state := oidcStateFromSession(t, r, start)
+	cb := httptest.NewRequest(http.MethodGet, "/auth/callback?code=abc&state="+url.QueryEscape(state), nil)
+	for _, c := range start.Result().Cookies() {
+		cb.AddCookie(c)
+	}
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, cb)
+
+	assertSignInFailure(t, w, echoResultPath, "failed")
 }

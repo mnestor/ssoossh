@@ -21,6 +21,8 @@ vi.mock('$app/state', () => ({ page: pageState }));
 vi.mock('#lib/auth.js', () => ({ startLogin }));
 vi.mock('#lib/branding.svelte.js', () => ({ getBranding: () => branding }));
 
+import type { CurrentUser } from '#lib/api/types.js';
+import { session } from '#lib/session.svelte.js';
 import Page from './+page.svelte';
 
 beforeEach(() => {
@@ -29,6 +31,7 @@ beforeEach(() => {
 	branding.support_email = undefined;
 	branding.support_label = undefined;
 	startLogin.mockClear();
+	session.user = null;
 });
 
 describe('Login page', () => {
@@ -120,6 +123,69 @@ describe('Login page', () => {
 			render(Page);
 			await userEvent.click(screen.getByRole('button', { name: 'I Accept' }));
 			expect(screen.getByRole('button', { name: /Continue with SSO/ })).toBeEnabled();
+		});
+	});
+
+	describe('when the callback sent the browser back with a reason', () => {
+		it.each([
+			{ error: 'expired', title: 'That sign-in had expired' },
+			{ error: 'refused', title: 'Your identity provider did not sign you in' },
+			{ error: 'session', title: 'Signed in, but the session could not be saved' },
+			{ error: 'failed', title: 'Sign-in did not complete' }
+		])('should explain "$error"', ({ error, title }) => {
+			pageState.url = new URL(`http://localhost/login?error=${error}`);
+			render(Page);
+			expect(screen.getByTestId('login-error')).toHaveTextContent(title);
+		});
+
+		it('should keep the sign-in button as the way to retry', () => {
+			pageState.url = new URL('http://localhost/login?error=expired');
+			render(Page);
+			expect(screen.getByRole('button', { name: /Continue with SSO/ })).toBeEnabled();
+		});
+	});
+
+	it('should show no error without a reason', () => {
+		render(Page);
+		expect(screen.queryByTestId('login-error')).not.toBeInTheDocument();
+	});
+
+	it('should say what the sign-in is for when it came from an approval link', () => {
+		pageState.url = new URL('http://localhost/login?return_to=%2Fapprove%2Freq-1');
+		render(Page);
+		expect(screen.getByTestId('login-purpose')).toHaveTextContent(
+			'review the certificate request your terminal opened'
+		);
+	});
+
+	it('should say what the sign-in is for when it came from a console code link', () => {
+		pageState.url = new URL('http://localhost/login?return_to=%2Fc%2FK7M4QP2X');
+		render(Page);
+		expect(screen.getByTestId('login-purpose')).toHaveTextContent('console login');
+	});
+
+	it('should mark the sign-in button busy once pressed', async () => {
+		render(Page);
+		await userEvent.click(screen.getByRole('button', { name: /Continue with SSO/ }));
+		expect(screen.getByRole('button', { name: /Continue with SSO/ })).toHaveAttribute(
+			'aria-busy',
+			'true'
+		);
+	});
+
+	describe('when already signed in', () => {
+		beforeEach(() => {
+			session.user = { username: 'alice', email: 'alice@example.com' } as CurrentUser;
+		});
+
+		it('should offer Continue as the primary action', () => {
+			render(Page);
+			expect(screen.getByTestId('login-continue')).toHaveAttribute('href', '/dashboard');
+		});
+
+		it('should offer a way to sign out for a different account', () => {
+			render(Page);
+			expect(screen.getByTestId('login-sign-out')).toHaveTextContent('Sign out');
 		});
 	});
 });

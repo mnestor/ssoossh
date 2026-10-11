@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -118,20 +119,44 @@ func (a *authController) loginHandler(g *gin.Context) {
 	g.Redirect(http.StatusFound, authURL)
 }
 
+// signInFailure is why a sign-in or a claims echo did not complete, as
+// the page the browser is sent back to reads it from ?error=. A browser
+// arriving here is mid-navigation, so a JSON error body was what it
+// rendered: a raw envelope with no way back into the app.
+type signInFailure string
+
+const (
+	// signInExpired: the state check failed. The sign-in took too long,
+	// was started in another tab, or the browser dropped the cookie.
+	signInExpired signInFailure = "expired"
+	// signInRefused: the identity provider came back without signing the
+	// person in (cancelled, consent refused) and said so with ?error=.
+	signInRefused signInFailure = "refused"
+	// signInSession: the identity checked out but the session could not be
+	// saved. The person cannot fix it; an operator can.
+	signInSession signInFailure = "session"
+	// signInFailed: anything else, such as a code exchange or token
+	// verification the provider or this server refused.
+	signInFailed signInFailure = "failed"
+)
+
 // callbackHandler handles GET /auth/callback: checks the OIDC state value
 // against the one loginHandler stored, exchanges the authorization code,
 // establishes the session, and redirects to the URL loginHandler captured
-// (falling back to "/" if none was set).
+// (falling back to "/" if none was set). A sign-in that does not complete
+// redirects to /login?error=<reason> instead, keeping return_to, and a
+// failed claims echo to the echo page; see signInFailure.
 //
 // @Summary     OIDC callback
 // @Description Checks `state` against the value stored at login, exchanges the code,
 // @Description establishes the session, and redirects to the captured `return_to` (or
-// @Description `/`).
+// @Description `/`). A failure redirects to `/login?error=<reason>` (`expired`,
+// @Description `refused`, `session` or `failed`), or for a claims echo to
+// @Description `/admin/identity/echo?error=<reason>`.
 // @Tags        auth
 // @Param       code  query string true "Authorization code from the identity provider"
 // @Param       state query string true "CSRF state value stored at login"
-// @Success     302 {string} string "Redirect back into the app"
-// @Failure     401 {object} openapidoc.ErrorEnvelope "State mismatch, or the provider rejected the exchange"
+// @Success     302 {string} string "Redirect back into the app, or to the page that explains a failure"
 // @Router      /auth/callback [get]
 func (a *authController) callbackHandler(g *gin.Context) {
 	code := g.Query("code")
@@ -139,17 +164,17 @@ func (a *authController) callbackHandler(g *gin.Context) {
 
 	expectedState, err := middleware.PopOIDCState(g)
 	if err != nil {
-		handleError(g, err)
+		a.failSignIn(g, signInFailed, false, err)
 		return
 	}
 	if expectedState == "" || state != expectedState {
-		handleError(g, &errorresponses.UnauthorizedError{})
+		a.failSignIn(g, signInExpired, false, errors.New("state missing or mismatched"))
 		return
 	}
 
 	nonce, err := middleware.PopOIDCNonce(g)
 	if err != nil {
-		handleError(g, err)
+		a.failSignIn(g, signInFailed, false, err)
 		// not covered: oversizedSessionSeed breaks only the first Save()
 		// in the chain (PopOIDCState's, which is tested), so the later
 		// ones stay unreached. Covering them needs a sessions.Store fake
@@ -159,7 +184,7 @@ func (a *authController) callbackHandler(g *gin.Context) {
 
 	pkceVerifier, err := middleware.PopOIDCVerifier(g)
 	if err != nil {
-		handleError(g, err)
+		a.failSignIn(g, signInFailed, false, err)
 		// not covered: oversizedSessionSeed breaks only the first Save()
 		// in the chain (PopOIDCState's, which is tested), so the later
 		// ones stay unreached. Covering them needs a sessions.Store fake
@@ -173,11 +198,21 @@ func (a *authController) callbackHandler(g *gin.Context) {
 	// set by the echo start endpoint and is consumed here.
 	echo, err := middleware.PopOIDCEcho(g)
 	if err != nil {
-		handleError(g, err)
+		a.failSignIn(g, signInFailed, false, err)
 		// not covered: same as PopOIDCNonce above, further down the same
 		// Save() chain.
 		return
 	}
+
+	// The provider says it did not sign the person in. Checked after the
+	// state, so only a reply to a sign-in this browser started is read as
+	// one, and before the exchange, which would only fail on the missing
+	// code and log it as something worse.
+	if providerErr := g.Query("error"); providerErr != "" {
+		a.failSignIn(g, signInRefused, echo, fmt.Errorf("identity provider returned %q", providerErr))
+		return
+	}
+
 	if echo {
 		a.echoCallback(g, code, nonce, pkceVerifier)
 		return
@@ -191,20 +226,18 @@ func (a *authController) callbackHandler(g *gin.Context) {
 			g.Redirect(http.StatusFound, "/auth/disabled")
 			return
 		}
-		handleError(g, err)
+		a.failSignIn(g, signInFailed, false, err)
 		return
 	}
 
 	if err := middleware.SetIdentitySession(g, identity); err != nil {
-		// Logged here rather than left to the error handler, which only
-		// logs errors that fell through to its generic 500. The typed
-		// error below is what the caller sees; this is the line an
-		// operator needs, and the group count is on it because an
-		// oversized group list is what put this branch in production —
-		// see the MaxLength call in bootstrap.initEngine.
+		// The group count is on the log line because an oversized group
+		// list is what put this branch in production; see the MaxLength
+		// call in bootstrap.initEngine. The person is told only that the
+		// session could not be saved, never the store's own message.
 		slog.ErrorContext(g.Request.Context(), "failed to save the login session",
 			"error", err, "groups", len(identity.Groups))
-		handleError(g, &errorresponses.SessionWriteError{})
+		a.failSignIn(g, signInSession, false, &errorresponses.SessionWriteError{})
 		return
 	}
 
@@ -222,6 +255,28 @@ func (a *authController) callbackHandler(g *gin.Context) {
 	g.Redirect(http.StatusFound, returnURL)
 }
 
+// failSignIn logs why a sign-in or claims echo did not complete and sends
+// the browser to the page that explains it: /login for a sign-in, carrying
+// the return_to the login started with so a retry lands where the person
+// was going, or the echo page for an echo.
+//
+// The return_to is read best effort. When the session cannot be read or
+// saved there is nothing to carry, and a bare /login is still a way back.
+func (a *authController) failSignIn(g *gin.Context, reason signInFailure, echo bool, err error) {
+	slog.WarnContext(g.Request.Context(), "sign-in did not complete",
+		"reason", string(reason), "echo", echo, "error", err)
+
+	query := url.Values{"error": {string(reason)}}
+	if echo {
+		g.Redirect(http.StatusFound, echoResultPath+"?"+query.Encode())
+		return
+	}
+	if returnTo, popErr := middleware.PopReturnURL(g); popErr == nil && returnTo != "" && isSafeReturnURL(returnTo) {
+		query.Set("return_to", returnTo)
+	}
+	g.Redirect(http.StatusFound, "/login?"+query.Encode())
+}
+
 // echoCallback finishes a claims echo: verify the token the same way a login
 // does, then render it instead of establishing anything.
 //
@@ -233,7 +288,7 @@ func (a *authController) callbackHandler(g *gin.Context) {
 func (a *authController) echoCallback(g *gin.Context, code, nonce, pkceVerifier string) {
 	claims, err := a.authService.EchoCallback(g.Request.Context(), code, nonce, pkceVerifier)
 	if err != nil {
-		handleError(g, err)
+		a.failSignIn(g, signInFailed, true, err)
 		return
 	}
 
