@@ -27,9 +27,9 @@ Claude or another AI tool to help with your contribution:
 3. **Review carefully.** Before submitting, run `make pre-pr`, read the diff,
    and verify it matches what you intended.
 
-An AI assistant working in the repository should read `./CLAUDE.md` for
-project-specific instructions, `client/CLAUDE.md` and `server/CLAUDE.md` for
-each side's role and layout, `./.claude/rules/` for the Go and TypeScript
+An AI assistant working in the repository should read `client/CLAUDE.md` and
+`server/CLAUDE.md` for each side's role and layout (a root `CLAUDE.md` is a
+personal file, ignored by git, so a clone has none), `./.claude/rules/` for the Go and TypeScript
 conventions, and `AGENTS.md` when several agents work in parallel. The project
 uses `rtk` to minimize token usage in bash commands.
 
@@ -38,7 +38,9 @@ uses `rtk` to minimize token usage in bash commands.
 - Go 1.27+
 - Node.js 26+, pnpm 11+
 - golangci-lint
-- Docker, for `make semgrep`. The e2e suite does not need it.
+- Docker, for `make semgrep` and for the e2e scenarios that start NATS or
+  Postgres in containers. Without a Docker daemon those scenarios skip
+  rather than fail.
 
 The `pam_ssoossh` PAM module is a separate project,
 [mnestor/ssoossh-pam](https://github.com/mnestor/ssoossh-pam); its build
@@ -128,6 +130,7 @@ through `check-generated`) are deliberately left out of both.
 | Target | What it does |
 | --- | --- |
 | `make frontend` | Build the web UI into `server/frontend/dist` |
+| `make csp-check` | Assert the built UI's assets are allowed by the served CSP (part of `ci-required`) |
 | `make build` | Build all Go packages |
 | `make linux` | Snapshot build for linux/amd64 only |
 | `make binaries` | Snapshot build for every release target |
@@ -225,8 +228,10 @@ tree and asserts nothing changed.
 | `makefile-docs` | `makefile-docs-check` | the `##@`/`##` annotations in the Makefile |
 | `third-party-licenses` | *(none, not committed)* | the Go module cache |
 
-`confdocs` produces two files from one walk: the OPTIONS body of
-`docs/man/ssoosshd.yaml.5`, and the comments in `server/config/defaults.yaml`,
+`confdocs` produces three artifacts from one walk: the OPTIONS body of
+`docs/man/ssoosshd.yaml.5`, the docs site's `reference/config/` pages with
+`user-docs/config-sidebar.json`, and the comments in
+`server/config/defaults.yaml`,
 the file embedded in the binary and installed as
 `/etc/ssoossh/ssoosshd.yaml`. Only the prose is generated. The **values** in
 `defaults.yaml` are read from the file and written back untouched, because
@@ -348,7 +353,7 @@ typecheck, and semgrep scan.
 | `lint` | yes | Go lint: the host build and the Windows and macOS builds. Plus frontend lint and svelte-check, actionlint, `.gitignore` invariants |
 | `codecover` | yes | Unit suite plus the Codecov upload |
 | `build` | yes | On PRs: generated-artifact staleness plus a single-target snapshot build. The full signed multi-platform pipeline runs on tags, weekly, and manual dispatch |
-| `e2e` | yes | Three tiers plus the multi-signer job. sqlite only except tier 1, which runs both backends |
+| `e2e` | yes | Three tiers plus the multi-signer job. SQLite, except that tier 1 runs both backends, the multi-signer job runs against a Postgres service, and the weekly extended run covers both |
 | `client-matrix` | yes | macOS and Windows client and agent tests |
 | `resilience` | yes | Resilience, migration parity, frontend tests, and the axe sweep over both the app and this site. The load job is weekly, not per-PR |
 | `hsm` | when it runs | The HSM key source against a real SoftHSM2 token. Unlike the others it filters in `on:` rather than in a `changes` job, so on an unrelated PR it does not start at all rather than reporting as skipped |
@@ -389,11 +394,11 @@ checks as skipped. Skipped satisfies branch protection; it is not a failure.
 
 | Requirement | Needed by | Why |
 | --- | --- | --- |
-| **cgo on** | `build`, `test-server`, `test-internal`, `test-race`, `cover*`, `lint`, `gendocs`, tagged suites | `server/signer`'s HSM key source reaches libpkcs11 through crypto11; without it the server packages do not build at all. Set per-recipe to keep the rest of the tree cgo-free |
-| **cgo off** | `lint-cross` only | There is no cross-compiling cgo toolchain, which is also why its scope is a package list rather than `./...` |
+| **cgo on** | `-tags=hsm` builds: `test-hsm` and `server-linux-pkcs11-build-local` | The HSM key source reaches libpkcs11 through crypto11, and it is compiled only under the `hsm` build tag. The default build is cgo-free. Several recipes (`build`, `test-server`, `lint`, `gendocs` among them) still set `CGO_ENABLED=1` from before that split; it is harmless |
+| **cgo off** | `lint-cross`, `test-client` | There is no cross-compiling cgo toolchain, which is also why `lint-cross` scopes to a package list rather than `./...` |
 | **Node, pnpm** | `frontend`, `frontend-*`, `fmt`, `pnpm-audit` | The web UI toolchain |
 | **Frontend bundle** | Anything embedding or testing the UI | `server/frontend` embeds it. A stale bundle makes a browser test assert against whenever the UI was last built, presenting as a selector timeout indistinguishable from a wrong selector |
-| **Docker** | `semgrep` only | Pinned image, same as CI |
+| **Docker** | `semgrep`, and the e2e scenarios that need NATS or Postgres | Pinned images, same as CI. Without a daemon those e2e scenarios skip |
 | **Host state + sudo** | `test-e2e` tier 3 | Creates and unlocks a local account, runs sshd as root |
 | **softhsm2 + opensc** | `test-hsm` | A real PKCS#11 token |
 | **goreleaser** | `linux`, `binaries`, `all` | Snapshot builds |
@@ -437,8 +442,9 @@ reference are **generated**. Do not edit them by hand:
 - `make confdocs` regenerates the `reference/config/` pages (and the sidebar
   entries that order them) from the doc comments on `server/config`'s structs,
   alongside the man page and the annotated `defaults.yaml`.
-- `make gendocs` regenerates the man pages from the cobra command trees, which
-  the CLI reference follows.
+- `make clidocs` regenerates the `reference/cli/` pages (and
+  `cli-sidebar.json`) from the cobra command trees, the same trees
+  `make gendocs` turns into man pages, so the two can never disagree.
 - `make openapi` regenerates `docs/openapi.yaml`, which backs the
   [HTTP API reference](/ssoossh/reference/api/).
 

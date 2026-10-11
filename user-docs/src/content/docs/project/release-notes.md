@@ -38,7 +38,8 @@ denominator, which is what the `-glibc-openssl3`, `-glibc-openssl1.1` and
 
 ## Client packages
 
-Linux (`.deb`/`.rpm`), Windows (`.zip`), and macOS (a Developer ID signed
+Linux (`.deb`/`.rpm`), Windows (a per-machine `.msi` for amd64, and the
+`.zip` for both architectures), and macOS (a Developer ID signed
 and notarized `.pkg` per architecture, plus the `.zip` for anyone who would
 rather unpack it by hand; the binary inside both is quill-signed and
 notarized).
