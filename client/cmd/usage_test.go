@@ -1,0 +1,159 @@
+package cmd
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"github.com/bep/simplecobra"
+	"github.com/spf13/cobra"
+
+	"github.com/mnestor/ssoossh/client/config"
+)
+
+// TestRejectUnknownSubcommand pins the message for a subcommand that does
+// not exist, at the root and inside a group.
+func TestRejectUnknownSubcommand(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "should accept a bare invocation",
+			args: nil,
+			want: "",
+		},
+		{
+			name: "should name the unknown subcommand and suggest the close one",
+			args: []string{"lst"},
+			want: `unknown command "lst" for "ssoossh mapping"; did you mean "list"?`,
+		},
+		{
+			name: "should name the unknown subcommand without a suggestion when none is close",
+			args: []string{"zzzzzz"},
+			want: `unknown command "zzzzzz" for "ssoossh mapping"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := &cobra.Command{Use: "ssoossh"}
+			group := &cobra.Command{Use: "mapping", SuggestionsMinimumDistance: 2}
+			group.AddCommand(&cobra.Command{Use: "list", Run: func(*cobra.Command, []string) {}})
+			root.AddCommand(group)
+
+			err := rejectUnknownSubcommand(group, tt.args)
+
+			got := ""
+			if err != nil {
+				got = err.Error()
+			}
+			if got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestExecute_UnknownSubcommands runs the real tree, which is where the
+// upstream checks went wrong: a nested typo named the wrong word, and one
+// after a global flag exited 0.
+func TestExecute_UnknownSubcommands(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "should name the mistyped word in a nested group",
+			args: []string{"host", "mapping", "lst"},
+			want: `unknown command "lst" for "ssoossh host mapping"; did you mean "list"?`,
+		},
+		{
+			name: "should fail on a typo that follows a global flag",
+			args: []string{"-v", "ssh", "loign"},
+			want: `unknown command "loign" for "ssoossh ssh"; did you mean "login"?`,
+		},
+		{
+			name: "should name the mistyped word at the root",
+			args: []string{"servce"},
+			want: `unknown command "servce" for "ssoossh"; did you mean "service"?`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newTestExec(t)
+
+			_, err := f.exec.Execute(context.Background(), tt.args)
+
+			var usage *usageError
+			if !errors.As(unwrapCommandError(err), &usage) || usage.Error() != tt.want {
+				t.Errorf("got %v, want usage error %q", err, tt.want)
+			}
+		})
+	}
+}
+
+// TestExecute_ShouldPrintHelpWithoutLoadingConfig covers the bare root and
+// group invocations: printing help needs no config, CA or agent, and doing
+// that work put network traffic and agent warnings in front of the help.
+func TestExecute_ShouldPrintHelpWithoutLoadingConfig(t *testing.T) {
+	for _, args := range [][]string{nil, {"ssh"}, {"host", "mapping"}, {"-v"}} {
+		t.Run("should not load config for "+joinArgs(args), func(t *testing.T) {
+			f := newTestExec(t)
+			loaded := false
+			f.root.newConfig = func(cmd *cobra.Command) (*config.Config, error) {
+				loaded = true
+				return &config.Config{}, nil
+			}
+			f.root.cobraRoot.SetOut(&discard{})
+
+			if _, err := f.exec.Execute(context.Background(), args); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if loaded {
+				t.Error("expected help to print without loading config")
+			}
+		})
+	}
+}
+
+// joinArgs names an argument list in a subtest name.
+func joinArgs(args []string) string {
+	if len(args) == 0 {
+		return "a bare invocation"
+	}
+	s := args[0]
+	for _, a := range args[1:] {
+		s += " " + a
+	}
+	return s
+}
+
+// discard is an io.Writer that drops everything, for help output a test
+// does not inspect.
+type discard struct{}
+
+// Write implements io.Writer.
+func (discard) Write(p []byte) (int, error) { return len(p), nil }
+
+func TestUnwrapCommandError(t *testing.T) {
+	cause := errors.New("cause")
+	tests := []struct {
+		name string
+		err  error
+		want error
+	}{
+		{name: "should return the error a CommandError wraps", err: &simplecobra.CommandError{Err: cause}, want: cause},
+		{name: "should return any other error unchanged", err: cause, want: cause},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := unwrapCommandError(tt.err); got != tt.want {
+				t.Errorf("got %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

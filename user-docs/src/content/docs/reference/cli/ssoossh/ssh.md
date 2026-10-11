@@ -10,7 +10,7 @@ Manage interactive SSH certificates.
 ## Synopsis
 
 ```
-ssoossh ssh [command] [flags]
+ssoossh ssh [command]
 ```
 
 ## Global options

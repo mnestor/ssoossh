@@ -71,6 +71,12 @@ func (r *RootCommand) Commands() []simplecobra.Commander { return r.commands }
 func (r *RootCommand) Init(cd *simplecobra.Commandeer) error {
 	cmd := cd.CobraCommand
 	r.cobraRoot = cmd
+	// Runnable like every group, so unknown subcommands reach
+	// rejectUnknownSubcommand; usageTemplate keeps the usage to one line.
+	// Children inherit the template.
+	cmd.Use = r.Name() + " [command]"
+	cmd.Args = rejectUnknownSubcommand
+	cmd.SetUsageTemplate(usageTemplate)
 	cmd.Short = "The ssoossh client — turns an OIDC login into a short-lived SSH certificate, from your ssh_config."
 	cmd.Long = "The ssoossh client wires SSO into your existing SSH workflow. Configured " +
 		"as a ProxyCommand or Match exec in ssh_config, it generates a fresh keypair, " +
@@ -110,6 +116,13 @@ func (r *RootCommand) Init(cd *simplecobra.Commandeer) error {
 // instead of the root's; leaf commands check InitErr() before doing
 // anything that needs Config/API/Agent.
 func (r *RootCommand) PreRun(this, runner *simplecobra.Commandeer) error {
+	// A bare `ssoossh` only prints help. Loading config, fetching the CA
+	// and resolving the agent for that put network traffic and agent
+	// warnings in front of the help text.
+	if runner.Command == simplecobra.Commander(r) {
+		return nil
+	}
+
 	// runner, not this: PreRun is called once per ancestor while walking
 	// root -> leaf (see bep/simplecobra's Commandeer.init), and `this` is
 	// always root's own Commandeer here — it never carries a leaf's local

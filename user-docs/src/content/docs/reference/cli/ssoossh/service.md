@@ -10,7 +10,7 @@ Manage service-account (non-interactive) certificate enrollment.
 ## Synopsis
 
 ```
-ssoossh service [command] [flags]
+ssoossh service [command]
 ```
 
 ## Global options

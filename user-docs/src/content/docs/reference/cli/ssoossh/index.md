@@ -10,7 +10,7 @@ The ssoossh client wires SSO into your existing SSH workflow. Configured as a Pr
 ## Synopsis
 
 ```
-ssoossh [command] [flags]
+ssoossh [command]
 ```
 
 ## Options

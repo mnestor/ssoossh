@@ -10,7 +10,7 @@ Manages the local principal mapping: a YAML file listing, per local account, the
 ## Synopsis
 
 ```
-ssoossh host mapping [command] [flags]
+ssoossh host mapping [command]
 ```
 
 ## Global options

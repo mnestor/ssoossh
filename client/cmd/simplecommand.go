@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/bep/simplecobra"
+	"github.com/spf13/cobra"
 )
 
 var _ simplecobra.Commander = (*simpleCommand)(nil)
@@ -93,12 +94,16 @@ func (c *simpleCommand) Init(cd *simplecobra.Commandeer) error {
 		cmd.Use = c.name + " " + c.argSpec
 	}
 	if len(c.commands) > 0 {
-		// Group command (e.g. ssh, host, service): let cobra's default
-		// "print help" behavior handle being invoked with no subcommand,
-		// same as Hugo's listCommand.Init clearing RunE. This also means a
-		// bare group invocation doesn't require root init to have
-		// succeeded, since Run (and its InitErr check) is never reached.
-		cmd.RunE = nil
+		// Group command (e.g. ssh, host, service): invoked bare it prints
+		// help, and given anything else it names the unknown subcommand
+		// (see rejectUnknownSubcommand). Neither needs root init, so the
+		// PreRun that loads config and fetches the CA is dropped for the
+		// group itself; its children keep their own. See usageTemplate for
+		// why runnable groups still get a single usage line.
+		cmd.Use = c.name + " [command]"
+		cmd.Args = rejectUnknownSubcommand
+		cmd.PreRunE = nil
+		cmd.RunE = func(cmd *cobra.Command, _ []string) error { return cmd.Help() }
 	}
 
 	// If the caller provided a custom InitFunc, use it to allow different

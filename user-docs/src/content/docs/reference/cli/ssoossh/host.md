@@ -10,7 +10,7 @@ Configures the principal mapping used when sshd asks for authorized principals v
 ## Synopsis
 
 ```
-ssoossh host [command] [flags]
+ssoossh host [command]
 ```
 
 ## Options
