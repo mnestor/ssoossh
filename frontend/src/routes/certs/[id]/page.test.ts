@@ -5,7 +5,13 @@ import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest';
 import type { CertificateResponse } from '#lib/api/types.js';
 import { formatDateTime, formatDateTimeRange } from '#lib/format.js';
 import { detail } from '#lib/detail.svelte.js';
+import { fakePage, resetFakePage } from '#lib/testing/page.svelte.js';
 import Page from './+page.svelte';
+
+vi.mock('$app/state', async () => {
+	const { fakePage } = await import('#lib/testing/page.svelte.js');
+	return { page: fakePage };
+});
 
 function mockFetch(response: object, status = 200) {
 	vi.stubGlobal(
@@ -30,6 +36,8 @@ function mockFetchError(message = 'network error') {
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	resetFakePage('http://localhost/certs/cert-123');
+	fakePage.params = { id: 'cert-123' };
 	// The full page unless a case says otherwise: simplified is the new
 	// default, and these cases describe what advanced shows.
 	detail.level = 'advanced';
@@ -73,7 +81,7 @@ describe('Certificate detail page', () => {
 		it('should display the key ID', async () => {
 			render(Page);
 			await new Promise((resolve) => setTimeout(resolve, 0));
-			expect(screen.getByText(/my-key/)).toBeInTheDocument();
+			expect(screen.getByTestId('cert-key-id')).toHaveTextContent('my-key');
 		});
 
 		it('should display the serial number', async () => {
@@ -863,5 +871,117 @@ describe('when the certificate fails to load', () => {
 		render(Page);
 		await screen.findByTestId('access-denied');
 		expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
+	});
+});
+
+describe('the top of the page', () => {
+	function stubCert(overrides: Partial<CertificateResponse> = {}) {
+		mockFetch({
+			id: 'cert-123',
+			type: 'user',
+			serial_number: '42',
+			key_id: 'my-key',
+			principals: 'alice',
+			public_key_fingerprint: 'SHA256:abcd1234',
+			reported_username: 'alice',
+			reported_hostname: 'build-01',
+			issued_at: new Date(Date.now() - 3600_000).toISOString(),
+			expires_at: new Date(Date.now() + 3600_000).toISOString(),
+			...overrides
+		} as CertificateResponse);
+	}
+
+	// The row it was opened from led with user@host; the page used to show
+	// only "USER" at the top.
+	it('should say which certificate this is', async () => {
+		stubCert();
+		render(Page);
+		expect(await screen.findByTestId('cert-subject')).toHaveTextContent('alice@build-01');
+	});
+
+	it('should say a live certificate is valid and for how long', async () => {
+		stubCert();
+		render(Page);
+		expect(await screen.findByTestId('cert-state')).toHaveTextContent(/Valid, .*left/);
+	});
+
+	it('should say an expired certificate is expired', async () => {
+		stubCert({ expires_at: new Date(Date.now() - 1000).toISOString() });
+		render(Page);
+		expect(await screen.findByTestId('cert-state')).toHaveTextContent('Expired');
+	});
+
+	it('should name the certificate in the tab', async () => {
+		stubCert();
+		render(Page);
+		await screen.findByTestId('cert-subject');
+		expect(document.title).toBe('alice@build-01 · Certificate · ssoossh');
+	});
+});
+
+describe('a certificate that is not found', () => {
+	// The server answers 404 for "not yours" too, so the page names neither
+	// cause rather than asserting a permission problem.
+	it('should say it was not found rather than that access was denied', async () => {
+		mockFetch({}, 404);
+		render(Page);
+		expect(await screen.findByTestId('access-denied')).toHaveTextContent('Certificate not found');
+	});
+});
+
+describe('the way back to the list', () => {
+	function stubService() {
+		mockFetch({
+			id: 'cert-123',
+			type: 'service',
+			serial_number: '42',
+			key_id: 'svc-deploy/req-1',
+			principals: 'svc-deploy',
+			public_key_fingerprint: 'SHA256:abcd1234',
+			enrollment_id: 'enr-9',
+			retrieved_source_ip: '10.0.0.8',
+			issued_at: new Date(Date.now() - 3600_000).toISOString(),
+			expires_at: new Date(Date.now() + 3600_000).toISOString()
+		} as CertificateResponse);
+	}
+
+	// The list's filters ride along, so the chip returns to the narrowed
+	// view an investigation was working in.
+	it('should return to the history with its filters', async () => {
+		resetFakePage('http://localhost/certs/cert-123?from=history&back=%3Ftype%3Dpam%26outcome%3D');
+		stubService();
+		render(Page);
+		expect(await screen.findByTestId('cert-back')).toHaveAttribute(
+			'href',
+			'/logs/me?type=pam&outcome='
+		);
+	});
+
+	it('should ignore a carried value that is not a query string', async () => {
+		resetFakePage('http://localhost/certs/cert-123?from=history&back=%2F%2Fevil.example');
+		stubService();
+		render(Page);
+		expect(await screen.findByTestId('cert-back')).toHaveAttribute('href', '/logs/me');
+	});
+
+	// An auditor's own service code list holds only their codes, so the
+	// link keeps a reader who came from the admin list in the admin area.
+	it('should link an admin reader to the admin service code page', async () => {
+		resetFakePage('http://localhost/certs/cert-123?from=admin');
+		stubService();
+		render(Page);
+		expect(await screen.findByTestId('cert-service-code-link')).toHaveAttribute(
+			'href',
+			'/admin/service-codes/enr-9'
+		);
+	});
+
+	it('should link a holder to their own service code page', async () => {
+		stubService();
+		render(Page);
+		expect(await screen.findByTestId('cert-service-code-link')).toHaveAttribute(
+			'href',
+			'/service-codes/enr-9'
+		);
 	});
 });

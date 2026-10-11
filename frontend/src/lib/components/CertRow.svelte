@@ -11,7 +11,7 @@
 	// table.
 	interface Props {
 		cert: CertificateRecord;
-		/** What the row is about — "certificate requested", "service enrollment requested". */
+		/** What the row is a record of; see certificateEvent in #lib/rowEvents. */
 		event?: string;
 		/** Pinned clock, so a list of rows agrees with itself and tests can fix it. */
 		now?: Date;
@@ -27,6 +27,14 @@
 		/** Stable selector for the e2e browser tier — see test/e2e/README.md. */
 		testid?: string;
 		/**
+		 * Who approved it, for a list where that is the question: the admin
+		 * list, where the subject is only what the requesting machine
+		 * claimed and the approver is the one verified identity on the row.
+		 * Left out on a person's own lists, where it would be their own name
+		 * on every row.
+		 */
+		approvedBy?: string;
+		/**
 		 * Where the row leads. A row is a link rather than a button because
 		 * opening one is a navigation to the certificate's own page, and only a
 		 * link gives a reader middle-click, ctrl-click and "copy link address".
@@ -36,11 +44,12 @@
 
 	let {
 		cert,
-		event = 'certificate requested',
+		event = 'certificate issued',
 		now = new Date(),
 		trailing,
 		showOutcome = false,
 		testid,
+		approvedBy,
 		href
 	}: Props = $props();
 
@@ -89,7 +98,9 @@
 		Math.floor((new Date(cert.expires_at).getTime() - new Date(cert.issued_at).getTime()) / 1000)
 	);
 
-	const detail = $derived(`${event} ${relativeTime(cert.issued_at, now)}`);
+	const detail = $derived(
+		`${event} ${relativeTime(cert.issued_at, now)}${approvedBy ? ` · approved by ${approvedBy}` : ''}`
+	);
 
 	// The granted lifetime, or the state that replaces it. "Valid for 8h" is
 	// what was granted and stays true forever; once the window has closed it

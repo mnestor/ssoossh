@@ -37,8 +37,11 @@
 	};
 </script>
 
+<!-- title as well as the hidden name: a pointer gets the glyph alone, and
+     the user and PAM glyphs are told apart by nothing else on a row. -->
 <span
 	class="inline-flex size-6.5 flex-shrink-0 items-center justify-center rounded bg-surface-muted text-ink-muted"
+	title={(type && (labels[type] ?? type)) || 'Unknown type'}
 >
 	<Icon name={(type && icons[type]) || 'help-circle'} size="xs" />
 	<!-- The name in the document rather than an `aria-label` on the span.

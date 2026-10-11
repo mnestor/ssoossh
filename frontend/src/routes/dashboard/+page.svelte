@@ -4,14 +4,15 @@
 	import type { CertificateListResponse, CertificateRecord } from '#lib/api/types.js';
 	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
 	import Alert from '#lib/components/Alert.svelte';
-	import Button from '#lib/components/Button.svelte';
 	import CertRow from '#lib/components/CertRow.svelte';
 	import EmptyState from '#lib/components/EmptyState.svelte';
+	import Icon from '#lib/components/Icon.svelte';
 	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import PageShell from '#lib/components/PageShell.svelte';
+	import { certificateEvent } from '#lib/rowEvents.js';
 
-	// Your recent decisions, newest first — there is deliberately no list of
+	// Your recent certificates, newest first — there is deliberately no list of
 	// requests awaiting approval. A request has no owner until someone opens
 	// it, so such a list could only ever show everyone's, and approving a
 	// stranger's request issues a certificate carrying *your* principals to
@@ -24,33 +25,26 @@
 	// the one screen somebody lands on rather than navigates to — a refusal
 	// belongs in the history they open deliberately, not in the summary
 	// they get by signing in.
-	let allCertificates = $state<CertificateRecord[]>([]);
-	let nextCursor = $state<string | null>(null);
+	let certificates = $state<CertificateRecord[]>([]);
 	let loadError = $state<string | null>(null);
-	// A failed "Load more" is its own error: the rows already shown are
-	// still right, so it sits by the button rather than replacing them.
-	let moreError = $state<string | null>(null);
-	let isLoading = $state(false);
 	let hasLoaded = $state(false);
 	// Bumped by Try again; the first load reads it, so a bump re-runs it.
 	let attempt = $state(0);
 
+	// How many rows the summary shows. Older ones are the history page's,
+	// which "View all history" leads to: paging here made the landing page a
+	// second history with no refusals, no filters and no search, that a
+	// reader could take for the whole record.
+	const recentCount = 5;
+
 	// Recomputed against a clock that ticks, not against load time: this page
-	// is the sort of thing that stays open in a tab, and "requested 2h ago"
+	// is the sort of thing that stays open in a tab, and "issued 2h ago"
 	// should not still say that tomorrow.
 	let now = $state(new Date());
 	$effect(() => {
 		const timer = setInterval(() => (now = new Date()), 30_000);
 		return () => clearInterval(timer);
 	});
-
-	// What each certificate type's row is a record of.
-	const rowEvents: Record<string, string> = {
-		user: 'certificate requested',
-		pam: 'certificate requested',
-		console: 'console login',
-		service: 'service key requested'
-	};
 
 	// A row opens the certificate's own page rather than a dialog over the
 	// list. `from` is what the back chip there reads, so a reader who came
@@ -59,28 +53,8 @@
 		return `${resolve(`certs/${certId}`)}?from=dashboard`;
 	}
 
-	async function loadMoreCertificates() {
-		if (isLoading || !nextCursor) {
-			return;
-		}
-		isLoading = true;
-		moreError = null;
-		const controller = new AbortController();
-		try {
-			const result = await listCertificates(controller.signal, nextCursor, 25);
-			allCertificates = [...allCertificates, ...result.certificates];
-			nextCursor = result.next_cursor ?? null;
-		} catch (cause) {
-			if (!controller.signal.aborted && !redirectIfUnauthenticated(cause)) {
-				moreError = errorMessage(cause);
-			}
-		} finally {
-			isLoading = false;
-		}
-	}
-
-	// The way out of a failed first load: back to the loading shape, then
-	// the same request again.
+	// The way out of a failed load: back to the loading shape, then the
+	// same request again.
 	function retry() {
 		loadError = null;
 		hasLoaded = false;
@@ -91,10 +65,9 @@
 		void attempt;
 		const controller = new AbortController();
 
-		listCertificates(controller.signal, null, 25)
+		listCertificates(controller.signal, null, recentCount)
 			.then((result: CertificateListResponse) => {
-				allCertificates = result.certificates;
-				nextCursor = result.next_cursor ?? null;
+				certificates = result.certificates.slice(0, recentCount);
 				hasLoaded = true;
 			})
 			.catch((cause) => {
@@ -112,20 +85,23 @@
 <svelte:head><title>Dashboard · ssoossh</title></svelte:head>
 
 <PageShell width="wide">
-	<PageHeading title="Recent decisions">
+	<PageHeading title="Recent certificates">
 		{#snippet action()}
 			<a
 				href={resolve('logs/me')}
-				class="text-dense font-medium whitespace-nowrap text-accent hover:underline"
-				>View all history →</a
+				class="inline-flex min-h-target items-center gap-1 text-dense font-medium whitespace-nowrap text-accent hover:underline"
+				data-testid="dashboard-history-link"
 			>
+				View all history
+				<Icon name="arrow-right" size="xs" />
+			</a>
 		{/snippet}
 	</PageHeading>
 
 	{#if loadError}
 		<Alert
 			variant="error"
-			title="Could not load your certificates"
+			title="Could not load your recent certificates"
 			onretry={retry}
 			testid="dashboard-error"
 		>
@@ -133,41 +109,29 @@
 		</Alert>
 	{:else if !hasLoaded}
 		<LoadingBlock shape="rows" count={3} testid="dashboard-loading" />
-	{:else if allCertificates.length === 0}
-		<EmptyState icon="certificate-off" title="Nothing yet" testid="dashboard-empty">
-			Run <code class="font-mono">ssoossh login</code> to request a certificate. It appears here as soon
-			as it is issued.
+	{:else if certificates.length === 0}
+		<EmptyState icon="certificate-off" title="No certificates yet" testid="dashboard-empty">
+			{#snippet action()}
+				<a
+					href={resolve('console')}
+					class="inline-flex min-h-target items-center text-dense font-medium text-accent hover:underline"
+					data-testid="dashboard-empty-console">Enter a console code</a
+				>
+			{/snippet}
+			Run <code class="font-mono">ssoossh login</code> to request a certificate, or log in at a machine's
+			console and enter the code it shows. Each one appears here as soon as it is issued.
 		</EmptyState>
 	{:else}
 		<div class="flex flex-col gap-2">
-			{#each allCertificates as cert (cert.id)}
+			{#each certificates as cert (cert.id)}
 				<CertRow
 					{cert}
 					{now}
-					event={rowEvents[cert.type] ?? 'certificate requested'}
+					event={certificateEvent(cert.type)}
 					testid="cert-row"
 					href={certHref(cert.id)}
 				/>
 			{/each}
-		</div>
-	{/if}
-
-	{#if moreError}
-		<Alert
-			variant="error"
-			title="Could not load more certificates"
-			onretry={loadMoreCertificates}
-			testid="dashboard-more-error"
-		>
-			{moreError}
-		</Alert>
-	{/if}
-
-	{#if nextCursor && !loadError}
-		<div class="flex justify-center">
-			<Button variant="ghost" busy={isLoading} onclick={loadMoreCertificates}>
-				{isLoading ? 'Loading…' : 'Load more'}
-			</Button>
 		</div>
 	{/if}
 </PageShell>

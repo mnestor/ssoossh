@@ -96,9 +96,17 @@ describe('Certificate history page', () => {
 		it('should show the empty-state message when no certificates exist', async () => {
 			render(Page);
 			await new Promise((resolve) => setTimeout(resolve, 0));
-			expect(
-				screen.getByText('You have not decided any certificate requests yet.')
-			).toBeInTheDocument();
+			expect(screen.getByTestId('history-empty')).toHaveTextContent('No certificates yet');
+		});
+
+		// The page opens on approvals; "no decisions" was false for someone
+		// whose only decision was a refusal.
+		it('should point at refused requests rather than say there are no decisions', async () => {
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			expect(screen.getByTestId('history-empty')).toHaveTextContent(
+				'Refused requests are under Outcome: Denied'
+			);
 		});
 	});
 
@@ -405,9 +413,7 @@ describe('Certificate history page', () => {
 			await new Promise((resolve) => setTimeout(resolve, 0));
 
 			expect(screen.getByTestId('outcome-filter')).toBeInTheDocument();
-			expect(
-				screen.getByText('You have not decided any certificate requests yet.')
-			).toBeInTheDocument();
+			expect(screen.getByTestId('history-empty')).toHaveTextContent('No certificates yet');
 		});
 
 		it('should send the search term to the server', async () => {
@@ -494,7 +500,7 @@ describe('Certificate history page', () => {
 
 			await vi.waitFor(() =>
 				expect(
-					screen.getByText('Nothing in your history matches the selected filter.')
+					screen.getByText('Nothing in your history matches this search or these filters.')
 				).toBeInTheDocument()
 			);
 		});
@@ -581,13 +587,16 @@ describe('Certificate history page', () => {
 			};
 		}
 
-		it('should not offer the outcome filter', async () => {
+		// A refusal carries its own mark (DeniedRow), so the outcome filter
+		// stays on offer on a phone; pinning it to approvals left a refusal
+		// unreachable there.
+		it('should still offer the outcome filter', async () => {
 			stubViewport(true);
 			mockFetch({ certificates: [aCert()] });
 			render(Page);
 			await new Promise((resolve) => setTimeout(resolve, 0));
 
-			expect(screen.queryByTestId('outcome-filter')).not.toBeInTheDocument();
+			expect(screen.getByTestId('outcome-filter')).toBeInTheDocument();
 		});
 
 		it('should still offer the other filter groups', async () => {
@@ -637,7 +646,7 @@ describe('Certificate history page', () => {
 		// Pinned, not merely hidden: a reader who asked for refusals on a
 		// wide window must not be left looking at rows that no longer say
 		// they were refused.
-		it('should return a denied selection to approvals when the viewport narrows', async () => {
+		it('should keep a denied selection when the viewport narrows', async () => {
 			const resize = stubViewport(false);
 			mockFetch({ certificates: [aCert()] }, 200, {
 				denials: [
@@ -655,9 +664,164 @@ describe('Certificate history page', () => {
 			await vi.waitFor(() => expect(screen.getByTestId('denied-row')).toBeInTheDocument());
 
 			resize(true);
+			await new Promise((resolve) => setTimeout(resolve, 0));
 
-			await vi.waitFor(() => expect(screen.getByTestId('cert-row')).toBeInTheDocument());
-			expect(screen.queryByTestId('denied-row')).not.toBeInTheDocument();
+			expect(screen.getByTestId('denied-row')).toBeInTheDocument();
 		});
+	});
+});
+
+describe('merging certificates and refusals', () => {
+	function cert(id: string, issuedAt: string) {
+		return {
+			id,
+			type: 'user',
+			serial_number: id,
+			principals: 'alice',
+			public_key_fingerprint: 'SHA256:abc',
+			issued_at: issuedAt,
+			expires_at: new Date(Date.now() + 86400000).toISOString(),
+			key_id: id
+		};
+	}
+
+	function denial(id: string, decidedAt: string): DeniedRequest {
+		return {
+			id,
+			certificate_request_id: `req-${id}`,
+			type: 'user',
+			decided_at: decidedAt
+		} as DeniedRequest;
+	}
+
+	// The certificates have more to fetch, so anything older than the oldest
+	// loaded one may still have certificates to come. Showing the old refusal
+	// there made a timeline with a hole in it.
+	it('should hold back a refusal older than the certificates loaded so far', async () => {
+		mockFetch(
+			{
+				certificates: [cert('c1', '2026-10-11T10:00:00Z'), cert('c2', '2026-10-10T10:00:00Z')],
+				next_cursor: 'more'
+			},
+			200,
+			{ denials: [denial('d1', '2026-10-10T12:00:00Z'), denial('d2', '2026-04-01T00:00:00Z')] }
+		);
+		render(Page);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		await userEvent.click(screen.getByTestId('outcome-filter-any'));
+		await vi.waitFor(() => expect(screen.getAllByTestId('denied-row')).toHaveLength(1));
+	});
+
+	it('should show every refusal once neither source has more', async () => {
+		mockFetch({ certificates: [cert('c1', '2026-10-11T10:00:00Z')], next_cursor: null }, 200, {
+			denials: [denial('d1', '2026-10-10T12:00:00Z'), denial('d2', '2026-04-01T00:00:00Z')]
+		});
+		render(Page);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		await userEvent.click(screen.getByTestId('outcome-filter-any'));
+		await vi.waitFor(() => expect(screen.getAllByTestId('denied-row')).toHaveLength(2));
+	});
+});
+
+describe('paging', () => {
+	// One pager: a page-of-ten pager used to sit over Load more and read
+	// "Page 3 of 3" while more existed.
+	it('should offer no Previous or Next', async () => {
+		mockFetch({ certificates: [], next_cursor: 'more' });
+		render(Page);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(screen.queryByRole('button', { name: 'Previous' })).not.toBeInTheDocument();
+	});
+
+	it('should show Load more while there is more', async () => {
+		mockFetch({
+			certificates: [
+				{
+					id: 'c1',
+					type: 'user',
+					serial_number: '1',
+					principals: 'alice',
+					public_key_fingerprint: 'SHA256:abc',
+					issued_at: '2026-10-11T10:00:00Z',
+					expires_at: new Date(Date.now() + 86400000).toISOString(),
+					key_id: 'k1'
+				}
+			],
+			next_cursor: 'more'
+		});
+		render(Page);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(screen.getByTestId('history-load-more')).toBeInTheDocument();
+	});
+});
+
+describe('the announced count', () => {
+	it('should count refusals as denied requests', async () => {
+		mockFetch({ certificates: [] }, 200, {
+			denials: [
+				{
+					id: 'd1',
+					certificate_request_id: 'req-1',
+					type: 'user',
+					decided_at: '2026-10-10T12:00:00Z'
+				}
+			]
+		});
+		render(Page);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		await userEvent.click(screen.getByTestId('outcome-filter-denied'));
+		await vi.waitFor(() =>
+			expect(screen.getByTestId('list-status')).toHaveTextContent('1 denied request found')
+		);
+	});
+});
+
+describe('when Load more fails', () => {
+	it('should show the failure with its retry instead of a second Load more', async () => {
+		let certReads = 0;
+		vi.stubGlobal(
+			'fetch',
+			vi.fn((input: RequestInfo | URL) => {
+				const url = String(input);
+				if (url.includes('/decisions/denied')) {
+					return Promise.resolve(
+						new Response(JSON.stringify({ data: { denials: [] }, error: null }), {
+							status: 200,
+							headers: { 'Content-Type': 'application/json' }
+						})
+					);
+				}
+				certReads += 1;
+				if (certReads > 1) return Promise.reject(new Error('offline'));
+				return Promise.resolve(
+					new Response(
+						JSON.stringify({
+							data: {
+								certificates: [
+									{
+										id: 'c1',
+										type: 'user',
+										serial_number: '1',
+										principals: 'alice',
+										public_key_fingerprint: 'SHA256:abc',
+										issued_at: '2026-10-11T10:00:00Z',
+										expires_at: new Date(Date.now() + 86400000).toISOString(),
+										key_id: 'k1'
+									}
+								],
+								next_cursor: 'more'
+							},
+							error: null
+						}),
+						{ status: 200, headers: { 'Content-Type': 'application/json' } }
+					)
+				);
+			})
+		);
+		render(Page);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		await userEvent.click(screen.getByTestId('history-load-more'));
+		await screen.findByTestId('history-more-error');
+		expect(screen.queryByTestId('history-load-more')).not.toBeInTheDocument();
 	});
 });
