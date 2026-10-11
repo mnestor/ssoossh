@@ -479,11 +479,11 @@ describe('critical options at the simplified level', () => {
 		await screen.findByTestId('approval-view');
 	}
 
-	/** One requested force-command trimmed, one source address granted. */
+	/** One requested force-command trimmed, one no-touch-required granted. */
 	const narrowed = (): Promise<void> =>
 		renderCritical(
-			{ force_command: 'backup.sh', source_addresses: ['10.0.0.0/8'] },
-			{ source_addresses: ['10.0.0.0/8'] }
+			{ force_command: 'backup.sh', no_touch_required: true },
+			{ no_touch_required: true }
 		);
 
 	afterEach(() => {
@@ -502,7 +502,7 @@ describe('critical options at the simplified level', () => {
 
 	it('should list the granted critical option beside it', async () => {
 		await narrowed();
-		expect(screen.getByTestId('option-granted')).toHaveTextContent('source-address: 10.0.0.0/8');
+		expect(screen.getByTestId('option-granted')).toHaveTextContent('no-touch-required');
 	});
 
 	it('should warn that less than was requested', async () => {
@@ -513,6 +513,19 @@ describe('critical options at the simplified level', () => {
 	it('should drop the Critical options section when nothing is trimmed', async () => {
 		await renderCritical({ force_command: 'backup.sh' }, { force_command: 'backup.sh' });
 		expect(screen.queryByText('Critical options')).not.toBeInTheDocument();
+	});
+
+	// The requested source_addresses is the client's own interfaces plus the
+	// observed address, sent on every request; it is not a request for the
+	// option and must not read as one the server removed.
+	it('should not strike through a source-address nobody asked for', async () => {
+		await renderCritical({ source_addresses: ['192.0.2.10', '198.51.100.7'] }, {});
+		expect(screen.queryByTestId('option-trimmed')).not.toBeInTheDocument();
+	});
+
+	it('should not warn that less was requested over the reported addresses', async () => {
+		await renderCritical({ source_addresses: ['192.0.2.10', '198.51.100.7'] }, {});
+		expect(screen.queryByTestId('narrowed-warning')).not.toBeInTheDocument();
 	});
 });
 

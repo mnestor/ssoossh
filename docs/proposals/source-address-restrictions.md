@@ -530,10 +530,21 @@ count it covers. A row selected and left alone is a `/32` or `/128`.
   than failing server-side after a click.
 
 The granted pin then flows through the existing requested-versus-granted diff
-(`frontend/src/lib/approval.ts:80-86`), which currently marks `source-address`
-as always trimmed because the server always dropped it. That becomes a real
-comparison. The gate is not a certificate option and does not belong in that
-diff; it gets its own row.
+(`criticalOptionDiff` in `frontend/src/lib/approval.ts`). The gate is not a
+certificate option and does not belong in that diff; it gets its own row.
+
+**Changed since this was written (PR #107).** That diff no longer compares the
+two sides for `source-address`. It used to mark it trimmed on every request:
+the requested side always carries the reported addresses, ssoosshd always
+dropped them, and the approval page said a restriction nobody had asked for
+was removed. It now ignores the requested side and shows a granted
+`source-address` as "added by server policy", which is true of
+`pin_source_address` today. The pin axis has to replace that rule, not build
+on it: an approver-chosen pin is the approver's decision, not server policy,
+and needs its own label. Whether the candidates the approver leaves
+unselected render as trimmed is open. They were offered, not asked for, and
+striking them through on every approval brings back the noise PR #107
+removed. **[judgement]**
 
 `frontend/DESIGN.md` governs the component work.
 
@@ -865,8 +876,9 @@ populating the option set.
 
 **Frontend** (`frontend/src/lib`, per `.claude/rules/test-ts.md`). The widening
 control clamps to the ceiling; overlap collapse renders collapsed; provenance
-labels follow `source_ip`; the `approval.ts` diff reports a real granted pin
-rather than always-trimmed; `required` disables the approve button.
+labels follow `source_ip`; the `approval.ts` diff labels an approver-chosen
+pin as the approver's, not as added by server policy; `required` disables the
+approve button.
 
 Anything that genuinely cannot be tested carries a `not covered:` comment at
 the block saying why, per the repository rule. "Awkward to reach" is a test to

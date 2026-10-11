@@ -11,9 +11,10 @@ import type { CertificateOptions, RequestDetail } from '#lib/api/types.js';
  *   succeeds, just with less in it than the client asked for. Showing this
  *   before approval is a hard constraint (root CLAUDE.md), because otherwise
  *   a human approves something quietly different from what they were shown.
- * - `added`: present in the granted set without being requested. Nothing
- *   does this today; it is represented so that a policy change which starts
- *   adding options cannot render as silence.
+ * - `added`: present in the granted set without being requested. Today
+ *   that is a `source-address` pinned by `pin_source_address` on a service
+ *   certificate; anything else that starts adding options must not render
+ *   as silence either.
  */
 export type OptionStatus = 'granted' | 'trimmed' | 'added';
 
@@ -58,11 +59,18 @@ export function extensionDiff(
  * criticalOptionDiff compares the critical options — force-command,
  * source-address, and no-touch-required.
  *
- * force-command and source-address are currently dropped unconditionally at
- * approval (there is no server config to bound them against, see
- * service.Approve), so a client that asks for either will always see them
- * trimmed here. That is the intended display, not a bug: the point is that
- * the human sees the request is not getting what it asked for.
+ * force-command is currently dropped unconditionally at approval (there is
+ * no server config to bound it against, see service.Approve), so a client
+ * that asks for one will always see it trimmed here. That is the intended
+ * display, not a bug: the point is that the human sees the request is not
+ * getting what it asked for.
+ *
+ * source-address is judged on the granted side alone. The requested
+ * source_addresses is where the request came from (the client's own
+ * interfaces plus the address ssoosshd observed), not a request for the
+ * option: no client asks for one, so diffing it would strike through a
+ * restriction nobody wanted on every request. It appears only when the
+ * server puts it on the certificate, as server-added.
  */
 export function criticalOptionDiff(
 	requested: CertificateOptions,
@@ -78,13 +86,12 @@ export function criticalOptionDiff(
 		});
 	}
 
-	const requestedAddresses = requested.source_addresses ?? [];
 	const grantedAddresses = granted.source_addresses ?? [];
-	if (requestedAddresses.length > 0 || grantedAddresses.length > 0) {
+	if (grantedAddresses.length > 0) {
 		entries.push({
 			label: 'source-address',
-			value: (grantedAddresses.length > 0 ? grantedAddresses : requestedAddresses).join(', '),
-			status: statusFor(requestedAddresses.length > 0, grantedAddresses.length > 0)
+			value: grantedAddresses.join(', '),
+			status: 'added'
 		});
 	}
 
