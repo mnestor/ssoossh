@@ -14,6 +14,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/mnestor/ssoossh/client/config"
+	"github.com/mnestor/ssoossh/internal/api"
 	"github.com/mnestor/ssoossh/internal/crypto/ssh/keypair"
 )
 
@@ -343,5 +344,73 @@ func TestServiceRetrieve_ShouldWriteTheCertificateBesideTheKey(t *testing.T) {
 	}
 	if string(got) != fresh {
 		t.Error("expected the retrieved certificate to be written verbatim")
+	}
+}
+
+// TestDescribeRetrieveError pins the message for each class of retrieval
+// failure, so a server outage is no longer reported as an expired code.
+func TestDescribeRetrieveError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{
+			name: "should report an expired code when the server answers 404",
+			err:  &api.ResponseError{StatusCode: 404, Message: "unknown or expired enrollment code"},
+			want: "enrollment code not found or expired; run 'ssoossh service enroll' to get a new one",
+		},
+		{
+			name: "should report an expired code when the server answers 410",
+			err:  &api.ResponseError{StatusCode: 410},
+			want: "enrollment code not found or expired; run 'ssoossh service enroll' to get a new one",
+		},
+		{
+			name: "should pass on the server's reason when it refuses the code",
+			err:  &api.ResponseError{StatusCode: 403, Message: "source address not allowed"},
+			want: "the server refused this enrollment code (status 403: source address not allowed)",
+		},
+		{
+			name: "should say to retry later when the server rate limits",
+			err:  &api.ResponseError{StatusCode: 429},
+			want: "the server is rate limiting retrieval from this address; retry in a minute",
+		},
+		{
+			name: "should blame the server, not the code, when the server fails",
+			err:  &api.ResponseError{StatusCode: 500, Message: "signing timed out"},
+			want: "the server failed to issue the certificate (status 500: signing timed out). This is a server problem, not your code; retry shortly or contact the ssoossh administrator",
+		},
+		{
+			name: "should name the status for any other rejection",
+			err:  &api.ResponseError{StatusCode: 400},
+			want: "the server rejected the retrieval (status 400)",
+		},
+		{
+			name: "should prefix a transport failure with the action",
+			err:  errors.New("connection refused"),
+			want: "retrieve certificate: connection refused",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := describeRetrieveError(tt.err).Error(); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// The server's response must stay reachable through the reworded error, so
+// a caller can still branch on the status.
+func TestDescribeRetrieveError_ShouldKeepTheResponseErrorUnwrappable(t *testing.T) {
+	t.Parallel()
+
+	respErr := &api.ResponseError{StatusCode: 500}
+	if !errors.As(describeRetrieveError(respErr), &respErr) {
+		t.Error("expected errors.As to find the *api.ResponseError")
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"time"
 
@@ -84,12 +85,7 @@ func runServiceRetrieve(ctx context.Context, root *RootCommand, errOut io.Writer
 	certText, err := root.API().RetrieveServiceCertificate(ctx, code)
 	if err != nil {
 		// Retrieval failed. Check if we have a degraded certificate to fall back to.
-		respErr := &api.ResponseError{}
-		if errors.As(err, &respErr) {
-			err = errors.New("enrollment code not found or expired")
-		} else {
-			err = fmt.Errorf("retrieve certificate: %w", err)
-		}
+		err = describeRetrieveError(err)
 
 		// Check for a still-valid certificate on disk.
 		if cert := reusableCertificateFile(certPath, reuseGrace); cert != nil {
@@ -135,4 +131,50 @@ func reusableCertificateFile(path string, within time.Duration) *ssh.Certificate
 	}
 
 	return nil
+}
+
+// retrieveError is a retrieval failure worded for the person or job running
+// `service retrieve`, with the underlying error kept for errors.As.
+type retrieveError struct {
+	msg string
+	err error
+}
+
+// Error implements error.
+func (e *retrieveError) Error() string { return e.msg }
+
+// Unwrap returns the underlying error.
+func (e *retrieveError) Unwrap() error { return e.err }
+
+// describeRetrieveError says what a failed retrieval means for the caller.
+// The HTTP status decides it: an unknown or expired code needs a new
+// enrollment, a refusal or rate limit needs a different response, and a
+// server failure is not the code's fault at all. Calling all of them "code
+// not found or expired" sent operators to re-enroll over a server outage.
+func describeRetrieveError(err error) error {
+	respErr := &api.ResponseError{}
+	if !errors.As(err, &respErr) {
+		return fmt.Errorf("retrieve certificate: %w", err)
+	}
+
+	detail := fmt.Sprintf("status %d", respErr.StatusCode)
+	if respErr.Message != "" {
+		detail += ": " + respErr.Message
+	}
+
+	var msg string
+	switch code := respErr.StatusCode; {
+	case code == http.StatusNotFound || code == http.StatusGone:
+		msg = "enrollment code not found or expired; run 'ssoossh service enroll' to get a new one"
+	case code == http.StatusUnauthorized || code == http.StatusForbidden:
+		msg = fmt.Sprintf("the server refused this enrollment code (%s)", detail)
+	case code == http.StatusTooManyRequests:
+		msg = "the server is rate limiting retrieval from this address; retry in a minute"
+	case code >= http.StatusInternalServerError:
+		msg = fmt.Sprintf("the server failed to issue the certificate (%s). This is a server problem, "+
+			"not your code; retry shortly or contact the ssoossh administrator", detail)
+	default:
+		msg = fmt.Sprintf("the server rejected the retrieval (%s)", detail)
+	}
+	return &retrieveError{msg: msg, err: err}
 }
