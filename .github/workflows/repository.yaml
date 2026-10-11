@@ -6,15 +6,21 @@
 # fine for ssoossh's own packages, which arrive with the tag by definition,
 # and wrong for pam-ssoossh, which releases on its own schedule: a PAM fix
 # would otherwise sit unpublished until an unrelated ssoossh release carried
-# it. Run this instead.
+# it. This runs instead.
 #
 # Nothing here builds software. It downloads packages that were built,
 # signed and published elsewhere, indexes them, signs the index, and uploads
 # it. So it cannot produce a package that no release contains.
 #
-# Manual only, and deliberately so. It writes to the location every
-# installed host reads for updates, which is not something a schedule should
-# do unattended.
+# Started on purpose, never on a schedule: it writes to the location every
+# installed host reads for updates. Two starters, both tied to a release a
+# person cut:
+#
+#   - ssoossh-pam's release workflow dispatches it with pam_tag once a final
+#     (non-hyphenated) tag's release is published. Its token is limited to
+#     Actions on this repository.
+#   - by hand, for anything else: a republish, a pinned ssoossh_tag, or a
+#     dry run.
 name: repository
 
 on:
