@@ -26,7 +26,7 @@ ssoossh [command] [flags]
 | Command | Description |
 | --- | --- |
 | [`ssoossh ca`](/ssoossh/reference/cli/ssoossh/ca/) | Retrieve the CA Public Key of the configured ssoossh server. |
-| [`ssoossh host`](/ssoossh/reference/cli/ssoossh/host/) | Manage local sshd principal mapping. |
+| [`ssoossh host`](/ssoossh/reference/cli/ssoossh/host/) | Manage local sshd principal mapping, and check sshd's setup. |
 | [`ssoossh service`](/ssoossh/reference/cli/ssoossh/service/) | Manage service-account (non-interactive) certificate enrollment. |
 | [`ssoossh ssh`](/ssoossh/reference/cli/ssoossh/ssh/) | Manage interactive SSH certificates. |
 | [`ssoossh version`](/ssoossh/reference/cli/ssoossh/version/) | Print ssoossh version, commit, and build info. |

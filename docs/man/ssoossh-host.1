@@ -2,7 +2,7 @@
 .TH "SSOOSSH" "1" "Aug 2026" "ssoossh" ""
 
 .SH NAME
-ssoossh-host - Manage local sshd principal mapping.
+ssoossh-host - Manage local sshd principal mapping, and check sshd's setup.
 
 
 .SH SYNOPSIS
@@ -10,7 +10,7 @@ ssoossh-host - Manage local sshd principal mapping.
 
 
 .SH DESCRIPTION
-Configures the principal mapping used when sshd asks for authorized principals via AuthorizedPrincipalsCommand. Principals can be synced from the server or managed locally.
+Configures the principal mapping used when sshd asks for authorized principals via AuthorizedPrincipalsCommand, and checks that this host's sshd will accept ssoossh certificates. The mapping is managed locally and never fetched from the server.
 
 
 .SH OPTIONS
@@ -36,7 +36,7 @@ Configures the principal mapping used when sshd asks for authorized principals v
 
 
 .SH SEE ALSO
-\fBssoossh(1)\fP, \fBssoossh-host-mapping(1)\fP, \fBssoossh-host-principals(1)\fP
+\fBssoossh(1)\fP, \fBssoossh-host-check(1)\fP, \fBssoossh-host-mapping(1)\fP, \fBssoossh-host-principals(1)\fP
 
 
 .SH HISTORY

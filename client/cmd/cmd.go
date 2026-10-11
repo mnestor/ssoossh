@@ -155,8 +155,9 @@ func (r *RootCommand) PreRun(this, runner *simplecobra.Commandeer) error {
 	// every sshd login attempt -- unprivileged, as whatever account
 	// AuthorizedPrincipalsCommandUser names -- and must answer from local
 	// state alone, and printing a version string is nobody's business but this
-	// machine's.
-	if isOffline(runner.Command) {
+	// machine's. A serverOptional command stops here too, and asks the
+	// server itself for the one thing it needs from it.
+	if isOffline(runner.Command) || isServerOptional(runner.Command) {
 		r.api = &offlineAPIClient{command: runner.CobraCommand.CommandPath()}
 		return nil
 	}

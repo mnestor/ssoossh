@@ -18,6 +18,10 @@
             "slug": "reference/cli/ssoossh/host"
           },
           {
+            "label": "check",
+            "slug": "reference/cli/ssoossh/host-check"
+          },
+          {
             "label": "mapping",
             "items": [
               {

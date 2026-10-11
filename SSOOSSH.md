@@ -11,7 +11,7 @@
   - A human approves every issuance in the browser. Service certificates are approved once, at enrollment. Every issuance goes through the sign queue.
   - Issued certificates are never stored on the server. Delivery is the only copy.
   - Group membership never appears in a certificate. Roles and policy come from the session identity, never from database rows.
-  - There are no host certificates. `ssoossh host` is local principal mapping for `AuthorizedPrincipalsCommand` only.
+  - There are no host certificates. `ssoossh host` is local principal mapping for `AuthorizedPrincipalsCommand`, plus `host check`, a read-only report on whether this host's sshd will accept ssoossh certificates.
   - `verify-required` is never used. `no-touch-required` is only for enrolled `sk-` keys on the service path.
   - Policy uses the source address the server observed, never one the client supplied. Audit records never capture `Cookie` or `Authorization`.
   - `client/` and `server/` never import each other. `internal/apitypes` and `internal/principalsmap` are a cross-repo wire contract with pam_ssoossh, gated by `docs/wire-contract.json`.
@@ -45,12 +45,13 @@
 
   ### Client (ssoossh)
   - Runs on macOS, Linux and Windows.
-  - Commands: `ssh login|logout|proxycommand|inspect|config`, `host principals|mapping list|add|remove`, `service enroll|retrieve`, `ca`, `version`.
+  - Commands: `ssh login|logout|proxycommand|inspect|config`, `host principals|mapping list|add|remove|check`, `service enroll|retrieve`, `ca`, `version`.
   - A new keypair is generated for every new certificate. Keys go to ssh-agent, or to files when `fallback_file_agent` allows. A preflight store-and-remove round trip runs before the request is made.
   - Key type and size are steered, FIPS-aware. CA public keys are cached and can be a list. `service retrieve` has an offline grace period.
   - Certificate extensions can be opted out in config or with the `--no-*` flags.
   - `-v`, `-vv` and `-vvv` trace what the client does. `--debug` is the only place resolved settings are printed, and it marks admin-locked sources in the merge chain.
   - The client reports its administrative policy (forbidden extensions) to the server. The approval page shows it but never decides on it.
+  - `host check` reads sshd's effective configuration (`sshd -T`) and reports whether the host will accept certificates: public key authentication, `TrustedUserCAKeys` present and matching the CA keys the server signs with (or a pinned `capubkey`), CA signature and certificate algorithms, the principals command's path safety, account and mapping access, and clock sync. It changes nothing, and exits non-zero when a check fails. Its local findings never depend on reaching the server.
 
   ### Client admin locks (`enforce`): never remove or weaken
   - Only the machine-wide config (`/etc/ssoossh/ssoossh.yaml`, `%ProgramData%\ssoossh\ssoossh.yaml`) can name an `enforce` file. A relative path resolves inside the system directory.

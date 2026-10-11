@@ -111,6 +111,7 @@ func writeVersion(w io.Writer, asJSON bool) error {
 func capabilities() []string {
 	return []string{
 		"ca",
+		"host check",
 		"host mapping add",
 		"host mapping list",
 		"host mapping remove",
