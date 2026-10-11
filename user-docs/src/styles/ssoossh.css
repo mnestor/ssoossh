@@ -1,92 +1,134 @@
-/* The docs site wearing the app's design system.
+/* The docs site wearing the app's design system (frontend/DESIGN.md).
  *
- * The tokens below are the same OKLch values the frontend defines in
+ * The tokens below are the same OKLCH values the frontend defines in
  * frontend/src/app.css, mapped onto the custom properties Starlight themes
- * itself with. Keeping the raw ssoossh token names as an intermediate layer
- * is deliberate: a palette change in the app is then a copy of the values,
- * not a re-derivation of which Starlight variable each one drives.
+ * itself with. Keeping the ssoossh token names as an intermediate layer is
+ * deliberate: a palette change in the app is then a copy of the values, not
+ * a re-derivation of which Starlight variable each one drives.
  *
- * Starlight's theme switch is `data-theme` on :root -- dark is the base and
- * [data-theme='light'] overrides -- rather than the app's `.dark` class, so
- * the two blocks below are inverted relative to app.css while carrying the
- * identical values. See frontend/DESIGN.md.
+ * The character carries over whole: IBM Plex Sans for prose with IBM Plex
+ * Mono as the voice (the page title and every identifier), one cobalt
+ * signature on warm stone neutrals, planes rather than frames, and sharp
+ * radii. The docs map onto the app's layout: the page is the `ground`, the
+ * header and sidebar are `surface` like the app's rail, and code, tables,
+ * asides and cards are `surface` planes on the ground. Nothing draws an
+ * edge a plane already draws.
+ *
+ * Starlight's theme switch is `data-theme` on :root, with dark as the base
+ * and [data-theme='light'] overriding it, rather than the app's `.dark`
+ * class; the two blocks carry the app's values the other way round.
  */
 
 /* Self-hosted, like the app: no CDN, no Google Fonts. */
-@import '@fontsource/public-sans/400.css';
-@import '@fontsource/public-sans/500.css';
-@import '@fontsource/public-sans/600.css';
-@import '@fontsource/public-sans/700.css';
-@import '@fontsource/fira-code/400.css';
-@import '@fontsource/fira-code/500.css';
+@import '@fontsource/ibm-plex-sans/400.css';
+@import '@fontsource/ibm-plex-sans/500.css';
+@import '@fontsource/ibm-plex-sans/600.css';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+@import '@fontsource/ibm-plex-mono/600.css';
 
-/* Dark is Starlight's base theme. */
+/* Dark is Starlight's base theme: the app's `.dark` values. */
 :root {
-	--ssoossh-surface: oklch(21% 0.004 200);
-	--ssoossh-surface-muted: oklch(17% 0.004 200);
-	--ssoossh-border-subtle: oklch(30% 0.006 200);
-	--ssoossh-ink: oklch(92% 0.004 200);
-	--ssoossh-ink-muted: oklch(68% 0.006 200);
-	--ssoossh-accent: oklch(72% 0.08 200);
-	--ssoossh-accent-hover: oklch(78% 0.07 200);
-	--ssoossh-accent-ink: oklch(18% 0.01 200);
-	--ssoossh-granted: oklch(74% 0.1 155);
-	--ssoossh-granted-surface: oklch(27% 0.03 155);
-	--ssoossh-trimmed: oklch(76% 0.1 75);
-	--ssoossh-trimmed-surface: oklch(27% 0.03 75);
-	--ssoossh-danger: oklch(74% 0.13 25);
-	--ssoossh-danger-surface: oklch(29% 0.04 25);
-
-	/* A code block sits on the muted surface so it separates from the page
-	   without a heavier border; the app treats cards the same way. */
-	--ssoossh-code-bg: oklch(17% 0.004 200);
+	--ssoossh-ground: oklch(14.5% 0.006 70);
+	--ssoossh-surface: oklch(22.5% 0.008 70);
+	--ssoossh-surface-muted: oklch(26.5% 0.008 70);
+	--ssoossh-border-subtle: oklch(31% 0.008 70);
+	--ssoossh-border-control: oklch(56% 0.01 70);
+	--ssoossh-ink: oklch(93% 0.006 75);
+	--ssoossh-ink-muted: oklch(71% 0.01 70);
+	--ssoossh-accent: oklch(74% 0.13 264);
+	--ssoossh-accent-hover: oklch(80% 0.11 264);
+	--ssoossh-accent-ink: oklch(17% 0.03 264);
+	--ssoossh-accent-wash: oklch(29% 0.05 264);
+	--ssoossh-granted: oklch(76% 0.13 150);
+	--ssoossh-granted-surface: oklch(28% 0.04 150);
+	--ssoossh-trimmed: oklch(80% 0.12 80);
+	--ssoossh-trimmed-surface: oklch(28% 0.04 80);
+	--ssoossh-danger: oklch(74% 0.15 27);
+	--ssoossh-danger-surface: oklch(29% 0.05 27);
 }
 
 :root[data-theme='light'] {
+	--ssoossh-ground: oklch(95.5% 0.006 75);
 	--ssoossh-surface: #ffffff;
-	--ssoossh-surface-muted: oklch(97% 0.002 200);
-	--ssoossh-border-subtle: oklch(88% 0.003 200);
-	--ssoossh-ink: oklch(20% 0.005 200);
-	--ssoossh-ink-muted: oklch(45% 0.005 200);
-	--ssoossh-accent: oklch(45% 0.06 200);
-	--ssoossh-accent-hover: oklch(38% 0.07 200);
+	--ssoossh-surface-muted: oklch(97.2% 0.005 75);
+	--ssoossh-border-subtle: oklch(90% 0.006 75);
+	--ssoossh-border-control: oklch(62% 0.01 70);
+	--ssoossh-ink: oklch(22% 0.01 60);
+	--ssoossh-ink-muted: oklch(46% 0.012 65);
+	--ssoossh-accent: oklch(50% 0.19 264);
+	--ssoossh-accent-hover: oklch(43% 0.19 264);
 	--ssoossh-accent-ink: #ffffff;
-	--ssoossh-granted: oklch(46% 0.08 155);
-	--ssoossh-granted-surface: oklch(95% 0.02 155);
-	--ssoossh-trimmed: oklch(52% 0.08 75);
-	--ssoossh-trimmed-surface: oklch(95% 0.02 75);
-	--ssoossh-danger: oklch(48% 0.13 25);
-	--ssoossh-danger-surface: oklch(95% 0.03 25);
+	--ssoossh-accent-wash: oklch(94% 0.03 264);
+	--ssoossh-granted: oklch(45% 0.11 150);
+	--ssoossh-granted-surface: oklch(95% 0.03 150);
+	--ssoossh-trimmed: oklch(50% 0.11 70);
+	--ssoossh-trimmed-surface: oklch(95% 0.035 80);
+	--ssoossh-danger: oklch(50% 0.18 27);
+	--ssoossh-danger-surface: oklch(95% 0.03 27);
+}
 
-	--ssoossh-code-bg: oklch(97% 0.002 200);
+/* Shape and type tokens, the same in both themes: the app's radii (chip 3px,
+   control 4px, panel 6px, dialog 8px) and its two tracking values. */
+:root {
+	--ssoossh-radius-chip: 3px;
+	--ssoossh-radius-control: 4px;
+	--ssoossh-radius-panel: 6px;
+	--ssoossh-radius-dialog: 8px;
+	--ssoossh-tracking-heading: -0.02em;
+	--ssoossh-tracking-label: 0.06em;
+	--ssoossh-tracking-widest: 0.1em;
 }
 
 /* Drive Starlight from the tokens above. Both themes take the same
    assignments, so only the values differ between the blocks. */
 :root,
 :root[data-theme='light'] {
-	--sl-font: 'Public Sans', system-ui, sans-serif;
-	--sl-font-mono: 'Fira Code', ui-monospace, monospace;
+	--sl-font: 'IBM Plex Sans', system-ui, sans-serif;
+	--sl-font-mono: 'IBM Plex Mono', ui-monospace, monospace;
 
-	--sl-color-accent: var(--ssoossh-accent);
-	--sl-color-accent-high: var(--ssoossh-accent-hover);
-	--sl-color-accent-low: var(--ssoossh-accent-ink);
-	--sl-color-text-accent: var(--ssoossh-accent);
-
-	--sl-color-bg: var(--ssoossh-surface);
-	--sl-color-bg-nav: var(--ssoossh-surface);
-	--sl-color-bg-sidebar: var(--ssoossh-surface);
-	--sl-color-bg-inline-code: var(--ssoossh-surface-muted);
-	--sl-color-text: var(--ssoossh-ink);
+	/* Starlight's grey ramp runs from the strongest text (white, gray-1) to
+	   the page (black). Text steps take the app's two inks; the lighter
+	   steps take its border and tint, so nothing Starlight draws in grey
+	   lands on a value the app does not have. */
+	--sl-color-white: var(--ssoossh-ink);
+	--sl-color-gray-1: var(--ssoossh-ink);
+	--sl-color-gray-2: var(--ssoossh-ink);
 	--sl-color-gray-3: var(--ssoossh-ink-muted);
+	--sl-color-gray-4: var(--ssoossh-ink-muted);
 	--sl-color-gray-5: var(--ssoossh-border-subtle);
 	--sl-color-gray-6: var(--ssoossh-surface-muted);
+	--sl-color-gray-7: var(--ssoossh-surface-muted);
+	--sl-color-black: var(--ssoossh-ground);
+
+	/* Cobalt keeps its four jobs: links, the primary action, focus, and the
+	   current page in the sidebar. accent-low is Starlight's tinted wash
+	   (badges, search highlights), so it takes the app's wash, and text on a
+	   filled accent is text-invert. */
+	--sl-color-accent: var(--ssoossh-accent);
+	--sl-color-accent-high: var(--ssoossh-accent-hover);
+	--sl-color-accent-low: var(--ssoossh-accent-wash);
+	--sl-color-text-accent: var(--ssoossh-accent);
+	--sl-color-text-invert: var(--ssoossh-accent-ink);
+	--sl-color-bg-accent: var(--ssoossh-accent);
+
+	--sl-color-text: var(--ssoossh-ink);
+	--sl-color-bg: var(--ssoossh-ground);
+	--sl-color-bg-nav: var(--ssoossh-surface);
+	--sl-color-bg-sidebar: var(--ssoossh-surface);
+	--sl-color-bg-inline-code: var(--ssoossh-surface);
+
+	/* Planes, not frames: the header and sidebar are told from the page by
+	   their surface, so the edges Starlight draws between them go. The
+	   hairline inside a panel (a sidebar group's guide line, a rule) stays
+	   the app's subtle border. */
+	--sl-color-hairline-shade: transparent;
 	--sl-color-hairline: var(--ssoossh-border-subtle);
 	--sl-color-hairline-light: var(--ssoossh-border-subtle);
-	--sl-color-hairline-shade: var(--ssoossh-border-subtle);
 
-	/* Asides and badges, kept on the app's semantic colors so "this is a
-	   warning" looks the same in the docs as it does in the product. */
+	/* Asides and badges on the app's semantic colours, so a warning looks
+	   the same in the docs as in the product. A note or a tip is not a
+	   status, so it is a neutral surface panel with an ink title. */
 	--sl-color-green: var(--ssoossh-granted);
 	--sl-color-green-low: var(--ssoossh-granted-surface);
 	--sl-color-green-high: var(--ssoossh-granted);
@@ -96,79 +138,133 @@
 	--sl-color-red: var(--ssoossh-danger);
 	--sl-color-red-low: var(--ssoossh-danger-surface);
 	--sl-color-red-high: var(--ssoossh-danger);
-	--sl-color-blue: var(--ssoossh-accent);
-	--sl-color-blue-low: var(--ssoossh-surface-muted);
-	--sl-color-blue-high: var(--ssoossh-accent);
+	--sl-color-blue: var(--ssoossh-ink-muted);
+	--sl-color-blue-low: var(--ssoossh-surface);
+	--sl-color-blue-high: var(--ssoossh-ink);
+	--sl-color-purple: var(--ssoossh-ink-muted);
+	--sl-color-purple-low: var(--ssoossh-surface);
+	--sl-color-purple-high: var(--ssoossh-ink);
 }
 
-/* The page sits on the muted surface, like the app's body, with content
-   panels on the plain surface above it. */
 body {
-	background-color: var(--ssoossh-surface-muted);
+	background-color: var(--ssoossh-ground);
 }
 
-.main-frame .main-pane {
-	background-color: var(--ssoossh-surface);
+/* The panel between the page title and the content draws a rule; the
+   spacing already parts them. The table of contents column sits on the
+   ground with no edge of its own. */
+.content-panel + .content-panel {
+	border-top: none;
 }
 
-/* Typography: the app's scale and weights, not Starlight's defaults. */
-.sl-markdown-content h2 {
-	font-size: var(--sl-text-xl);
+.right-sidebar {
+	border-inline-start: none;
+}
+
+/* The current page in the sidebar is the app rail's current item: a cobalt
+   label on the accent wash, not a filled cobalt bar, so cobalt still means
+   "the thing to press" on the page itself. */
+.sidebar-content a[aria-current='page'],
+.sidebar-content a[aria-current='page']:hover,
+.sidebar-content a[aria-current='page']:focus {
+	color: var(--ssoossh-accent);
+	background-color: var(--ssoossh-accent-wash);
+}
+
+.sidebar-content a {
+	border-radius: var(--ssoossh-radius-control);
+}
+
+/* Typography: the page title is the voice, in the mono like the app's
+   page heading; everything below it is the sans. 28px is the largest size
+   in the app; below 50rem it steps down to 20px as the app's heading does
+   below `sm`. */
+h1#_top {
+	font-family: var(--sl-font-mono);
+	font-weight: 600;
+	font-size: 1.25rem;
+	line-height: 1.25;
+	letter-spacing: var(--ssoossh-tracking-heading);
+}
+
+@media (min-width: 50rem) {
+	h1#_top {
+		font-size: 1.75rem;
+	}
+}
+
+.sl-markdown-content :is(h2, h3, h4) {
 	font-weight: 600;
 	line-height: 1.25;
-	padding-top: 0.4em;
-	border-top: 1px solid var(--ssoossh-border-subtle);
 }
 
-/* A key's heading is the identifier itself, so it is set in the mono face
-   at full weight rather than as prose. */
-.sl-markdown-content h2 code {
+.sl-markdown-content h2 {
+	font-size: var(--sl-text-xl);
+}
+
+/* A key's heading is the identifier itself, so it is set in the mono at
+   the heading's weight rather than as an inline code chip. */
+.sl-markdown-content :is(h2, h3) code {
 	font-size: inherit;
 	font-weight: 600;
 	background: none;
+	border: none;
 	padding: 0;
 	color: var(--ssoossh-ink);
 }
 
+/* Inline code is a value chip: a surface fill with the app's one hairline
+   for a chip, so a run of identifiers shows where each ends. */
 .sl-markdown-content code:not(pre code) {
 	border: 1px solid var(--ssoossh-border-subtle);
-	border-radius: 4px;
+	border-radius: var(--ssoossh-radius-chip);
 	padding: 0.1em 0.35em;
 	font-size: 0.9em;
 }
 
-/* Tables: the reference's at-a-glance key lists. Dense, monospace keys,
-   and a muted header row -- the shape the app's detail lists use. */
+/* Tables are surface planes on the ground, set like the app's data tables:
+   sans uppercase column heads, dense cells, a hairline between rows and
+   none after the last. Separate borders with no spacing, so the panel's
+   corners can round. */
 .sl-markdown-content table {
 	width: 100%;
-	border-collapse: collapse;
+	border-collapse: separate;
+	border-spacing: 0;
+	border-radius: var(--ssoossh-radius-panel);
+	overflow: hidden;
+	background-color: var(--ssoossh-surface);
 	font-size: var(--sl-text-sm);
+	font-variant-numeric: tabular-nums;
 }
 
 .sl-markdown-content th {
-	background-color: var(--ssoossh-surface-muted);
+	background: none;
 	color: var(--ssoossh-ink-muted);
 	font-weight: 600;
-	font-size: var(--sl-text-xs);
+	font-size: 0.6875rem;
 	text-transform: uppercase;
-	letter-spacing: 0.04em;
+	letter-spacing: var(--ssoossh-tracking-widest);
 	text-align: left;
 	padding: 0.5rem 0.75rem;
 	border-bottom: 1px solid var(--ssoossh-border-subtle);
 }
 
 .sl-markdown-content td {
-	padding: 0.45rem 0.75rem;
+	padding: 0.5rem 0.75rem;
 	border-bottom: 1px solid var(--ssoossh-border-subtle);
 	vertical-align: top;
+}
+
+.sl-markdown-content tr:last-child td {
+	border-bottom: none;
 }
 
 .sl-markdown-content tr:hover td {
 	background-color: var(--ssoossh-surface-muted);
 }
 
-/* A key cell holds an identifier; keep it monospace and unwrapped so the
-   dotted paths stay comparable down the column. */
+/* A key cell holds an identifier; keep it unwrapped so dotted paths stay
+   comparable down the column. */
 .sl-markdown-content td:first-child {
 	white-space: nowrap;
 }
@@ -179,32 +275,52 @@ body {
 	padding: 0;
 }
 
-/* Code blocks on the muted surface, bordered like the app's cards. */
+/* Code blocks are surface planes too: no frame, the panel radius. */
 .sl-markdown-content .expressive-code .frame pre {
-	border: 1px solid var(--ssoossh-border-subtle);
-	border-radius: 10px;
-	background-color: var(--ssoossh-code-bg);
+	border: none;
+	border-radius: var(--ssoossh-radius-panel);
+	background-color: var(--ssoossh-surface);
 }
 
-/* Cards and asides pick up the app's 10px card radius. */
-.sl-markdown-content .starlight-aside,
-.sl-markdown-content .card {
-	border-radius: 10px;
+/* Asides are planes: a status surface for a caution or a danger, a neutral
+   surface for a note or a tip, and no side stripe. */
+.sl-markdown-content .starlight-aside {
+	border-inline-start: none;
+	border-radius: var(--ssoossh-radius-panel);
+}
+
+/* Cards and link cards (the landing page) are surface planes with no edge;
+   a link card tints on hover, like a row in the app. */
+.card,
+.sl-link-card {
+	border: none;
+	border-radius: var(--ssoossh-radius-panel);
+	background-color: var(--ssoossh-surface);
+}
+
+.sl-link-card:hover {
+	background-color: var(--ssoossh-surface-muted);
+}
+
+/* The search dialog takes the dialog radius. */
+dialog[aria-label='Search'] {
+	border-radius: var(--ssoossh-radius-dialog);
+}
+
+site-search button[data-open-modal] {
+	border-radius: var(--ssoossh-radius-control);
 }
 
 /* Screenshots of the app. They are captured in the light theme at a fixed
-   width, so they read as one set; the frame is the app's own card treatment
-   and a caption follows each one in the muted ink. */
+   width, so they read as one set: each is a plane on the ground with the
+   panel radius, no frame and no shadow, and a caption follows in the muted
+   ink. */
 .sl-markdown-content img.screen,
 .sl-markdown-content p > img {
 	display: block;
 	max-width: 100%;
 	height: auto;
-	border: 1px solid var(--ssoossh-border-subtle);
-	border-radius: 10px;
-	box-shadow:
-		0 1px 2px rgb(0 0 0 / 6%),
-		0 12px 32px -16px rgb(0 0 0 / 30%);
+	border-radius: var(--ssoossh-radius-panel);
 }
 
 .sl-markdown-content .screen-caption {
@@ -225,9 +341,9 @@ body {
 	margin-top: 0;
 }
 
-/* The landing page's hero screenshot: the same frame as the in-page ones,
-   shown whole. Starlight caps the hero figure at 25rem in a 7:4 grid, which
-   is sized for a square illustration, not a wide screenshot. */
+/* The landing page's hero screenshot, shown whole. Starlight caps the hero
+   figure at 25rem in a 7:4 grid, which is sized for a square illustration,
+   not a wide screenshot. */
 @media (min-width: 50rem) {
 	.hero {
 		grid-template-columns: 6fr 5fr;
@@ -241,9 +357,15 @@ body {
 .hero-html img {
 	width: 100%;
 	height: auto;
-	border: 1px solid var(--ssoossh-border-subtle);
-	border-radius: 10px;
-	box-shadow:
-		0 1px 2px rgb(0 0 0 / 6%),
-		0 24px 48px -24px rgb(0 0 0 / 40%);
+	border-radius: var(--ssoossh-radius-panel);
+}
+
+/* The hero's actions: the primary is the one cobalt button; the others
+   are ghost buttons with the app's control edge. */
+.hero .sl-link-button {
+	border-radius: var(--ssoossh-radius-control);
+}
+
+.hero .sl-link-button:not(.primary) {
+	border-color: var(--ssoossh-border-control);
 }
