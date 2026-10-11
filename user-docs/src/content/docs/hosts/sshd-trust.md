@@ -161,14 +161,14 @@ AuthorizedPrincipalsCommandUser ssoossh-principals
 `AuthorizedPrincipalsCommandUser` is not optional. `sshd` refuses to start
 when `AuthorizedPrincipalsCommand` is set without it.
 
-:::caution[Do not point this at `/usr/local/bin`]
+:::caution[Point this at `/usr/bin/ssoossh`]
 Packages before this release installed the binary at `/usr/local/bin/ssoossh`,
-and a compatibility symlink still answers there for two more releases. Do not
-name it here. On Debian and Ubuntu `/usr/local/bin` is `root:staff` mode `2775`,
-and `sshd` refuses to run an `AuthorizedPrincipalsCommand` whose path is
-writable by group or other -- so an `sshd_config` naming the old path fails
-every certificate login, with the refusal visible only in `sshd`'s log. Point it
-at `/usr/bin/ssoossh`.
+and a compatibility symlink still answers there for two more releases. An
+`sshd_config` naming the old path works while that link exists: `sshd` resolves
+the symlink before its path-safety check, and judges `/usr/bin/ssoossh`, not the
+group-writable `/usr/local/bin` the link sits in. It stops working the release
+the link is removed, and then every certificate login fails with the reason
+only in `sshd`'s log. Point it at `/usr/bin/ssoossh` now.
 :::
 
 That is the whole setup, and no `chmod` is needed. If you would rather the
