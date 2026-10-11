@@ -10,7 +10,7 @@ Shows what each certificate ssoossh is holding actually grants — who it is for
 ## Synopsis
 
 ```
-ssoossh ssh inspect [flags] [args]
+ssoossh ssh inspect
 ```
 
 ## Global options

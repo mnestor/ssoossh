@@ -137,7 +137,7 @@ func TestExecuteEndToEnd(t *testing.T) {
 		{name: "ssh proxycommand with no command", args: []string{"ssh", "proxycommand"}, wantErr: errProxyCommandRequiresArgs},
 		{name: "ssh inspect", args: []string{"ssh", "inspect"}, wantNilErr: true},
 		{name: "ssh config", args: []string{"ssh", "config"}, wantNilErr: true},
-		{name: "host principals with no args", args: []string{"host", "principals"}, wantErr: errors.New("usage: ssoossh host principals <username>")},
+		{name: "host principals with no args", args: []string{"host", "principals"}, wantErr: errors.New("missing <username>; usage: ssoossh host principals <username>")},
 		{name: "host mapping list", args: []string{"host", "mapping", "list"}, wantNilErr: true},
 		{name: "service enroll with no key source", args: []string{"service", "enroll"}, wantErr: errors.New("--key is required")},
 		{name: "service retrieve with no code", args: []string{"service", "retrieve"}, wantErr: errors.New("--code is required")},
@@ -149,9 +149,13 @@ func TestExecuteEndToEnd(t *testing.T) {
 		// command wrong -- and the half these rows were missing. Both
 		// mapping constructors sat at 12.5% statement coverage while their
 		// run functions were near 90%.
-		{name: "host mapping add with no arguments", args: []string{"host", "mapping", "add"}, wantErr: errors.New("usage: ssoossh host mapping add <account> <principal>")},
-		{name: "host mapping add with only an account", args: []string{"host", "mapping", "add", "deploy"}, wantErr: errors.New("usage: ssoossh host mapping add <account> <principal>")},
-		{name: "host mapping remove with no arguments", args: []string{"host", "mapping", "remove"}, wantErr: errors.New("usage: ssoossh host mapping remove <account> [principal]")},
+		{name: "host mapping add with no arguments", args: []string{"host", "mapping", "add"}, wantErr: errors.New("missing <account>; usage: ssoossh host mapping add <account> <principal>")},
+		{name: "host mapping add with only an account", args: []string{"host", "mapping", "add", "deploy"}, wantErr: errors.New("missing <principal>; usage: ssoossh host mapping add <account> <principal>")},
+		{name: "host mapping remove with no arguments", args: []string{"host", "mapping", "remove"}, wantErr: errors.New("missing <account>; usage: ssoossh host mapping remove <account> [principal]")},
+		{name: "ca with an extra argument", args: []string{"ca", "extra"}, wantErr: errors.New(`ssoossh ca takes no arguments, got "extra"`)},
+		{name: "version with an extra argument", args: []string{"version", "extra"}, wantErr: errors.New(`ssoossh version takes no arguments, got "extra"`)},
+		{name: "host principals with two accounts", args: []string{"host", "principals", "alice", "bob"}, wantErr: errors.New(`unexpected argument "bob"; usage: ssoossh host principals <username>`)},
+		{name: "host mapping add with an empty account", args: []string{"host", "mapping", "add", "", "alice"}, useMappingFile: true, wantErr: errors.New("the account name must not be empty")},
 
 		// The success paths through the same wrappers, which need --file:
 		// the default mapping file is /etc/ssoossh/principals.yaml and a
@@ -180,7 +184,7 @@ func TestExecuteEndToEnd(t *testing.T) {
 					t.Fatalf("expected no error, got %v", err)
 				}
 			case tt.wantErr != nil:
-				if err == nil || err.Error() != tt.wantErr.Error() {
+				if err == nil || unwrapCommandError(err).Error() != tt.wantErr.Error() {
 					t.Fatalf("expected error %q, got %v", tt.wantErr, err)
 				}
 			default:

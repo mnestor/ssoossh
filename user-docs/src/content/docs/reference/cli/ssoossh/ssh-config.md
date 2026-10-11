@@ -42,7 +42,7 @@ For what this machine actually resolved — the config files that were merged an
 ## Synopsis
 
 ```
-ssoossh ssh config [flags] [args]
+ssoossh ssh config
 ```
 
 ## Examples

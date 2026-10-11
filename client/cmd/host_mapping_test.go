@@ -2,8 +2,13 @@ package cmd
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -120,7 +125,7 @@ func TestRunHostMappingRemove(t *testing.T) {
 		if err := runHostMappingAdd("deploy", "ci", path); err != nil {
 			t.Fatalf("add error = %v", err)
 		}
-		if err := runHostMappingRemove("deploy", "", path); err != nil {
+		if err := runHostMappingRemove(io.Discard, "deploy", "", path); err != nil {
 			t.Fatalf("remove error = %v", err)
 		}
 		got, err := loadMapping(path)
@@ -141,7 +146,7 @@ func TestRunHostMappingRemove(t *testing.T) {
 		if err := runHostMappingAdd("deploy", "alice", path); err != nil {
 			t.Fatalf("add alice error = %v", err)
 		}
-		if err := runHostMappingRemove("deploy", "ci", path); err != nil {
+		if err := runHostMappingRemove(io.Discard, "deploy", "ci", path); err != nil {
 			t.Fatalf("remove error = %v", err)
 		}
 		got, err := loadMapping(path)
@@ -159,7 +164,7 @@ func TestRunHostMappingRemove(t *testing.T) {
 		if err := runHostMappingAdd("deploy", "ci", path); err != nil {
 			t.Fatalf("add error = %v", err)
 		}
-		if err := runHostMappingRemove("deploy", "ci", path); err != nil {
+		if err := runHostMappingRemove(io.Discard, "deploy", "ci", path); err != nil {
 			t.Fatalf("remove error = %v", err)
 		}
 		got, err := loadMapping(path)
@@ -171,9 +176,39 @@ func TestRunHostMappingRemove(t *testing.T) {
 		}
 	})
 
+	t.Run("should say so and leave the file alone when the account has no mapping", func(t *testing.T) {
+		t.Parallel()
+		path := filepath.Join(t.TempDir(), "mapping.yaml")
+		var out strings.Builder
+		if err := runHostMappingRemove(&out, "deploy", "", path); err != nil {
+			t.Fatalf("remove error = %v", err)
+		}
+		if want := fmt.Sprintf("Nothing to remove: account \"deploy\" has no mapping in %s.\n", path); out.String() != want {
+			t.Errorf("got %q, want %q", out.String(), want)
+		}
+		if _, err := os.Stat(path); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("expected no file to be written, stat error = %v", err)
+		}
+	})
+
+	t.Run("should say so when the account does not list the principal", func(t *testing.T) {
+		t.Parallel()
+		path := filepath.Join(t.TempDir(), "mapping.yaml")
+		if err := runHostMappingAdd("deploy", "ci", path); err != nil {
+			t.Fatalf("add error = %v", err)
+		}
+		var out strings.Builder
+		if err := runHostMappingRemove(&out, "deploy", "alice", path); err != nil {
+			t.Fatalf("remove error = %v", err)
+		}
+		if want := fmt.Sprintf("Nothing to remove: account \"deploy\" does not list principal \"alice\" in %s.\n", path); out.String() != want {
+			t.Errorf("got %q, want %q", out.String(), want)
+		}
+	})
+
 	t.Run("should reject an empty path", func(t *testing.T) {
 		t.Parallel()
-		err := runHostMappingRemove("deploy", "ci", "")
+		err := runHostMappingRemove(io.Discard, "deploy", "ci", "")
 		if err == nil {
 			t.Fatal("runHostMappingRemove() error = nil, want error for empty path")
 		}

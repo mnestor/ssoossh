@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/bep/simplecobra"
+	"github.com/spf13/cobra"
 
 	"github.com/mnestor/ssoossh/internal/version"
 )
@@ -42,6 +43,14 @@ func (c *versionCommand) Offline() bool { return true }
 
 // Init implements simplecobra.Commander.
 func (c *versionCommand) Init(cd *simplecobra.Commandeer) error {
+	// Takes no arguments, like every leaf; see simpleCommand.checkArity.
+	cd.CobraCommand.Use = c.Name()
+	cd.CobraCommand.Args = func(cmd *cobra.Command, args []string) error {
+		if len(args) > 0 {
+			return &usageError{msg: fmt.Sprintf("%s takes no arguments, got %q", cmd.CommandPath(), args[0])}
+		}
+		return nil
+	}
 	cd.CobraCommand.Short = "Print ssoossh version, commit, and build info."
 	cd.CobraCommand.Long = "Print ssoossh version, commit, and build info.\n\n" +
 		"With --json, prints the same values as an object along with a list of the " +

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/bep/simplecobra"
+	"github.com/spf13/cobra"
 
 	"github.com/mnestor/ssoossh/internal/crypto/ssh/agent"
 	"github.com/mnestor/ssoossh/internal/version"
@@ -132,6 +133,9 @@ func newSSHProxyCommandCommand() simplecobra.Commander {
 		// Everything after "proxycommand" is the command to exec, so cobra
 		// must not try to interpret any of it as flags of ours.
 		init: func(cd *simplecobra.Commandeer) error {
+			// Its own check in run gives a missing relay command a better
+			// message (with an example) than checkArity's.
+			cd.CobraCommand.Args = cobra.ArbitraryArgs
 			cd.CobraCommand.Flags().SetInterspersed(false)
 			return nil
 		},

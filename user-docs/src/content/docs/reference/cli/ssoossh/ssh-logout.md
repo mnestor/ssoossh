@@ -10,7 +10,7 @@ Removes the certificates ssoossh put in your ssh-agent — those signed by the c
 ## Synopsis
 
 ```
-ssoossh ssh logout [flags] [args]
+ssoossh ssh logout
 ```
 
 ## Global options

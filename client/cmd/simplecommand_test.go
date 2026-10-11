@@ -140,9 +140,9 @@ func TestSimpleCommandInit_ShouldNameThePositionalArgumentsInTheUsageLine(t *tes
 			wantUse: "test <account> [principal]",
 		},
 		{
-			name:    "should leave the default usage line alone when a command takes no arguments",
+			name:    "should name no arguments when a command takes none",
 			argSpec: "",
-			wantUse: "test [flags] [args]",
+			wantUse: "test",
 		},
 	}
 
@@ -161,19 +161,59 @@ func TestSimpleCommandInit_ShouldNameThePositionalArgumentsInTheUsageLine(t *tes
 	}
 }
 
-// The message for calling a command wrong is built from the same argSpec
-// the usage line uses, so the two cannot drift and neither hard-codes the
-// binary name.
-func TestSimpleCommandUsageError_ShouldMatchTheUsageLine(t *testing.T) {
-	c := &simpleCommand{name: "add", argSpec: "<account> <principal>"}
-	root := &cobra.Command{Use: "ssoossh"}
-	leaf := &cobra.Command{Use: "add"}
-	root.AddCommand(leaf)
-	cd := &simplecobra.Commandeer{CobraCommand: leaf}
+// TestSimpleCommandCheckArity pins the message for each way of passing the
+// wrong number of arguments. It is built from the same argSpec the usage
+// line uses, so the two cannot drift and neither hard-codes the binary name.
+func TestSimpleCommandCheckArity(t *testing.T) {
+	tests := []struct {
+		name    string
+		argSpec string
+		args    []string
+		want    string
+	}{
+		{name: "should accept the required arguments", argSpec: "<account> <principal>", args: []string{"deploy", "alice"}},
+		{name: "should accept a missing optional argument", argSpec: "<account> [principal]", args: []string{"deploy"}},
+		{name: "should name the first missing argument", argSpec: "<account> <principal>", args: []string{"deploy"}, want: "missing <principal>; usage: ssoossh add <account> <principal>"},
+		{name: "should name the first unexpected argument", argSpec: "<username>", args: []string{"alice", "bob"}, want: `unexpected argument "bob"; usage: ssoossh add <username>`},
+		{name: "should refuse any argument to a command that takes none", argSpec: "", args: []string{"extra"}, want: `ssoossh add takes no arguments, got "extra"`},
+		{name: "should accept any number after a variadic argument", argSpec: "<command> [args...]", args: []string{"nc", "-v", "host", "22"}},
+	}
 
-	err := c.usageError(cd)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &simpleCommand{name: "add", argSpec: tt.argSpec}
+			root := &cobra.Command{Use: "ssoossh"}
+			leaf := &cobra.Command{Use: "add"}
+			root.AddCommand(leaf)
 
-	if err == nil || err.Error() != "usage: ssoossh add <account> <principal>" {
-		t.Errorf("got %v, want the command path and the argument spec", err)
+			err := c.checkArity(leaf, tt.args)
+
+			got := ""
+			if err != nil {
+				got = err.Error()
+			}
+			if got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestArity(t *testing.T) {
+	tests := []struct {
+		spec             string
+		wantMin, wantMax int
+	}{
+		{spec: "", wantMin: 0, wantMax: 0},
+		{spec: "<username>", wantMin: 1, wantMax: 1},
+		{spec: "<account> [principal]", wantMin: 1, wantMax: 2},
+		{spec: "<command> [args...]", wantMin: 1, wantMax: -1},
+	}
+	for _, tt := range tests {
+		t.Run("should read "+tt.spec, func(t *testing.T) {
+			if gotMin, gotMax := arity(tt.spec); gotMin != tt.wantMin || gotMax != tt.wantMax {
+				t.Errorf("arity(%q) = %d, %d, want %d, %d", tt.spec, gotMin, gotMax, tt.wantMin, tt.wantMax)
+			}
+		})
 	}
 }

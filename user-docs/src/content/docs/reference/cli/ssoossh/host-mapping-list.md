@@ -10,7 +10,7 @@ Prints the mapping file named by --file as YAML, in the form it is stored in, so
 ## Synopsis
 
 ```
-ssoossh host mapping list [flags] [args]
+ssoossh host mapping list
 ```
 
 ## Global options

@@ -10,7 +10,7 @@ Prints the public key of the server's certificate authority in authorized_keys f
 ## Synopsis
 
 ```
-ssoossh ca [flags] [args]
+ssoossh ca
 ```
 
 ## Examples

@@ -12,7 +12,7 @@ Read-only: it changes no file and reloads nothing. The CA keys to compare with c
 ## Synopsis
 
 ```
-ssoossh host check [flags] [args]
+ssoossh host check [flags]
 ```
 
 ## Options

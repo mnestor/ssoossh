@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/bep/simplecobra"
 	"github.com/spf13/cobra"
@@ -66,12 +67,43 @@ type simpleCommand struct {
 	init func(cd *simplecobra.Commandeer) error
 }
 
-// usageError reports a call that is missing the positional arguments the
-// command needs. It is built from the command's own path and argSpec, so
-// the message a user gets for calling it wrong and the usage line --help
-// prints cannot drift apart -- and neither hard-codes the binary name.
-func (c *simpleCommand) usageError(cd *simplecobra.Commandeer) error {
-	return &usageError{msg: fmt.Sprintf("usage: %s %s", cd.CobraCommand.CommandPath(), c.argSpec)}
+// checkArity is a leaf command's cobra Args validator, derived from argSpec
+// so the usage line and the check cannot disagree. Extra arguments used to
+// be ignored silently: `ssoossh ca extra` made a request, `host principals
+// alice bob` answered for alice, and `ssh inspect garbage.txt` ignored the
+// file. Cobra runs it before PreRun, so a mistyped call loads nothing.
+func (c *simpleCommand) checkArity(cmd *cobra.Command, args []string) error {
+	minArgs, maxArgs := arity(c.argSpec)
+	switch {
+	case c.argSpec == "" && len(args) > 0:
+		return &usageError{msg: fmt.Sprintf("%s takes no arguments, got %q", cmd.CommandPath(), args[0])}
+	case len(args) < minArgs:
+		missing := strings.Fields(c.argSpec)[len(args)]
+		return &usageError{msg: fmt.Sprintf("missing %s; usage: %s %s", missing, cmd.CommandPath(), c.argSpec)}
+	case maxArgs >= 0 && len(args) > maxArgs:
+		return &usageError{msg: fmt.Sprintf("unexpected argument %q; usage: %s %s", args[maxArgs], cmd.CommandPath(), c.argSpec)}
+	}
+	return nil
+}
+
+// arity reads an argSpec: each <name> is required, each [name] optional,
+// and a name ending in "..." takes any number (maxArgs -1).
+func arity(spec string) (minArgs, maxArgs int) {
+	variadic := false
+	for _, token := range strings.Fields(spec) {
+		if strings.HasPrefix(token, "<") {
+			minArgs++
+		}
+		if strings.HasSuffix(strings.TrimRight(token, ">]"), "...") {
+			variadic = true
+			continue
+		}
+		maxArgs++
+	}
+	if variadic {
+		maxArgs = -1
+	}
+	return minArgs, maxArgs
 }
 
 // Name implements simplecobra.Commander.
@@ -93,10 +125,13 @@ func (c *simpleCommand) Init(cd *simplecobra.Commandeer) error {
 	cmd.Short = c.short
 	cmd.Long = c.long
 	cmd.Example = c.example
-	if c.argSpec != "" {
-		// Cobra appends "[flags]" to the usage line itself, so the spec
-		// carries only the positional arguments.
-		cmd.Use = c.name + " " + c.argSpec
+	if len(c.commands) == 0 {
+		// Cobra appends "[flags]" to the usage line itself, so Use carries
+		// only the positional arguments, and none at all for a command
+		// that takes none (simplecobra's default "[flags] [args]" claimed
+		// arguments that every such command ignored).
+		cmd.Use = strings.TrimSpace(c.name + " " + c.argSpec)
+		cmd.Args = c.checkArity
 	}
 	if len(c.commands) > 0 {
 		// Group command (e.g. ssh, host, service): invoked bare it prints

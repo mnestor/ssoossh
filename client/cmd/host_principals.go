@@ -44,12 +44,9 @@ func newHostPrincipalsCommand(mappingFileFunc func() string) simplecobra.Command
 			"this host stays consistent with pam_ssoossh, which falls back to the same " +
 			"rule when it cannot read the map.",
 	}
+	// checkArity has already required exactly one argument.
 	cmd.run = func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error {
-		if len(args) < 1 {
-			return cmd.usageError(cd)
-		}
-		username := args[0]
-		return runHostPrincipals(ctx, username, mappingFileFunc())
+		return runHostPrincipals(ctx, args[0], mappingFileFunc())
 	}
 	return cmd
 }

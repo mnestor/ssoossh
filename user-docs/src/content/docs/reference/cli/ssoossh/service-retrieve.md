@@ -14,7 +14,7 @@ The key files follow OpenSSH naming: the private key is &lt;name&gt;, the public
 ## Synopsis
 
 ```
-ssoossh service retrieve [flags] [args]
+ssoossh service retrieve [flags]
 ```
 
 ## Examples

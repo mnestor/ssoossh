@@ -61,7 +61,7 @@ func LoadFromFile(path string) (PrincipalsMap, error) {
 
 	m, err := parse(data)
 	if err != nil {
-		return nil, fmt.Errorf("parse principals map: %w", err)
+		return nil, fmt.Errorf("parse principals map %s: %w", path, err)
 	}
 	return m, nil
 }

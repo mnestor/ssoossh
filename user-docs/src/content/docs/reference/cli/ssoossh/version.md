@@ -12,7 +12,7 @@ With --json, prints the same values as an object along with a list of the comman
 ## Synopsis
 
 ```
-ssoossh version [flags] [args]
+ssoossh version [flags]
 ```
 
 ## Options

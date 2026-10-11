@@ -20,7 +20,7 @@ With --retrieve, the command immediately redeems the code once, writing the cert
 ## Synopsis
 
 ```
-ssoossh service enroll [flags] [args]
+ssoossh service enroll [flags]
 ```
 
 ## Examples

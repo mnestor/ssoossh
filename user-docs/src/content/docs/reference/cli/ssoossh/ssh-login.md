@@ -12,7 +12,7 @@ A certificate that is already loaded and still valid is reused rather than repla
 ## Synopsis
 
 ```
-ssoossh ssh login [flags] [args]
+ssoossh ssh login [flags]
 ```
 
 ## Examples
