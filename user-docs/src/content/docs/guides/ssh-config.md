@@ -18,7 +18,7 @@ for when the connection is the broken thing.
 
 | Behaviour | `Match exec` + `ssh login` | `ProxyCommand` |
 | --- | --- | --- |
-| Client after issuance | exits | stays running, relays the connection |
+| Client after issuance | exits | replaces itself with your relay command (`exec`) |
 | ssh-agent | optional; key files on disk also work | **required** |
 | Reaches the target through a proxy | no | yes, that is the point |
 

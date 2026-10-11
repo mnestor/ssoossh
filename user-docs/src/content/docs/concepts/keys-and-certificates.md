@@ -20,7 +20,7 @@ This page is the comparison. The pages after it are the mechanism.
 | What the credential asserts | possession of the matching private key | a signed statement: these principals, these options, valid between these two timestamps |
 | Who decided | whoever could write that file | the identity provider, plus a human approval recorded in the audit log |
 | When it stops working | when somebody edits the file, on every host | on its own, at the expiry inside the certificate |
-| What the host records | a key fingerprint | the key ID, which names the identity and the request behind it |
+| What the host records | a key fingerprint | the key ID, which names the identity (and the request, if the [key ID template](/ssoossh/operations/key-id-templates/) includes it) |
 
 Everything below follows from the third and fourth rows: the decision moves off
 the hosts and into one place, and it carries its own clock.
@@ -152,7 +152,7 @@ deploy:
   - bob
 alice:
   - alice
-root:          # listed with nothing: nobody becomes root this way
+root:          # listed with nothing: only a certificate naming root itself
 ```
 
 Two things follow:
@@ -188,10 +188,11 @@ What matters for something running on a timer:
   still valid beyond `--grace` (default one minute), so a five-minute timer is
   not five minutes' worth of traffic.
 - If retrieval fails but a still-valid certificate exists, it **warns and exits
-  0**, so a briefly unreachable server does not break the job.
+  0**, so a briefly unreachable server does not break the job, once the client
+  has cached the CA key from a first successful contact.
 - Only when there is no readable, valid certificate does it fail non-zero.
-- The private key can live on a PKCS#11 token: enroll the existing `.pub` and
-  ssoossh never sees the private half.
+- An existing keypair can be enrolled instead of a generated one: when both
+  `<path>` and `<path>.pub` are on disk, that pair is used as-is.
 - The enrollment belongs to the **service account, not the approver**, so the
   person who set it up leaving does not stop the job.
 - Every redemption is logged with the address it was fetched from, and ending

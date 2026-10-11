@@ -116,7 +116,7 @@ connection:
 | Situation | Result |
 | --- | --- |
 | A certificate at `<path>-cert.pub` is valid beyond `--grace` | Nothing fetched, exit 0 |
-| Retrieval fails but a still-valid certificate exists | Warning printed, exit 0 |
+| Retrieval fails but a still-valid certificate exists | Warning printed, exit 0, provided the client has cached the CA key from an earlier run; with no cached key it cannot start and exits non-zero |
 | No readable, valid certificate and retrieval fails | Error, non-zero exit |
 
 `--grace` is what keeps a job that runs every minute from asking the server for

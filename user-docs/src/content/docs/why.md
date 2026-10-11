@@ -40,7 +40,9 @@ hand of the person logging in.
 - **The private key never leaves you.** The client generates the keypair and
   loads the result into your ssh-agent. The server only ever sees public keys.
 - **The log names a person.** `sshd` records the certificate key ID, which
-  names the identity and the request behind it, not an anonymous fingerprint.
+  names the identity (and the request too, if the deployment's
+  [key ID template](/ssoossh/operations/key-id-templates/) includes it), not an
+  anonymous fingerprint.
   That holds even on a shared operations account.
 
 ## What pam_ssoossh does about it

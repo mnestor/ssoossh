@@ -22,9 +22,9 @@ when you open the link, you land on the sign-in screen first, including any
 consent notice the deployment sets, and come back to the request afterwards.
 
 The URL can be opened in any browser, including one on a different device from
-the machine running `ssh`. Be aware that the deployment's lifetime policy may
-compare the browser's address with the client's, and weak correlation can
-shorten the issued lifetime -- never lengthen it.
+the machine running `ssh`. The browser's address does not affect the
+certificate: the lifetime policy is judged on the address the client's request
+came from.
 
 ```mermaid
 sequenceDiagram

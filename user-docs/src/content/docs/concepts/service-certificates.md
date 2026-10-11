@@ -23,10 +23,10 @@ option set, and every redemption is logged against the account it mints for.
 sequenceDiagram
     accTitle: Service enrollment, step one: registering the key
     accDescr {
-      An operator asks the ssoossh client to enroll a service keypair. If the
-      keypair already exists on disk it is used as-is — the private key may
-      live on an HSM or PKCS#11 token that ssoossh never sees. If neither file
-      exists the client generates the pair, writing the private key 0600
+      An operator asks the ssoossh client to enroll a service keypair. If both
+      files of the keypair already exist on disk they are used as-is, and if
+      only one does the client refuses, since ssh needs the private key beside
+      the public one. If neither file exists the client generates the pair, writing the private key 0600
       (owner-only on Windows) and the public key alongside it with a .pub
       suffix; neither file is ever overwritten. The client posts the public
       key, receives an authorization URL, and opens a server-sent events
@@ -38,8 +38,8 @@ sequenceDiagram
     participant Server as ssoossh server
 
     User->>Client: enroll a service keypair
-    alt the keypair is already on disk
-        Note over Client: private key may live on an HSM<br/>or PKCS#11 token, and ssoossh never sees it
+    alt both files are already on disk
+        Note over Client: the existing pair is enrolled as-is<br/>(only one of the two is refused)
     else neither file exists yet
         Client->>Client: generate keypair
         Note over Client: private key written 0600 to the named path<br/>(owner-only access list on Windows),<br/>public key to #lt;path#gt;.pub. Neither is overwritten
@@ -51,10 +51,10 @@ sequenceDiagram
 
 1. An operator runs `ssoossh service enroll --key <path>`.
 2. One flag decides both branches. If neither `<path>` nor `<path>.pub`
-   exists, the client generates the keypair. If the public key is already
-   there, that one is enrolled and no key is generated -- which is how a
-   private key that lives on an HSM or a PKCS#11 token gets enrolled without
-   ssoossh ever seeing it. Neither file is overwritten.
+   exists, the client generates the keypair. If both exist, that pair is
+   enrolled and no key is generated. If only one of them exists, enrollment
+   stops with an error naming the missing file, because `ssh` needs the
+   private key beside the public one. Neither file is overwritten.
 3. The client posts the public key to the server.
 4. The server answers with an authorization URL.
 5. The client opens an SSE stream and waits, exactly as the interactive flow
@@ -184,7 +184,10 @@ without generating traffic it does not need:
   still valid beyond `--grace`, which defaults to 1 minute. `--force`
   overrides that.
 - If retrieval fails but a still-valid certificate exists, it warns and exits
-  0, so a briefly unreachable server does not break the job.
+  0, so a briefly unreachable server does not break the job. That needs the
+  CA key the client caches after its first successful contact: a first run
+  as that user, or one with no home directory, cannot start without the
+  server and exits non-zero.
 - Only when there is no readable, valid certificate does it fail with a
   non-zero exit.
 
@@ -201,8 +204,13 @@ who approved the code and is identical on every certificate it mints.
 
 <p class="screen-caption">A code's record as SOC sees it. The redemption history is the retrieval log; each entry's serial is the one on the certificate that fetch produced.</p>
 
-Policy is evaluated at retrieval, so a certificate signed months after
-approval is still bounded by the ceilings in force when it is signed.
+Policy is not evaluated again at retrieval. Every certificate a code mints
+carries the principals, options and lifetime fixed when it was approved, so
+nothing changes underneath the job between one redemption and the next, and
+a ceiling lowered after approval does not shorten a code's certificates. The
+one check at signing is the absolute cap,
+[`max_service_cert_lifetime`](/ssoossh/reference/config/top-level/#max_service_cert_lifetime),
+which refuses a certificate longer than it rather than shortening it.
 
 Disabling the person who approved an enrollment does not stop the job. Service
 enrollments belong to the service account, not to the approver, so the

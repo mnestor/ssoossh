@@ -21,8 +21,9 @@ sequenceDiagram
       rule, ssh invokes the ssoossh client. A valid certificate already in the
       agent or on disk is reused and the flow ends there. Otherwise the client
       generates an SSH keypair, posts the public key and the host IP list,
-      receives an authorization URL, prints it and tries to open a browser,
-      then opens a server-sent events stream and waits.
+      receives an authorization URL and prints it (opening a browser only
+      when try_open_browser is set), then opens a server-sent events stream
+      and waits.
     }
     autonumber
     actor User
@@ -36,7 +37,7 @@ sequenceDiagram
     Client->>Client: generate SSH keypair
     Client->>Server: POST public key + host IP list
     Server-->>Client: authorization URL
-    Client->>User: print URL (and try to open a browser)
+    Client->>User: print URL (and open a browser if configured)
     Client->>Server: open SSE stream and wait
 ```
 
@@ -47,12 +48,15 @@ sequenceDiagram
 3. The client generates a fresh SSH keypair, locally.
 4. It posts the public key and the host IP list to the server.
 5. The server answers with an authorization URL.
-6. The client prints that URL and tries to open a browser.
+6. The client prints that URL, and opens it in a browser only when
+   [`try_open_browser`](/ssoossh/reference/client-config/#try_open_browser) is
+   set; it is off by default.
 7. The client opens an SSE stream and waits.
 
-The wait window is configurable, up to about 5 minutes:
+The wait window is configurable:
 [`cert_options.client_timeout`](/ssoossh/reference/config/cert_options/#client_timeout)
-is the whole budget and defaults to `5m`. The server owns that deadline and
+is the whole budget and defaults to `5m`, and the client sets no shorter limit
+of its own. The server owns that deadline and
 measures it from the request's creation, so a client that reconnects to its
 event stream re-attaches to the original deadline instead of extending it.
 
@@ -150,7 +154,8 @@ client that misses the window re-requests.
 ## 1d. `ssh` connects to the target host
 
 Nothing here involves ssoossh. The client has exited, or in `ProxyCommand` mode
-is only relaying bytes, and this is ordinary SSH certificate authentication.
+has replaced itself with your relay command, and this is ordinary SSH
+certificate authentication.
 
 ```mermaid
 sequenceDiagram
@@ -192,9 +197,12 @@ The certificate is used once, at session initiation. A ten-hour certificate is
 not a ten-hour session limit, and an expiring certificate does not drop a
 session already running.
 
-A valid certificate is reused until it expires, so one approval can cover a
-workday: you see the browser when a new certificate is needed, not once per
-connection.
+A valid certificate is reused until it expires, so you see the browser when a
+new certificate is needed, not once per connection. How often that is follows
+the lifetime the deployment sets: the shipped default for a user certificate
+([`cert_options.user.valid_duration`](/ssoossh/reference/config/cert_options/user/#valid_duration))
+is 30 seconds; a deployment that sets eight hours sees about one approval a
+working day.
 
 ## What the record says
 
