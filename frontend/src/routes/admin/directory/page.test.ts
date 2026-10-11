@@ -470,3 +470,36 @@ describe('Directory admin page', () => {
 		});
 	});
 });
+
+describe('the last pass at a glance', () => {
+	// Every chip carries a number; the ones that need a second look now say so.
+	it('should flag a live pass that disabled someone', async () => {
+		signedInAsAdmin();
+		mockApi({ status: enabledStatus({ last_run: syncRun({ dry_run: false, disabled: 3 }) }) });
+		render(Page);
+		expect(await screen.findByTestId('ldap-count-disabled')).toHaveClass('text-trimmed');
+	});
+
+	it('should not flag a dry run that would disable someone', async () => {
+		signedInAsAdmin();
+		mockApi({ status: enabledStatus({ last_run: syncRun({ dry_run: true, disabled: 3 }) }) });
+		render(Page);
+		expect(await screen.findByTestId('ldap-count-disabled')).not.toHaveClass('text-trimmed');
+	});
+
+	it('should flag a pass with failures', async () => {
+		signedInAsAdmin();
+		mockApi({ status: enabledStatus({ last_run: syncRun({ failed: 2 }) }) });
+		render(Page);
+		expect(await screen.findByTestId('ldap-count-failed')).toHaveClass('text-trimmed');
+	});
+});
+
+describe('for someone below the admin role', () => {
+	it('should say running a sync or probe needs the admin role', async () => {
+		signedInAsAdmin(false);
+		mockApi({ status: enabledStatus({ last_run: syncRun() }) });
+		render(Page);
+		expect(await screen.findByTestId('ldap-admin-only')).toBeInTheDocument();
+	});
+});
