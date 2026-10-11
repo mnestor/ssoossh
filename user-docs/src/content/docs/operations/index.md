@@ -102,7 +102,7 @@ key with its type and default is in the
 | File | Lives on | Search paths |
 | --- | --- | --- |
 | `ssoosshd.yaml` | the server | `./ssoosshd.yaml`, `~/.config/ssoosshd.yaml`, `~/.config/ssoossh/ssoosshd.yaml`, `/etc/ssoosshd.yaml`, `/etc/ssoossh/ssoosshd.yaml` |
-| `ssoossh.yaml` | each client machine | `/etc/ssoossh/ssoossh.yaml`, `~/.config/ssoossh.yaml`, `./ssoossh.yaml` |
+| `ssoossh.yaml` | each client machine | `/etc/ssoossh/ssoossh.yaml`, `~/.config/ssoossh.yaml` |
 | `ssh_config` | each client machine | standard OpenSSH locations |
 | `sshd_config` | each target host | standard OpenSSH locations |
 | `/etc/pam.d/sudo`, `/etc/pam.d/su` | hosts using `pam_ssoossh` | fixed |

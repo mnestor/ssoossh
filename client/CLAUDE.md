@@ -8,8 +8,9 @@
   `https://mnestor.github.io/ssoossh/internals/design-brief/`
 
 # Design rules
-- Viper config loading (~/.config/ssoossh.yaml | ./ssoossh.yaml), CLI
-  overrides
+- Viper config loading (/etc/ssoossh/ssoossh.yaml, then
+  ~/.config/ssoossh.yaml; anything else only via --config), CLI overrides.
+  Never a working-directory file: ssh runs the client from any directory
 - Never open a listening port — no loopback redirect (see
   https://mnestor.github.io/ssoossh/internals/invariants/)
 

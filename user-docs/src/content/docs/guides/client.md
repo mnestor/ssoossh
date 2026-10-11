@@ -37,8 +37,8 @@ spctl --assess --type install -v ssoossh-client_1.2.3_darwin_arm64.pkg
 
 The package writes nothing under `/etc`. It installs the annotated defaults
 to `/usr/local/share/ssoossh/ssoossh.yaml` as a file to copy from -- the
-client reads `/etc/ssoossh/ssoossh.yaml`, `~/.config/ssoossh.yaml` and
-`./ssoossh.yaml`, in that order, and needs none of them, since the same
+client reads `/etc/ssoossh/ssoossh.yaml` and then `~/.config/ssoossh.yaml`,
+and needs neither, since the same
 defaults are compiled in. To remove it:
 
 ```bash

@@ -13,8 +13,9 @@ tests" is not actionable and the interesting gaps are rarely a missing file.
 **Found:** 2026-08-23, while adding end-to-end coverage of the client's
 configuration merge chain.
 
-`config_precedence_test.go` now drives the user file, the local file,
-`--config`, and flags against a real binary. Two layers below those are
+`config_precedence_test.go` now drives the user file, `--config`, and
+flags against a real binary, and checks that a working-directory file is
+ignored. Two layers below those are
 still proven only by unit tests that call `newConfig` directly with injected
 search paths: `/etc/ssoossh/ssoossh.yaml`, and the `enforce` file it can
 name.

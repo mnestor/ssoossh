@@ -30,9 +30,11 @@ type searchPaths struct {
 	// skipped.
 	userFile string
 
-	// localFile is the configuration in the working directory, for
-	// development.
-	localFile string
+	// There is deliberately no working-directory location. ssh runs the
+	// client from wherever the user happens to be, so a ./ssoossh.yaml would
+	// let any directory, a cloned repository included, repoint server,
+	// capubkey and insecure_skip_verify. A file outside the two locations
+	// above is named explicitly with --config.
 }
 
 // defaultSearchPaths returns the locations for the running platform.
@@ -40,7 +42,6 @@ func defaultSearchPaths() searchPaths {
 	return searchPaths{
 		systemDir: systemConfigDir(runtime.GOOS, os.Getenv("ProgramData")),
 		userFile:  userConfigFile(runtime.GOOS, homeDir(), os.Getenv("AppData")),
-		localFile: "./" + configFileName,
 	}
 }
 

@@ -26,7 +26,7 @@ before writing it down.
 
 ## Where the file is looked for
 
-Up to four files are consulted, each merged on top of the last. A missing file
+Up to three files are consulted, each merged on top of the last. A missing file
 at any of them is normal, not an error.
 
 | Order | Location on Linux and macOS | Location on Windows |
@@ -34,14 +34,18 @@ at any of them is normal, not an error.
 | 1 | built-in defaults (compiled into the binary) | same |
 | 2 | `/etc/ssoossh/ssoossh.yaml` | `%ProgramData%\ssoossh\ssoossh.yaml` |
 | 3 | `~/.config/ssoossh.yaml` | `%AppData%\ssoossh\ssoossh.yaml` (the roaming profile) |
-| 4 | `./ssoossh.yaml` (working directory) | `.\ssoossh.yaml` |
-| 5 | the file named by `--config` | same |
+| 4 | the file named by `--config` | same |
 
 The machine-wide file at position 2 is special in one way: it is the only
 location the [`enforce`](/ssoossh/reference/client-config/#enforce) key is read
 from. The per-user file is skipped entirely when no home directory can be
 determined, which is the right answer for a machine account rather than an
 error.
+
+There is no working-directory file. `ssh` runs the client from whatever
+directory you started it in, so a `./ssoossh.yaml` would let any directory, a
+cloned repository included, change the server and CA key for connections made
+from inside it. A file anywhere else is named explicitly with `--config`.
 
 The `.deb` and `.rpm` packages install an annotated copy of the built-in
 defaults to `/etc/ssoossh/ssoossh.yaml`, so a fresh install starts from a file
@@ -61,12 +65,11 @@ key; a key a source does not mention is left to whatever set it below.
 1. Built-in defaults
 2. The machine-wide file (`/etc/ssoossh/ssoossh.yaml`)
 3. The per-user file (`~/.config/ssoossh.yaml`)
-4. The local file (`./ssoossh.yaml`)
-5. `--config <file>`
-6. Command-line flags
-7. The [`enforce`](/ssoossh/reference/client-config/#enforce) file named by the
+4. `--config <file>`
+5. Command-line flags
+6. The [`enforce`](/ssoossh/reference/client-config/#enforce) file named by the
    machine-wide file
-8. Platform-native policy: Windows Group Policy registry values, macOS managed
+7. Platform-native policy: Windows Group Policy registry values, macOS managed
    preferences
 
 Nothing is guessed about where a value came from: `--debug` prints the whole
@@ -77,7 +80,7 @@ that server". See [Diagnostics](/ssoossh/guides/diagnostics/).
 ## The `enforce` file
 
 If the machine-wide file sets `enforce`, naming another YAML file, that file is
-merged after the per-user file, the local file, and `--config` -- so it wins
+merged after the per-user file and `--config` -- so it wins
 over every location a non-administrator can write to. A relative `enforce` path
 resolves inside the system directory, so it cannot be redirected to a file the
 user controls.

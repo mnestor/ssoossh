@@ -13,13 +13,11 @@
 # Linux and macOS:
 #   /etc/ssoossh/ssoossh.yaml
 #   ~/.config/ssoossh.yaml
-#   ./ssoossh.yaml
 #   --config <file>
 #
 # Windows:
 #   %ProgramData%\ssoossh\ssoossh.yaml
 #   %AppData%\ssoossh\ssoossh.yaml        (the roaming profile)
-#   .\ssoossh.yaml
 #   --config <file>
 #
 # A missing file at any location is normal, not an error.
