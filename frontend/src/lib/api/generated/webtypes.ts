@@ -542,6 +542,15 @@ export interface RequestDetailResponse {
 	type: CertificateType;
 	status: CertificateRequestStatus;
 	source_ip: string;
+	/**
+	 * ViewerIP is the address this server sees the approving browser
+	 * connect from, resolved the same way as SourceIP, so the approval page
+	 * can set the two side by side. Display only and never a reason to
+	 * refuse: plenty of people approve from one machine a request their
+	 * terminal made on another. A difference is something the approver can
+	 * check, where everything the requester reports about itself is not.
+	 */
+	viewer_ip?: string;
 	local_username?: string;
 	local_hostname?: string;
 	/**

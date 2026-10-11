@@ -475,12 +475,19 @@ type CertificateOptionsResponse struct {
 // snapshot of the decider's identity and connection context is never shown
 // to anyone but that same person.
 type RequestDetailResponse struct {
-	ID            string                         `json:"id" validate:"required"`
-	Type          model.CertificateType          `json:"type" validate:"required"`
-	Status        model.CertificateRequestStatus `json:"status" validate:"required"`
-	SourceIP      string                         `json:"source_ip" validate:"required"`
-	LocalUsername string                         `json:"local_username,omitempty"`
-	LocalHostname string                         `json:"local_hostname,omitempty"`
+	ID       string                         `json:"id" validate:"required"`
+	Type     model.CertificateType          `json:"type" validate:"required"`
+	Status   model.CertificateRequestStatus `json:"status" validate:"required"`
+	SourceIP string                         `json:"source_ip" validate:"required"`
+	// ViewerIP is the address this server sees the approving browser
+	// connect from, resolved the same way as SourceIP, so the approval page
+	// can set the two side by side. Display only and never a reason to
+	// refuse: plenty of people approve from one machine a request their
+	// terminal made on another. A difference is something the approver can
+	// check, where everything the requester reports about itself is not.
+	ViewerIP      string `json:"viewer_ip,omitempty"`
+	LocalUsername string `json:"local_username,omitempty"`
+	LocalHostname string `json:"local_hostname,omitempty"`
 	// TargetAccount is the local account a PAM or console request is
 	// authenticating: who `sudo` is being run as, or the account typed at
 	// the `login:` prompt. Empty for every other type. It is

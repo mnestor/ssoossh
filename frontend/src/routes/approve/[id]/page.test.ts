@@ -354,9 +354,21 @@ describe('at the simplified detail level', () => {
 		detail.level = 'advanced';
 	});
 
-	it('should open with who asked, as account at address', async () => {
+	it('should open with who asked', async () => {
 		await renderSimplified();
-		expect(screen.getByTestId('request-line')).toHaveTextContent('root@10.0.0.5');
+		expect(screen.getByTestId('request-line')).toHaveTextContent('root');
+	});
+
+	// The address the server saw is not a claim, so it is not filed under the
+	// tiles' "never verified" caption; it sits with the check by the buttons.
+	it('should keep the server-observed address out of the claimed tiles', async () => {
+		await renderSimplified();
+		expect(screen.getByTestId('request-line')).not.toHaveTextContent('10.0.0.5');
+	});
+
+	it('should show the server-observed address beside the buttons', async () => {
+		await renderSimplified();
+		expect(screen.getByTestId('approve-addresses')).toHaveTextContent('10.0.0.5');
 	});
 
 	it('should say what the request runs', async () => {
@@ -667,5 +679,114 @@ describe('remembered principals', () => {
 		await userEvent.click(screen.getByRole('button', { name: 'alice' }));
 
 		expect(pressed()).toEqual([]);
+	});
+});
+
+describe('when a decision does not go through', () => {
+	function pending(overrides: Record<string, unknown> = {}) {
+		return {
+			id: 'req-1',
+			type: 'user',
+			status: 'pending',
+			source_ip: '198.51.100.7',
+			public_key: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5',
+			principals: [],
+			valid_seconds: 28800,
+			requested: { extensions: [], no_touch_required: false },
+			granted: { extensions: [], no_touch_required: false },
+			created_at: '2026-08-14T09:00:00Z',
+			expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+			approval_url: '/approve/req-1',
+			is_owned_by_you: true,
+			already_closed: false,
+			...overrides
+		};
+	}
+
+	/**
+	 * stubDecision answers the first detail read with a pending request, the
+	 * approve call with a server error, and every later detail read with
+	 * `after`, so the page's re-check sees what changed.
+	 */
+	function stubDecision(after: object) {
+		let reads = 0;
+		vi.stubGlobal(
+			'fetch',
+			vi.fn((input: RequestInfo | URL) => {
+				const url = String(input);
+				const reply = (status: number, data: unknown) =>
+					Promise.resolve(
+						new Response(
+							JSON.stringify({ data, error: status === 200 ? null : 'internal server error' }),
+							{
+								status,
+								headers: { 'Content-Type': 'application/json' }
+							}
+						)
+					);
+				if (url.includes('/approve')) return reply(500, null);
+				reads += 1;
+				return reply(200, reads === 1 ? pending() : after);
+			})
+		);
+	}
+
+	beforeEach(() => {
+		redirectIfUnauthenticated.mockReturnValue(false);
+		session.user = signedInAs();
+	});
+
+	afterEach(() => {
+		session.user = null;
+	});
+
+	// The server answers approving a closed request only as a failure, so
+	// the page reads the request back and says what really happened.
+	it('should show the request closed in the meantime instead of the error', async () => {
+		stubDecision(pending({ status: 'approved', already_closed: true }));
+		render(Page);
+		await settle();
+
+		await userEvent.click(screen.getByTestId('approve-button'));
+		await settle();
+		await settle();
+
+		expect(screen.getByTestId('blocked-already-resolved')).toHaveTextContent('nothing left to do');
+	});
+
+	it('should keep the error when the request has not changed', async () => {
+		stubDecision(pending());
+		render(Page);
+		await settle();
+
+		await userEvent.click(screen.getByTestId('approve-button'));
+		await settle();
+		await settle();
+
+		expect(screen.getByTestId('action-error')).toHaveTextContent('Could not record your decision');
+	});
+});
+
+describe('the browser tab', () => {
+	it('should name a console login for what it is', async () => {
+		redirectIfUnauthenticated.mockReturnValue(false);
+		mockFetch(200, {
+			id: 'req-1',
+			type: 'console',
+			status: 'pending',
+			source_ip: '198.51.100.7',
+			public_key: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5',
+			principals: [],
+			valid_seconds: 600,
+			requested: { extensions: [], no_touch_required: false },
+			granted: { extensions: [], no_touch_required: false },
+			created_at: '2026-08-14T09:00:00Z',
+			approval_url: '/approve/req-1',
+			is_owned_by_you: true,
+			already_closed: false
+		});
+		render(Page);
+		await settle();
+		expect(document.title).toBe('Approve a console login · ssoossh');
 	});
 });

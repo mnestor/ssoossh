@@ -103,6 +103,7 @@ func fullFixtures() map[string]any {
 			Type:          model.CertificateTypeUser,
 			Status:        model.CertificateRequestStatusPending,
 			SourceIP:      "198.51.100.7",
+			ViewerIP:      "203.0.113.20",
 			LocalUsername: "alice",
 			LocalHostname: "alice-laptop",
 			TargetAccount: "root",

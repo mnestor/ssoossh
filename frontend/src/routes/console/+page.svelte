@@ -51,17 +51,38 @@
 	const display = $derived(formatCode(code));
 	const ready = $derived(isComplete(code) && !busy);
 
-	// Rewriting the value on every keystroke means the caret would otherwise
-	// jump to the start; putting it at the end is right for a field that is
-	// only ever appended to, and the field is short enough that editing
-	// mid-string is not the workflow.
+	// Rewriting the value on every keystroke would otherwise send the caret
+	// to the end, which made a typo in the middle fixable only by deleting
+	// back to it. The caret is kept after the same number of code characters
+	// it followed before the rewrite, which is where the person was typing,
+	// whatever separator the formatting added or removed.
 	function onInput(event: Event) {
 		const input = event.currentTarget as HTMLInputElement;
+		const caret = input.selectionStart ?? input.value.length;
+		const before = normalizeCode(input.value.slice(0, caret)).length;
 		code = normalizeCode(input.value);
 		input.value = display;
-		input.setSelectionRange(input.value.length, input.value.length);
+		input.setSelectionRange(caretAfter(display, before), caretAfter(display, before));
 		// A previous failure describes a code that is no longer in the box.
 		failure = null;
+	}
+
+	/** caretAfter is the position just after the nth code character of the
+	 * formatted value, skipping the group separator. */
+	function caretAfter(formatted: string, n: number): number {
+		if (n <= 0) {
+			return 0;
+		}
+		let seen = 0;
+		for (let i = 0; i < formatted.length; i++) {
+			if (formatted[i] !== '-') {
+				seen += 1;
+			}
+			if (seen === n) {
+				return i + 1;
+			}
+		}
+		return formatted.length;
 	}
 
 	async function submit() {
@@ -108,8 +129,9 @@
 
 	<div data-testid="console-code-entry" class="rounded-lg bg-surface p-5">
 		<p class="text-sm text-ink-muted">
-			A machine with no browser shows a short code when someone logs in at its console. Type it here
-			to see what is being asked for.
+			A machine with no browser shows a short code when you log in at its console. Type it here to
+			see what is being asked for. Only enter a code shown on a screen in front of you. Never enter
+			one someone sends or reads to you.
 		</p>
 
 		<form
@@ -136,8 +158,8 @@
 				class="mt-2 w-full rounded-md border border-border-control bg-surface px-4 py-3 text-center font-mono text-2xl tracking-[0.2em] text-ink placeholder:text-ink-muted focus:border-accent"
 			/>
 			<p id="console-code-hint" class="mt-2 text-xs text-ink-muted">
-				{CODE_LENGTH} characters, in two groups. Case does not matter, and there are no letters I, L or
-				O — if you see one, it is the digit next to it.
+				{CODE_LENGTH} characters, in two groups. Case doesn't matter, and I, L and O count as 1 and 0.
+				Codes last a minute or two.
 			</p>
 
 			<div class="mt-5">

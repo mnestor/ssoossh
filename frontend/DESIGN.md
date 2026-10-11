@@ -857,9 +857,11 @@ the result and drops the diagnostic detail an expert compares.
   forbidden note, the console remote-host warning, the own-account notice,
   blocked and outcome alerts, action errors, the "reported by the client"
   marking on any client-reported value still shown, a skewed host clock, the
-  pam-headless note ("this looks like a script or a service"), and expired
-  or active status. A section whose only remaining content is one of these
-  keeps it.
+  pam-headless note ("this looks like a script or a service"), expired or
+  active status, and the approval page's check beside the buttons: "Approve
+  only if you started this yourself", worded per type, with the address the
+  server received the request from and the one it sees the approver at. A
+  section whose only remaining content is one of these keeps it.
 - **Dropped in simplified:** request, certificate and enrollment ids; key
   ids, serials and fingerprints; public keys and host trusts; process ids,
   platform and client rows; registered IPs; request and decision timestamps
@@ -877,12 +879,12 @@ the result and drops the diagnostic detail an expert compares.
   - Opens with one request line in place of the description and the
     Account, Command, Host and Requested-from rows: three `surface-muted`
     tiles side by side (wrapping on a phone), each a sans `text-meta`
-    uppercase eyebrow over a `text-base` mono value: **Who**
-    `user@source-ip`, **Runs** `command`, **On** `host`. (The eyebrow was
-    mono in the first draft of this decision; the mono-scope decision makes
-    it sans, since it is a label, not a value.)
-  - One muted line under them: the values are reported by the client;
-    approve only if you just ran it.
+    uppercase eyebrow over a `text-base` mono value: **Who** `user`,
+    **Runs** `command`, **On** `host`. (The eyebrow was mono in the first
+    draft of this decision; the mono-scope decision makes it sans, since it
+    is a label, not a value.) The source address is not a tile: it is the
+    one value the server observed, so it is not filed under the claims.
+  - One muted line under them: the values are reported by the client.
   - Then Principals, Valid for, the extensions: what will be issued, with
     any trimmed ones struck through, then the remaining warnings and the
     actions.

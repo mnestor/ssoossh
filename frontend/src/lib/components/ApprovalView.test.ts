@@ -23,7 +23,7 @@ function detail(overrides: Partial<RequestDetail> = {}): RequestDetail {
 		requested: options({ extensions: ['permit-pty'] }),
 		granted: options({ extensions: ['permit-pty'] }),
 		created_at: '2026-08-14T09:00:00Z',
-		expires_at: '2026-08-14T09:04:00Z',
+		expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
 		approval_url: '/approve/f0e1d2c3-0000-4000-8000-000000000000',
 		is_owned_by_you: true,
 		already_closed: false,
@@ -67,7 +67,7 @@ describe('ApprovalView', () => {
 
 	it('should show the source IP the request came from', () => {
 		mount();
-		expect(screen.getByText('198.51.100.7')).toBeInTheDocument();
+		expect(screen.getAllByText('198.51.100.7').length).toBeGreaterThan(0);
 	});
 
 	// Regression: these lists used to be keyed by their own values, and a
@@ -335,9 +335,34 @@ describe('ApprovalView', () => {
 			expect(screen.getByText('denied')).toBeInTheDocument();
 		});
 
-		it('should explain that the request is closed', () => {
+		it('should say a denied request issued no certificate', () => {
 			mount({ detail: resolved });
-			expect(screen.getByText(/This request is closed/)).toBeInTheDocument();
+			expect(screen.getByTestId('blocked-already-resolved')).toHaveTextContent(
+				'denied and no certificate was issued'
+			);
+		});
+
+		// One sentence for every closed status used to tell the approver of
+		// an approved request to run the client again, which started a
+		// second one.
+		it.each([
+			{ status: 'approved' as const, text: 'nothing left to do' },
+			{ status: 'enrolled' as const, text: 'nothing left to do' },
+			{ status: 'denied' as const, text: 'Run the client again if that was a mistake' },
+			{ status: 'failed' as const, text: 'Signing this certificate failed' }
+		])('should word a $status request for what happened to it', ({ status, text }) => {
+			mount({ detail: detail({ status, already_closed: true }) });
+			expect(screen.getByTestId('blocked-already-resolved')).toHaveTextContent(text);
+		});
+
+		it('should give a request that expired on the server the expired notice', () => {
+			mount({ detail: detail({ status: 'expired', already_closed: true }) });
+			expect(screen.getByTestId('expired-notice')).toBeInTheDocument();
+		});
+
+		it('should stop asking for a decision in the heading', () => {
+			mount({ detail: resolved });
+			expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Certificate request');
 		});
 	});
 
@@ -1025,4 +1050,85 @@ describe('ApprovalView', () => {
 			});
 		});
 	});
+});
+
+describe('the check beside the buttons', () => {
+	// The one defence against approving someone else's request is the
+	// approver's own memory of starting it. It used to be said only at the
+	// simplified level, and in muted text away from the buttons.
+	it.each([
+		{ type: 'user' as const, text: 'Approve only if you started this yourself, just now' },
+		{
+			type: 'pam' as const,
+			text: 'Approve only if you just ran sudo or a similar command yourself'
+		},
+		{ type: 'console' as const, text: 'Approve only if you are at the console' },
+		{
+			type: 'service' as const,
+			text: 'Approve only if you just ran ssoossh service enroll yourself'
+		}
+	])('should ask the approver of a $type request whether they started it', ({ type, text }) => {
+		mount({ detail: detail({ type }), serviceAccounts: ['svc-deploy'], userPrincipals: ['alice'] });
+		expect(screen.getByTestId('approve-only-if')).toHaveTextContent(text);
+	});
+
+	it('should name the machine the request says it came from', () => {
+		mount({ detail: detail({ local_hostname: 'alice-laptop' }) });
+		expect(screen.getByTestId('approve-only-if')).toHaveTextContent('on alice-laptop');
+	});
+
+	it('should say when the approver and the request share an address', () => {
+		mount({ detail: detail({ source_ip: '198.51.100.7', viewer_ip: '198.51.100.7' }) });
+		expect(screen.getByTestId('approve-addresses')).toHaveTextContent('They match.');
+	});
+
+	// A difference is information, not a failure: plenty of people approve
+	// from one machine a request their terminal made on another.
+	it('should say when the addresses differ without refusing', () => {
+		mount({ detail: detail({ source_ip: '198.51.100.7', viewer_ip: '203.0.113.20' }) });
+		expect(screen.getByTestId('approve-addresses')).toHaveTextContent('They differ');
+	});
+
+	it('should still offer Approve when the addresses differ', () => {
+		mount({ detail: detail({ source_ip: '198.51.100.7', viewer_ip: '203.0.113.20' }) });
+		expect(screen.getByRole('button', { name: 'Approve' })).toBeEnabled();
+	});
+});
+
+describe('when the deadline passes with the page open', () => {
+	it('should replace the buttons with the expired notice at the advanced level', () => {
+		mount({ detail: detail({ expires_at: new Date(Date.now() - 1000).toISOString() }) });
+		expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
+	});
+
+	it('should say the request expired', () => {
+		mount({ detail: detail({ expires_at: new Date(Date.now() - 1000).toISOString() }) });
+		expect(screen.getByTestId('expired-notice')).toBeInTheDocument();
+	});
+});
+
+describe('when every principal is unticked', () => {
+	it('should say why Approve is disabled, beside it', () => {
+		mount({ selectedPrincipals: [], userPrincipals: ['alice'] });
+		expect(screen.getByTestId('approve-needs-principal')).toHaveTextContent(
+			'Select at least one account to approve.'
+		);
+	});
+});
+
+describe('after a decision', () => {
+	it('should move focus to the outcome', () => {
+		mount({ outcome: 'approved' });
+		expect(screen.getByTestId('outcome')).toHaveFocus();
+	});
+});
+
+it('should title a failed decision for what failed', () => {
+	mount({ actionError: 'request expired' });
+	expect(screen.getByTestId('action-error')).toHaveTextContent('Could not record your decision');
+});
+
+it('should point to the reader’s own history for the log of decisions', () => {
+	mount();
+	expect(screen.getByRole('link', { name: 'your history' })).toHaveAttribute('href', '/logs/me');
 });
