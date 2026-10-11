@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -841,5 +842,79 @@ func TestNewConfig_ShouldThreadTheCommandThroughToTheLoader(t *testing.T) {
 
 	if _, err := NewConfig(cmd); err == nil {
 		t.Error("NewConfig() error = nil, want an error for a --config file that does not exist")
+	}
+}
+
+// TestNewConfig_ForbiddenExtensionsFromLockedSources pins where
+// forbidden_certificate_extensions may come from: the enforce file (the only
+// locked source Linux has) and platform policy, unioned, and never a file the
+// user controls.
+func TestNewConfig_ForbiddenExtensionsFromLockedSources(t *testing.T) {
+	tests := []struct {
+		name       string
+		locked     string
+		userConfig string
+		policy     func() (map[string]any, error)
+		want       []string
+	}{
+		{
+			name:   "should read forbidden extensions from the enforce file",
+			locked: "forbidden_certificate_extensions:\n  - permit-port-forwarding\n",
+			policy: noPolicy,
+			want:   []string{"permit-port-forwarding"},
+		},
+		{
+			name:   "should union the enforce file and platform policy without duplicates",
+			locked: "forbidden_certificate_extensions:\n  - permit-port-forwarding\n  - permit-user-rc\n",
+			policy: func() (map[string]any, error) {
+				return map[string]any{"forbidden_certificate_extensions": []any{"permit-user-rc", "permit-pty"}}, nil
+			},
+			want: []string{"permit-port-forwarding", "permit-user-rc", "permit-pty"},
+		},
+		{
+			name:       "should ignore forbidden extensions set in a user file",
+			locked:     "use_agent: true\n",
+			userConfig: "forbidden_certificate_extensions:\n  - permit-pty\n",
+			policy:     noPolicy,
+			want:       nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sysDir := writeSystemConfig(t, map[string]string{
+				"ssoossh.yaml": "enforce: locked.yaml\n",
+				"locked.yaml":  tt.locked,
+			})
+			var args []string
+			if tt.userConfig != "" {
+				args = []string{"--config", writeConfig(t, tt.userConfig)}
+			}
+			cmd := newConfigCommand(t, args...)
+
+			cfg, err := newConfig(cmd, testPaths(sysDir), tt.policy)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !slices.Equal(cfg.ForbiddenCertificateExtensions, tt.want) {
+				t.Errorf("ForbiddenCertificateExtensions = %v, want %v", cfg.ForbiddenCertificateExtensions, tt.want)
+			}
+		})
+	}
+}
+
+// TestNewConfig_ShouldReadAnEnforceFileWithNoExtension covers an enforce
+// file named without a recognised extension: the main instance parses every
+// file as YAML, and the isolated read of the locked keys must agree rather
+// than fail with viper's "Unsupported Config Type".
+func TestNewConfig_ShouldReadAnEnforceFileWithNoExtension(t *testing.T) {
+	sysDir := writeSystemConfig(t, map[string]string{
+		"ssoossh.yaml":   "enforce: ssoossh-locked\n",
+		"ssoossh-locked": "insecure_skip_verify: false\n",
+	})
+	cmd := newConfigCommand(t)
+
+	if _, err := newConfig(cmd, testPaths(sysDir), noPolicy); err != nil {
+		t.Errorf("newConfig() error = %v, want an extensionless enforce file to load", err)
 	}
 }

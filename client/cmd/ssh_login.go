@@ -32,10 +32,10 @@ import (
 // anything the deployment does not permit is simply trimmed.
 //
 // Users can opt out of extensions via config settings or CLI flags, and
-// administrators can forbid extensions via policy (Windows registry, macOS
-// managed preferences, or the enforce file on Linux). The effective set is
-// the default, minus config opt-outs, minus flag opt-outs, minus policy
-// forbidden — in that order. Asking for nothing is not an option: narrowing
+// administrators can forbid extensions via the enforce file on any platform
+// or platform policy (Windows registry, macOS managed preferences). The
+// effective set is the default, minus config opt-outs, minus flag opt-outs,
+// minus policy forbidden — in that order. Asking for nothing is not an option: narrowing
 // is an intersection, so an empty request yields a certificate carrying no
 // extensions at all, which cannot open an interactive session.
 var loginExtensions = []string{

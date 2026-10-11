@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -74,10 +75,11 @@ func newConfig(cmd *cobra.Command, paths searchPaths, loadPolicy func() (map[str
 		return nil, err
 	}
 
-	enforceKeys, enforceSource, err := mergeEnforceFile(v, paths, enforce)
+	enforced, enforceSource, err := mergeEnforceFile(v, paths, enforce)
 	if err != nil {
 		return nil, err
 	}
+	enforceKeys := enforced.keys
 
 	// Merged after `enforce`, so a platform-native policy source (Windows
 	// GPO registry, macOS managed preferences) wins over even the enforce
@@ -149,7 +151,9 @@ func newConfig(cmd *cobra.Command, paths searchPaths, loadPolicy func() (map[str
 		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
 	c.FIPSEnforced = (enforceKeys["fips"] || policy.fipsSet) && c.FIPS != nil && *c.FIPS
-	c.ForbiddenCertificateExtensions = policy.forbiddenExtensions
+	// Both locked sources contribute, so an enforce file is enough on a
+	// platform (Linux) that has no native policy store.
+	c.ForbiddenCertificateExtensions = unionStrings(enforced.forbiddenExtensions, policy.forbiddenExtensions)
 	c.SetByFlag = setByFlag
 
 	// Resolve the key settings now so a bad combination is reported at
@@ -230,9 +234,9 @@ func mergeConfigFiles(v *viper.Viper, paths searchPaths, configFile string) (enf
 // user-writable location — that is the whole point of `enforce`. A relative
 // target resolves inside the system directory, so naming one cannot reach a
 // file the user controls.
-func mergeEnforceFile(v *viper.Viper, paths searchPaths, enforce string) (map[string]bool, ConfigSource, error) {
+func mergeEnforceFile(v *viper.Viper, paths searchPaths, enforce string) (enforceFile, ConfigSource, error) {
 	if enforce == "" {
-		return nil, ConfigSource{Label: "enforce", Status: SourceNotGiven, AdminLock: true}, nil
+		return enforceFile{}, ConfigSource{Label: "enforce", Status: SourceNotGiven, AdminLock: true}, nil
 	}
 	if !filepath.IsAbs(enforce) {
 		enforce = filepath.Join(paths.systemDir, enforce)
@@ -245,13 +249,38 @@ func mergeEnforceFile(v *viper.Viper, paths searchPaths, enforce string) (map[st
 	// (which is exactly what the control exists to prevent).
 	v.SetConfigFile(enforce)
 	if err := v.MergeInConfig(); err != nil {
-		return nil, ConfigSource{}, fmt.Errorf("failed to load enforce file %q: %w", enforce, err)
+		return enforceFile{}, ConfigSource{}, fmt.Errorf("failed to load enforce file %q: %w", enforce, err)
 	}
-	keys, err := enforceFileKeys(enforce)
+	found, err := readEnforceFile(enforce)
 	if err != nil {
-		return nil, ConfigSource{}, fmt.Errorf("failed to load enforce file %q: %w", enforce, err)
+		return enforceFile{}, ConfigSource{}, fmt.Errorf("failed to load enforce file %q: %w", enforce, err)
 	}
-	return keys, ConfigSource{Label: "enforce", Path: enforce, Status: SourceMerged, AdminLock: true}, nil
+	return found, ConfigSource{Label: "enforce", Path: enforce, Status: SourceMerged, AdminLock: true}, nil
+}
+
+// enforceFile is what readEnforceFile found in the enforce file.
+type enforceFile struct {
+	// keys are the settings it sets, flattened the way viper names them
+	// ("sshkey.type"). No command-line flag may override one.
+	keys map[string]bool
+	// forbiddenExtensions is its forbidden_certificate_extensions, the
+	// counterpart of platformPolicy.forbiddenExtensions. Config never
+	// decodes that key from the merged chain, so a user file cannot set it.
+	forbiddenExtensions []string
+}
+
+// unionStrings returns every string in a then b, in that order, once each.
+func unionStrings(a, b []string) []string {
+	var out []string
+	seen := make(map[string]bool, len(a)+len(b))
+	for _, s := range slices.Concat(a, b) {
+		if s == "" || seen[s] {
+			continue
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	return out
 }
 
 // flagsSource is the command-line flags' entry in the source chain: which
@@ -413,17 +442,27 @@ func bindFlags(v *viper.Viper, cmd *cobra.Command, flagToKey map[string]string, 
 	return changed, overridden, setByFlag, nil
 }
 
-// enforceFileKeys returns the settings the enforce file at path sets,
-// flattened the way viper names them ("sshkey.type"). Read in isolation
-// from the main viper instance, where the origin of a merged value is lost.
-// These are the settings no command-line flag may override, so a read that
-// fails is an error rather than an empty set: the caller has just merged
-// the same file, and an empty set here would quietly unlock all of them.
-func enforceFileKeys(path string) (map[string]bool, error) {
+// readEnforceFile returns the settings the enforce file at path sets,
+// flattened the way viper names them ("sshkey.type"), and the extensions it
+// forbids. Read in isolation from the main viper instance, where the origin
+// of a merged value is lost. These are the settings no command-line flag may
+// override, so a read that fails is an error rather than an empty set: the
+// caller has just merged the same file, and an empty set here would quietly
+// unlock all of them.
+//
+// Parsed as YAML whatever its extension, the same way the main instance
+// (SetConfigType("yaml") in newConfig) merged it a moment ago: an enforce
+// file named without a recognised extension would otherwise merge fine and
+// then fail here with viper's "Unsupported Config Type".
+func readEnforceFile(path string) (enforceFile, error) {
 	v := viper.New()
+	v.SetConfigType("yaml")
 	v.SetConfigFile(path)
 	if err := v.MergeInConfig(); err != nil {
-		return nil, err
+		return enforceFile{}, err
 	}
-	return keySet(v.AllKeys()), nil
+	return enforceFile{
+		keys:                keySet(v.AllKeys()),
+		forbiddenExtensions: v.GetStringSlice("forbidden_certificate_extensions"),
+	}, nil
 }

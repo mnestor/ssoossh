@@ -95,9 +95,10 @@ type Config struct {
 	CertificateExtensions CertificateExtensionOptions `mapstructure:"certificate_extensions"`
 
 	// ForbiddenCertificateExtensions names extensions that policy forbids.
-	// This is set only by platform-native policy (GPO registry on Windows,
-	// managed preferences on macOS, enforce file on Linux). It is not read
-	// from user config, not bound to flags, and not merged — it acts as an
+	// This is set only by the locked sources: the enforce file on every
+	// platform, plus platform-native policy (GPO registry on Windows,
+	// managed preferences on macOS), the two unioned. It is not read from
+	// user config, not bound to flags, and not merged — it acts as an
 	// unconditional floor that subtracts from any flag/config result.
 	ForbiddenCertificateExtensions []string `mapstructure:"-"`
 
