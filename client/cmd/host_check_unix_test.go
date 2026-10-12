@@ -5,21 +5,24 @@ package cmd
 import (
 	"errors"
 	"os"
+	"os/exec"
 	"os/user"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mnestor/ssoossh/internal/testexec"
 )
 
 // writeScript writes an executable shell script standing in for sshd, so
-// SSHDConfig can be exercised without one installed.
+// SSHDConfig can be exercised without one installed. It goes through
+// testexec, which holds syscall.ForkLock while the file is open for writing:
+// these tests run in parallel, and a plain os.WriteFile let another
+// subtest's fork inherit the write descriptor, so exec failed with "text
+// file busy" (#153).
 func writeScript(t *testing.T, body string) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "sshd")
-	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+body), 0o700); err != nil { //nolint:gosec // an executable test script in the test's own temp dir
-		t.Fatalf("write script: %v", err)
-	}
-	return path
+	return testexec.WriteScript(t, t.TempDir(), "sshd", body)
 }
 
 func TestOSHostSystemSSHDConfig(t *testing.T) {
@@ -37,9 +40,9 @@ func TestOSHostSystemSSHDConfig(t *testing.T) {
 	t.Run("should pass the connection spec with -C", func(t *testing.T) {
 		t.Parallel()
 		sshd := writeScript(t, `echo "$@"`+"\n")
-		out, _ := osHostSystem{}.SSHDConfig(t.Context(), sshd, "user=deploy")
-		if got := strings.TrimSpace(string(out)); got != "-T -C user=deploy" {
-			t.Errorf("sshd was run with %q, want %q", got, "-T -C user=deploy")
+		out, err := osHostSystem{}.SSHDConfig(t.Context(), sshd, "user=deploy")
+		if got := strings.TrimSpace(string(out)); err != nil || got != "-T -C user=deploy" {
+			t.Errorf("sshd was run with %q (%v), want %q", got, err, "-T -C user=deploy")
 		}
 	})
 
@@ -55,8 +58,12 @@ func TestOSHostSystemSSHDConfig(t *testing.T) {
 	t.Run("should report the exit when sshd fails silently", func(t *testing.T) {
 		t.Parallel()
 		sshd := writeScript(t, "exit 3\n")
-		if _, err := (osHostSystem{}).SSHDConfig(t.Context(), sshd, ""); err == nil {
-			t.Error("SSHDConfig() error = nil, want the exit status")
+		_, err := (osHostSystem{}).SSHDConfig(t.Context(), sshd, "")
+		// Any error is not enough: a failure to start sshd at all must not
+		// pass for sshd's own exit status.
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) || exitErr.ExitCode() != 3 {
+			t.Errorf("SSHDConfig() error = %v, want sshd's exit status 3", err)
 		}
 	})
 }
