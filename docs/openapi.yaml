@@ -4127,6 +4127,13 @@ paths:
                 $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
           description: The certificate was issued but is no longer available. They
             are never persisted, so a client that missed delivery must re-request.
+        "503":
+          content:
+            text/event-stream:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: 'This instance is shutting down. The request is still pending:
+            reconnect.'
       summary: Wait for a request's outcome (SSE)
       tags:
       - client

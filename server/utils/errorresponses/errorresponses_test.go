@@ -242,6 +242,7 @@ func TestErrorCode_ShouldReportTheWireCodeForEachError(t *testing.T) {
 		{name: "user status check", err: &UserStatusCheckError{}, wantCode: apitypes.ErrorCodeUnavailable, wantStatus: http.StatusServiceUnavailable},
 		{name: "conflict", err: &ConflictError{Reason: "a directory sync is already running"}, wantCode: apitypes.ErrorCodeConflict, wantStatus: http.StatusConflict},
 		{name: "session write", err: &SessionWriteError{}, wantCode: apitypes.ErrorCodeInternalError, wantStatus: http.StatusInternalServerError},
+		{name: "shutting down", err: &ShuttingDownError{}, wantCode: apitypes.ErrorCodeUnavailable, wantStatus: http.StatusServiceUnavailable},
 	}
 
 	for _, tt := range tests {
