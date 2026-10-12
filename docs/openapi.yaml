@@ -3352,10 +3352,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
-          description: Not authorized as auditor
+          description: Not authorized as admin
       security:
       - sessionCookie: []
-      summary: Directory sync status and probe target (auditor-only)
+      summary: Directory sync status and probe target (admin-only)
       tags:
       - admin
   /api/admin/ldap/sync:
