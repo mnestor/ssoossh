@@ -9,6 +9,7 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -496,6 +497,39 @@ func TestEventsHandler_ShouldRegisterErrorOnWaitFailure(t *testing.T) {
 
 	if gotErrors != 1 {
 		t.Fatalf("expected exactly one error to be attached when Wait fails, got %d", gotErrors)
+	}
+}
+
+// TestEventsHandler_ShouldEndTheStreamWithA503WhenTheServerShutsDown traces
+// #139's shutdown error to the wire: Wait's ShuttingDownError must reach the
+// client as a 503 error envelope rather than an SSE event, since a 5xx
+// connect is what internal/api's retryableConnect reconnects from.
+func TestEventsHandler_ShouldEndTheStreamWithA503WhenTheServerShutsDown(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	svc := &fakeCertRequestService{waitErr: &errorresponses.ShuttingDownError{}}
+
+	r := gin.New()
+	r.Use(middleware.NewErrorHandlerMiddleware().Add())
+	NewCertRequestController(&r.RouterGroup, svc, passthrough, passthrough, nil)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/certs/requests/req-1/events", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("got status %d, want %d; body: %s", w.Code, http.StatusServiceUnavailable, w.Body.String())
+	}
+	var body struct {
+		Error     string `json:"error"`
+		ErrorCode string `json:"error_code"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("response is not a JSON error envelope: %v; body: %s", err, w.Body.String())
+	}
+	if body.ErrorCode != apitypes.ErrorCodeUnavailable {
+		t.Errorf("got error_code %q, want %q", body.ErrorCode, apitypes.ErrorCodeUnavailable)
 	}
 }
 

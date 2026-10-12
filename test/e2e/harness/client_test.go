@@ -3,22 +3,19 @@
 package harness
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/mnestor/ssoossh/internal/testexec"
 )
 
 // fakeClient writes a shell script standing in for the ssoossh binary, so
-// StartClient's process handling can be checked without a server.
+// StartClient's process handling can be checked without a server. It goes
+// through testexec so a fork elsewhere in the test binary cannot leave the
+// script "text file busy" when it is run (#153).
 func fakeClient(t *testing.T, body string) string {
 	t.Helper()
-
-	path := filepath.Join(t.TempDir(), "ssoossh")
-	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+body+"\n"), 0o755); err != nil { //nolint:gosec // a stand-in binary has to be executable
-		t.Fatal(err)
-	}
-	return path
+	return testexec.WriteScript(t, t.TempDir(), "ssoossh", body+"\n")
 }
 
 // A client the test left running must be gone by the time the test's
