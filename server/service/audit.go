@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/netip"
+	"slices"
 	"strings"
 	"time"
 
@@ -14,127 +16,7 @@ import (
 	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/logging"
 	"github.com/mnestor/ssoossh/server/model"
-)
-
-// AuditAction is a namespaced action name in the audit taxonomy. They are
-// strings inside the payload rather than a database enum, so the set grows
-// without a migration.
-type AuditAction string
-
-// The taxonomy. Namespaced by subject area: authentication, certificates,
-// enrollments, user containment, and privileged views.
-const (
-	// AuditAuthLogin records a successful login, snapshotting the groups the
-	// identity carried at that moment. Since group membership is never persisted
-	// (see https://mnestor.github.io/ssoossh/internals/invariants/), this is in
-	// fact the only durable record of what access an identity held on a given
-	// day.
-	AuditAuthLogin AuditAction = "auth.login"
-	// AuditAuthLoginDenied records a disabled account attempting to log in.
-	// There is deliberately no logout event: sessions mostly end by expiry,
-	// so an explicit logout carries too little signal to keep.
-	AuditAuthLoginDenied AuditAction = "auth.login_denied"
-
-	AuditCertRequested AuditAction = "cert.requested"
-	AuditCertApproved  AuditAction = "cert.approved"
-	AuditCertDenied    AuditAction = "cert.denied"
-	// AuditCertCodeResolved records a console login code being typed into
-	// the web UI and resolving. It is the moment a request created by an
-	// unauthenticated machine acquires a named human, which is the step the
-	// consent-phishing case in
-	// https://mnestor.github.io/ssoossh/concepts/console-flow/ turns on: an
-	// approval that follows a phone call looks exactly like one that does
-	// not, except that this event names who was talked into it and which
-	// machine's console they were told about.
-	AuditCertCodeResolved AuditAction = "cert.code_resolved"
-	// AuditCertIssued goes to the shipped log only, never the table — see
-	// tableSkipped. The UI already has certificate history from the
-	// certificates table, so a table copy would be pure duplication; the
-	// archive line, which an incident reviewer joins against target-host
-	// sshd logs, is the valuable part.
-	AuditCertIssued AuditAction = "cert.issued"
-	// AuditCertClaimed records the first browser opening an approval page
-	// (see CertRequestService.ClaimApprovalPage). It is the moment a link
-	// that was sent somewhere turns into a page in front of someone, and
-	// the event a reviewer reads to learn whether a link was opened at all
-	// and from what user agent, before any decision was made.
-	AuditCertClaimed AuditAction = "cert.claimed"
-	// AuditCertExpired records a request nobody answered within its budget.
-	// System event: there is no actor, which is the point of recording it.
-	AuditCertExpired AuditAction = "cert.expired"
-	// AuditCertSignFailed records an approval that produced no certificate:
-	// the signer refused the job, or the stranded-request sweep found the
-	// row stuck in signing. Without it an approval that never became a
-	// certificate reads exactly like one that did.
-	AuditCertSignFailed AuditAction = "cert.sign_failed"
-
-	AuditEnrollmentCodeCreated AuditAction = "enrollment.code_created"
-	AuditEnrollmentRedeemed    AuditAction = "enrollment.redeemed"
-	AuditEnrollmentExpired     AuditAction = "enrollment.expired"
-
-	// AuditEnrollmentNotificationEmailSet records a change to an
-	// enrollment's notification address. Audited because it redirects every
-	// subsequent notification about a credential to an address of the
-	// setter's choosing — an unremarkable convenience, and also the quiet
-	// way to stop an account's holders hearing about their own code.
-	//
-	// The address itself is in the detail: it is operator-entered
-	// configuration in an admin-only log, not a user secret, and an event
-	// that recorded only "the address changed" would not answer the
-	// question anyone reads it for.
-	AuditEnrollmentNotificationEmailSet AuditAction = "enrollment.notification_email_set"
-
-	// AuditEnrollmentReassigned is no longer emitted: group ownership
-	// removed reassignment (see
-	// https://mnestor.github.io/ssoossh/concepts/service-certificates/).
-	// The constant stays so events recorded before that still resolve to a
-	// name rather than a raw string in every reader of the log.
-	AuditEnrollmentReassigned AuditAction = "enrollment.reassigned"
-
-	AuditUserDisabled AuditAction = "user.disabled"
-	AuditUserEnabled  AuditAction = "user.enabled"
-	// AuditUserAutoDisabled is a system action, so it carries no actor.
-	AuditUserAutoDisabled AuditAction = "user.auto_disabled"
-	// AuditUserDisableRefused records a disable the server refused because
-	// the caller named their own account. Actor and target are the same
-	// person; the reason is the server's, not one the caller typed, and the
-	// detail carries the source address the server observed. It exists so
-	// the attempt shows on that account's timeline: a slog line alone is
-	// invisible to the reviewer reading it.
-	AuditUserDisableRefused AuditAction = "user.disable_refused"
-
-	// Privileged detail views. List views are deliberately not audited:
-	// a row per page of the user directory says nothing. If a list query
-	// ever needs auditing, record it as one event carrying the search
-	// parameters.
-	AuditAdminUserViewed       AuditAction = "admin.user_viewed"
-	AuditAdminEnrollmentViewed AuditAction = "admin.enrollment_viewed"
-	// AuditAdminConfigViewed is no longer emitted. The effective-config
-	// screen is read-only and gets reloaded constantly while an operator
-	// works, so the event arrived several times a minute and buried the
-	// decisions this log exists to record. The constant stays so events
-	// recorded before that still resolve to a name rather than a raw
-	// string in every reader of the log.
-	AuditAdminConfigViewed AuditAction = "admin.config_viewed"
-	// AuditAdminAuditViewed is one event per visit to the audit feed, not
-	// one per event displayed — which settles the recursion question.
-	AuditAdminAuditViewed AuditAction = "admin.audit_viewed"
-
-	// AuditLDAPSyncTriggered is an admin running the directory sync by
-	// hand. Recorded with the counts the pass produced, and with dry_run,
-	// so a pass that only reported reads as one.
-	AuditLDAPSyncTriggered AuditAction = "ldap.sync_triggered"
-
-	// AuditLDAPProbed is one directory probe. The probe writes nothing,
-	// but it makes the server open an outbound connection and read an
-	// entry in full, so it is recorded with the filter it sent.
-	AuditLDAPProbed AuditAction = "ldap.probed"
-
-	// AuditAdminDiagnosticsRun is an admin running the deployment
-	// self-checks. Like the directory probe it makes the server open an
-	// outbound connection (to its own public URL), so it is recorded with
-	// the worst status each check reached.
-	AuditAdminDiagnosticsRun AuditAction = "admin.diagnostics_run"
+	"github.com/mnestor/ssoossh/server/utils/errorresponses"
 )
 
 // auditPayloadVersion is the payload schema version, carried on every
@@ -146,6 +28,49 @@ const auditPayloadVersion = 1
 // and a ticket reference, short enough that the column cannot be used as
 // free storage.
 const maxAuditReasonLength = 1000
+
+// auditActions is every action in the taxonomy, in declaration order. It is
+// what the feed's action filter checks a caller's value against. It lives
+// here rather than in audit_actions.go because tygo generates the frontend's
+// copy of that file and would emit this too.
+// TestAuditActions_ShouldListEveryTaxonomyAction parses audit_actions.go and
+// fails when the two differ, so a new action cannot be left unfilterable.
+var auditActions = []AuditAction{
+	AuditAuthLogin,
+	AuditAuthLoginDenied,
+	AuditCertRequested,
+	AuditCertApproved,
+	AuditCertDenied,
+	AuditCertCodeResolved,
+	AuditCertIssued,
+	AuditCertClaimed,
+	AuditCertExpired,
+	AuditCertSignFailed,
+	AuditCertRequestRefusedNetwork,
+	AuditEnrollmentCodeCreated,
+	AuditEnrollmentRedeemed,
+	AuditEnrollmentExpired,
+	AuditEnrollmentNotificationEmailSet,
+	AuditEnrollmentReassigned,
+	AuditUserDisabled,
+	AuditUserEnabled,
+	AuditUserAutoDisabled,
+	AuditUserDisableRefused,
+	AuditAdminUserViewed,
+	AuditAdminEnrollmentViewed,
+	AuditAdminConfigViewed,
+	AuditAdminAuditViewed,
+	AuditLDAPSyncTriggered,
+	AuditLDAPProbed,
+	AuditAdminDiagnosticsRun,
+}
+
+// IsAuditAction reports whether action is in the taxonomy, including the
+// actions that are no longer emitted (older rows still carry them) and the
+// shipped-log-only ones (a filter on those is valid and finds no rows).
+func IsAuditAction(action string) bool {
+	return slices.Contains(auditActions, AuditAction(action))
+}
 
 // tableSkipped reports whether an action is emitted to the shipped log
 // only. Keeping this a function of the action (rather than a decision at
@@ -202,6 +127,14 @@ type AuditEvent struct {
 	// Detail carries the per-action specifics: certificate serial, key ID,
 	// principals, enrollment ID, source IP, search parameters. Never an
 	// enrollment code or any other secret.
+	//
+	// The key "source_ip" is reserved for an address the server observed
+	// (gin's ClientIP, which honours forwarded headers only from
+	// http.trusted_proxies), because the recorder copies it into the
+	// indexed source_ip column the admin feed filters on; see
+	// auditSourceIP. Never put a client-supplied address under it, and
+	// never a filter value: admin.audit_viewed records its filters as
+	// filter_source_ip.
 	Detail map[string]any `json:"detail,omitempty"`
 
 	// OccurredAt is when the action happened. Zero means "now", filled in
@@ -352,7 +285,12 @@ func (s *AuditService) prepare(event AuditEvent) (*model.AuditEvent, AuditEvent,
 		CreatedAt:    event.OccurredAt,
 		ActorUserID:  subjectUserID(event.Actor),
 		TargetUserID: subjectUserID(event.Target),
-		Payload:      string(payload),
+		// Action and SourceIP are encoded into payload just above from
+		// this same event, which is what keeps the indexed copies equal to
+		// the record.
+		Action:   string(event.Action),
+		SourceIP: auditSourceIP(event.Detail),
+		Payload:  string(payload),
 	}
 	return row, event, nil
 }
@@ -381,6 +319,51 @@ func (s *AuditService) emit(event AuditEvent) {
 		attrs = append(attrs, slog.Any(k, v))
 	}
 	s.log.Info("audit", attrs...)
+}
+
+// auditSourceIP is the value of the indexed source_ip column for an event:
+// its detail.source_ip in canonical form, or "" when it has none.
+//
+// The rule is one key for every action, so the column means the same thing
+// on every row: the address the server observed for the client the event is
+// about. Per action that is:
+//   - cert.requested, cert.claimed, cert.approved, cert.denied,
+//     cert.expired, cert.sign_failed and enrollment.code_created: the
+//     address the certificate request came from (req.SourceIP, stored from
+//     ClientIP when the request was created). Following one address
+//     through these reads one client's requests end to end.
+//   - cert.request_refused_network: the refused caller.
+//   - enrollment.redeemed: the client that retrieved the certificate.
+//   - user.disable_refused: the caller's browser.
+//   - every other action: none, so "".
+//
+// approver_ip on cert.approved and cert.denied is deliberately not used: it
+// is the approving browser, a different party, and mixing the two in one
+// column would make a filter on an address answer two questions at once.
+// remote_host (the host context) is what the client reported, never an
+// observation, so it is never used either.
+func auditSourceIP(detail map[string]any) string {
+	raw, ok := detail["source_ip"].(string)
+	if !ok {
+		return ""
+	}
+	canonical, ok := canonicalSourceIP(raw)
+	if !ok {
+		return ""
+	}
+	return canonical
+}
+
+// canonicalSourceIP parses an address and returns the one spelling the
+// column stores and the filter compares: netip's form, with an IPv4-mapped
+// IPv6 address unmapped to plain IPv4, since both name the same client. ok is
+// false for anything that is not an address, including "".
+func canonicalSourceIP(raw string) (string, bool) {
+	addr, err := netip.ParseAddr(strings.TrimSpace(raw))
+	if err != nil {
+		return "", false
+	}
+	return addr.Unmap().String(), true
 }
 
 // subjectUserID pulls the indexed grouping key out of a snapshot, or nil
@@ -450,11 +433,60 @@ func (s *AuditService) ListForUser(ctx context.Context, userID string, limit, of
 	return s.page(ctx, q, limit, offset)
 }
 
-// ListRecent returns the whole stream in created_at order, newest first —
-// the recent-activity feed. Deliberately unsearchable: the external log
-// system is where searching happens.
-func (s *AuditService) ListRecent(ctx context.Context, limit, offset int) (*AuditPage, error) {
-	return s.page(ctx, s.db.WithContext(ctx).Model(&model.AuditEvent{}), limit, offset)
+// AuditFilter narrows the recent-activity feed. Each field is an equality
+// match on an indexed column, and the zero value matches everything.
+type AuditFilter struct {
+	// Action keeps only the rows of this action.
+	Action AuditAction
+	// SourceIP keeps only the rows whose observed source is this address,
+	// in canonical form (see canonicalSourceIP).
+	SourceIP string
+}
+
+// ParseAuditFilter validates the feed's action and source_ip parameters as
+// a caller sent them. An empty value is no filter. An action outside the
+// taxonomy, or a source that is not an IP address, is an
+// InvalidRequestError (400): a filter the server silently dropped would show
+// the whole feed under a heading that says it is narrowed. The address is
+// canonicalized, so "::ffff:192.0.2.1" finds the rows stored as 192.0.2.1.
+func ParseAuditFilter(action, sourceIP string) (AuditFilter, error) {
+	var filter AuditFilter
+	if action = strings.TrimSpace(action); action != "" {
+		if !IsAuditAction(action) {
+			return AuditFilter{}, &errorresponses.InvalidRequestError{Reason: fmt.Sprintf("action %q is not an audit action", action)}
+		}
+		filter.Action = AuditAction(action)
+	}
+	if sourceIP = strings.TrimSpace(sourceIP); sourceIP != "" {
+		canonical, ok := canonicalSourceIP(sourceIP)
+		if !ok {
+			return AuditFilter{}, &errorresponses.InvalidRequestError{Reason: fmt.Sprintf("source_ip %q is not an IP address", sourceIP)}
+		}
+		filter.SourceIP = canonical
+	}
+	return filter, nil
+}
+
+// ListRecent returns the stream in created_at order, newest first: the
+// recent-activity feed, optionally narrowed by filter.
+//
+// The feed filters by action and by observed source address, and nothing
+// else. Both are equality matches on indexed columns, ordered as the
+// indexes are (created_at, id), so a filtered page reads
+// idx_audit_events_action, idx_audit_events_source_ip or
+// idx_audit_events_action_source_ip rather than scanning payloads. Anything
+// else (a free-text search, a time range, a field inside the detail) is
+// still the shipped log's job: the table is a bounded cache, not the
+// archive.
+func (s *AuditService) ListRecent(ctx context.Context, filter AuditFilter, limit, offset int) (*AuditPage, error) {
+	q := s.db.WithContext(ctx).Model(&model.AuditEvent{})
+	if filter.Action != "" {
+		q = q.Where("action = ?", string(filter.Action))
+	}
+	if filter.SourceIP != "" {
+		q = q.Where("source_ip = ?", filter.SourceIP)
+	}
+	return s.page(ctx, q, limit, offset)
 }
 
 // page runs one paged query and decodes the payloads.
@@ -490,9 +522,23 @@ func (s *AuditService) page(ctx context.Context, q *gorm.DB, limit, offset int) 
 	return page, nil
 }
 
+// auditSweepBatch is how many rows one delete in the row-cap sweep names.
+// The ids travel as bind parameters, and both backends cap those (sqlite at
+// 32766, postgres at 65535), so a large excess, such as a burst of network
+// refusals, is deleted in batches rather than as one statement that fails.
+const auditSweepBatch = 1000
+
 // SweepAuditEvents prunes the database copy: rows older than the retention
-// window, then anything past the row cap, oldest first. The shipped log is
-// the archive, so this loses nothing a deployment should be relying on.
+// window, then the oldest rows past the row cap. The shipped log is the
+// archive, so this loses nothing a deployment should be relying on.
+//
+// Past the cap it is oldest first whatever the action, network refusals
+// included, so the table always holds one unbroken window of time rather
+// than a history with one kind of event cut out early. Anyone on a refused
+// network can raise cert.request_refused_network without signing in, so a
+// burst of them can push older events out of the UI's history. That is left
+// to the deployment: a firewall keeps those networks out, the rate limits
+// slow what gets through, and the shipped log keeps every line regardless.
 //
 // A package-level function rather than a method, so the scheduler can
 // register it without reaching through a service.
@@ -520,25 +566,39 @@ func SweepAuditEvents(ctx context.Context, db *gorm.DB, retention time.Duration,
 	if total <= maxRows {
 		return nil
 	}
-
-	// Delete by id from a bounded subquery rather than with a LIMIT on the
-	// delete itself, which sqlite and postgres do not share syntax for.
 	excess := int(total - maxRows)
-	var ids []string
-	if err := db.WithContext(ctx).Model(&model.AuditEvent{}).
-		Order("created_at ASC, id ASC").
-		Limit(excess).
-		Pluck("id", &ids).Error; err != nil {
-		return fmt.Errorf("failed to select the oldest audit events past the cap: %w", err)
-	}
-	if len(ids) == 0 {
-		// not covered: total > maxRows >= 0 means at least one row exists
-		// to select, so this cannot be reached from the count above.
-		return nil
-	}
-	if err := db.WithContext(ctx).Where("id IN ?", ids).Delete(&model.AuditEvent{}).Error; err != nil {
+
+	deleted, err := deleteOldestAuditEvents(ctx, db, excess)
+	if err != nil {
 		return fmt.Errorf("failed to prune audit events past the row cap: %w", err)
 	}
-	slog.Info("pruned audit events past the row cap", "deleted", len(ids), "max_rows", maxRows)
+	slog.Info("pruned audit events past the row cap", "deleted", deleted, "max_rows", maxRows)
 	return nil
+}
+
+// deleteOldestAuditEvents deletes up to limit of the oldest rows, in batches
+// of auditSweepBatch, and returns how many it deleted. It stops early when
+// the table runs out of rows.
+//
+// Each batch selects ids and deletes by id rather than putting a LIMIT on
+// the delete itself, which sqlite and postgres do not share syntax for.
+func deleteOldestAuditEvents(ctx context.Context, db *gorm.DB, limit int) (int, error) {
+	deleted := 0
+	for deleted < limit {
+		var ids []string
+		if err := db.WithContext(ctx).Model(&model.AuditEvent{}).
+			Order("created_at ASC, id ASC").
+			Limit(min(limit-deleted, auditSweepBatch)).
+			Pluck("id", &ids).Error; err != nil {
+			return deleted, fmt.Errorf("failed to select the oldest audit events: %w", err)
+		}
+		if len(ids) == 0 {
+			return deleted, nil
+		}
+		if err := db.WithContext(ctx).Where("id IN ?", ids).Delete(&model.AuditEvent{}).Error; err != nil {
+			return deleted, fmt.Errorf("failed to delete audit events: %w", err)
+		}
+		deleted += len(ids)
+	}
+	return deleted, nil
 }

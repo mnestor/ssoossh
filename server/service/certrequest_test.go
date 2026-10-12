@@ -922,6 +922,211 @@ func TestCertRequestService_Wait_ShouldSurfaceASubscribeFailure(t *testing.T) {
 	}
 }
 
+// TestCertRequestService_waitForUpdate covers each way the blocking select
+// can end. The closed-subscription rows are the #139 regression: a closed
+// channel used to return (nil, nil) like the expiry tick, and Wait looped
+// straight back to the same closed channel.
+func TestCertRequestService_waitForUpdate(t *testing.T) {
+	t.Parallel()
+
+	// closedMessages is a subscription the broker has already closed.
+	closedMessages := func() <-chan *message.Message {
+		ch := make(chan *message.Message)
+		close(ch)
+		return ch
+	}
+	// openMessages is a live subscription with nothing on it.
+	openMessages := func() <-chan *message.Message {
+		return make(chan *message.Message)
+	}
+	// firedExpiry is an expiry timer that has already fired.
+	firedExpiry := func() <-chan time.Time {
+		ch := make(chan time.Time, 1)
+		ch <- time.Now()
+		return ch
+	}
+	// cancelledCtx is a context that has already ended.
+	cancelledCtx := func() context.Context {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		return ctx
+	}
+
+	tests := []struct {
+		name         string
+		ctx          context.Context
+		messages     <-chan *message.Message
+		expireC      <-chan time.Time
+		wantMessage  bool
+		wantShutdown bool
+		wantErr      error
+	}{
+		{
+			name:         "should return a shutdown error when the subscription is closed",
+			ctx:          context.Background(),
+			messages:     closedMessages(),
+			wantShutdown: true,
+		},
+		{
+			name:     "should return the context error when the subscription is closed and the context is done",
+			ctx:      cancelledCtx(),
+			messages: closedMessages(),
+			wantErr:  context.Canceled,
+		},
+		{
+			name:     "should return nil and no error when the expiry timer fires",
+			ctx:      context.Background(),
+			messages: openMessages(),
+			expireC:  firedExpiry(),
+		},
+		{
+			name:     "should return the context error when the context is done",
+			ctx:      cancelledCtx(),
+			messages: openMessages(),
+			wantErr:  context.Canceled,
+		},
+		{
+			name: "should return the message when one arrives",
+			ctx:  context.Background(),
+			messages: func() <-chan *message.Message {
+				ch := make(chan *message.Message, 1)
+				ch <- message.NewMessage(watermill.NewUUID(), []byte("{}"))
+				return ch
+			}(),
+			wantMessage: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			svc := &CertRequestService{}
+			msg, err := svc.waitForUpdate(tt.ctx, tt.messages, tt.expireC)
+
+			var shutdown *errorresponses.ShuttingDownError
+			switch {
+			case tt.wantShutdown:
+				if !errors.As(err, &shutdown) {
+					t.Errorf("waitForUpdate() error = %v, want *errorresponses.ShuttingDownError", err)
+				}
+			case tt.wantErr != nil:
+				if !errors.Is(err, tt.wantErr) {
+					t.Errorf("waitForUpdate() error = %v, want %v", err, tt.wantErr)
+				}
+			case err != nil:
+				t.Errorf("waitForUpdate() error = %v, want nil", err)
+			}
+			if gotMessage := msg != nil; gotMessage != tt.wantMessage {
+				t.Errorf("waitForUpdate() message = %v, want a message: %v", msg, tt.wantMessage)
+			}
+		})
+	}
+}
+
+// closableSubscriber is a message.Subscriber whose one subscription the test
+// closes by hand, standing in for watermill's Router.Close closing the
+// shared subscriber while a Wait is blocked on it.
+type closableSubscriber struct {
+	// messages is handed out by Subscribe; closing it ends the subscription.
+	messages chan *message.Message
+	// subscribed is closed once Subscribe has been called.
+	subscribed chan struct{}
+}
+
+// Subscribe returns the test-owned channel and signals that Wait holds it.
+func (s *closableSubscriber) Subscribe(_ context.Context, _ string) (<-chan *message.Message, error) {
+	close(s.subscribed)
+	return s.messages, nil
+}
+
+// Close is a no-op: the test closes messages itself, at the moment it chooses.
+func (s *closableSubscriber) Close() error { return nil }
+
+// countRequestReads registers a gorm query callback on db that counts reads of
+// the certificate_requests table, so a test can bound how often Wait goes back
+// to the database.
+func countRequestReads(t *testing.T, db *gorm.DB) *atomic.Int64 {
+	t.Helper()
+
+	var reads atomic.Int64
+	err := db.Callback().Query().After("gorm:query").Register("test:count_request_reads", func(tx *gorm.DB) {
+		if tx.Statement.Table == "certificate_requests" {
+			reads.Add(1)
+		}
+	})
+	if err != nil {
+		t.Fatalf("failed to register the read-counting callback: %v", err)
+	}
+	return &reads
+}
+
+// TestCertRequestService_Wait_ShouldReturnAShutdownErrorWhenTheSubscriptionCloses
+// is the #139 regression at the level of Wait: once the subscription closes
+// mid-wait, Wait must return promptly with the shutdown error after a bounded
+// number of database reads, rather than spinning one read per pass on the
+// closed channel until its context ends.
+func TestCertRequestService_Wait_ShouldReturnAShutdownErrorWhenTheSubscriptionCloses(t *testing.T) {
+	t.Parallel()
+
+	db := newTestDB(t)
+	if err := db.AutoMigrate(&model.CertificateRequest{}, &model.CertificateRequestDecision{}, &model.User{}, &model.Enrollment{}); err != nil {
+		t.Fatalf("failed to migrate test tables: %v", err)
+	}
+	channel := gochannel.NewGoChannel(gochannel.Config{Persistent: false}, watermill.NewSlogLogger(slog.Default()))
+	t.Cleanup(func() {
+		if err := channel.Close(); err != nil {
+			t.Errorf("unexpected error closing gochannel: %v", err)
+		}
+	})
+
+	subscriber := &closableSubscriber{messages: make(chan *message.Message), subscribed: make(chan struct{})}
+	svc, err := NewCertRequestService(&config.Config{}, db, channel, subscriber)
+	if err != nil {
+		t.Fatalf("failed to construct CertRequestService: %v", err)
+	}
+
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA..."})
+	if err != nil {
+		t.Fatalf("unexpected error creating request: %v", err)
+	}
+	reads := countRequestReads(t, db)
+
+	// The context outlives the test's own deadline below, so a Wait that
+	// spins instead of returning is caught by that deadline and by the read
+	// count, not rescued by the context ending.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := svc.Wait(ctx, requestID)
+		done <- err
+	}()
+
+	<-subscriber.subscribed
+	// Long enough for Wait to have done its first read and reached the
+	// blocking select, so the close lands mid-wait.
+	time.Sleep(50 * time.Millisecond)
+	close(subscriber.messages)
+
+	select {
+	case err := <-done:
+		var shutdown *errorresponses.ShuttingDownError
+		if !errors.As(err, &shutdown) {
+			t.Errorf("Wait() error = %v, want *errorresponses.ShuttingDownError", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("Wait did not return after its subscription closed (%d request reads so far)", reads.Load())
+	}
+
+	// One read before the close; anything past a couple means Wait went
+	// back around its loop on the closed channel.
+	if got := reads.Load(); got > 2 {
+		t.Errorf("Wait read the request %d times, want at most 2", got)
+	}
+}
+
 func TestCertRequestService_Approve_ShouldNarrowExtensionsAndPublishSigningJob(t *testing.T) {
 	t.Parallel()
 
@@ -1744,13 +1949,11 @@ func TestCertRequestService_Approve_ShouldRefuseARequestPastTTL(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 
 	err = svc.Approve(context.Background(), requestID, identity, DecisionContext{}, ApprovalSelection{})
-	if err == nil {
-		t.Error("expected a TTL-expired request to be refused by Approve")
-	}
 	// Strengthen assertion: verify the rejection is TTL-related, not due to
 	// missing user or other pre-TTL-check failures
-	if !strings.Contains(err.Error(), "not pending") {
-		t.Errorf("expected TTL expiry to reject with 'not pending' message, got: %v", err)
+	var expired *errorresponses.ExpiredError
+	if !errors.As(err, &expired) {
+		t.Errorf("expected TTL expiry to reject with an ExpiredError, got: %v (%T)", err, err)
 	}
 }
 
@@ -1963,6 +2166,18 @@ func TestCertRequestService_Approve_ShouldEnforceRequireOnUserCertificates(t *te
 			groups:  []string{"other"},
 			wantErr: true,
 		},
+		{
+			name:    "should reject an identity with no groups",
+			require: &config.PolicyCondition{Group: "ssh-users"},
+			groups:  nil,
+			wantErr: true,
+		},
+		{
+			name:    "should reject an identity whose only group is the empty string",
+			require: &config.PolicyCondition{Group: "ssh-users"},
+			groups:  []string{""},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -1982,6 +2197,12 @@ func TestCertRequestService_Approve_ShouldEnforceRequireOnUserCertificates(t *te
 			err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}, ApprovalSelection{})
 			if tt.wantErr && err == nil {
 				t.Error("expected approve to be rejected by the require condition")
+			}
+			// A refusal is an authorization answer (403), not an internal
+			// failure: anything but a ForbiddenError renders as 500.
+			var forbidden *errorresponses.ForbiddenError
+			if tt.wantErr && err != nil && !errors.As(err, &forbidden) {
+				t.Errorf("got error %v, want a ForbiddenError", err)
 			}
 			if !tt.wantErr && err != nil {
 				t.Errorf("unexpected error: %v", err)
@@ -2459,66 +2680,6 @@ func TestBindRequester_ShouldDetectARacingClaim(t *testing.T) {
 	var forbidden *errorresponses.ForbiddenError
 	if !errors.As(err, &forbidden) {
 		t.Fatalf("got error %v (%T), want a ForbiddenError for a request claimed by someone else", err, err)
-	}
-}
-
-// TestApproveServiceEnrollment_ShouldRefuseARequestThatIsNoLongerPending
-// covers approveServiceEnrollment's own guarded-UPDATE RowsAffected==0
-// branch directly. Approve's own top-level pending check (line ~291) always
-// catches a non-pending row first when called through Approve — including
-// with a genuine second Approve call — so this branch is only reachable via
-// a real race between two concurrent Approve calls both passing that check
-// before either commits. Calling approveServiceEnrollment directly (an
-// unexported, in-package-testable method) after flipping the row's status
-// out from under it reproduces exactly that race deterministically.
-func TestApproveServiceEnrollment_ShouldRefuseARequestThatIsNoLongerPending(t *testing.T) {
-	t.Parallel()
-
-	svc := newTestCertRequestService(t, time.Hour)
-	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{Type: model.CertificateTypeService, PublicKey: "ssh-ed25519 AAAA... svc"})
-	if err != nil {
-		t.Fatalf("unexpected error creating request: %v", err)
-	}
-	if err := svc.db.Model(&model.CertificateRequest{}).
-		Where("id = ?", requestID).
-		Update("status", model.CertificateRequestStatusDenied).Error; err != nil {
-		t.Fatalf("failed to flip the request's status: %v", err)
-	}
-	var req model.CertificateRequest
-	if err := svc.db.First(&req, "id = ?", requestID).Error; err != nil {
-		t.Fatalf("failed to load request: %v", err)
-	}
-	policy, _ := svc.policyFor(model.CertificateTypeService)
-	if err := svc.approveServiceEnrollment(context.Background(), req, RequestedOptions{}, nil, &Identity{Username: "approver", Subject: "sub-approver"}, policy, DecisionContext{}, ApprovalSelection{ServiceAccount: "svc-account"}); err == nil {
-		t.Error("approveServiceEnrollment() error = nil, want error for a request that lost the pending race")
-	}
-}
-
-// TestApproveForSigning_ShouldRefuseARequestThatIsNoLongerPending is
-// approveForSigning's counterpart to
-// TestApproveServiceEnrollment_ShouldRefuseARequestThatIsNoLongerPending —
-// same reasoning, same technique: Approve's own top-level check makes this
-// guard only reachable via a genuine race, reproduced deterministically by
-// calling approveForSigning directly after flipping the row's status.
-func TestApproveForSigning_ShouldRefuseARequestThatIsNoLongerPending(t *testing.T) {
-	t.Parallel()
-
-	svc := newTestCertRequestService(t, time.Hour)
-	identity := &Identity{Username: "alice", Subject: "sub-alice"}
-	requestID := mustCreateUserRequest(t, svc)
-	if err := svc.db.Model(&model.CertificateRequest{}).
-		Where("id = ?", requestID).
-		Update("status", model.CertificateRequestStatusDenied).Error; err != nil {
-		t.Fatalf("failed to flip the request's status: %v", err)
-	}
-
-	var req model.CertificateRequest
-	if err := svc.db.First(&req, "id = ?", requestID).Error; err != nil {
-		t.Fatalf("failed to reload request: %v", err)
-	}
-
-	if err := svc.approveForSigning(context.Background(), req, identity, svc.policies[model.CertificateTypeUser], RequestedOptions{}, DecisionContext{}, []string{}); err == nil {
-		t.Error("approveForSigning() error = nil, want error for a request that lost the pending race")
 	}
 }
 

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { AuditEvent } from '#lib/api/types.js';
-	import { visibleAuditEvents } from '#lib/audit.js';
+	import { describeAuditAction, visibleAuditEvents } from '#lib/audit.js';
 	import { formatDateTime } from '#lib/format.js';
 
 	interface Props {
@@ -12,55 +12,51 @@
 		 * Omit it on the global feed, where neither side is "you".
 		 */
 		subjectUserId?: string;
+		/**
+		 * sourceHref, when given, turns each event's source_ip into a link
+		 * that filters the feed to that address: the address of the view
+		 * filtered that way. The global feed passes it; a user's timeline
+		 * does not, since it cannot filter.
+		 */
+		sourceHref?: (ip: string) => string;
+		/**
+		 * onsource, with sourceHref, applies the filter in place on a plain
+		 * click instead of navigating, so the page keeps its state. A
+		 * modified click (a new tab, say) still follows the href.
+		 */
+		onsource?: (ip: string) => void;
 	}
 
-	const { events, subjectUserId = '' }: Props = $props();
+	const { events, subjectUserId = '', sourceHref, onsource }: Props = $props();
+
+	/**
+	 * followSource applies the source filter in place on a plain left click.
+	 * Anything else (a middle click, a modifier key) is left to the browser,
+	 * which opens the href, so the link behaves like every other link.
+	 */
+	function followSource(event: MouseEvent, ip: string) {
+		if (
+			!onsource ||
+			event.button !== 0 ||
+			event.metaKey ||
+			event.ctrlKey ||
+			event.shiftKey ||
+			event.altKey
+		) {
+			return;
+		}
+		event.preventDefault();
+		onsource(ip);
+	}
 
 	// The hidden privileged-view actions and the array guard both live in
 	// #lib/audit, so this and the page that counts what it rendered cannot
 	// disagree about which rows are shown.
 	const rows = $derived(visibleAuditEvents(events));
 
-	/**
-	 * Human phrasing per action. Unknown actions fall back to the raw
-	 * namespaced name rather than being hidden: the taxonomy grows without a
-	 * wire change, so a client that only rendered known actions would
-	 * silently drop new ones.
-	 */
-	const phrasing: Record<string, string> = {
-		'auth.login': 'signed in',
-		'auth.login_denied': 'was refused sign-in',
-		'cert.requested': 'requested a certificate',
-		'cert.approved': 'approved a certificate',
-		'cert.denied': 'denied a certificate request',
-		'cert.code_resolved': 'opened a console login by its code',
-		'enrollment.code_created': 'created a service enrollment',
-		'enrollment.redeemed': 'redeemed a service enrollment',
-		'enrollment.expired': 'expired a service enrollment',
-		'enrollment.notification_email_set': "changed a service enrollment's notification address",
-		'enrollment.reassigned': 'reassigned a service enrollment',
-		'user.disabled': 'disabled an account',
-		'user.enabled': 're-enabled an account',
-		'user.auto_disabled': 'was disabled automatically',
-		// Actor and target are the same account, so onWhom adds nothing and
-		// the phrase has to carry "self" on its own. Worded to match
-		// auth.login_denied, the other refusal on a timeline.
-		'user.disable_refused': 'was refused a self-disable',
-		'ldap.sync_triggered': 'ran the directory sync',
-		'ldap.probed': 'probed the directory',
-		'admin.enrollment_viewed': 'viewed an enrollment',
-		// No longer emitted, kept so events recorded before that still read
-		// as a sentence rather than as a raw action name.
-		'admin.config_viewed': 'viewed the effective configuration',
-		// Not rendered at all any more (see hiddenAuditActions), but kept
-		// phrased: the filter is a display rule and this is what the row
-		// would read as if it were ever lifted.
-		'admin.user_viewed': 'viewed a user record',
-		'admin.audit_viewed': 'viewed the audit log'
-	};
-
+	/** describe is the row's verb phrase; see auditPhrasing in #lib/audit. */
 	function describe(event: AuditEvent): string {
-		return phrasing[event.action] ?? event.action;
+		return describeAuditAction(event.action);
 	}
 
 	/** who names the actor, or the system when the server acted alone. */
@@ -148,7 +144,24 @@
 					>
 						{#each details(event) as [key, value] (key)}
 							<dt>{key}</dt>
-							<dd class="break-all text-ink">{value}</dd>
+							<!-- source_ip is the one field the feed filters on, so
+							     on the feed it is a link to the view filtered to
+							     it. Cobalt because it is a link (DESIGN.md, "Where
+							     cobalt appears"); inline in the field list, so the
+							     target rule's inline-link exemption applies. -->
+							{#if key === 'source_ip' && sourceHref}
+								<dd class="break-all">
+									<a
+										href={sourceHref(value)}
+										onclick={(e) => followSource(e, value)}
+										class="text-accent underline hover:text-accent-hover"
+										data-testid="audit-source-link"
+										>{value}<span class="sr-only">, show only events from this address</span></a
+									>
+								</dd>
+							{:else}
+								<dd class="break-all text-ink">{value}</dd>
+							{/if}
 						{/each}
 					</dl>
 				{/if}

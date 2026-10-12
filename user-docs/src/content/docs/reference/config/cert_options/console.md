@@ -145,6 +145,8 @@ Refuses request creation from outside these CIDRs, before a keypair is certified
 
 The server's half of per-host policy rests on the source address rather than the hostname because the address is observed by the server and the hostname is a string an unauthenticated caller typed — the same reasoning that got host certificates declined (https://mnestor.github.io/ssoossh/project/decisions/). Behind a reverse proxy this is only meaningful with http.trusted_proxies set; without it every request carries the proxy's address.
 
+Every refusal writes one cert.request_refused_network audit event with the observed source address (https://mnestor.github.io/ssoossh/operations/audit-log/). The caller needs no session to cause one, so keep http.rate_limit on when the server is reachable from the internet.
+
 ```yaml
 cert_options:
   console:

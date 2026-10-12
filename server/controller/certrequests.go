@@ -495,7 +495,8 @@ func (cr *certRequestController) resolveCodeHandler(g *gin.Context) {
 // error response via ErrorHandlerMiddleware instead of needing to be
 // encoded as an SSE event after the fact. Safe to hit repeatedly for the
 // same :id — e.g. a client reconnecting after a dropped connection — since
-// Wait itself handles that.
+// Wait itself handles that. A server shutting down mid-wait ends the call
+// with a 503, which the client treats like a dropped stream and reconnects.
 //
 // @Summary     Wait for a request's outcome (SSE)
 // @Description A real `text/event-stream`, separate from the creating POST because an
@@ -517,6 +518,7 @@ func (cr *certRequestController) resolveCodeHandler(g *gin.Context) {
 // @Success     200 {string} string "The stream, closed after one terminal event"
 // @Failure     404 {object} openapidoc.ErrorEnvelope "No such request"
 // @Failure     410 {object} openapidoc.ErrorEnvelope "The certificate was issued but is no longer available. They are never persisted, so a client that missed delivery must re-request."
+// @Failure     503 {object} openapidoc.ErrorEnvelope "This instance is shutting down. The request is still pending: reconnect."
 // @Router      /api/certs/requests/{id}/events [get]
 func (cr *certRequestController) eventsHandler(g *gin.Context) {
 	outcome, err := cr.certRequestService.Wait(g.Request.Context(), g.Param("id"))
@@ -562,9 +564,12 @@ func (cr *certRequestController) eventsHandler(g *gin.Context) {
 // @Param       id path string true "The certificate request's UUID"
 // @Param       request body webtypes.ApproveRequestBody false "Service-account selection (service-type requests only)"
 // @Success     200 {object} openapidoc.ApproveEnvelope "Queued for signing"
+// @Failure     400 {object} openapidoc.ErrorEnvelope "Malformed body, or a service-type approval that names no service account"
 // @Failure     401 {object} openapidoc.ErrorEnvelope "No valid session"
-// @Failure     403 {object} openapidoc.ErrorEnvelope "Bound to another user, or a cross-origin call"
+// @Failure     403 {object} openapidoc.ErrorEnvelope "Bound to another user, refused by the type's require condition, a service account the approver is not associated with, or a cross-origin call"
 // @Failure     404 {object} openapidoc.ErrorEnvelope "No such request"
+// @Failure     409 {object} openapidoc.ErrorEnvelope "Already decided: denied, or approved and signing or signed"
+// @Failure     410 {object} openapidoc.ErrorEnvelope "Expired before it was decided"
 // @Security    sessionCookie
 // @Router      /api/certs/requests/{id}/approve [post]
 func (cr *certRequestController) approveHandler(g *gin.Context) {
@@ -617,6 +622,8 @@ func (cr *certRequestController) approveHandler(g *gin.Context) {
 // @Failure     401 {object} openapidoc.ErrorEnvelope "No valid session"
 // @Failure     403 {object} openapidoc.ErrorEnvelope "Bound to another user, or a cross-origin call"
 // @Failure     404 {object} openapidoc.ErrorEnvelope "No such request"
+// @Failure     409 {object} openapidoc.ErrorEnvelope "Already decided: denied, or approved and signing or signed"
+// @Failure     410 {object} openapidoc.ErrorEnvelope "Expired before it was decided"
 // @Security    sessionCookie
 // @Router      /api/certs/requests/{id}/deny [post]
 func (cr *certRequestController) denyHandler(g *gin.Context) {

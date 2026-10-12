@@ -165,6 +165,26 @@ const cases: [string, any, Record<string, unknown>][] = [
 	['AppRail', AppRail, { onsignout: vi.fn() }],
 	['AppRail (collapsed)', AppRail, { collapsed: true, onsignout: vi.fn() }],
 	['AuditTimeline', AuditTimeline, { events: [] }],
+	[
+		'AuditTimeline (source link)',
+		AuditTimeline,
+		// Under `props`: `events` is also the name of a mount option, so a
+		// bare object with a second prop beside it reads as options.
+		{
+			props: {
+				events: [
+					{
+						id: 'evt-1',
+						created_at: '2026-10-12T09:00:00Z',
+						action: 'cert.request_refused_network',
+						system: true,
+						detail: { source_ip: '203.0.113.9' }
+					}
+				],
+				sourceHref: (ip: string) => `/admin/audit?source_ip=${ip}`
+			}
+		}
+	],
 	['BrandMark', BrandMark, { size: 22 }],
 	['Button (primary)', Button, { children: text('Approve') }],
 	['Button (ghost)', Button, { variant: 'ghost', children: text('Cancel') }],

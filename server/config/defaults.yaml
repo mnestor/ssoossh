@@ -393,6 +393,11 @@ http:
   # Zero or negative disables rate limiting entirely. Localhost (127.0.0.1,
   # ::1) bypasses the limit, so health probes and tests from the local
   # frontend are not throttled.
+  #
+  # Keep it on for an internet-facing deployment. Some requests write an audit
+  # event without a session, such as a console request from outside
+  # cert_options.console.allowed_networks, and this limit is what stops one
+  # address writing them as fast as it can send.
   rate_limit: 60
 
   # The time window for rate limiting calculations. With rate_limit=60 and
@@ -1760,6 +1765,12 @@ cert_options:
     # (https://mnestor.github.io/ssoossh/project/decisions/). Behind a reverse
     # proxy this is only meaningful with http.trusted_proxies set; without it
     # every request carries the proxy's address.
+    #
+    # Every refusal writes one cert.request_refused_network audit event with the
+    # observed source address
+    # (https://mnestor.github.io/ssoossh/operations/audit-log/). The caller
+    # needs no session to cause one, so keep http.rate_limit on when the server
+    # is reachable from the internet.
     # allowed_networks: []
 
     # This type's whole budget: the longest a console login can sit waiting for

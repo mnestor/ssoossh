@@ -416,6 +416,11 @@ func (s *CertRequestService) CreateRequest(ctx context.Context, p NewCertRequest
 			slog.String("cert_type", string(p.Type)),
 			slog.String("source_ip", p.SourceIP),
 		)
+		// Recorded before the refusal returns, so a SOC reviewer sees every
+		// attempt. Detached from the request's cancellation: a caller that
+		// hangs up straight after sending must not keep its row out of the
+		// table.
+		s.auditRecord(context.WithoutCancel(ctx), refusedNetworkEvent(p))
 		return CreatedRequest{}, &errorresponses.ForbiddenError{
 			Reason: fmt.Sprintf("%s certificate requests are not accepted from this network", p.Type),
 		}
@@ -519,6 +524,30 @@ func (s *CertRequestService) CreateRequest(ctx context.Context, p NewCertRequest
 // caller writing arbitrary volume into the table. Same reasoning as
 // claimUserAgentMaxLen.
 const maxContextFieldLen = 256
+
+// refusedNetworkEvent builds the audit event for a request the type's
+// network gate refused.
+//
+// A system event with no actor: nobody has signed in at this point. The
+// username and hostname are what an unauthenticated caller sent, so they are
+// recorded under claimed_* keys, never as a subject, and bounded the same way
+// the stored context fields are. source_ip is p.SourceIP, which the
+// controller takes from gin's ClientIP: the peer address, or a forwarded
+// address only through http.trusted_proxies. No request header is copied
+// here, so Cookie and Authorization cannot reach the record.
+func refusedNetworkEvent(p NewCertRequestParams) AuditEvent {
+	return AuditEvent{
+		Action: AuditCertRequestRefusedNetwork,
+		System: true,
+		Reason: fmt.Sprintf("the source address is outside cert_options.%s.allowed_networks", p.Type),
+		Detail: map[string]any{
+			"cert_type":        string(p.Type),
+			"source_ip":        p.SourceIP,
+			"claimed_username": truncateContextField(p.Username),
+			"claimed_hostname": truncateContextField(p.Hostname),
+		},
+	}
+}
 
 // truncateContextField bounds one self-reported string. Truncated rather
 // than rejected: a request that fails because a machine has a long hostname
@@ -878,11 +907,11 @@ func (s *CertRequestService) Approve(ctx context.Context, requestID string, iden
 		return fmt.Errorf("failed to look up certificate request: %w", err)
 	}
 	if req.Status != model.CertificateRequestStatusPending {
-		return fmt.Errorf("certificate request %q is not pending", requestID)
+		return notPendingError(req, s.ttlCutoffFor(req.Type))
 	}
 	if cutoff := s.ttlCutoffFor(req.Type); !cutoff.IsZero() && req.CreatedAt.Before(cutoff) {
 		s.expire(ctx, requestID)
-		return fmt.Errorf("certificate request %q is not pending", requestID)
+		return notPendingError(req, cutoff)
 	}
 
 	var requested RequestedOptions
@@ -966,8 +995,12 @@ func checkApproverAuthorization(certType model.CertificateType, policy *certType
 	// Both rules below come from the policy table rather than a switch here,
 	// so adding a certificate type means filling in newCertTypePolicies
 	// rather than remembering to extend this function.
+	// A ForbiddenError, so the refusal reaches the caller as 403 and is
+	// logged as a refused request. A plain error rendered as 500 and was
+	// logged as an internal failure, which read as the server breaking
+	// rather than policy saying no.
 	if policy.require != nil && !policy.require.evaluate(identity) {
-		return fmt.Errorf("identity is not authorized to approve %s certificates", certType)
+		return &errorresponses.ForbiddenError{Reason: fmt.Sprintf("identity is not authorized to approve %s certificates", certType)}
 	}
 
 	if policy.linkage != nil {
@@ -1219,7 +1252,7 @@ func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req m
 			return fmt.Errorf("failed to mark certificate request as enrolled: %w", result.Error)
 		}
 		if result.RowsAffected == 0 {
-			return fmt.Errorf("certificate request %q is not pending", req.ID)
+			return s.explainNotPending(tx, req.ID)
 		}
 
 		// Create the enrollment record with both computed lifetimes.
@@ -1341,7 +1374,9 @@ func describeAuthorizedKey(authorizedKey string) (fingerprint, keyType string) {
 // choice of principal.
 func checkServiceAccountLinkage(identity *Identity, serviceAccount string, allowUserAccounts bool) error {
 	if serviceAccount == "" {
-		return fmt.Errorf("approving a service certificate requires choosing a service account")
+		// The approver left out a required field: their input, not a
+		// server fault, so it renders as 400 rather than 500.
+		return &errorresponses.InvalidRequestError{Reason: "approving a service certificate requires choosing a service account"}
 	}
 	if slices.Contains(identity.ServiceAccounts, serviceAccount) {
 		return nil
@@ -1349,7 +1384,9 @@ func checkServiceAccountLinkage(identity *Identity, serviceAccount string, allow
 	if allowUserAccounts && slices.Contains(heldAccounts(identity), serviceAccount) {
 		return nil
 	}
-	return fmt.Errorf("identity is not associated with service account %q", serviceAccount)
+	// A policy refusal, not a server fault: typed so it renders as 403
+	// rather than falling through to the error handler's 500.
+	return &errorresponses.ForbiddenError{Reason: fmt.Sprintf("identity is not associated with service account %q", serviceAccount)}
 }
 
 // ApprovableServiceAccounts is every account identity may name as the
@@ -1633,7 +1670,7 @@ func (s *CertRequestService) approveForSigning(ctx context.Context, req model.Ce
 			return fmt.Errorf("failed to mark certificate request as signing: %w", result.Error)
 		}
 		if result.RowsAffected == 0 {
-			return fmt.Errorf("certificate request %q is not pending", req.ID)
+			return s.explainNotPending(tx, req.ID)
 		}
 		if err := tx.Create(decision).Error; err != nil {
 			return fmt.Errorf("failed to record approval decision: %w", err)
@@ -1708,10 +1745,12 @@ func intersectStrings(requested, permitted []string) []string {
 	return out
 }
 
-// Deny marks requestID denied and notifies anything waiting in Wait. Denying
-// a request that's already past the TTL (but not yet lazily flipped to
-// "expired" by Wait) fails the same as denying any other non-pending
-// request — the row's actual state is Wait's responsibility to reconcile.
+// Deny marks requestID denied and notifies anything waiting in Wait. A
+// request that is no longer pending is refused through notPendingError:
+// 409 when it was already decided, 410 when it expired, including one past
+// the TTL but not yet lazily flipped to "expired" by Wait. Deny does not
+// flip it itself; the row's actual state is Wait's responsibility to
+// reconcile.
 //
 // Denying is an action on the request like approving it, so it goes
 // through bindRequester the same way: an unclaimed request is claimed by
@@ -1789,7 +1828,7 @@ func (s *CertRequestService) Deny(ctx context.Context, requestID string, identit
 			return fmt.Errorf("failed to deny certificate request: %w", result.Error)
 		}
 		if result.RowsAffected == 0 {
-			return fmt.Errorf("certificate request %q is not pending", requestID)
+			return s.explainNotPending(tx, requestID)
 		}
 		if err := tx.Create(decision).Error; err != nil {
 			return fmt.Errorf("failed to record denial decision: %w", err)
@@ -1812,7 +1851,9 @@ func (s *CertRequestService) Deny(ctx context.Context, requestID string, identit
 
 // Wait blocks until requestID resolves (approved/denied/expired) or ctx is
 // canceled (e.g. the client disconnects), for the events handler in
-// server/controller/certrequests.go to relay to the client.
+// server/controller/certrequests.go to relay to the client. If the wake
+// subscription closes first, because this instance is shutting down, it
+// returns errorresponses.ShuttingDownError so the client reconnects.
 //
 // Safe to call more than once for the same requestID, including after a
 // previous call returned via ctx cancellation — each call re-checks the
@@ -1928,13 +1969,26 @@ func (s *CertRequestService) expiryTimer(req model.CertificateRequest) (<-chan t
 // separate code path is needed for it.
 //
 // It returns the received message so the caller can inspect its payload with
-// requestID in scope, nil when the expiry timer fired or the subscription
-// closed, or ctx.Err() if the context was cancelled.
+// requestID in scope, nil when the expiry timer fired, or ctx.Err() if the
+// context was cancelled.
+//
+// A closed subscription is terminal, not "check again": the channel stays
+// closed, so looping back to it spins Wait through one database read per
+// pass until ctx ends (#139). It closes when the broker shuts down
+// (watermill's Router.Close closes the shared subscriber), so it returns
+// ctx.Err() if the context has also ended, else ShuttingDownError, which the
+// events handler renders as a 503 the client reconnects from.
 func (s *CertRequestService) waitForUpdate(ctx context.Context, messages <-chan *message.Message, expireC <-chan time.Time) (*message.Message, error) {
 	select {
 	case msg, ok := <-messages:
 		if !ok {
-			return nil, nil
+			// select picks at random among ready cases, so a cancelled
+			// context can land here rather than in its own arm. Report the
+			// cancellation then, as the ctx.Done() arm would have.
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			return nil, &errorresponses.ShuttingDownError{}
 		}
 		msg.Ack()
 		return msg, nil
@@ -1958,6 +2012,60 @@ func (s *CertRequestService) lookupRequest(ctx context.Context, requestID string
 		return model.CertificateRequest{}, fmt.Errorf("failed to look up certificate request: %w", err)
 	}
 	return req, nil
+}
+
+// notPendingError says why req can no longer be approved or denied, from
+// its actual state. cutoff is req's type's TTL cutoff (see ttlCutoffFor);
+// the zero time means no TTL.
+//
+//   - Expired, or still pending but created before cutoff (past its TTL
+//     and not yet flipped to expired by Wait or the sweep): ExpiredError,
+//     410 Gone, the same status an expired console code answers with.
+//   - Denied: ConflictError, 409.
+//   - Approved, signing, enrolled or failed: ConflictError, 409. Each of
+//     these follows an approval.
+//   - Anything else, in practice a pending row that lost a race but has
+//     since been reset: ConflictError, 409.
+//
+// The reasons reach the approval page, so they name the state and never
+// the request ID.
+func notPendingError(req model.CertificateRequest, cutoff time.Time) error {
+	switch req.Status {
+	case model.CertificateRequestStatusExpired:
+		return &errorresponses.ExpiredError{Resource: "certificate request"}
+	case model.CertificateRequestStatusPending:
+		if !cutoff.IsZero() && req.CreatedAt.Before(cutoff) {
+			return &errorresponses.ExpiredError{Resource: "certificate request"}
+		}
+	case model.CertificateRequestStatusDenied:
+		return &errorresponses.ConflictError{Reason: "this certificate request was already denied"}
+	case model.CertificateRequestStatusApproved,
+		model.CertificateRequestStatusSigning,
+		model.CertificateRequestStatusEnrolled,
+		model.CertificateRequestStatusFailed:
+		return &errorresponses.ConflictError{Reason: "this certificate request was already approved"}
+	}
+	return &errorresponses.ConflictError{Reason: "this certificate request is no longer pending"}
+}
+
+// explainNotPending re-reads requestID through tx after a guarded
+// "WHERE status = pending" update matched no row, and returns
+// notPendingError for the state that row is in now. The row the caller
+// read earlier is stale by definition: something changed it in between.
+// A row that has since been deleted (the retention sweep) is NotFoundError,
+// the same as an unknown ID.
+func (s *CertRequestService) explainNotPending(tx *gorm.DB, requestID string) error {
+	var req model.CertificateRequest
+	if err := tx.First(&req, "id = ?", requestID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return &errorresponses.NotFoundError{Resource: fmt.Sprintf("certificate request %q", requestID)}
+		}
+		// not covered: failing this read after the guarded update in the
+		// same transaction succeeded needs per-query DB fault injection,
+		// which this codebase has no helper for.
+		return fmt.Errorf("failed to re-read certificate request: %w", err)
+	}
+	return notPendingError(req, s.ttlCutoffFor(req.Type))
 }
 
 // reconcileStatus handles req's current DB status for Wait's loop:
