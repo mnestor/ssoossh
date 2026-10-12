@@ -879,12 +879,9 @@ describe('after a decision goes through', () => {
 		};
 	}
 
-	/** badgeText is the status badge's text, the first span in the card header. */
+	/** badgeText is the request status badge's text. */
 	function badgeText(): string {
-		const card = screen.getByTestId('approval-view');
-		return within(card)
-			.getByText(/^(pending|signing|approved|enrolled|denied|expired|failed)$/)
-			.textContent!.trim();
+		return screen.getByTestId('request-status').textContent!.trim();
 	}
 
 	beforeEach(() => {

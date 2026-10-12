@@ -529,7 +529,7 @@
 		     request is in, what kind it is, and which one it is. -->
 		<div class="flex items-center justify-between gap-3 pb-4">
 			<div class="flex items-center gap-2">
-				<StatusBadge status={shownStatus} />
+				<StatusBadge status={shownStatus} testid="request-status" />
 				<TypeChip type={detail.type} />
 			</div>
 			{#if !simplified}
