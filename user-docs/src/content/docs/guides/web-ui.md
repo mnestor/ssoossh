@@ -18,7 +18,7 @@ identity provider and takes you back afterwards. If a deployment sets a
 consent notice, it stands in front of the sign-in button and has to be
 accepted before anything else is clickable.
 
-![The sign-in screen: the ssoossh mark, a "Sign in to ssoossh" heading, and a Continue link for a session that already exists](../../../assets/screens/login.png)
+![The sign-in screen: the ssoossh mark, a "Sign in to ssoossh" heading, a line naming the account that is already signed in, a Continue button and a Sign out link](../../../assets/screens/login.png)
 
 <p class="screen-caption">The sign-in screen. Opening an approval link while signed out lands here first and returns to the request afterwards.</p>
 
@@ -32,7 +32,7 @@ Signed in, the app has one navigation surface: the rail down the left edge.
 It holds the brand, every destination, and -- at its bottom edge -- your
 identity, which opens into the account controls.
 
-![The dashboard with the navigation rail expanded: Dashboard, History, Service codes and Console login above an Admin group of eight entries, and the signed-in identity at the bottom](../../../assets/screens/dashboard.png)
+![The dashboard with the navigation rail expanded: Dashboard, History, Service codes and Console login above an Admin group of eight entries, the signed-in identity at the bottom, and a Recent certificates list filling the rest of the page](../../../assets/screens/dashboard.png)
 
 <p class="screen-caption">The dashboard, with the rail expanded and the Admin group open. Someone without an admin role sees the rail without that group.</p>
 
@@ -61,7 +61,7 @@ The rail has a few behaviours worth knowing:
 
 ![The rail collapsed to a 60-pixel strip of icons, with the dashboard content filling the rest of the width](../../../assets/screens/rail-collapsed.png)
 
-![The identity row's drop-up menu open over the rail, listing the account, Preferences, the theme switch and Sign out](../../../assets/screens/rail-user-menu.png)
+![The identity row's drop-up menu open over the rail: the signed-in name and email, which open the account page, then Preferences, the theme switch and Sign out](../../../assets/screens/rail-user-menu.png)
 
 </div>
 
@@ -106,7 +106,7 @@ detail can be reloaded, bookmarked, pasted into a ticket, and left with the
 browser's own Back button. Each carries a back chip naming the list it was
 opened from.
 
-![A certificate's detail page: type and status chips, the certificate card with principals, key ID, serial, fingerprint and validity, then the decision card with the approver, source address, approver groups and the lifetime policy that applied](../../../assets/screens/cert-detail.png)
+![A PAM certificate's detail page in the Advanced view: a header strip with the type, the reported host, an Expired chip and the request ID; the Certificate card with principals, key ID, serial, fingerprint and valid period; the Decision card with the approver, source address, approver groups, principals granted and the lifetime policy that applied; and a What asked for it card with the service, terminal, command, machine ID and client the host reported](../../../assets/screens/cert-detail.png)
 
 <p class="screen-caption">A PAM certificate's detail page. The "What asked for it" section at the bottom is what the requesting host reported about itself, labelled as never verified.</p>
 
