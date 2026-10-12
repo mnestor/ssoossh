@@ -200,22 +200,79 @@ func TestCheckHeaderHygiene_HSTSDisabled(t *testing.T) {
 
 	tests := []struct {
 		name string
-		hsts http.Header
+		hsts []string
 		want DiagnosticStatus
 	}{
-		{name: "should warn when http.hsts is empty and the edge sends none", hsts: nil, want: DiagnosticWarn},
-		{name: "should not grade HSTS when http.hsts is empty and the edge sends one", hsts: http.Header{"Strict-Transport-Security": {"max-age=1"}}, want: DiagnosticOK},
+		{name: "should be ok when http.hsts is empty and the edge sends none", hsts: nil, want: DiagnosticOK},
+		{name: "should be ok when http.hsts is empty and the edge sends an empty header", hsts: []string{""}, want: DiagnosticOK},
+		{name: "should be ok when http.hsts is empty and the edge sends a short max-age", hsts: []string{"max-age=1"}, want: DiagnosticOK},
+		{name: "should be ok when http.hsts is empty and the edge sends a full policy", hsts: []string{"max-age=63072000; includeSubDomains; preload"}, want: DiagnosticOK},
+		{name: "should warn when http.hsts is empty and the edge sends max-age=0", hsts: []string{"max-age=0"}, want: DiagnosticWarn},
+		{name: "should warn when http.hsts is empty and the edge sends a non-numeric max-age", hsts: []string{"max-age=abc"}, want: DiagnosticWarn},
+		{name: "should warn when http.hsts is empty and the edge sends no max-age", hsts: []string{"includeSubDomains"}, want: DiagnosticWarn},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			h := goodHeaders()
 			h.Del("Strict-Transport-Security")
-			for k, v := range tt.hsts {
-				h[k] = v
+			if tt.hsts != nil {
+				h["Strict-Transport-Security"] = tt.hsts
 			}
 			if c := hygieneCheck(t, "", h); c.Status != tt.want {
 				t.Errorf("got %q, want %q (findings: %v)", c.Status, tt.want, c.Findings)
+			}
+		})
+	}
+}
+
+func TestCheckHeaderHygiene_HSTSDisabledFindings(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		mutate func(http.Header)
+		want   string
+	}{
+		{name: "should say HSTS is off in config when the edge sends none", mutate: func(http.Header) {}, want: "HSTS is off in config (http.hsts is empty)"},
+		{name: "should name the edge's value when it adds HSTS", mutate: func(h http.Header) { h.Set("Strict-Transport-Security", "max-age=1") }, want: `the edge adds Strict-Transport-Security "max-age=1"`},
+		{name: "should say max-age=0 drops HSTS when the edge sends it", mutate: func(h http.Header) { h.Set("Strict-Transport-Security", "max-age=0") }, want: "drop any HSTS policy"},
+		{name: "should say browsers ignore a malformed edge HSTS", mutate: func(h http.Header) { h.Set("Strict-Transport-Security", "max-age=x") }, want: "malformed, so browsers ignore it"},
+		{name: "should keep the HSTS note when another header warns", mutate: func(h http.Header) { h.Set("X-Frame-Options", "SAMEORIGIN") }, want: "HSTS is off in config"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			h := goodHeaders()
+			h.Del("Strict-Transport-Security")
+			tt.mutate(h)
+			c := hygieneCheck(t, "", h)
+			if joined := strings.Join(c.Findings, "\n"); !strings.Contains(joined, tt.want) {
+				t.Errorf("findings %q do not contain %q", joined, tt.want)
+			}
+		})
+	}
+}
+
+func TestCheckHeaderHygiene_RemediationNamesHSTSOnlyWhenConfigured(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		hsts     string
+		wantHSTS bool
+	}{
+		{name: "should name HSTS in the remediation when http.hsts is set", hsts: testHSTS, wantHSTS: true},
+		{name: "should not name HSTS in the remediation when http.hsts is empty", hsts: "", wantHSTS: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			h := goodHeaders()
+			h.Set("X-Frame-Options", "SAMEORIGIN")
+			c := hygieneCheck(t, tt.hsts, h)
+			if got := strings.Contains(c.Remediation, "HSTS"); got != tt.wantHSTS {
+				t.Errorf("remediation %q names HSTS = %v, want %v", c.Remediation, got, tt.wantHSTS)
 			}
 		})
 	}
@@ -247,6 +304,216 @@ func TestCheckHeaderHygiene_IncompleteAppValues(t *testing.T) {
 			c := NewDiagnosticsService(cfg, app, nil).checkHeaderHygiene(edgeProbe{reached: true, fromApp: true, headers: goodHeaders()})
 			if c.Status != DiagnosticSkipped {
 				t.Errorf("got %q, want %q (summary: %s)", c.Status, DiagnosticSkipped, c.Summary)
+			}
+		})
+	}
+}
+
+// withScriptSrc returns the app's CSP with script-src replaced by sources.
+func withScriptSrc(sources string) string {
+	return strings.Replace(testAppCSP("abc"), "script-src 'self' 'nonce-abc'", "script-src "+sources, 1)
+}
+
+func TestCheckHeaderHygiene_ScriptSrcHashSources(t *testing.T) {
+	t.Parallel()
+
+	const hash = "'sha256-B2yPHKaXnvFWtRChIbabYmUBFZdVfKKXHbWtWidDVF8='"
+
+	tests := []struct {
+		name string
+		csp  string
+		want DiagnosticStatus
+	}{
+		// A hash admits only the script it names, so it stands in for the nonce.
+		{name: "should be ok when script-src uses a sha256 hash in place of the nonce", csp: withScriptSrc("'self' " + hash), want: DiagnosticOK},
+		{name: "should be ok when script-src uses a sha384 hash", csp: withScriptSrc("'self' 'sha384-abc'"), want: DiagnosticOK},
+		{name: "should be ok when script-src uses a sha512 hash", csp: withScriptSrc("'self' 'sha512-abc'"), want: DiagnosticOK},
+		{name: "should be ok when script-src uses only a hash", csp: withScriptSrc(hash), want: DiagnosticOK},
+		{name: "should be ok when script-src mixes a nonce and a hash", csp: withScriptSrc("'self' 'nonce-zzz' " + hash), want: DiagnosticOK},
+		{name: "should be ok when script-src lists several hashes", csp: withScriptSrc("'self' " + hash + " 'sha384-abc'"), want: DiagnosticOK},
+		{name: "should be ok when the hash prefix is uppercase", csp: withScriptSrc("'self' 'SHA256-abc'"), want: DiagnosticOK},
+		{name: "should be ok when a hash comes through default-src with no script-src", csp: "default-src 'self' " + hash + "; object-src 'none'; frame-ancestors 'none'", want: DiagnosticOK},
+
+		// Anything that loosens script matching cancels the equivalence.
+		{name: "should warn when a hash comes with 'unsafe-inline'", csp: withScriptSrc("'self' " + hash + " 'unsafe-inline'"), want: DiagnosticWarn},
+		{name: "should warn when a hash comes with 'unsafe-eval'", csp: withScriptSrc("'self' " + hash + " 'unsafe-eval'"), want: DiagnosticWarn},
+		{name: "should warn when a hash comes with 'unsafe-hashes'", csp: withScriptSrc("'self' " + hash + " 'unsafe-hashes'"), want: DiagnosticWarn},
+		{name: "should warn when a hash comes with a wildcard", csp: withScriptSrc("'self' " + hash + " *"), want: DiagnosticWarn},
+		{name: "should warn when a hash comes with a wildcard host", csp: withScriptSrc("'self' " + hash + " *.example.com"), want: DiagnosticWarn},
+		{name: "should warn when a hash comes with the https: scheme source", csp: withScriptSrc("'self' " + hash + " https:"), want: DiagnosticWarn},
+		{name: "should warn when a hash comes with the data: scheme source", csp: withScriptSrc("'self' " + hash + " data:"), want: DiagnosticWarn},
+		{name: "should warn when a hash comes with 'strict-dynamic'", csp: withScriptSrc("'self' " + hash + " 'strict-dynamic'"), want: DiagnosticWarn},
+		{name: "should warn when a nonce comes with 'strict-dynamic'", csp: withScriptSrc("'self' 'nonce-abc' 'strict-dynamic'"), want: DiagnosticWarn},
+		{name: "should warn when a nonce and a hash come with 'unsafe-inline'", csp: withScriptSrc("'self' 'nonce-abc' " + hash + " 'unsafe-inline'"), want: DiagnosticWarn},
+		{name: "should warn when a hash comes with a host the app does not allow", csp: withScriptSrc("'self' " + hash + " https://cdn.example"), want: DiagnosticWarn},
+
+		// Malformed hashes are not hashes.
+		{name: "should warn when the hash algorithm is sha1", csp: withScriptSrc("'self' 'sha1-abc'"), want: DiagnosticWarn},
+		{name: "should warn when the hash value is empty", csp: withScriptSrc("'self' 'sha256-'"), want: DiagnosticWarn},
+		{name: "should warn when the hash has no closing quote", csp: withScriptSrc("'self' 'sha256-abc"), want: DiagnosticWarn},
+		{name: "should warn when the hash is unquoted", csp: withScriptSrc("'self' sha256-abc"), want: DiagnosticWarn},
+
+		// The equivalence is for script-src: the app's object-src is 'none'.
+		{name: "should warn when object-src carries a hash", csp: strings.Replace(testAppCSP("abc"), "object-src 'none'", "object-src "+hash, 1), want: DiagnosticWarn},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			h := goodHeaders()
+			h.Set("Content-Security-Policy", tt.csp)
+			if c := hygieneCheck(t, testHSTS, h); c.Status != tt.want {
+				t.Errorf("got %q, want %q (findings: %v)", c.Status, tt.want, c.Findings)
+			}
+		})
+	}
+}
+
+func TestCheckHeaderHygiene_RepeatedHeaderLines(t *testing.T) {
+	t.Parallel()
+
+	app := testAppCSP("abc")
+	weakScript := withScriptSrc("'self' 'unsafe-inline'")
+	noFA := strings.Replace(app, "frame-ancestors 'none'; ", "", 1)
+
+	tests := []struct {
+		name string
+		csp  []string
+		xfo  []string
+		want DiagnosticStatus
+	}{
+		// Browsers enforce every CSP; one that is the app's bounds the rest.
+		{name: "should be ok when a second CSP line is weak and the first is the app's", csp: []string{app, "script-src * 'unsafe-inline'; object-src *; frame-ancestors *"}, want: DiagnosticOK},
+		{name: "should be ok when the weak CSP line comes first", csp: []string{"script-src * 'unsafe-inline'; object-src *; frame-ancestors *", app}, want: DiagnosticOK},
+		{name: "should be ok when two comma-separated policies on one line have only one weak", csp: []string{app + ", script-src *"}, want: DiagnosticOK},
+		{name: "should be ok when each CSP line is weak on a different directive", csp: []string{
+			"object-src 'none'; script-src *; frame-ancestors 'none'",
+			"object-src *; script-src 'self' 'nonce-abc'",
+		}, want: DiagnosticOK},
+		{name: "should be ok when an empty CSP line sits beside the app's", csp: []string{"", app}, want: DiagnosticOK},
+		{name: "should be ok when frame-ancestors is 'none' in one line and 'self' in another", csp: []string{app, "frame-ancestors 'self'"}, want: DiagnosticOK},
+		{name: "should warn when every CSP line is weak on script-src", csp: []string{weakScript, withScriptSrc("*")}, want: DiagnosticWarn},
+		{name: "should warn when no single CSP line is within the app's script-src even if their intersection is", csp: []string{
+			withScriptSrc("'self' https:"), withScriptSrc("'self' 'unsafe-inline'"),
+		}, want: DiagnosticWarn},
+		{name: "should warn when the only CSP line with frame-ancestors is weak despite X-Frame-Options DENY", csp: []string{noFA, "frame-ancestors *"}, want: DiagnosticWarn},
+		{name: "should warn when every CSP line is empty", csp: []string{"", " , ; "}, want: DiagnosticWarn},
+
+		// Every X-Frame-Options value must be the app's.
+		{name: "should be ok when X-Frame-Options is DENY on two lines", csp: []string{app}, xfo: []string{"DENY", "deny"}, want: DiagnosticOK},
+		{name: "should be ok when X-Frame-Options has an empty token beside DENY", csp: []string{app}, xfo: []string{"DENY,"}, want: DiagnosticOK},
+		{name: "should warn when a second X-Frame-Options line is SAMEORIGIN", csp: []string{app}, xfo: []string{"DENY", "SAMEORIGIN"}, want: DiagnosticWarn},
+		{name: "should warn when X-Frame-Options is a comma list of DENY and SAMEORIGIN", csp: []string{app}, xfo: []string{"DENY, SAMEORIGIN"}, want: DiagnosticWarn},
+		{name: "should warn when X-Frame-Options is only a comma", csp: []string{app}, xfo: []string{","}, want: DiagnosticWarn},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			h := goodHeaders()
+			h["Content-Security-Policy"] = tt.csp
+			if tt.xfo != nil {
+				h["X-Frame-Options"] = tt.xfo
+			}
+			if c := hygieneCheck(t, testHSTS, h); c.Status != tt.want {
+				t.Errorf("got %q, want %q (findings: %v)", c.Status, tt.want, c.Findings)
+			}
+		})
+	}
+}
+
+func TestCheckHeaderHygiene_RepeatedLinesFindingNamesEveryPolicy(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		csp  []string
+		xfo  []string
+		want string
+	}{
+		{name: "should list each policy's script-src when none is within the app's", csp: []string{withScriptSrc("*"), withScriptSrc("https:")}, want: `"script-src * | script-src https:"`},
+		{name: "should list each policy's frame-ancestors when none is within the app's", csp: []string{
+			strings.Replace(testAppCSP("abc"), "frame-ancestors 'none'", "frame-ancestors *", 1), "frame-ancestors 'self'",
+		}, want: `"frame-ancestors * | frame-ancestors 'self'"`},
+		{name: "should show every X-Frame-Options line joined", csp: []string{testAppCSP("abc")}, xfo: []string{"DENY", "SAMEORIGIN"}, want: `"DENY, SAMEORIGIN"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			h := goodHeaders()
+			h["Content-Security-Policy"] = tt.csp
+			if tt.xfo != nil {
+				h["X-Frame-Options"] = tt.xfo
+			}
+			c := hygieneCheck(t, testHSTS, h)
+			if joined := strings.Join(c.Findings, "\n"); !strings.Contains(joined, tt.want) {
+				t.Errorf("findings %q do not contain %q", joined, tt.want)
+			}
+		})
+	}
+}
+
+func TestSourceClassifiers(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		source      string
+		wantToken   bool
+		wantLoosens bool
+	}{
+		{name: "should treat a nonce as a token source", source: "'nonce-abc'", wantToken: true},
+		{name: "should treat a sha256 hash as a token source", source: "'sha256-abc'", wantToken: true},
+		{name: "should treat a sha384 hash as a token source", source: "'sha384-abc'", wantToken: true},
+		{name: "should treat a sha512 hash as a token source", source: "'sha512-abc'", wantToken: true},
+		{name: "should not treat a sha1 hash as a token source", source: "'sha1-abc'"},
+		{name: "should not treat an empty nonce as a token source", source: "'nonce-'"},
+		{name: "should not treat an empty hash as a token source", source: "'sha256-'"},
+		{name: "should not treat a hash missing its closing quote as a token source", source: "'sha256-abc"},
+		{name: "should not treat an empty string as a token source", source: ""},
+		{name: "should not treat 'self' as loosening", source: "'self'"},
+		{name: "should not treat a host as loosening", source: "https://cdn.example"},
+		{name: "should treat 'unsafe-inline' as loosening", source: "'unsafe-inline'", wantLoosens: true},
+		{name: "should treat 'unsafe-eval' as loosening", source: "'unsafe-eval'", wantLoosens: true},
+		{name: "should treat 'unsafe-hashes' as loosening", source: "'unsafe-hashes'", wantLoosens: true},
+		{name: "should treat a bare wildcard as loosening", source: "*", wantLoosens: true},
+		{name: "should treat a wildcard host as loosening", source: "https://*.example", wantLoosens: true},
+		{name: "should treat a scheme source as loosening", source: "blob:", wantLoosens: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := isNonceOrHashSource(tt.source); got != tt.wantToken {
+				t.Errorf("isNonceOrHashSource(%q) = %v, want %v", tt.source, got, tt.wantToken)
+			}
+			if got := loosensScripts(tt.source); got != tt.wantLoosens {
+				t.Errorf("loosensScripts(%q) = %v, want %v", tt.source, got, tt.wantLoosens)
+			}
+		})
+	}
+}
+
+func TestSourcesWithin(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		observed []string
+		allowed  []string
+		want     bool
+	}{
+		{name: "should be within when observed is empty", observed: nil, allowed: []string{"'self'"}, want: true},
+		{name: "should be within when observed equals allowed", observed: []string{"'self'", "'nonce-a'"}, allowed: []string{"'self'", "'nonce-a'"}, want: true},
+		{name: "should match a different nonce", observed: []string{"'nonce-b'"}, allowed: []string{"'nonce-a'"}, want: true},
+		{name: "should match a hash to the app's nonce", observed: []string{"'sha256-x'"}, allowed: []string{"'nonce-a'"}, want: true},
+		{name: "should not match a hash when the app allows no nonce or hash", observed: []string{"'sha256-x'"}, allowed: []string{"'self'"}, want: false},
+		{name: "should not match a hash when observed also has a loosening source the app allows", observed: []string{"'sha256-x'", "'unsafe-eval'"}, allowed: []string{"'nonce-a'", "'unsafe-eval'"}, want: false},
+		{name: "should match a loosening source the app allows when no token equivalence is needed", observed: []string{"'nonce-a'", "'unsafe-eval'"}, allowed: []string{"'nonce-a'", "'unsafe-eval'"}, want: true},
+		{name: "should not be within when a source is not allowed", observed: []string{"'self'", "https:"}, allowed: []string{"'self'"}, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := sourcesWithin(tt.observed, tt.allowed); got != tt.want {
+				t.Errorf("sourcesWithin(%q, %q) = %v, want %v", tt.observed, tt.allowed, got, tt.want)
 			}
 		})
 	}
