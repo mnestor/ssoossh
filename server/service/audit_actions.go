@@ -65,8 +65,10 @@ const (
 	// The source is the address the server observed (through
 	// http.trusted_proxies), never one the client supplied. One row per
 	// refusal, so a run of attempts shows each time and source. Anyone on a
-	// refused network can raise it without signing in, so the row-cap
-	// sweep deletes these rows before any other (see SweepAuditEvents).
+	// refused network can raise it without signing in; the row-cap sweep
+	// still takes these rows oldest first like any other (see
+	// SweepAuditEvents), leaving a burst to the firewall, the rate limits
+	// and the shipped log.
 	AuditCertRequestRefusedNetwork AuditAction = "cert.request_refused_network"
 
 	AuditEnrollmentCodeCreated AuditAction = "enrollment.code_created"

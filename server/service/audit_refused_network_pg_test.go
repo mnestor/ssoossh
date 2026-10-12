@@ -9,12 +9,11 @@ import (
 	"github.com/mnestor/ssoossh/test/postgres"
 )
 
-// should delete network refusals first on Postgres too, where the victims
-// are selected through the migrated idx_audit_events_action index and
+// should delete oldest first whatever the action on Postgres too, where
 // created_at is a TIMESTAMPTZ. The cases share one database, so the table is
 // emptied before each. Not parallel: the Postgres harness binds one fixed
 // port.
-func TestSweepAuditEvents_shouldDeleteNetworkRefusalsFirstOnPostgres(t *testing.T) {
+func TestSweepAuditEvents_shouldDeleteOldestFirstWhateverTheActionOnPostgres(t *testing.T) {
 	db, _ := postgres.ConnectAndMigrate(t, t.Context())
 	for _, tt := range refusalSweepCases() {
 		t.Run(tt.name, func(t *testing.T) {
