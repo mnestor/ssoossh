@@ -155,6 +155,6 @@ remains the requester's.
   the signer refused (`error_code` from the reply) or because the stranded
   sweep found the row stuck (`error_code: stranded`).
 
-See `server/service/audit.go` for the taxonomy and the
+See `server/service/audit_actions.go` for the taxonomy and the
 [signing pipeline](/ssoossh/internals/architecture/) for where each stage
 sits.

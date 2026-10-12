@@ -85,6 +85,54 @@ describe('AuditTimeline', () => {
 		);
 	});
 
+	// Each row is shaped as the server records it: cert.claimed has no actor
+	// (nobody has signed in yet), cert.expired and cert.sign_failed are system
+	// events, and admin.diagnostics_run names the admin who ran it. None of
+	// the first three has an actor or a target, so they appear only on the
+	// global feed; the per-user rows are what an account's own timeline shows.
+	const admin = { user_id: 'u-alice', username: 'alice' };
+	it.each([
+		{
+			view: 'the global feed',
+			row: event({ action: 'cert.claimed' }),
+			subjectUserId: '',
+			want: 'Someone opened a certificate approval link'
+		},
+		{
+			view: 'the global feed',
+			row: event({ action: 'cert.expired', system: true }),
+			subjectUserId: '',
+			want: 'The server expired an unanswered certificate request'
+		},
+		{
+			view: 'the global feed',
+			row: event({ action: 'cert.sign_failed', system: true }),
+			subjectUserId: '',
+			want: 'The server could not sign an approved certificate'
+		},
+		{
+			view: 'the global feed',
+			row: event({ action: 'admin.diagnostics_run', actor: admin }),
+			subjectUserId: '',
+			want: 'alice ran the deployment diagnostics'
+		},
+		{
+			view: 'the account timeline',
+			row: event({ action: 'admin.diagnostics_run', actor: admin }),
+			subjectUserId: 'u-alice',
+			want: 'This account ran the deployment diagnostics'
+		},
+		{
+			view: 'another account timeline',
+			row: event({ action: 'admin.diagnostics_run', actor: admin }),
+			subjectUserId: 'u-bob',
+			want: 'alice ran the deployment diagnostics'
+		}
+	])('should phrase $row.action on $view', ({ row, subjectUserId, want }) => {
+		render(AuditTimeline, { props: { events: [row], subjectUserId } });
+		expect(screen.getByTestId('audit-event').querySelector('p')).toHaveTextContent(want);
+	});
+
 	it('should name the actor when one is recorded', () => {
 		render(AuditTimeline, {
 			props: {

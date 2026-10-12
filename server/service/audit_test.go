@@ -417,15 +417,16 @@ func TestSweepAuditEvents_ShouldKeepTheNewestPastTheCap(t *testing.T) {
 	}
 }
 
-// auditTaxonomy reads every AuditAction constant declared in audit.go, so a
-// test over "every action" cannot fall behind when one is added. Parsing the
-// source is the only way to enumerate a const block.
+// auditTaxonomy reads every AuditAction constant declared in
+// audit_actions.go, so a test over "every action" cannot fall behind when
+// one is added. Parsing the source is the only way to enumerate a const
+// block.
 func auditTaxonomy(t *testing.T) []AuditAction {
 	t.Helper()
 
-	file, err := parser.ParseFile(token.NewFileSet(), "audit.go", nil, 0)
+	file, err := parser.ParseFile(token.NewFileSet(), "audit_actions.go", nil, 0)
 	if err != nil {
-		t.Fatalf("failed to parse audit.go: %v", err)
+		t.Fatalf("failed to parse audit_actions.go: %v", err)
 	}
 	var actions []AuditAction
 	for _, decl := range file.Decls {
@@ -457,7 +458,7 @@ func auditTaxonomy(t *testing.T) []AuditAction {
 	// A floor rather than an exact count: it catches a parse that silently
 	// found nothing without needing an edit for every new action.
 	if len(actions) < 20 {
-		t.Fatalf("found only %d AuditAction constants in audit.go: %v", len(actions), actions)
+		t.Fatalf("found only %d AuditAction constants in audit_actions.go: %v", len(actions), actions)
 	}
 	return actions
 }

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { AuditEvent } from '#lib/api/types.js';
-	import { visibleAuditEvents } from '#lib/audit.js';
+	import { describeAuditAction, visibleAuditEvents } from '#lib/audit.js';
 	import { formatDateTime } from '#lib/format.js';
 
 	interface Props {
@@ -21,46 +21,9 @@
 	// disagree about which rows are shown.
 	const rows = $derived(visibleAuditEvents(events));
 
-	/**
-	 * Human phrasing per action. Unknown actions fall back to the raw
-	 * namespaced name rather than being hidden: the taxonomy grows without a
-	 * wire change, so a client that only rendered known actions would
-	 * silently drop new ones.
-	 */
-	const phrasing: Record<string, string> = {
-		'auth.login': 'signed in',
-		'auth.login_denied': 'was refused sign-in',
-		'cert.requested': 'requested a certificate',
-		'cert.approved': 'approved a certificate',
-		'cert.denied': 'denied a certificate request',
-		'cert.code_resolved': 'opened a console login by its code',
-		'enrollment.code_created': 'created a service enrollment',
-		'enrollment.redeemed': 'redeemed a service enrollment',
-		'enrollment.expired': 'expired a service enrollment',
-		'enrollment.notification_email_set': "changed a service enrollment's notification address",
-		'enrollment.reassigned': 'reassigned a service enrollment',
-		'user.disabled': 'disabled an account',
-		'user.enabled': 're-enabled an account',
-		'user.auto_disabled': 'was disabled automatically',
-		// Actor and target are the same account, so onWhom adds nothing and
-		// the phrase has to carry "self" on its own. Worded to match
-		// auth.login_denied, the other refusal on a timeline.
-		'user.disable_refused': 'was refused a self-disable',
-		'ldap.sync_triggered': 'ran the directory sync',
-		'ldap.probed': 'probed the directory',
-		'admin.enrollment_viewed': 'viewed an enrollment',
-		// No longer emitted, kept so events recorded before that still read
-		// as a sentence rather than as a raw action name.
-		'admin.config_viewed': 'viewed the effective configuration',
-		// Not rendered at all any more (see hiddenAuditActions), but kept
-		// phrased: the filter is a display rule and this is what the row
-		// would read as if it were ever lifted.
-		'admin.user_viewed': 'viewed a user record',
-		'admin.audit_viewed': 'viewed the audit log'
-	};
-
+	/** describe is the row's verb phrase; see auditPhrasing in #lib/audit. */
 	function describe(event: AuditEvent): string {
-		return phrasing[event.action] ?? event.action;
+		return describeAuditAction(event.action);
 	}
 
 	/** who names the actor, or the system when the server acted alone. */
