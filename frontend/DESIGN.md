@@ -936,8 +936,11 @@ nothing else. The gate is display-only (the server re-checks every read),
 and a signed-in identity without auditor access is told so rather than sent
 to a login it already passed. That refusal is the `AccessDenied` card, the
 same one the error page gives a 403; a section narrower than the area (the
-Directory) gates in its own `+layout.svelte` with the same card, and is
-marked `adminOnly` in `nav.ts` so the rail does not offer it. Each admin page sets its own width through
+Config, Directory, Claims echo and Diagnostics, all admin only) gates in its own
+`+layout.svelte` with the same card, naming the page in the requirement
+("Diagnostics needs the admin role."), and is marked `adminOnly` in
+`nav.ts` so `adminNavFor` leaves it out of the rail. Behind that gate the
+page has no non-admin branch. Each admin page sets its own width through
 `PageShell`; the rail marks the section for its own path and everything
 beneath it.
 
@@ -957,8 +960,9 @@ beneath it.
   LEFT JOIN) so an auditor can trace them. Rows open `/certs/<id>`.
 - **Service codes** (`/admin/service-codes`, and `/<id>`): every
   enrollment; the detail carries Expire for SOC.
-- **Config** (`/admin/config`): every key in effect, grouped by the config
-  file's sections, filtered by key or value. The server reflects over its
+- **Config** (`/admin/config`, admin only, gated like the Directory): every
+  key in effect, grouped by the config file's sections, filtered by key or
+  value. The server reflects over its
   own config struct (`server/config/effective.go`), so the page lists no key
   itself. Keys at their defaults are hidden until "Show unset keys" is
   checked; a typed filter overrides that. Secrets are redacted at their Go
@@ -970,7 +974,8 @@ beneath it.
   the `AccessDenied` card on a direct visit. The probe's three views (entry as returned, field
   mapping, merge and allowlist) are a segmented toggle group, not tabs; a
   mapped attribute carries a "mapped" label, not a colour.
-- **Claims echo** (`/admin/identity/echo`, admin only): re-authenticates
+- **Claims echo** (`/admin/identity/echo`, admin only, gated like the
+  Directory): re-authenticates
   with `prompt=login` and renders the decoded ID token, each claim annotated
   by the field that reads it, plus the `fields.extra` block that would
   capture the unread ones. Nothing is stored; the token arrives in the URL
@@ -1008,7 +1013,8 @@ beneath it.
   - Clear filters (ghost) appears once either is set. Filters that match
     nothing get the "filtered out" `EmptyState` with Clear filters; an empty
     table gets the "nothing yet" one.
-- **Diagnostics** (`/admin/diagnostics`, admin only): four read-only
+- **Diagnostics** (`/admin/diagnostics`, admin only, gated like the
+  Directory): four read-only
   deployment checks run on demand (public URL reachability, proxy trust and
   client IP, security headers, CORS and edge header attribution), one panel
   per check in a single column, in the order they ran, each with an OK,
