@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -39,26 +40,26 @@ const expectedNonce = "probe"
 
 // hygieneFindings grades the security headers on the public URL against the
 // values the app emits, a, and against http.hsts. a comes from the middleware
-// that sets the headers, so the grading cannot drift from it. Each finding
-// names the header, the app's value and the value the edge returned. a must
-// be complete.
-func (a AppSecurityHeaders) hygieneFindings(h http.Header, hsts string) []string {
-	csp := h.Get("Content-Security-Policy")
-	var f []string
-	f = append(f, hstsFindings(h.Get("Strict-Transport-Security"), hsts)...)
+// that sets the headers, so the grading cannot drift from it. problems are
+// headers that are missing or weaker than the app's; each names the header,
+// the app's value and the value the edge returned. notes are informational
+// and never raise the check's status. a must be complete.
+func (a AppSecurityHeaders) hygieneFindings(h http.Header, hsts string) (problems, notes []string) {
+	csp := cspPolicies(h)
+	problems, notes = hstsFindings(h.Get("Strict-Transport-Security"), hsts)
 	if v := h.Get("X-Content-Type-Options"); !strings.EqualFold(strings.TrimSpace(v), a.ContentTypeOptions) {
-		f = append(f, weakerFinding("X-Content-Type-Options", a.ContentTypeOptions, v))
+		problems = append(problems, weakerFinding("X-Content-Type-Options", a.ContentTypeOptions, v))
 	}
-	f = append(f, a.framingFindings(h, csp)...)
-	f = append(f, a.cspFindings(csp)...)
-	f = append(f, a.referrerFindings(h)...)
+	problems = append(problems, a.framingFindings(h, csp)...)
+	problems = append(problems, a.cspFindings(csp)...)
+	problems = append(problems, a.referrerFindings(h)...)
 	// The app never sets X-XSS-Protection. Any value here is the edge's, and
 	// the legacy filter is best disabled (0) rather than enabled, per current
 	// guidance, since the CSP is the real control.
 	if v := h.Get("X-Xss-Protection"); v != "" && !strings.HasPrefix(strings.TrimSpace(v), "0") {
-		f = append(f, fmt.Sprintf("X-XSS-Protection is %q. The app does not set this, so an edge added it; the legacy filter should be disabled (0) or removed.", v))
+		problems = append(problems, fmt.Sprintf("X-XSS-Protection is %q. The app does not set this, so an edge added it; the legacy filter should be disabled (0) or removed.", v))
 	}
-	return f
+	return problems, notes
 }
 
 // weakerFinding words a header that is present but differs from the app's
@@ -103,57 +104,137 @@ func (a AppSecurityHeaders) referrerPolicyAccepted(value string) bool {
 	return false
 }
 
-// framingFindings grades the framing controls. X-Frame-Options, when set,
-// must be the app's value. When it is absent, CSP frame-ancestors must carry
-// the app's restriction, since browsers ignore X-Frame-Options alongside it.
-func (a AppSecurityHeaders) framingFindings(h http.Header, csp string) []string {
+// framingFindings grades the framing controls. Every X-Frame-Options value,
+// across repeated lines and comma lists, must be the app's value: browsers
+// differ on how they resolve conflicting values, so a mix is graded as the
+// weakest of them. When any CSP policy carries frame-ancestors, browsers
+// ignore X-Frame-Options, and the intersection of the policies must be no
+// looser than the app's frame-ancestors (see anyPolicyWithin). With neither
+// control present, framing is unrestricted.
+func (a AppSecurityHeaders) framingFindings(h http.Header, csp []map[string][]string) []string {
 	var f []string
-	xfo := h.Get("X-Frame-Options")
-	if xfo != "" && !strings.EqualFold(strings.TrimSpace(xfo), a.FrameOptions) {
+	xfo := strings.Join(h.Values("X-Frame-Options"), ", ")
+	if strings.TrimSpace(xfo) != "" && !everyTokenIs(xfo, a.FrameOptions) {
 		f = append(f, weakerFinding("X-Frame-Options", a.FrameOptions, xfo))
 	}
 
 	appFA := a.policy()["frame-ancestors"]
-	fa, hasFA := parseCSP(csp)["frame-ancestors"]
+	within, observed, hasFA := anyPolicyWithin(csp, appFA, func(p map[string][]string) ([]string, bool) {
+		v, ok := p["frame-ancestors"]
+		return v, ok
+	})
 	switch {
-	case hasFA && !sourcesWithin(fa, appFA):
+	case hasFA && !within:
 		f = append(f, weakerFinding("Content-Security-Policy frame-ancestors",
-			"frame-ancestors "+strings.Join(appFA, " "), "frame-ancestors "+strings.Join(fa, " ")))
-	case xfo == "" && !hasFA:
+			"frame-ancestors "+strings.Join(appFA, " "), observedDirective("frame-ancestors", observed)))
+	case strings.TrimSpace(xfo) == "" && !hasFA:
 		f = append(f, fmt.Sprintf("Neither X-Frame-Options nor a CSP frame-ancestors directive is present. The app sets X-Frame-Options: %s, and frame-ancestors %s in its CSP.",
 			a.FrameOptions, strings.Join(appFA, " ")))
 	}
 	return f
 }
 
+// everyTokenIs reports whether every comma-separated token of value equals
+// want, case-insensitively. Empty tokens are skipped; a value with no
+// tokens at all is not accepted.
+func everyTokenIs(value, want string) bool {
+	seen := false
+	for _, t := range strings.Split(value, ",") {
+		t = strings.TrimSpace(t)
+		if t == "" {
+			continue
+		}
+		if !strings.EqualFold(t, want) {
+			return false
+		}
+		seen = true
+	}
+	return seen
+}
+
 // cspFindings grades the Content-Security-Policy. object-src and script-src
 // are checked against the app's policy; each falls back to default-src when
-// absent, as browsers apply it. A missing header is a finding in its own right.
-func (a AppSecurityHeaders) cspFindings(csp string) []string {
-	if strings.TrimSpace(csp) == "" {
+// absent, as browsers apply it. Browsers enforce every policy sent, so the
+// effective policy is their intersection, graded by anyPolicyWithin. A
+// missing header is a finding in its own right.
+func (a AppSecurityHeaders) cspFindings(csp []map[string][]string) []string {
+	if len(csp) == 0 {
 		return []string{missingFinding("Content-Security-Policy", a.ContentSecurityPolicy(expectedNonce))}
 	}
 	app := a.policy()
-	obs := parseCSP(csp)
 	var f []string
 	for _, name := range []string{"object-src", "script-src"} {
 		appSrc := app[name]
-		got, ok := effectiveSources(obs, name)
-		if ok && sourcesWithin(got, appSrc) {
+		within, observed, present := anyPolicyWithin(csp, appSrc, func(p map[string][]string) ([]string, bool) {
+			return effectiveSources(p, name)
+		})
+		if present && within {
 			continue
 		}
-		observed := "no " + name + " or default-src"
-		if ok {
-			observed = name + " " + strings.Join(got, " ")
+		got := "no " + name + " or default-src"
+		if present {
+			got = observedDirective(name, observed)
 		}
-		f = append(f, weakerFinding("Content-Security-Policy "+name, name+" "+strings.Join(appSrc, " "), observed))
+		f = append(f, weakerFinding("Content-Security-Policy "+name, name+" "+strings.Join(appSrc, " "), got))
 	}
 	return f
+}
+
+// anyPolicyWithin grades one directive across every CSP policy the edge
+// sent. A browser allows a load only when every policy allows it, so the
+// effective directive is the intersection of the policies that set it. That
+// intersection is no looser than allowed whenever at least one policy's
+// directive is within allowed on its own, so within is true in that case.
+// When no single policy is within, within is false, even where an exact
+// intersection might be: computing it over host and scheme sources is not
+// attempted, so the grade errs strict. present is false when no policy sets
+// the directive (the resource is unrestricted). observed lists each
+// policy's source list for the finding.
+func anyPolicyWithin(csp []map[string][]string, allowed []string,
+	directive func(map[string][]string) ([]string, bool)) (within bool, observed [][]string, present bool) {
+	for _, p := range csp {
+		v, ok := directive(p)
+		if !ok {
+			continue
+		}
+		present = true
+		observed = append(observed, v)
+		if sourcesWithin(v, allowed) {
+			within = true
+		}
+	}
+	return within, observed, present
+}
+
+// observedDirective words a directive's source lists as the edge sent them,
+// one per policy that set it, joined with " | " when there are several.
+func observedDirective(name string, lists [][]string) string {
+	parts := make([]string, 0, len(lists))
+	for _, l := range lists {
+		parts = append(parts, strings.TrimSpace(name+" "+strings.Join(l, " ")))
+	}
+	return strings.Join(parts, " | ")
 }
 
 // policy parses the policy the app's CSP middleware sets.
 func (a AppSecurityHeaders) policy() map[string][]string {
 	return parseCSP(a.ContentSecurityPolicy(expectedNonce))
+}
+
+// cspPolicies returns every Content-Security-Policy the edge sent, parsed.
+// Repeated header lines and comma-separated policies within a line are each
+// a separate policy that browsers enforce. Empty policies are dropped, so an
+// empty result means no CSP at all.
+func cspPolicies(h http.Header) []map[string][]string {
+	var out []map[string][]string
+	for _, line := range h.Values("Content-Security-Policy") {
+		for _, policy := range strings.Split(line, ",") {
+			if p := parseCSP(policy); len(p) > 0 {
+				out = append(out, p)
+			}
+		}
+	}
+	return out
 }
 
 // parseCSP splits a policy into directive name to source list. Names and
@@ -191,57 +272,91 @@ func effectiveSources(policy map[string][]string, name string) ([]string, bool) 
 }
 
 // sourcesWithin reports whether every observed source is one the app allows.
-// An empty observed list means 'none', so it is within anything. Nonce
-// sources match any nonce, since the app's nonce differs per request.
+// An empty observed list means 'none', so it is within anything. A nonce or
+// hash source is within when the app allows a nonce or hash source: the
+// app's nonce differs per request, and a hash admits only the script it
+// names, which is about as strict. That equivalence holds only while the
+// observed list has no source that loosens script matching (see
+// loosensScripts); any such source fails on its own unless the app allows
+// it too.
 func sourcesWithin(observed, allowed []string) bool {
+	tokenEquivalent := slices.ContainsFunc(allowed, isNonceOrHashSource) &&
+		!slices.ContainsFunc(observed, loosensScripts)
 	for _, o := range observed {
-		found := false
-		for _, a := range allowed {
-			if a == o || (isNonceSource(o) && isNonceSource(a)) {
-				found = true
-				break
-			}
+		if slices.Contains(allowed, o) {
+			continue
 		}
-		if !found {
-			return false
+		if tokenEquivalent && isNonceOrHashSource(o) {
+			continue
 		}
+		return false
 	}
 	return true
 }
 
-// isNonceSource reports whether a CSP source expression is a nonce source such
-// as 'nonce-abc'. The nonce differs per request, so sources are matched by
-// this prefix rather than by value.
-func isNonceSource(source string) bool {
-	return strings.HasPrefix(source, "'nonce-")
+// isNonceOrHashSource reports whether a CSP source expression is a nonce
+// source such as 'nonce-abc' or a hash source such as 'sha256-...'. It
+// expects the lowercased form parseCSP produces, and requires the closing
+// quote and a non-empty value, since browsers ignore a malformed one.
+func isNonceOrHashSource(source string) bool {
+	for _, prefix := range []string{"'nonce-", "'sha256-", "'sha384-", "'sha512-"} {
+		if strings.HasPrefix(source, prefix) && strings.HasSuffix(source, "'") && len(source) > len(prefix)+1 {
+			return true
+		}
+	}
+	return false
+}
+
+// loosensScripts reports whether a source expression widens which scripts
+// run beyond what a nonce or hash admits: 'unsafe-inline', 'unsafe-eval',
+// 'unsafe-hashes', a wildcard, or a scheme source such as https: or data:.
+func loosensScripts(source string) bool {
+	switch source {
+	case "'unsafe-inline'", "'unsafe-eval'", "'unsafe-hashes'":
+		return true
+	}
+	return strings.Contains(source, "*") || strings.HasSuffix(source, ":")
 }
 
 // hstsFindings grades Strict-Transport-Security against http.hsts, the value
 // the app sends. The max-age must be at least the configured one, and
 // includeSubDomains must be kept when configured. A longer max-age or preload
-// is stronger and passes. An empty http.hsts means the app sends none, so a
-// missing header still warns, as it always has, but a present one is not
-// graded.
-func hstsFindings(observed, configured string) []string {
+// is stronger and passes.
+//
+// An empty http.hsts means HSTS is off in config and the app sends none, so
+// there is no app value to be weaker than. A missing header is then a note,
+// not a problem, and says HSTS is off in config. When the edge adds HSTS of
+// its own, its value is the policy browsers get: a well-formed one with a
+// positive max-age is a note naming it, but a malformed one (which browsers
+// ignore) or max-age=0 (which tells browsers to drop any HSTS they already
+// hold) is a problem, since an edge sending either was meant to protect and
+// does not.
+func hstsFindings(observed, configured string) (problems, notes []string) {
 	if configured == "" {
-		if observed == "" {
-			return []string{"Strict-Transport-Security (HSTS) is missing. http.hsts is empty, so the app sends none; set it or let the edge send one."}
+		if strings.TrimSpace(observed) == "" {
+			return nil, []string{"Strict-Transport-Security (HSTS) is not sent: HSTS is off in config (http.hsts is empty), so the app sends none, and the edge adds none. If that is not intended, set http.hsts or have the edge send it."}
 		}
-		return nil
+		maxAge, _, ok := parseHSTS(observed)
+		switch {
+		case !ok:
+			return []string{fmt.Sprintf("Strict-Transport-Security is malformed, so browsers ignore it. HSTS is off in config (http.hsts is empty), so the edge added %q.", observed)}, nil
+		case maxAge == 0:
+			return []string{fmt.Sprintf("Strict-Transport-Security has max-age=0, which tells browsers to drop any HSTS policy they hold. HSTS is off in config (http.hsts is empty), so the edge added %q.", observed)}, nil
+		}
+		return nil, []string{fmt.Sprintf("HSTS is off in config (http.hsts is empty), so the app sends none; the edge adds Strict-Transport-Security %q, and that is the policy browsers get.", observed)}
 	}
 	if strings.TrimSpace(observed) == "" {
-		return []string{missingFinding("Strict-Transport-Security", configured)}
+		return []string{missingFinding("Strict-Transport-Security", configured)}, nil
 	}
 	maxAge, subdomains, ok := parseHSTS(observed)
 	if !ok {
-		return []string{fmt.Sprintf("Strict-Transport-Security is malformed. The app sets %q; the edge returned %q.", configured, observed)}
+		return []string{fmt.Sprintf("Strict-Transport-Security is malformed. The app sets %q; the edge returned %q.", configured, observed)}, nil
 	}
 	wantAge, wantSub, _ := parseHSTS(configured)
-	var f []string
 	if maxAge < wantAge || (wantSub && !subdomains) {
-		f = append(f, weakerFinding("Strict-Transport-Security", configured, observed))
+		return []string{weakerFinding("Strict-Transport-Security", configured, observed)}, nil
 	}
-	return f
+	return nil, nil
 }
 
 // parseHSTS reads max-age and includeSubDomains from an HSTS value. Directive
