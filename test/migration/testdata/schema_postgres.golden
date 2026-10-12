@@ -119,6 +119,7 @@ table certificates
   index certificates_pkey CREATE UNIQUE INDEX certificates_pkey ON public.certificates USING btree (id)
   index certificates_serial_number_key CREATE UNIQUE INDEX certificates_serial_number_key ON public.certificates USING btree (serial_number)
   index idx_certificates_certificate_request_id CREATE INDEX idx_certificates_certificate_request_id ON public.certificates USING btree (certificate_request_id)
+  index idx_certificates_issued_at_id CREATE INDEX idx_certificates_issued_at_id ON public.certificates USING btree (issued_at, id)
   index idx_certificates_user_id_issued_at CREATE INDEX idx_certificates_user_id_issued_at ON public.certificates USING btree (user_id, issued_at DESC)
 table enrollment_reassignments
   column enrollment_id type=text nullable=false default=<none>
@@ -163,6 +164,7 @@ table enrollments
   fk user_id -> users.id
   index enrollments_pkey CREATE UNIQUE INDEX enrollments_pkey ON public.enrollments USING btree (id)
   index idx_enrollments_code CREATE UNIQUE INDEX idx_enrollments_code ON public.enrollments USING btree (code)
+  index idx_enrollments_created_at_id CREATE INDEX idx_enrollments_created_at_id ON public.enrollments USING btree (created_at, id)
   index idx_enrollments_expiry_reminder CREATE INDEX idx_enrollments_expiry_reminder ON public.enrollments USING btree (expiry_reminder_sent_at, expires_at)
   index idx_enrollments_service_account CREATE INDEX idx_enrollments_service_account ON public.enrollments USING btree (service_account)
   index idx_enrollments_user_id CREATE INDEX idx_enrollments_user_id ON public.enrollments USING btree (user_id)

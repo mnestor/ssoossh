@@ -124,9 +124,10 @@
 	// refusals are interleaved (see DeniedRow) and the mark is what tells
 	// the two kinds of row apart at a glance. Not on the admin list or the
 	// dashboard, which read the certificates table alone and would carry the
-	// same green tick down every row, and not at phone width, where the
-	// history is pinned to approvals precisely so the row can spend that
-	// space on the subject and the detail line instead.
+	// same green tick down every row, and not at phone width, where the row
+	// spends that space on the subject and the detail line instead. A mixed
+	// list still reads there: a refusal is a DeniedRow, which keeps its own
+	// mark and says "denied" in its detail line.
 	//
 	// An icon rather than the pill this used to be: a pill costs a word's
 	// width plus its padding on every row to answer a yes or a no.

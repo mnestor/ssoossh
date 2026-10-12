@@ -3,12 +3,7 @@ import { axe, toHaveNoViolations } from 'jest-axe';
 import { createRawSnippet } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 
-import type {
-	CertificateRecord,
-	DeniedRequest,
-	PageMeta,
-	ServiceEnrollment
-} from '#lib/api/types.js';
+import type { CertificateRecord, DeniedRequest, ServiceEnrollment } from '#lib/api/types.js';
 
 import AccessDenied from './AccessDenied.svelte';
 import AccountHoldersPanel from './AccountHoldersPanel.svelte';
@@ -31,12 +26,12 @@ import Footer from './Footer.svelte';
 import Icon from './Icon.svelte';
 import ListStatus from './ListStatus.svelte';
 import LoadingBlock from './LoadingBlock.svelte';
+import LoadMoreFooter from './LoadMoreFooter.svelte';
 import MonoChip from './MonoChip.svelte';
 import OptionDiffList from './OptionDiffList.svelte';
 import PageHeading from './PageHeading.svelte';
 import PageSection from './PageSection.svelte';
 import PageShell from './PageShell.svelte';
-import Pager from './Pager.svelte';
 import RailGroup from './RailGroup.svelte';
 import RailItem from './RailItem.svelte';
 import RailUserMenu from './RailUserMenu.svelte';
@@ -74,10 +69,6 @@ const now = new Date('2026-08-22T12:00:00Z');
 /** text is a `children` snippet holding one string, for the wrappers that take one. */
 function text(content: string) {
 	return createRawSnippet(() => ({ render: () => `<span>${content}</span>` }));
-}
-
-function meta(overrides: Partial<PageMeta> = {}): PageMeta {
-	return { total: 120, limit: 25, offset: 50, page: 3, page_count: 9, ...overrides };
 }
 
 function cert(overrides: Partial<CertificateRecord> = {}): CertificateRecord {
@@ -146,10 +137,8 @@ const parents: Record<string, string> = { DetailRow: 'dl' };
 /**
  * Every component, in the state a reader actually meets.
  *
- * Deliberately the interesting state rather than the empty one: a Pager on
- * page 3 of 9 renders the elision and the `aria-current` that a one-page
- * Pager renders neither of, and a busy button carries a different set of
- * attributes from an idle one. Where a component has two shapes worth
+ * Deliberately the interesting state rather than the empty one: a busy
+ * button carries a different set of attributes from an idle one. Where a component has two shapes worth
  * separating — a rail item collapsed and expanded, an alert that warns and
  * one that errors — both are listed.
  *
@@ -251,10 +240,66 @@ const cases: [string, any, Record<string, unknown>][] = [
 			]
 		}
 	],
+	// Both forms render here (no Tailwind in jsdom), so this pass also holds
+	// the below-`sm` select to axe's select-name rule: it must be named by
+	// its visible label, with a selection that is not the "any" option.
+	[
+		'FilterGroup (select, narrowed)',
+		FilterGroup,
+		{
+			label: 'Outcome',
+			selected: 'denied',
+			onselect: vi.fn(),
+			options: [
+				{ value: 'approved', label: 'Approved', icon: 'circle-check' },
+				{ value: 'denied', label: 'Denied', icon: 'circle-x' },
+				{ value: '', label: 'Both', icon: 'filter-off' }
+			]
+		}
+	],
 	['Footer', Footer, {}],
 	['Icon (decorative)', Icon, { name: 'certificate' }],
 	['Icon (labelled)', Icon, { name: 'certificate', ariaLabel: 'Certificate' }],
 	['ListStatus', ListStatus, { message: '12 certificates found.' }],
+	[
+		'LoadMoreFooter',
+		LoadMoreFooter,
+		{
+			summary: '25 shown, 25 older not loaded',
+			hasMore: true,
+			busy: false,
+			error: null,
+			errorTitle: 'Could not load more users',
+			onmore: vi.fn(),
+			testid: 'users'
+		}
+	],
+	[
+		'LoadMoreFooter (last page)',
+		LoadMoreFooter,
+		{
+			summary: '50 shown',
+			hasMore: false,
+			busy: false,
+			error: null,
+			errorTitle: 'Could not load more users',
+			onmore: vi.fn(),
+			testid: 'users'
+		}
+	],
+	[
+		'LoadMoreFooter (failed)',
+		LoadMoreFooter,
+		{
+			summary: '25 shown, 25 older not loaded',
+			hasMore: true,
+			busy: false,
+			error: 'The server did not answer.',
+			errorTitle: 'Could not load more users',
+			onmore: vi.fn(),
+			testid: 'users'
+		}
+	],
 	// Only the labelled case. The bars are gated behind 300ms and are
 	// `aria-hidden` when they do arrive, so an unlabelled LoadingBlock hands
 	// axe an empty container and a passing case that checked nothing. The
@@ -271,8 +316,6 @@ const cases: [string, any, Record<string, unknown>][] = [
 	],
 	['PageSection', PageSection, { title: 'Email notifications', children: text('Seven kinds.') }],
 	['PageShell', PageShell, { children: text('Page body') }],
-	['Pager', Pager, { meta: meta(), onpage: vi.fn() }],
-	['Pager (single page)', Pager, { meta: meta({ page_count: 1 }), onpage: vi.fn() }],
 	[
 		'RailGroup',
 		RailGroup,

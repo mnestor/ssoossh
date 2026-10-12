@@ -1048,3 +1048,137 @@ describe('when the audit timeline fails to load', () => {
 		expect(auditReads()).toBeGreaterThan(before);
 	});
 });
+
+describe('when the audit timeline runs past one page', () => {
+	/** timelineEvent builds one timeline row whose reason identifies it. */
+	function timelineEvent(id: string, reason: string) {
+		return {
+			id,
+			created_at: '2026-08-29T12:00:00Z',
+			action: 'user.disabled',
+			actor: { user_id: 'user-9', username: 'soc' },
+			target: { user_id: 'user-1', username: 'alice' },
+			reason
+		};
+	}
+
+	/**
+	 * mockTimeline answers the account, then the nth timeline read with the
+	 * nth page (a string is a failed read), and returns the timeline URLs.
+	 */
+	function mockTimeline(...pages: (object | string)[]) {
+		const urls: string[] = [];
+		vi.stubGlobal(
+			'fetch',
+			vi.fn((input: RequestInfo | URL) => {
+				const url = String(input);
+				if (!url.includes('/audit')) {
+					return Promise.resolve(ok(userDetail(false)));
+				}
+				const page = pages[Math.min(urls.length, pages.length - 1)];
+				urls.push(url);
+				if (typeof page === 'string') {
+					return Promise.reject(new Error(page));
+				}
+				return Promise.resolve(ok(page));
+			})
+		);
+		return urls;
+	}
+
+	const first = { events: [timelineEvent('e1', 'first page reason')], total: 2, next_cursor: 'e1' };
+	const last = { events: [timelineEvent('e2', 'second page reason')], total: 2 };
+
+	it('should count the events shown and the older still to load', async () => {
+		mockTimeline(first);
+		render(Page);
+		expect(await screen.findByTestId('user-audit-count')).toHaveTextContent(
+			'1 shown, 1 older not loaded'
+		);
+	});
+
+	it('should count only what is shown once the oldest event is in', async () => {
+		mockTimeline(first, last);
+		render(Page);
+		await userEvent.click(await screen.findByTestId('user-audit-load-more'));
+		await screen.findByText(/second page reason/);
+		expect(screen.getByTestId('user-audit-count')).toHaveTextContent(/^2 shown$/);
+	});
+
+	it('should offer Load more when older events remain', async () => {
+		mockTimeline(first);
+		render(Page);
+		expect(await screen.findByTestId('user-audit-load-more')).toBeInTheDocument();
+	});
+
+	it('should ask for the page after the cursor when Load more is pressed', async () => {
+		const urls = mockTimeline(first, last);
+		render(Page);
+		await userEvent.click(await screen.findByTestId('user-audit-load-more'));
+		await screen.findByText(/second page reason/);
+		expect(urls[1]).toContain('after=e1');
+	});
+
+	it('should keep the first page above the one it appends', async () => {
+		mockTimeline(first, last);
+		render(Page);
+		await userEvent.click(await screen.findByTestId('user-audit-load-more'));
+		await screen.findByText(/second page reason/);
+		expect(screen.getByText(/first page reason/)).toBeInTheDocument();
+	});
+
+	it('should remove Load more once the oldest event is in', async () => {
+		mockTimeline(first, last);
+		render(Page);
+		await userEvent.click(await screen.findByTestId('user-audit-load-more'));
+		await screen.findByText(/second page reason/);
+		expect(screen.queryByTestId('user-audit-load-more')).not.toBeInTheDocument();
+	});
+
+	it('should keep the events shown and offer a retry when Load more fails', async () => {
+		mockTimeline(first, 'network down', last);
+		render(Page);
+		await userEvent.click(await screen.findByTestId('user-audit-load-more'));
+		await screen.findByTestId('user-audit-more-error');
+		expect(screen.getByText(/first page reason/)).toBeInTheDocument();
+		await userEvent.click(screen.getByTestId('user-audit-more-error-retry'));
+		expect(await screen.findByText(/second page reason/)).toBeInTheDocument();
+	});
+
+	// Where keyboard focus lands once the pressed control is gone: the count
+	// line after the last page, Try again after a failure. See
+	// LoadMoreFooter, which owns the rule for every Load more list.
+	const focusCases: { name: string; pages: (object | string)[]; retry: boolean; lands: string }[] =
+		[
+			{
+				name: 'should move focus to the count line when the oldest event loads',
+				pages: [first, last],
+				retry: false,
+				lands: 'user-audit-count'
+			},
+			{
+				name: 'should move focus to Try again when Load more fails',
+				pages: [first, 'network down'],
+				retry: false,
+				lands: 'user-audit-more-error-retry'
+			},
+			{
+				name: 'should move focus to the count line when a retry loads the oldest event',
+				pages: [first, 'network down', last],
+				retry: true,
+				lands: 'user-audit-count'
+			}
+		];
+
+	for (const { name, pages, retry, lands } of focusCases) {
+		it(name, async () => {
+			mockTimeline(...pages);
+			render(Page);
+			await userEvent.click(await screen.findByTestId('user-audit-load-more'));
+			if (retry) {
+				await userEvent.click(await screen.findByTestId('user-audit-more-error-retry'));
+			}
+			await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId(lands)));
+		});
+	}
+});

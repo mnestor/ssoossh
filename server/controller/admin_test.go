@@ -908,7 +908,7 @@ func TestListUsersHandler_AgainstARealDatabase(t *testing.T) {
 			var resp struct {
 				Data struct {
 					Users []map[string]any `json:"users"`
-					Meta  map[string]any   `json:"meta"`
+					Total float64          `json:"total"`
 				} `json:"data"`
 			}
 			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
@@ -918,8 +918,8 @@ func TestListUsersHandler_AgainstARealDatabase(t *testing.T) {
 			if len(resp.Data.Users) != tt.wantCount {
 				t.Errorf("returned %d users, want %d", len(resp.Data.Users), tt.wantCount)
 			}
-			if got, _ := resp.Data.Meta["total"].(float64); got != tt.wantTotal {
-				t.Errorf("meta.total = %v, want %v", got, tt.wantTotal)
+			if got := resp.Data.Total; got != tt.wantTotal {
+				t.Errorf("total = %v, want %v", got, tt.wantTotal)
 			}
 		})
 	}
@@ -1567,8 +1567,9 @@ func TestCertificateHistoryHandler_ShouldReturnEmptyList(t *testing.T) {
 
 	var resp struct {
 		Data struct {
-			Certificates []any          `json:"certificates"`
-			PageMeta     map[string]any `json:"page_meta"`
+			Certificates []any    `json:"certificates"`
+			Total        *float64 `json:"total"`
+			NextCursor   *string  `json:"next_cursor"`
 		} `json:"data"`
 	}
 
@@ -1579,8 +1580,11 @@ func TestCertificateHistoryHandler_ShouldReturnEmptyList(t *testing.T) {
 	if len(resp.Data.Certificates) != 0 {
 		t.Errorf("expected empty certificate list, got %d items", len(resp.Data.Certificates))
 	}
-	if total, ok := resp.Data.PageMeta["total"]; !ok || total != float64(0) {
-		t.Errorf("expected total=0, got %v", total)
+	if resp.Data.Total == nil || *resp.Data.Total != 0 {
+		t.Errorf("expected total=0, got %v", resp.Data.Total)
+	}
+	if resp.Data.NextCursor != nil {
+		t.Errorf("expected no next_cursor on an empty list, got %q", *resp.Data.NextCursor)
 	}
 }
 
@@ -1943,7 +1947,8 @@ func TestCertificateHistoryHandler_FiltersByStatus(t *testing.T) {
 	}
 }
 
-// TestCertificateHistoryHandler_Pagination tests offset-based pagination.
+// TestCertificateHistoryHandler_Pagination tests that a limited first page
+// reports the full total and a cursor for the rest.
 func TestCertificateHistoryHandler_Pagination(t *testing.T) {
 	t.Parallel()
 
@@ -2002,13 +2007,14 @@ func TestCertificateHistoryHandler_Pagination(t *testing.T) {
 
 	// Request first page with limit=5.
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/admin/certificates/history?limit=5&offset=0", nil)
+	req := httptest.NewRequest(http.MethodGet, "/admin/certificates/history?limit=5", nil)
 	r.ServeHTTP(w, req)
 
 	var resp struct {
 		Data struct {
-			Certificates []any          `json:"certificates"`
-			PageMeta     map[string]any `json:"page_meta"`
+			Certificates []map[string]any `json:"certificates"`
+			Total        float64          `json:"total"`
+			NextCursor   *string          `json:"next_cursor"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
@@ -2017,8 +2023,11 @@ func TestCertificateHistoryHandler_Pagination(t *testing.T) {
 	if len(resp.Data.Certificates) != 5 {
 		t.Errorf("page 1: got %d certs, want 5", len(resp.Data.Certificates))
 	}
-	if total, ok := resp.Data.PageMeta["total"]; !ok || total != float64(10) {
-		t.Errorf("page 1: got total %v, want 10", total)
+	if resp.Data.Total != 10 {
+		t.Errorf("page 1: got total %v, want 10", resp.Data.Total)
+	}
+	if len(resp.Data.Certificates) == 5 && derefOr(resp.Data.NextCursor) != resp.Data.Certificates[4]["id"] {
+		t.Errorf("page 1: next_cursor = %v, want the last served certificate %v", resp.Data.NextCursor, resp.Data.Certificates[4]["id"])
 	}
 }
 

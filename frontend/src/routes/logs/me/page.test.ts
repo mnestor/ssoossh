@@ -573,6 +573,14 @@ describe('Certificate history page', () => {
 				'/certs/cert-1?from=history'
 			);
 		});
+
+		// The type badge is a mark, not a name: the row says the type in
+		// words, so nobody has to hover the glyph to tell user from PAM.
+		it('should name a user certificate in words on its detail line', async () => {
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			expect(screen.getByTestId('cert-row')).toHaveTextContent(/user certificate issued/);
+		});
 	});
 
 	// A phone-width row has space for the subject, the detail line and one
@@ -828,5 +836,92 @@ describe('when Load more fails', () => {
 		await userEvent.click(screen.getByTestId('history-load-more'));
 		await screen.findByTestId('history-more-error');
 		expect(screen.queryByTestId('history-load-more')).not.toBeInTheDocument();
+	});
+});
+
+// Where keyboard focus lands once the pressed control is gone: the count
+// line after the last page, Try again after a failure. See LoadMoreFooter,
+// which owns the rule for every Load more list.
+describe('keyboard focus after Load more', () => {
+	/** historyCert builds one certificate row issued at the given time. */
+	function historyCert(id: string, issuedAt: string) {
+		return {
+			id,
+			type: 'user',
+			serial_number: id,
+			principals: 'alice',
+			public_key_fingerprint: 'SHA256:abc',
+			issued_at: issuedAt,
+			expires_at: new Date(Date.now() + 86400000).toISOString(),
+			key_id: id
+		};
+	}
+
+	const first = { certificates: [historyCert('c1', '2026-10-11T10:00:00Z')], next_cursor: 'c1' };
+	const last = { certificates: [historyCert('c2', '2026-10-10T10:00:00Z')] };
+
+	/**
+	 * stubPages answers the nth certificate read with the nth page
+	 * ('offline' is a failed read) and every denial read with none.
+	 */
+	function stubPages(...pages: (object | 'offline')[]) {
+		let call = 0;
+		vi.stubGlobal(
+			'fetch',
+			vi.fn((input: RequestInfo | URL) => {
+				const ok = (data: object) =>
+					Promise.resolve(
+						new Response(JSON.stringify({ data, error: null }), {
+							status: 200,
+							headers: { 'Content-Type': 'application/json' }
+						})
+					);
+				if (String(input).includes('/decisions/denied')) return ok({ denials: [] });
+				const page = pages[Math.min(call++, pages.length - 1)];
+				if (page === 'offline') return Promise.reject(new Error('offline'));
+				return ok(page);
+			})
+		);
+	}
+
+	const cases: { name: string; pages: (object | 'offline')[]; retry: boolean; lands: string }[] = [
+		{
+			name: 'should move focus to the count line when the last page loads',
+			pages: [first, last],
+			retry: false,
+			lands: 'history-count'
+		},
+		{
+			name: 'should move focus to Try again when Load more fails',
+			pages: [first, 'offline'],
+			retry: false,
+			lands: 'history-more-error-retry'
+		},
+		{
+			name: 'should move focus to the count line when a retry loads the last page',
+			pages: [first, 'offline', last],
+			retry: true,
+			lands: 'history-count'
+		}
+	];
+
+	for (const { name, pages, retry, lands } of cases) {
+		it(name, async () => {
+			stubPages(...pages);
+			render(Page);
+			await userEvent.click(await screen.findByTestId('history-load-more'));
+			if (retry) {
+				await userEvent.click(await screen.findByTestId('history-more-error-retry'));
+			}
+			await vi.waitFor(() => expect(document.activeElement).toBe(screen.getByTestId(lands)));
+		});
+	}
+
+	it('should keep the count line once the last page is in', async () => {
+		stubPages(first, last);
+		render(Page);
+		await userEvent.click(await screen.findByTestId('history-load-more'));
+		await screen.findByText(/c2/);
+		expect(screen.getByTestId('history-count')).toHaveTextContent(/^2 shown$/);
 	});
 });

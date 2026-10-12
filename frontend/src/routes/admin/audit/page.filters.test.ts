@@ -41,10 +41,10 @@ function stubFeed(answer: (url: URL) => object[] = () => []) {
 			requested.push(url);
 			const events = answer(url);
 			return Promise.resolve(
-				new Response(
-					JSON.stringify({ data: { events, total: events.length, next_offset: 0 }, error: null }),
-					{ status: 200, headers: { 'Content-Type': 'application/json' } }
-				)
+				new Response(JSON.stringify({ data: { events, total: events.length }, error: null }), {
+					status: 200,
+					headers: { 'Content-Type': 'application/json' }
+				})
 			);
 		})
 	);
@@ -243,7 +243,7 @@ describe('audit filter states', () => {
 		render(Page);
 		const empty = await screen.findByTestId('audit-no-match');
 		await userEvent.click(within(empty).getByTestId('audit-no-match-clear'));
-		await waitFor(() => expect(lastRequest().search).toBe('?limit=50&offset=0'));
+		await waitFor(() => expect(lastRequest().search).toBe('?limit=50'));
 	});
 
 	it('should keep the filters on screen when a filtered read fails', async () => {
@@ -264,10 +264,10 @@ describe('audit filter states', () => {
 			vi.fn((input: RequestInfo | URL) => {
 				const url = new URL(String(input), 'http://localhost');
 				const body = (events: object[]) =>
-					new Response(
-						JSON.stringify({ data: { events, total: events.length, next_offset: 0 }, error: null }),
-						{ status: 200, headers: { 'Content-Type': 'application/json' } }
-					);
+					new Response(JSON.stringify({ data: { events, total: events.length }, error: null }), {
+						status: 200,
+						headers: { 'Content-Type': 'application/json' }
+					});
 				if (!url.searchParams.has('action')) {
 					// The unfiltered first read hangs until released.
 					return new Promise<Response>((resolve) => {

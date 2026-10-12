@@ -8,8 +8,9 @@ package controller
 // looking at the feed is itself audited exactly once per visit.
 
 import (
+	"bytes"
 	"encoding/json"
-	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -138,7 +139,7 @@ func TestAuditFeed_ShouldReturnEventsNewestFirst(t *testing.T) {
 // Visiting the feed is still audited to the shipped log, but no longer to
 // the table the feed itself renders. A visit that wrote a row left the feed
 // consuming its own output: every read added an event ahead of the ones
-// being read, which shifted the offset window under "load more" and produced
+// being read, which shifted the page window under "load more" and produced
 // repeats. See service.tableSkipped.
 func TestAuditFeed_ShouldNotRecordTheVisitInTheTable(t *testing.T) {
 	t.Parallel()
@@ -198,47 +199,6 @@ func TestAuditFeed_ShouldRejectMalformedPaging(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("GET /admin/audit?limit=abc: got %d, want %d", w.Code, http.StatusBadRequest)
-	}
-}
-
-// The window carries across pages: a second request at the returned offset
-// gets the remainder, and the last page reports no next offset.
-func TestAuditFeed_ShouldPageWithNextOffset(t *testing.T) {
-	t.Parallel()
-
-	cfg := newTestConfig(t)
-	db := newTestDB(t)
-
-	base := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
-	for i := range 3 {
-		seedAuditEvent(t, db, service.AuditEvent{
-			Action:     service.AuditAuthLogin,
-			Actor:      &service.AuditSubject{UserID: fmt.Sprintf("user-%d", i)},
-			OccurredAt: base.Add(time.Duration(i) * time.Minute),
-		})
-	}
-
-	r := routerWithAuth(t, cfg, db, auditorIdentity())
-
-	code, first := getAuditPage(t, r, "/admin/audit?limit=2")
-	if code != http.StatusOK {
-		t.Fatalf("first page: got %d, want %d", code, http.StatusOK)
-	}
-	if len(first.Events) != 2 || first.NextOffset != 2 {
-		t.Errorf("first page: %d events, NextOffset %d, want 2 events and NextOffset 2", len(first.Events), first.NextOffset)
-	}
-
-	// Reading the feed no longer adds to it, so the second page holds the
-	// one remaining seeded event and the window closes.
-	code, second := getAuditPage(t, r, "/admin/audit?limit=2&offset=2")
-	if code != http.StatusOK {
-		t.Fatalf("second page: got %d, want %d", code, http.StatusOK)
-	}
-	if len(second.Events) != 1 || second.NextOffset != 0 {
-		t.Errorf("second page: %d events, NextOffset %d, want 1 event and NextOffset 0", len(second.Events), second.NextOffset)
-	}
-	if got := second.Events[0].Action; got != string(service.AuditAuthLogin) {
-		t.Errorf("second page oldest action = %q, want the first seeded event", got)
 	}
 }
 
@@ -310,15 +270,62 @@ func TestUserAudit_ShouldReturnActorAndTargetRows(t *testing.T) {
 	}
 }
 
-func TestUserAudit_ShouldRejectMalformedPaging(t *testing.T) {
-	t.Parallel()
+// The visit's shipped-log line records the paging it was asked for: the page
+// size, and past the first page the cursor it resumed from, never an offset.
+// Not parallel: it swaps the default logger the audit recorder writes to.
+func TestAuditFeed_ShouldRecordTheCursorOnTheVisit(t *testing.T) {
+	tests := []struct {
+		name      string
+		after     bool
+		wantAfter bool
+	}{
+		{name: "should record no cursor when the first page is read", after: false, wantAfter: false},
+		{name: "should record the cursor when a later page is read", after: true, wantAfter: true},
+	}
 
-	r := routerWithAuth(t, newTestConfig(t), newTestDB(t), auditorIdentity())
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			prior := slog.Default()
+			slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, nil)))
+			t.Cleanup(func() { slog.SetDefault(prior) })
 
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/users/user-1/audit?offset=-1", nil))
+			db := newTestDB(t)
+			seedAuditEvent(t, db, service.AuditEvent{Action: service.AuditAuthLogin, Actor: &service.AuditSubject{UserID: "user-1"}})
+			var row model.AuditEvent
+			if err := db.First(&row).Error; err != nil {
+				t.Fatalf("read seeded row: %v", err)
+			}
+			r := routerWithAuth(t, newTestConfig(t), db, auditorIdentity())
 
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("GET /admin/users/:id/audit?offset=-1: got %d, want %d", w.Code, http.StatusBadRequest)
+			path := "/admin/audit?limit=5"
+			if tt.after {
+				path += "&after=" + row.ID
+			}
+			if code, _ := getAuditPage(t, r, path); code != http.StatusOK {
+				t.Fatalf("GET %s: got %d, want %d", path, code, http.StatusOK)
+			}
+
+			var visit map[string]any
+			for line := range bytes.SplitSeq(buf.Bytes(), []byte("\n")) {
+				var entry map[string]any
+				if json.Unmarshal(line, &entry) == nil && entry["action"] == string(service.AuditAdminAuditViewed) {
+					visit = entry
+				}
+			}
+			if visit == nil {
+				t.Fatalf("no %s line in the log: %s", service.AuditAdminAuditViewed, buf.String())
+			}
+			if _, ok := visit["offset"]; ok {
+				t.Errorf("visit line carries an offset: %v", visit)
+			}
+			if visit["limit"] != float64(5) {
+				t.Errorf("visit limit = %v, want 5", visit["limit"])
+			}
+			gotAfter, hasAfter := visit["after"]
+			if hasAfter != tt.wantAfter || (tt.wantAfter && gotAfter != row.ID) {
+				t.Errorf("visit after = %v (present %v), want present %v with %q", gotAfter, hasAfter, tt.wantAfter, row.ID)
+			}
+		})
 	}
 }

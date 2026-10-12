@@ -249,37 +249,61 @@ func eventNumbers(page *AuditPage) []int {
 	return out
 }
 
+// idsByN maps each seeded event's detail.n to its row id, so a table can
+// name a cursor by the row it points at.
+func idsByN(t *testing.T, audit *AuditService) map[int]string {
+	t.Helper()
+	page, err := audit.ListRecent(context.Background(), AuditFilter{}, "", 100)
+	if err != nil {
+		t.Fatalf("ListRecent() error = %v", err)
+	}
+	out := make(map[int]string, len(page.Events))
+	for _, e := range page.Events {
+		n, _ := e.Event.Detail["n"].(float64)
+		out[int(n)] = e.ID
+	}
+	return out
+}
+
 func TestListRecent_ShouldFilterByActionAndSource(t *testing.T) {
 	t.Parallel()
 
+	// after and wantNext name rows by detail.n; -1 is "none" (the first
+	// page, or the last page's absent cursor).
 	tests := []struct {
-		name       string
-		filter     AuditFilter
-		limit      int
-		offset     int
-		want       []int
-		wantTotal  int64
-		wantOffset int
+		name      string
+		filter    AuditFilter
+		limit     int
+		after     int
+		want      []int
+		wantTotal int64
+		wantNext  int
 	}{
-		{name: "should return everything newest first when unfiltered", limit: 25, want: []int{6, 5, 4, 3, 2, 1, 0}, wantTotal: 7},
-		{name: "should keep one action when filtered by action", filter: AuditFilter{Action: AuditCertRequestRefusedNetwork}, limit: 25, want: []int{6, 3, 2, 0}, wantTotal: 4},
-		{name: "should keep one source when filtered by source", filter: AuditFilter{SourceIP: "192.0.2.7"}, limit: 25, want: []int{6, 5, 2, 0}, wantTotal: 4},
-		{name: "should keep the intersection when filtered by both", filter: AuditFilter{Action: AuditCertRequestRefusedNetwork, SourceIP: "192.0.2.7"}, limit: 25, want: []int{6, 2, 0}, wantTotal: 3},
-		{name: "should return nothing when no row matches", filter: AuditFilter{SourceIP: "203.0.113.1"}, limit: 25, want: []int{}, wantTotal: 0},
-		{name: "should return nothing for an action with no rows", filter: AuditFilter{Action: AuditUserDisabled}, limit: 25, want: []int{}, wantTotal: 0},
-		{name: "should page the first window of a filtered feed", filter: AuditFilter{Action: AuditCertRequestRefusedNetwork}, limit: 2, want: []int{6, 3}, wantTotal: 4, wantOffset: 2},
-		{name: "should page the last window of a filtered feed", filter: AuditFilter{Action: AuditCertRequestRefusedNetwork}, limit: 2, offset: 2, want: []int{2, 0}, wantTotal: 4},
-		{name: "should page both filters together", filter: AuditFilter{Action: AuditCertRequestRefusedNetwork, SourceIP: "192.0.2.7"}, limit: 1, offset: 1, want: []int{2}, wantTotal: 3, wantOffset: 2},
+		{name: "should return everything newest first when unfiltered", limit: 25, after: -1, want: []int{6, 5, 4, 3, 2, 1, 0}, wantTotal: 7, wantNext: -1},
+		{name: "should keep one action when filtered by action", filter: AuditFilter{Action: AuditCertRequestRefusedNetwork}, limit: 25, after: -1, want: []int{6, 3, 2, 0}, wantTotal: 4, wantNext: -1},
+		{name: "should keep one source when filtered by source", filter: AuditFilter{SourceIP: "192.0.2.7"}, limit: 25, after: -1, want: []int{6, 5, 2, 0}, wantTotal: 4, wantNext: -1},
+		{name: "should keep the intersection when filtered by both", filter: AuditFilter{Action: AuditCertRequestRefusedNetwork, SourceIP: "192.0.2.7"}, limit: 25, after: -1, want: []int{6, 2, 0}, wantTotal: 3, wantNext: -1},
+		{name: "should return nothing when no row matches", filter: AuditFilter{SourceIP: "203.0.113.1"}, limit: 25, after: -1, want: []int{}, wantTotal: 0, wantNext: -1},
+		{name: "should return nothing for an action with no rows", filter: AuditFilter{Action: AuditUserDisabled}, limit: 25, after: -1, want: []int{}, wantTotal: 0, wantNext: -1},
+		{name: "should page the first window of a filtered feed", filter: AuditFilter{Action: AuditCertRequestRefusedNetwork}, limit: 2, after: -1, want: []int{6, 3}, wantTotal: 4, wantNext: 3},
+		{name: "should page the last window of a filtered feed", filter: AuditFilter{Action: AuditCertRequestRefusedNetwork}, limit: 2, after: 3, want: []int{2, 0}, wantTotal: 4, wantNext: -1},
+		{name: "should page both filters together", filter: AuditFilter{Action: AuditCertRequestRefusedNetwork, SourceIP: "192.0.2.7"}, limit: 1, after: 6, want: []int{2}, wantTotal: 3, wantNext: 2},
+		{name: "should resume a filtered feed from a cursor the filter excludes", filter: AuditFilter{Action: AuditCertRequestRefusedNetwork}, limit: 25, after: 5, want: []int{3, 2, 0}, wantTotal: 4, wantNext: -1},
 	}
 
 	audit, _ := newTestAuditService(t)
 	seedFilterFeed(t, audit)
+	ids := idsByN(t, audit)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			page, err := audit.ListRecent(context.Background(), tt.filter, tt.limit, tt.offset)
+			after := ""
+			if tt.after >= 0 {
+				after = ids[tt.after]
+			}
+			page, err := audit.ListRecent(context.Background(), tt.filter, after, tt.limit)
 			if err != nil {
 				t.Fatalf("ListRecent() error = %v", err)
 			}
@@ -289,8 +313,16 @@ func TestListRecent_ShouldFilterByActionAndSource(t *testing.T) {
 			if page.Total != tt.wantTotal {
 				t.Errorf("total = %d, want %d", page.Total, tt.wantTotal)
 			}
-			if page.NextOffset != tt.wantOffset {
-				t.Errorf("next offset = %d, want %d", page.NextOffset, tt.wantOffset)
+			wantNext := ""
+			if tt.wantNext >= 0 {
+				wantNext = ids[tt.wantNext]
+			}
+			gotNext := ""
+			if page.NextCursor != nil {
+				gotNext = *page.NextCursor
+			}
+			if gotNext != wantNext {
+				t.Errorf("next cursor = %q, want %q", gotNext, wantNext)
 			}
 		})
 	}
@@ -311,7 +343,7 @@ func TestListRecent_ShouldNotMatchARowWithNoSource(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 
-	page, err := audit.ListRecent(context.Background(), AuditFilter{SourceIP: "192.0.2.7"}, 25, 0)
+	page, err := audit.ListRecent(context.Background(), AuditFilter{SourceIP: "192.0.2.7"}, "", 25)
 	if err != nil {
 		t.Fatalf("ListRecent() error = %v", err)
 	}

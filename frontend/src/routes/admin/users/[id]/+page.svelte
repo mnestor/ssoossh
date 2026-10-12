@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import { getAdminUser, disableUser, enableUser, getUserAudit } from '#lib/api/endpoints.js';
 	import Alert from '#lib/components/Alert.svelte';
+	import LoadMoreFooter from '#lib/components/LoadMoreFooter.svelte';
 	import AuditTimeline from '#lib/components/AuditTimeline.svelte';
 	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
 	import Button from '#lib/components/Button.svelte';
@@ -13,6 +14,8 @@
 	import PageShell from '#lib/components/PageShell.svelte';
 	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
 	import { formatDateTime, relativeTime } from '#lib/format.js';
+	import { visibleAuditEvents } from '#lib/audit.js';
+	import { describeLoaded } from '#lib/listStatus.js';
 	import { session } from '#lib/session.svelte.js';
 	import type {
 		AdminUserDetail,
@@ -36,6 +39,16 @@
 	// False until the first timeline read answers, so the section shows the
 	// loading shape rather than an empty timeline while it is out.
 	let auditLoaded = $state(false);
+	// The cursor for the timeline's next page, or null when the oldest event
+	// has loaded.
+	let auditNextCursor: string | null = $state(null);
+	// How many events the server holds for this timeline, for the footer's
+	// "N older not loaded".
+	let auditTotal = $state(0);
+	// A failed "Load more" is its own error: the events already shown are
+	// still right, so it sits where the button was and retries that page.
+	let auditMoreError: string | null = $state(null);
+	let auditLoadingMore = $state(false);
 	// What the last disable or re-enable did, said where it happened.
 	let actionNotice: string | null = $state(null);
 	// A refresh after an action that failed. The action itself went
@@ -290,9 +303,12 @@
 	// reported beside it rather than replacing the whole page with an error.
 	async function loadAudit() {
 		auditError = null;
+		auditMoreError = null;
 		try {
 			const page = await getUserAudit(userId, { limit: 25 });
 			auditEvents = page.events;
+			auditTotal = page.total;
+			auditNextCursor = page.next_cursor ?? null;
 		} catch (cause) {
 			if (redirectIfUnauthenticated(cause)) {
 				return;
@@ -300,6 +316,30 @@
 			auditError = errorMessage(cause);
 		} finally {
 			auditLoaded = true;
+		}
+	}
+
+	// loadMoreAudit appends the page after the cursor. The server pages by
+	// cursor, so an event recorded since the first page lands above it
+	// rather than repeating a row here.
+	async function loadMoreAudit() {
+		if (auditLoadingMore || auditNextCursor === null) {
+			return;
+		}
+		auditLoadingMore = true;
+		auditMoreError = null;
+		try {
+			const page = await getUserAudit(userId, { limit: 25, after: auditNextCursor });
+			auditEvents = [...auditEvents, ...page.events];
+			auditTotal = page.total;
+			auditNextCursor = page.next_cursor ?? null;
+		} catch (cause) {
+			if (redirectIfUnauthenticated(cause)) {
+				return;
+			}
+			auditMoreError = errorMessage(cause);
+		} finally {
+			auditLoadingMore = false;
 		}
 	}
 
@@ -877,7 +917,26 @@
 					testid="user-audit-loading"
 				/>
 			{:else}
-				<AuditTimeline events={auditEvents} subjectUserId={userId} />
+				<div class="flex flex-col gap-3">
+					<AuditTimeline events={auditEvents} subjectUserId={userId} />
+					<!-- The audit feed's footer, counted the same way: rows the
+					     timeline rendered, against what the server holds. -->
+					<LoadMoreFooter
+						summary={auditEvents.length > 0
+							? describeLoaded(
+									visibleAuditEvents(auditEvents).length,
+									auditTotal - auditEvents.length,
+									'older'
+								)
+							: ''}
+						hasMore={auditNextCursor !== null}
+						busy={auditLoadingMore}
+						error={auditMoreError}
+						errorTitle="Could not load older events"
+						onmore={loadMoreAudit}
+						testid="user-audit"
+					/>
+				</div>
 			{/if}
 		</PageSection>
 	{/if}

@@ -238,12 +238,13 @@ export function getCertificateDetail(
 
 /**
  * GET /api/admin/certificates/history — cross-user certificate history for auditor review.
- * Supports search, filtering by type and status, and offset pagination.
+ * Supports search and filtering by type and status, newest first, with
+ * cursor paging: `after` is the previous page's `next_cursor`.
  */
 export function listAdminCertificates(
 	signal?: AbortSignal,
 	options?: {
-		offset?: number;
+		after?: string;
 		limit?: number;
 		q?: string;
 		type?: string;
@@ -251,8 +252,8 @@ export function listAdminCertificates(
 	}
 ): Promise<CertificateListAdminResponse> {
 	const params = new URLSearchParams();
-	if (options?.offset !== undefined) {
-		params.append('offset', options.offset.toString());
+	if (options?.after) {
+		params.append('after', options.after);
 	}
 	if (options?.limit !== undefined) {
 		params.append('limit', options.limit.toString());
@@ -356,15 +357,16 @@ export function getAdminConfig(signal?: AbortSignal): Promise<EffectiveConfigRes
 }
 
 /**
- * GET /api/admin/users — paginated list of all users (auditor-only).
+ * GET /api/admin/users — the user directory (auditor-only), cursor-paged:
+ * `after` is the previous page's `next_cursor`.
  */
 export function getAdminUsers(options?: {
 	q?: string;
 	limit?: number;
-	offset?: number;
+	after?: string;
 	/**
 	 * Account state to narrow to: 'active' or 'disabled'. Omitted returns
-	 * both. Applied before the count, so the pager describes the filtered
+	 * both. Applied before the count, so the total describes the filtered
 	 * set.
 	 */
 	status?: 'active' | 'disabled';
@@ -376,8 +378,8 @@ export function getAdminUsers(options?: {
 	if (options?.limit) {
 		params.append('limit', options.limit.toString());
 	}
-	if (options?.offset) {
-		params.append('offset', options.offset.toString());
+	if (options?.after) {
+		params.append('after', options.after);
 	}
 	if (options?.status) {
 		params.append('status', options.status);
@@ -426,15 +428,16 @@ export function enableUser(
 
 /**
  * GET /api/admin/users/:id/audit — one user's audit timeline, as both actor
- * and target (auditor-scoped).
+ * and target (auditor-scoped). Cursor-paged: `after` is the previous page's
+ * `next_cursor`.
  */
 export function getUserAudit(
 	id: string,
-	params: { limit?: number; offset?: number } = {}
+	params: { limit?: number; after?: string } = {}
 ): Promise<AuditEventsResponse> {
 	const query = new URLSearchParams();
 	if (params.limit !== undefined) query.set('limit', String(params.limit));
-	if (params.offset !== undefined) query.set('offset', String(params.offset));
+	if (params.after) query.set('after', params.after);
 	const suffix = query.toString() ? `?${query}` : '';
 	return request<AuditEventsResponse>(`/admin/users/${encodeURIComponent(id)}/audit${suffix}`);
 }
@@ -445,14 +448,15 @@ export function getUserAudit(
  * Filters by action and by observed source address, both exact matches, and
  * nothing else: the database copy is a bounded cache of recent events, and
  * any other search happens in the shipped audit log. An empty filter is left
- * off the request.
+ * off the request. Cursor-paged: `after` is the previous page's
+ * `next_cursor`.
  */
 export function getAuditFeed(
-	params: { limit?: number; offset?: number; action?: string; source_ip?: string } = {}
+	params: { limit?: number; after?: string; action?: string; source_ip?: string } = {}
 ): Promise<AuditEventsResponse> {
 	const query = new URLSearchParams();
 	if (params.limit !== undefined) query.set('limit', String(params.limit));
-	if (params.offset !== undefined) query.set('offset', String(params.offset));
+	if (params.after) query.set('after', params.after);
 	if (params.action) query.set('action', params.action);
 	if (params.source_ip) query.set('source_ip', params.source_ip);
 	const suffix = query.toString() ? `?${query}` : '';
@@ -495,21 +499,22 @@ export function loginURL(returnTo?: string): string {
 }
 
 /**
- * GET /api/admin/enrollments — paged, searchable list of all service
- * enrollments across users, visible to auditors.
+ * GET /api/admin/enrollments — searchable list of all service enrollments
+ * across users, newest first, visible to auditors. Cursor-paged: `after` is
+ * the previous page's `next_cursor`.
  */
 export function listAdminEnrollments(
 	signal?: AbortSignal,
 	limit?: number,
-	offset?: number,
+	after?: string,
 	query?: string
 ): Promise<AdminEnrollmentsResponse> {
 	const params = new URLSearchParams();
 	if (limit !== undefined) {
 		params.append('limit', limit.toString());
 	}
-	if (offset !== undefined) {
-		params.append('offset', offset.toString());
+	if (after) {
+		params.append('after', after);
 	}
 	if (query) {
 		params.append('q', query);

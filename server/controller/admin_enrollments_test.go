@@ -97,7 +97,8 @@ func TestListEnrollmentsHandler_ShouldMapEveryFieldOntoTheResponse(t *testing.T)
 
 	prov := &stubEnrollmentProvider{
 		list: service.AdminEnrollmentList{
-			Total: 7,
+			Total:      7,
+			NextCursor: ptrTo("enr-1"),
 			Enrollments: []service.AdminEnrollmentRow{{
 				Enrollment: model.Enrollment{
 					ID:                         "enr-1",
@@ -126,7 +127,7 @@ func TestListEnrollmentsHandler_ShouldMapEveryFieldOntoTheResponse(t *testing.T)
 	r := routerWithEnrollmentService(t, cfg, newTestDB(t), newAuditorIdentity(cfg), prov)
 
 	w := httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/enrollments?limit=2&offset=2&q=deploy", nil))
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/enrollments?limit=2&after=enr-0&q=deploy", nil))
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("GET /admin/enrollments = %d, want 200, body: %s", w.Code, w.Body.String())
@@ -135,7 +136,8 @@ func TestListEnrollmentsHandler_ShouldMapEveryFieldOntoTheResponse(t *testing.T)
 	var resp struct {
 		Data struct {
 			Enrollments []map[string]any `json:"enrollments"`
-			Meta        map[string]any   `json:"meta"`
+			Total       float64          `json:"total"`
+			NextCursor  *string          `json:"next_cursor"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
@@ -186,15 +188,18 @@ func TestListEnrollmentsHandler_ShouldMapEveryFieldOntoTheResponse(t *testing.T)
 		t.Errorf("options.no_touch_required = %v, want true", opts["no_touch_required"])
 	}
 
-	// meta.total counts matches, not the page.
-	if total, _ := resp.Data.Meta["total"].(float64); total != 7 {
-		t.Errorf("meta.total = %v, want 7", total)
+	// total counts matches, not the page.
+	if resp.Data.Total != 7 {
+		t.Errorf("total = %v, want 7", resp.Data.Total)
+	}
+	if derefOr(resp.Data.NextCursor) != "enr-1" {
+		t.Errorf("next_cursor = %v, want the service's enr-1", resp.Data.NextCursor)
 	}
 
 	// The paging and search terms have to reach the service, or the panel
 	// pages through a query the database never narrowed.
-	if prov.lastParams.Limit != 2 || prov.lastParams.Offset != 2 || prov.lastParams.Query != "deploy" {
-		t.Errorf("service saw %+v, want limit 2, offset 2, query \"deploy\"", prov.lastParams)
+	if prov.lastParams.Limit != 2 || prov.lastParams.After != "enr-0" || prov.lastParams.Query != "deploy" {
+		t.Errorf("service saw %+v, want limit 2, after enr-0, query \"deploy\"", prov.lastParams)
 	}
 }
 

@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
 	import Alert from '#lib/components/Alert.svelte';
+	import LoadMoreFooter from '#lib/components/LoadMoreFooter.svelte';
 	import Icon from '#lib/components/Icon.svelte';
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import EmptyState from '#lib/components/EmptyState.svelte';
@@ -9,10 +10,9 @@
 	import PageShell from '#lib/components/PageShell.svelte';
 	import SearchInput from '#lib/components/SearchInput.svelte';
 	import ListStatus from '#lib/components/ListStatus.svelte';
-	import Pager from '#lib/components/Pager.svelte';
 	import { getAdminUsers } from '#lib/api/endpoints.js';
 	import type { AdminUsersListResponse } from '#lib/api/types.js';
-	import { describeList } from '#lib/listStatus.js';
+	import { describeList, describeLoaded } from '#lib/listStatus.js';
 	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
 	import { formatDateTime } from '#lib/format.js';
 	import Button from '#lib/components/Button.svelte';
@@ -34,7 +34,10 @@
 	let busy = $state(true);
 	let searchQuery = $state('');
 	let status: StatusFilter = $state('all');
-	let offset = $state(0);
+	// A failed "Load more" is its own error: the users already shown are
+	// still right, so it sits where the button was and retries that page,
+	// rather than replacing the list with the first page again.
+	let moreError: string | null = $state(null);
 
 	// Which load is allowed to write to the page. Nothing cancels a request
 	// in flight and the search box stays live while one runs, so two can
@@ -44,10 +47,18 @@
 	// from it.
 	let latestLoad = 0;
 
-	async function loadUsers() {
+	/**
+	 * loadUsers reads the first page under the current search and state
+	 * filter, or, given the previous page's cursor, appends the page after
+	 * it so "Load more" grows one continuous list.
+	 */
+	async function loadUsers(after?: string) {
 		const load = ++latestLoad;
 		busy = true;
-		error = null;
+		moreError = null;
+		if (!after) {
+			error = null;
+		}
 		try {
 			// 'all' is sent as no parameter rather than as a value: the
 			// server's filter is "active", "disabled", or absent, and an
@@ -55,11 +66,11 @@
 			const result = await getAdminUsers({
 				q: searchQuery,
 				limit: 25,
-				offset,
+				after,
 				status: status === 'all' ? undefined : status
 			});
 			if (load === latestLoad) {
-				users = result;
+				users = after && users ? { ...result, users: [...users.users, ...result.users] } : result;
 			}
 		} catch (cause) {
 			// An expired session is a sign-in, not a failed list.
@@ -67,7 +78,11 @@
 				return;
 			}
 			if (load === latestLoad) {
-				error = errorMessage(cause);
+				if (after) {
+					moreError = errorMessage(cause);
+				} else {
+					error = errorMessage(cause);
+				}
 			}
 		} finally {
 			// Only the newest load owns the busy state.
@@ -79,40 +94,40 @@
 
 	function handleSearch(q: string) {
 		searchQuery = q;
-		offset = 0;
 		loadUsers();
 	}
 
 	// Back to the first page, like a new search: the filtered set is a
-	// different list, so page 3 of the old one means nothing in it.
+	// different list, so what was loaded of the old one means nothing in it.
 	function selectStatus(next: StatusFilter) {
 		if (next === status) {
 			return;
 		}
 		status = next;
-		offset = 0;
 		loadUsers();
 	}
 
-	function handlePage(newOffset: number) {
-		offset = newOffset;
-		loadUsers();
+	/** loadMore appends the page after the last user shown. */
+	async function loadMore() {
+		const after = users?.next_cursor;
+		if (after) {
+			await loadUsers(after);
+		}
 	}
 
 	// What the list just became, for a reader who cannot see the rows
 	// change under a search or a state filter. See #lib/listStatus.
 	// `$derived.by` rather than `$derived`: at this point in the module the
 	// only assignment TypeScript has seen to `users` is the `null` it was
-	// declared with, so it narrows the whole union away and `users?.meta`
+	// declared with, so it narrows the whole union away and `users?.total`
 	// types as `never`. Reading it inside a function body resets that — the
-	// same reason the markup below can say `users.meta` after an `{#if}`.
+	// same reason the markup below can say `users.total` after an `{#if}`.
 	// Clearing remounts the search box: it owns what is typed in it, so
 	// resetting the term alone would leave the old text over the full list.
 	let searchKey = $state(0);
 	function clearFilters() {
 		searchQuery = '';
 		status = 'all';
-		offset = 0;
 		searchKey += 1;
 		loadUsers();
 	}
@@ -135,19 +150,17 @@
 	});
 
 	const listStatus = $derived.by(() => {
-		const meta = users?.meta;
+		const list = users;
 		return describeList({
 			noun: 'user',
-			total: meta?.total ?? 0,
+			total: list?.total ?? 0,
 			loading: busy,
-			ready: meta !== undefined,
-			page: meta?.page,
-			pageCount: meta?.page_count,
+			ready: list !== null,
 			query: searchQuery
 		});
 	});
 
-	onMount(loadUsers);
+	onMount(() => void loadUsers());
 </script>
 
 <svelte:head><title>Users · ssoossh</title></svelte:head>
@@ -205,7 +218,7 @@
 		<Alert
 			variant="error"
 			title="Could not load the user list"
-			onretry={loadUsers}
+			onretry={() => loadUsers()}
 			testid="users-error"
 		>
 			{error}
@@ -275,7 +288,18 @@
 			</table>
 		</div>
 
-		<Pager meta={users.meta} onpage={handlePage} {busy} />
+		<!-- The audit feed's footer: what is on screen, what is left, then
+		     Load more. "more" rather than "older": the directory is sorted
+		     by name, not by time. -->
+		<LoadMoreFooter
+			summary={describeLoaded(users.users.length, users.total - users.users.length, 'more')}
+			hasMore={!!users.next_cursor}
+			{busy}
+			error={moreError}
+			errorTitle="Could not load more users"
+			onmore={loadMore}
+			testid="users"
+		/>
 	{:else if busy}
 		<LoadingBlock shape="table" count={6} testid="users-loading" />
 	{:else}

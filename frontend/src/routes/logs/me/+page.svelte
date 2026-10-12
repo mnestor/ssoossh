@@ -6,6 +6,7 @@
 	import type { CertificateRecord, DeniedRequest } from '#lib/api/types.js';
 	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
 	import Alert from '#lib/components/Alert.svelte';
+	import LoadMoreFooter from '#lib/components/LoadMoreFooter.svelte';
 	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
 	import Button from '#lib/components/Button.svelte';
 	import CertRow from '#lib/components/CertRow.svelte';
@@ -17,7 +18,7 @@
 	import SearchInput from '#lib/components/SearchInput.svelte';
 	import EmptyState from '#lib/components/EmptyState.svelte';
 	import { outcomeFilters, statusFilters, typeFilters } from '#lib/filters.js';
-	import { describeList } from '#lib/listStatus.js';
+	import { describeList, describeLoaded } from '#lib/listStatus.js';
 	import { certificateEvent } from '#lib/rowEvents.js';
 	import { watchNarrow } from '#lib/viewport.js';
 
@@ -426,7 +427,7 @@
 						<CertRow
 							cert={entry.cert}
 							{now}
-							event={certificateEvent(entry.cert.type)}
+							event={certificateEvent(entry.cert.type, entry.cert.reported_pam_service)}
 							showOutcome={!isNarrow}
 							testid="cert-row"
 							href={certHref(entry.cert.id)}
@@ -440,23 +441,15 @@
 			<!-- One pager. Loaded rows all show, and Load more fetches older
 			     ones: a page-of-ten pager over what had loaded used to sit on
 			     top of this, reading "Page 3 of 3" while more existed. -->
-			{#if moreError}
-				<Alert
-					variant="error"
-					title="Could not load more of your history"
-					onretry={loadMore}
-					testid="history-more-error"
-				>
-					{moreError}
-				</Alert>
-			{:else if hasMore}
-				<div class="flex flex-col items-center gap-1">
-					<Button variant="ghost" busy={isLoading} onclick={loadMore} testid="history-load-more">
-						{isLoading ? 'Loading…' : 'Load more'}
-					</Button>
-					<span class="text-xs text-ink-muted tabular-nums">{shown.length} shown</span>
-				</div>
-			{/if}
+			<LoadMoreFooter
+				summary={describeLoaded(shown.length, 0, 'older')}
+				{hasMore}
+				busy={isLoading}
+				error={moreError}
+				errorTitle="Could not load more of your history"
+				onmore={loadMore}
+				testid="history"
+			/>
 		{/if}
 	{/if}
 </PageShell>

@@ -1,21 +1,24 @@
-// Package paging parses and applies the window and search parameters the
-// admin and auditor list endpoints share.
+// Package paging parses the window and search parameters the admin and
+// auditor list endpoints share, and builds the keyset seek they page with.
 //
-// It exists so those endpoints agree on one contract — `limit`, `offset`,
-// and `q`, with a total row count in the response — rather than each
-// inventing its own. Offset paging is deliberate: the admin lists show page
-// numbers and let an auditor jump to a page, which a cursor cannot do. The
-// caller-facing endpoints (/api/certs) stay on cursors, where the UI only
-// ever loads more.
+// It exists so those endpoints agree on one contract — `after`, `limit`, and
+// `q`, with `next_cursor` and a total row count in the response — rather
+// than each inventing its own. The contract is the one the caller's own
+// history (/api/certs) already uses: `after` is the id of the last row of
+// the previous page, and each list resumes from that row's place in its own
+// order with the id as the tiebreaker. A row written or deleted between two
+// requests therefore neither repeats nor skips a row, which offset paging
+// over a live table cannot promise.
 //
 // Nothing here knows about a particular table. A caller supplies the columns
-// its list searches; everything else is shared.
+// its list searches and orders by; everything else is shared.
 package paging
 
 import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -37,6 +40,11 @@ const (
 	// the query plan.
 	MaxQueryLength = 200
 
+	// MaxCursorLength bounds `after`. A cursor is a row id (a UUID), so
+	// anything this long is not one, and is refused before it reaches a
+	// query.
+	MaxCursorLength = 128
+
 	// likeEscape is the character Filter escapes LIKE wildcards with. It is
 	// spelled into the SQL as `ESCAPE '\'`, which both SQLite and Postgres
 	// accept (Postgres with standard_conforming_strings on, the default
@@ -49,8 +57,9 @@ type Params struct {
 	// Limit is the page size, always between 1 and MaxLimit.
 	Limit int
 
-	// Offset is how many rows to skip, never negative.
-	Offset int
+	// After is the id of the last row of the previous page, trimmed. Empty
+	// means the first page.
+	After string
 
 	// Query is the caller's search term, trimmed. Empty means "no filter" —
 	// Filter returns nothing for it, so an endpoint does not need to branch.
@@ -62,9 +71,10 @@ type Params struct {
 // package depending on gin.
 type Values interface {
 	Get(key string) string
+	Has(key string) bool
 }
 
-// Parse reads limit, offset, and q from values, applying the defaults and
+// Parse reads after, limit, and q from values, applying the defaults and
 // bounds.
 //
 // A malformed number is an error rather than a silent fallback to the
@@ -72,8 +82,16 @@ type Values interface {
 // learn its parameter was thrown away, and would page through the list
 // wrongly forever. An oversized limit is clamped instead, since that is the
 // server declining to serve more rather than the caller being wrong.
+//
+// `offset` is refused outright, empty or not. These lists paged by offset
+// once, and a caller still sending it would otherwise be handed the first
+// page every time and never learn why.
 func Parse(values Values) (Params, error) {
 	p := Params{Limit: DefaultLimit}
+
+	if values.Has("offset") {
+		return Params{}, &errorresponses.InvalidRequestError{Reason: "offset is not supported: page with after and the next_cursor of the previous page"}
+	}
 
 	if raw := values.Get("limit"); raw != "" {
 		limit, err := strconv.Atoi(raw)
@@ -89,16 +107,11 @@ func Parse(values Values) (Params, error) {
 		p.Limit = limit
 	}
 
-	if raw := values.Get("offset"); raw != "" {
-		offset, err := strconv.Atoi(raw)
-		if err != nil {
-			return Params{}, &errorresponses.InvalidRequestError{Reason: fmt.Sprintf("offset must be a number, got %q", raw)}
-		}
-		if offset < 0 {
-			return Params{}, &errorresponses.InvalidRequestError{Reason: "offset cannot be negative"}
-		}
-		p.Offset = offset
+	after := strings.TrimSpace(values.Get("after"))
+	if len(after) > MaxCursorLength {
+		return Params{}, UnknownCursor()
 	}
+	p.After = after
 
 	query := strings.TrimSpace(values.Get("q"))
 	if len(query) > MaxQueryLength {
@@ -109,39 +122,48 @@ func Parse(values Values) (Params, error) {
 	return p, nil
 }
 
-// PageNumber reports the 1-based page the window lands on, for a response to
-// echo back to a UI that renders page numbers.
-func (p Params) PageNumber() int {
-	if p.Limit <= 0 {
-		return 1
-	}
-	return p.Offset/p.Limit + 1
+// UnknownCursor is the error for an `after` that names no row of the list
+// being paged: a malformed value, an id from another list, or a row that no
+// longer exists. A 400 rather than a first page, for the same reason a
+// malformed limit is one: a UI handed page one again would show it as page
+// two.
+func UnknownCursor() error {
+	return &errorresponses.InvalidRequestError{Reason: "after does not name a row in this list"}
 }
 
-// PageCount reports how many pages total rows fill at this page size. An
-// empty list is one (empty) page, not zero, so a UI never has to special-case
-// "page 1 of 0".
-func (p Params) PageCount(total int64) int {
-	if p.Limit <= 0 || total <= 0 {
-		return 1
-	}
-	pages := int((total + int64(p.Limit) - 1) / int64(p.Limit))
-	if pages < 1 {
-		return 1
-	}
-	return pages
+// SeekBefore builds the WHERE fragment that resumes a list ordered
+// (timeColumn DESC, idColumn DESC) after the row with sort time at and id.
+// The id breaks ties between rows written in the same instant, so a row
+// sharing the cursor's timestamp is neither repeated nor skipped.
+//
+// The leading "timeColumn <= at" is implied by the rest and is there for the
+// planner: Postgres cannot turn the OR into an index bound, and without a
+// plain range it walks the index from the newest row and filters its way
+// down to the cursor, which costs what an offset did. With it, the scan
+// starts at the cursor on both backends.
+//
+// Column names are interpolated into the SQL, so they must be literals from
+// the calling package — never a caller-supplied string.
+func SeekBefore(timeColumn, idColumn string, at time.Time, id string) (string, []any) {
+	sql := fmt.Sprintf("(%[1]s <= ? AND (%[1]s < ? OR (%[1]s = ? AND %[2]s < ?)))", timeColumn, idColumn)
+	return sql, []any{at, at, at, id}
 }
 
-// Apply adds the window to db. The caller supplies the ordering: a paged
-// query without a deterministic ORDER BY can return the same row on two
-// pages and skip another entirely.
-func Apply(db *gorm.DB, p Params) *gorm.DB {
-	return db.Limit(p.Limit).Offset(p.Offset)
+// Trim cuts rows, fetched with Limit+1, down to one page and reports the
+// cursor for the next: the id of the page's last row, or nil when the extra
+// row was not there and this is the last page.
+func Trim[T any](rows []T, limit int, id func(T) string) ([]T, *string) {
+	if len(rows) <= limit {
+		return rows, nil
+	}
+	rows = rows[:limit]
+	next := id(rows[len(rows)-1])
+	return rows, &next
 }
 
-// Count runs COUNT(*) over db, which must already carry the filter but not
-// the window — the total describes the whole result set, which is what a
-// page-number UI needs.
+// Count runs COUNT(*) over db, which must already carry the filter but
+// neither the seek nor the window: the total describes the whole filtered
+// list, which is what "25 of 120" is read from.
 func Count(db *gorm.DB) (int64, error) {
 	var total int64
 	if err := db.Count(&total).Error; err != nil {

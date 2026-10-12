@@ -28,17 +28,6 @@ function adminEnrollment(id: string, account: string) {
 	};
 }
 
-/** pageMeta builds the paging envelope for one page of rows. */
-function pageMeta(total: number, offset = 0, limit = 25) {
-	return {
-		total,
-		limit,
-		offset,
-		page: Math.floor(offset / limit) + 1,
-		page_count: Math.max(1, Math.ceil(total / limit))
-	};
-}
-
 /** json wraps a body in the envelope every endpoint answers with. */
 function json(data: unknown): Response {
 	return new Response(JSON.stringify({ data, error: null }), {
@@ -47,13 +36,47 @@ function json(data: unknown): Response {
 	});
 }
 
-/** stubList answers the list fetch. */
-function stubList(enrollments: object[], meta = pageMeta(enrollments.length)) {
+/** stubList answers the list fetch with one page and no next cursor. */
+function stubList(enrollments: object[]) {
 	vi.stubGlobal(
 		'fetch',
-		vi.fn(() => Promise.resolve(json({ enrollments, meta })))
+		vi.fn(() => Promise.resolve(json({ enrollments, total: enrollments.length })))
 	);
 }
+
+/**
+ * stubPages answers the nth request with the nth body, repeating the last;
+ * a string body is a failed request. It returns the URLs requested.
+ */
+function stubPages(...bodies: (object | string)[]) {
+	const urls: string[] = [];
+	let call = 0;
+	vi.stubGlobal(
+		'fetch',
+		vi.fn((input: RequestInfo | URL) => {
+			urls.push(String(input));
+			const body = bodies[Math.min(call++, bodies.length - 1)];
+			if (typeof body === 'string') {
+				return Promise.resolve(
+					new Response(JSON.stringify({ data: null, error: body }), {
+						status: 500,
+						headers: { 'Content-Type': 'application/json' }
+					})
+				);
+			}
+			return Promise.resolve(json(body));
+		})
+	);
+	return urls;
+}
+
+/** firstPage and lastPage are a two-code list, one code per page. */
+const firstPage = {
+	enrollments: [adminEnrollment('enr-1', 'svc-deploy')],
+	total: 2,
+	next_cursor: 'enr-1'
+};
+const lastPage = { enrollments: [adminEnrollment('enr-2', 'svc-backup')], total: 2 };
 
 beforeEach(() => {
 	vi.unstubAllGlobals();
@@ -122,13 +145,118 @@ describe('admin service codes page', () => {
 		);
 	});
 
-	it('should page rather than pile every code onto one screen', async () => {
-		const rows = Array.from({ length: 25 }, (_, i) => adminEnrollment('enr-' + i, 'svc-' + i));
-		stubList(rows, pageMeta(60));
-
+	it('should not offer Load more when one page holds every code', async () => {
+		stubList([adminEnrollment('enr-1', 'svc-deploy')]);
 		render(Page);
+		await screen.findAllByTestId('enrollment-row');
+		expect(screen.queryByTestId('enrollments-load-more')).not.toBeInTheDocument();
+	});
+});
 
-		expect(await screen.findByTestId('enrollments-pager')).toBeInTheDocument();
+describe('loading more codes', () => {
+	it('should count the codes shown and the older still to load', async () => {
+		stubPages(firstPage);
+		render(Page);
+		expect(await screen.findByTestId('enrollments-count')).toHaveTextContent(
+			'1 shown, 1 older not loaded'
+		);
+	});
+
+	it('should count only what is shown once the last page is in', async () => {
+		stubPages(firstPage, lastPage);
+		render(Page);
+		await userEvent.click(await screen.findByTestId('enrollments-load-more'));
+		await screen.findByText('svc-backup');
+		expect(screen.getByTestId('enrollments-count')).toHaveTextContent(/^2 shown$/);
+	});
+
+	it('should offer Load more when more codes exist', async () => {
+		stubPages(firstPage);
+		render(Page);
+		expect(await screen.findByTestId('enrollments-load-more')).toBeInTheDocument();
+	});
+
+	it('should ask for the page after the cursor when Load more is pressed', async () => {
+		const urls = stubPages(firstPage, lastPage);
+		render(Page);
+		await userEvent.click(await screen.findByTestId('enrollments-load-more'));
+		await screen.findByText('svc-backup');
+		expect(urls[1]).toContain('after=enr-1');
+	});
+
+	it('should append the next page below the codes already shown', async () => {
+		stubPages(firstPage, lastPage);
+		render(Page);
+		await userEvent.click(await screen.findByTestId('enrollments-load-more'));
+		await screen.findByText('svc-backup');
+		expect(screen.getAllByTestId('enrollment-row')).toHaveLength(2);
+	});
+
+	it('should remove Load more once the last page is in', async () => {
+		stubPages(firstPage, lastPage);
+		render(Page);
+		await userEvent.click(await screen.findByTestId('enrollments-load-more'));
+		await screen.findByText('svc-backup');
+		expect(screen.queryByTestId('enrollments-load-more')).not.toBeInTheDocument();
+	});
+
+	it('should keep the codes shown and offer a retry when Load more fails', async () => {
+		stubPages(firstPage, 'boom', lastPage);
+		render(Page);
+		await userEvent.click(await screen.findByTestId('enrollments-load-more'));
+		await screen.findByTestId('enrollments-more-error');
+		expect(screen.getByText('svc-deploy')).toBeInTheDocument();
+		await userEvent.click(screen.getByRole('button', { name: /try again/i }));
+		expect(await screen.findByText('svc-backup')).toBeInTheDocument();
+	});
+
+	// Where keyboard focus lands once the pressed control is gone: the count
+	// line after the last page, Try again after a failure. See
+	// LoadMoreFooter, which owns the rule for every Load more list.
+	const focusCases: { name: string; bodies: (object | string)[]; retry: boolean; lands: string }[] =
+		[
+			{
+				name: 'should move focus to the count line when the last page loads',
+				bodies: [firstPage, lastPage],
+				retry: false,
+				lands: 'enrollments-count'
+			},
+			{
+				name: 'should move focus to Try again when Load more fails',
+				bodies: [firstPage, 'boom'],
+				retry: false,
+				lands: 'enrollments-more-error-retry'
+			},
+			{
+				name: 'should move focus to the count line when a retry loads the last page',
+				bodies: [firstPage, 'boom', lastPage],
+				retry: true,
+				lands: 'enrollments-count'
+			}
+		];
+
+	for (const { name, bodies, retry, lands } of focusCases) {
+		it(name, async () => {
+			stubPages(...bodies);
+			render(Page);
+			await userEvent.click(await screen.findByTestId('enrollments-load-more'));
+			if (retry) {
+				await userEvent.click(await screen.findByTestId('enrollments-more-error-retry'));
+			}
+			await vi.waitFor(() => expect(document.activeElement).toBe(screen.getByTestId(lands)));
+		});
+	}
+
+	it('should start a new search from its first page', async () => {
+		const urls = stubPages(firstPage, lastPage);
+		render(Page);
+		await userEvent.click(await screen.findByTestId('enrollments-load-more'));
+		await screen.findByText('svc-backup');
+		await userEvent.type(screen.getByTestId('search-enrollments'), 'deploy{Enter}');
+		await vi.waitFor(() => expect(urls.some((url) => url.includes('q=deploy'))).toBe(true));
+		expect(
+			urls.filter((url) => url.includes('q=deploy')).every((url) => !url.includes('after='))
+		).toBe(true);
 	});
 });
 
