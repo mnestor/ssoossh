@@ -11,8 +11,9 @@ package migration_test
 // columns, nullability, indexes, foreign keys, and CHECK constraints leaves
 // them untouched.
 //
-// Run `go test ./test/migration/ -update` to accept an intended change (add
-// `-tags dbparity` to refresh the Postgres golden too, which needs docker).
+// Run `go test ./test/migration/ -update` to accept an intended change, and
+// the same against Postgres to refresh its golden too:
+// `make test-postgres PKGS=./test/migration/ ARGS=-update`.
 
 import (
 	"flag"

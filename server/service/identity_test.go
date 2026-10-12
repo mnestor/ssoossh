@@ -12,6 +12,7 @@ import (
 	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/utils/errorresponses"
+	"github.com/mnestor/ssoossh/test/testdb"
 )
 
 // newIdentityTestDB gives the identity tests the two tables a refresh
@@ -20,10 +21,7 @@ import (
 func newIdentityTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
-	db := newTestDB(t)
-	if err := db.AutoMigrate(&model.User{}, &model.UserLDAP{}); err != nil {
-		t.Fatalf("failed to migrate test tables: %v", err)
-	}
+	db := testdb.New(t)
 	return db
 }
 

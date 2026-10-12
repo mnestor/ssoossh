@@ -6,32 +6,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/glebarez/sqlite"
 	"github.com/google/uuid"
-	"gorm.io/gorm"
 
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/utils/errorresponses"
+	"github.com/mnestor/ssoossh/test/testdb"
 )
-
-// newTestUserDB creates an in-memory test database with the users table.
-func newTestUserDB(t *testing.T) *gorm.DB {
-	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("failed to open test database: %v", err)
-	}
-	db.AutoMigrate(&model.User{})
-	return db
-}
 
 // TestCheckUserDisabled_FirstTimeLoginNoRow verifies that a first-time login
 // (no users row for this subject) succeeds even if the database lookup occurs.
 // This is NOT an error condition — the user legitimately has no row yet.
 func TestCheckUserDisabled_FirstTimeLoginNoRow(t *testing.T) {
 	t.Parallel()
-	db := newTestUserDB(t)
-	db.AutoMigrate(&model.User{})
+	db := testdb.New(t)
 
 	service := &AuthService{db: db}
 	ctx := context.Background()
@@ -51,8 +38,7 @@ func TestCheckUserDisabled_FirstTimeLoginNoRow(t *testing.T) {
 // admit a user an admin has explicitly disabled.
 func TestCheckUserDisabled_DatabaseErrorFailsClosed(t *testing.T) {
 	t.Parallel()
-	db := newTestUserDB(t)
-	db.AutoMigrate(&model.User{})
+	db := testdb.New(t)
 
 	service := &AuthService{db: db}
 	ctx := context.Background()
@@ -88,8 +74,7 @@ func TestCheckUserDisabled_DatabaseErrorFailsClosed(t *testing.T) {
 // cannot establish a session.
 func TestCheckUserDisabled_DisabledUserBlocked(t *testing.T) {
 	t.Parallel()
-	db := newTestUserDB(t)
-	db.AutoMigrate(&model.User{})
+	db := testdb.New(t)
 
 	service := &AuthService{db: db}
 	ctx := context.Background()
@@ -123,8 +108,7 @@ func TestCheckUserDisabled_DisabledUserBlocked(t *testing.T) {
 // user can establish a session.
 func TestCheckUserDisabled_EnabledUserAllowed(t *testing.T) {
 	t.Parallel()
-	db := newTestUserDB(t)
-	db.AutoMigrate(&model.User{})
+	db := testdb.New(t)
 
 	service := &AuthService{db: db}
 	ctx := context.Background()
@@ -153,8 +137,7 @@ func TestCheckUserDisabled_EnabledUserAllowed(t *testing.T) {
 // /auth/disabled but instead renders a generic service failure.
 func TestCheckUserDisabled_DatabaseErrorReturnsStatusCheckError(t *testing.T) {
 	t.Parallel()
-	db := newTestUserDB(t)
-	db.AutoMigrate(&model.User{})
+	db := testdb.New(t)
 
 	service := &AuthService{db: db}
 	ctx := context.Background()

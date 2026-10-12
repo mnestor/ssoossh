@@ -16,6 +16,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/mnestor/ssoossh/server/testutil"
+	"github.com/mnestor/ssoossh/test/testdb"
 )
 
 // Test methodology: Tests verify the full startup sequence and system
@@ -44,20 +45,23 @@ func newTestSSHKeyPEM(t *testing.T) string {
 // bootstrapConfigOpts customizes the config file written by
 // writeBootstrapConfig. Zero values mean "use a working default".
 type bootstrapConfigOpts struct {
-	dbProvider string // database provider; defaults to sqlite
+	dbProvider string // database provider; defaults to the run's test backend
 	sshKey     string // CA key material; defaults to a freshly generated valid key
 	httpExtra  string // appended verbatim inside the http: block (must be indented)
 	extra      string // appended verbatim at the top level of the file
 }
 
-// writeBootstrapConfig writes an ssoosshd config file (port 0, in-memory
-// SQLite, generated SSH key, unless overridden via opts) and returns its
-// path.
+// writeBootstrapConfig writes an ssoosshd config file (port 0, a fresh
+// database on the run's test backend, generated SSH key, unless overridden
+// via opts) and returns its path.
 func writeBootstrapConfig(t *testing.T, opts bootstrapConfigOpts) string {
 	t.Helper()
 
+	// The database is the run's backend (test/testdb) unless a test names a
+	// provider of its own, which only the bad-provider test does.
+	connection := ":memory:"
 	if opts.dbProvider == "" {
-		opts.dbProvider = "sqlite"
+		opts.dbProvider, connection = testdb.Connection(t)
 	}
 
 	var sshKeyYAML string
@@ -74,9 +78,9 @@ func writeBootstrapConfig(t *testing.T, opts bootstrapConfigOpts) string {
 %s
 db:
   provider: %s
-  connection_string: ":memory:"
+  connection_string: %q
 %s
-%s`, opts.httpExtra, opts.dbProvider, sshKeyYAML, opts.extra)
+%s`, opts.httpExtra, opts.dbProvider, connection, sshKeyYAML, opts.extra)
 
 	path := filepath.Join(t.TempDir(), "ssoosshd.yaml")
 	if err := os.WriteFile(path, []byte(content), 0600); err != nil {

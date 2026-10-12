@@ -1,10 +1,8 @@
 package service
 
-// Test methodology: unit tests for CertRequestService against a real
-// in-memory sqlite *gorm.DB (AutoMigrate'd from model.CertificateRequest —
-// this exercises the service's query/expiry logic, not full migration
-// correctness, which server/bootstrap/db_test.go covers). Tests run in
-// parallel where they don't share a DB/service instance.
+// Test methodology: unit tests for CertRequestService against a real,
+// migrated database (test/testdb: SQLite by default, Postgres in that CI
+// leg). Tests run in parallel where they don't share a DB/service instance.
 
 import (
 	"context"
@@ -13,204 +11,34 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
-	"net/url"
-	"os"
 	"slices"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/ThreeDotsLabs/watermill"
 	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/ThreeDotsLabs/watermill/pubsub/gochannel"
-	"github.com/glebarez/sqlite"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/ssh"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
 	"github.com/mnestor/ssoossh/server/certmsg"
 	"github.com/mnestor/ssoossh/server/config"
-	"github.com/mnestor/ssoossh/server/dbtime"
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/utils/errorresponses"
+	"github.com/mnestor/ssoossh/test/testdb"
 )
 
-// newTestCertRequestService opens an in-memory sqlite DB migrated for
-// model.CertificateRequest and returns a CertRequestService backed by it,
+// newTestCertRequestService opens an isolated, migrated database and returns
+// a CertRequestService backed by it,
 // with ClientTimeout as given (0 disables expiry). The wake-topic broker is a
 // real, non-persistent gochannel pair — matching server/pubsub.New exactly
 // (see its Persistent:false doc comment for why) — closed on test cleanup.
 func newTestCertRequestService(t *testing.T, clientTimeout time.Duration) *CertRequestService {
 	t.Helper()
 	return newTestCertRequestServiceWithOptions(t, config.CertificateOptions{ClientTimeout: clientTimeout})
-}
-
-// pgAdminOnce guards creation of the single admin handle used to create
-// and drop per-test schemas. The per-test pools cannot do it themselves:
-// their own search_path points at a schema that does not exist yet.
-var (
-	pgAdminOnce sync.Once
-	pgAdminDB   *gorm.DB
-	pgAdminErr  error
-	pgSchemaSeq atomic.Uint64
-)
-
-// pgAdmin returns the shared admin connection to the live Postgres named by
-// dsn, opening it once per process.
-func pgAdmin(dsn string) (*gorm.DB, error) {
-	pgAdminOnce.Do(func() {
-		pgAdminDB, pgAdminErr = gorm.Open(postgres.Open(dsn), &gorm.Config{})
-		if pgAdminErr != nil {
-			return
-		}
-		sqlDB, err := pgAdminDB.DB()
-		if err != nil {
-			pgAdminErr = err
-			return
-		}
-		// Schema create/drop only; a couple of connections is plenty and
-		// leaves the server's slots for the per-test pools.
-		sqlDB.SetMaxOpenConns(4)
-	})
-	return pgAdminDB, pgAdminErr
-}
-
-// pgSchemaName derives a unique, valid Postgres identifier for t. Postgres
-// truncates identifiers at 63 bytes, so the test name is trimmed and a
-// process-unique counter appended to keep it collision-free even when two
-// subtests sanitize to the same string.
-func pgSchemaName(t *testing.T) string {
-	t.Helper()
-	sanitized := strings.Map(func(r rune) rune {
-		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '_':
-			return r
-		case r >= 'A' && r <= 'Z':
-			return r + ('a' - 'A')
-		default:
-			return '_'
-		}
-	}, t.Name())
-
-	const maxLen = 40
-	if len(sanitized) > maxLen {
-		sanitized = sanitized[:maxLen]
-	}
-	return fmt.Sprintf("t_%s_%d", sanitized, pgSchemaSeq.Add(1))
-}
-
-// dsnWithSearchPath returns dsn with search_path pinned to schema. It has to
-// travel on the DSN rather than a `SET search_path` statement: the pool opens
-// several physical connections and a SET only affects the one it ran on, so
-// a later query on a sibling connection would silently resolve against the
-// wrong schema.
-func dsnWithSearchPath(dsn, schema string) (string, error) {
-	u, err := url.Parse(dsn)
-	if err != nil {
-		return "", fmt.Errorf("parse dsn: %w", err)
-	}
-	q := u.Query()
-	q.Set("search_path", schema)
-	u.RawQuery = q.Encode()
-	return u.String(), nil
-}
-
-// newTestPostgresDB gives t its own schema on the live Postgres named by
-// SSOOSSH_TEST_POSTGRES_DSN, so the package's t.Parallel() tests run
-// concurrently against one server without seeing each other's rows. The
-// schema is dropped on cleanup.
-//
-// The instance must be disposable: these tests create and drop schemas
-// freely.
-func newTestPostgresDB(t *testing.T, dsn string) *gorm.DB {
-	t.Helper()
-
-	admin, err := pgAdmin(dsn)
-	if err != nil {
-		t.Fatalf("failed to open the admin connection to live postgres: %v", err)
-	}
-
-	schema := pgSchemaName(t)
-	if err := admin.Exec("CREATE SCHEMA " + schema).Error; err != nil {
-		t.Fatalf("failed to create schema %s: %v", schema, err)
-	}
-	t.Cleanup(func() {
-		if err := admin.Exec("DROP SCHEMA IF EXISTS " + schema + " CASCADE").Error; err != nil {
-			t.Errorf("failed to drop schema %s: %v", schema, err)
-		}
-	})
-
-	scopedDSN, err := dsnWithSearchPath(dsn, schema)
-	if err != nil {
-		t.Fatalf("failed to scope the dsn to schema %s: %v", schema, err)
-	}
-
-	db, err := gorm.Open(postgres.Open(scopedDSN), &gorm.Config{NowFunc: dbtime.NowFunc})
-	if err != nil {
-		t.Fatalf("failed to open live postgres: %v", err)
-	}
-	if err := db.Use(dbtime.Plugin{}); err != nil {
-		t.Fatalf("failed to register the UTC timestamp plugin: %v", err)
-	}
-
-	sqlDB, err := db.DB()
-	if err != nil {
-		t.Fatalf("failed to get underlying sql.DB: %v", err)
-	}
-	// Small per-test pools: with tests running in parallel these multiply,
-	// and Postgres defaults to 100 connection slots.
-	sqlDB.SetMaxOpenConns(4)
-	sqlDB.SetMaxIdleConns(1)
-
-	// Registered after the DROP cleanup so it runs first (cleanups are
-	// last-in-first-out): the schema cannot be dropped while this pool
-	// still holds connections inside it.
-	t.Cleanup(func() { _ = sqlDB.Close() })
-
-	return db
-}
-
-// newTestDB opens a fresh in-memory sqlite *gorm.DB. Constrained to a
-// single open connection, matching server/bootstrap/db.go's onConnFn for
-// in-memory SQLite: a pool that opens more than one physical connection to
-// ":memory:" hands out a genuinely separate, unmigrated database on the
-// second connection (each connection is its own in-memory instance), which
-// surfaces as sporadic "no such table" failures under concurrent access —
-// exactly what this avoids.
-func newTestDB(t *testing.T) *gorm.DB {
-	t.Helper()
-
-	// With SSOOSSH_TEST_POSTGRES_DSN set, the whole package runs against a
-	// live Postgres instead — same tests, real dialect semantics (row
-	// locking instead of SQLite's serialized writes, native TIMESTAMPTZ,
-	// enforced FKs under concurrency). Used with a disposable container.
-	if dsn := os.Getenv("SSOOSSH_TEST_POSTGRES_DSN"); dsn != "" {
-		return newTestPostgresDB(t, dsn)
-	}
-
-	// Mirrors bootstrap.openWithRetry: the UTC timestamp normalization is
-	// part of how this project talks to SQLite, not an optional extra, so
-	// tests exercise the same configuration production runs. See package
-	// dbtime for why comparing local-offset timestamps against SQLite's
-	// string-compared DATETIME columns is wrong.
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{NowFunc: dbtime.NowFunc})
-	if err != nil {
-		t.Fatalf("failed to open in-memory sqlite: %v", err)
-	}
-	if err := db.Use(dbtime.Plugin{}); err != nil {
-		t.Fatalf("failed to register the UTC timestamp plugin: %v", err)
-	}
-	sqlDB, err := db.DB()
-	if err != nil {
-		t.Fatalf("failed to get underlying sql.DB: %v", err)
-	}
-	sqlDB.SetMaxOpenConns(1)
-	return db
 }
 
 // newTestCertRequestServiceWithOptions is newTestCertRequestService but
@@ -227,10 +55,7 @@ func newTestCertRequestServiceWithOptions(t *testing.T, opts config.CertificateO
 func newTestCertRequestServiceWithConfig(t *testing.T, cfg *config.Config) *CertRequestService {
 	t.Helper()
 
-	db := newTestDB(t)
-	if err := db.AutoMigrate(&model.CertificateRequest{}, &model.CertificateRequestDecision{}, &model.User{}, &model.Enrollment{}); err != nil {
-		t.Fatalf("failed to migrate test tables: %v", err)
-	}
+	db := testdb.New(t)
 
 	channel := gochannel.NewGoChannel(gochannel.Config{Persistent: false}, watermill.NewSlogLogger(slog.Default()))
 	t.Cleanup(func() {
@@ -249,7 +74,7 @@ func newTestCertRequestServiceWithConfig(t *testing.T, cfg *config.Config) *Cert
 // closeUnderlyingDB closes db's connection, so any subsequent query fails
 // with a real "sql: database is closed" error — the most direct way to
 // exercise this package's generic-DB-error branches without a mock: every
-// call still goes through the real *gorm.DB and the real sqlite driver,
+// call still goes through the real *gorm.DB and the real driver,
 // just against a connection that's genuinely gone.
 func closeUnderlyingDB(t *testing.T, db *gorm.DB) {
 	t.Helper()
@@ -447,7 +272,7 @@ func TestCertRequestService_ShouldSurfaceGenericDBErrors(t *testing.T) {
 func TestNewCertRequestService_ShouldRejectAMalformedKeyIDTemplate(t *testing.T) {
 	t.Parallel()
 
-	db := newTestDB(t)
+	db := testdb.New(t)
 	channel := gochannel.NewGoChannel(gochannel.Config{Persistent: false}, watermill.NewSlogLogger(slog.Default()))
 	t.Cleanup(func() {
 		if err := channel.Close(); err != nil {
@@ -659,6 +484,7 @@ func TestCertRequestService_Wait_ShouldRebuildEnrollmentTokenFromTheRow(t *testi
 		ID:        "enrollment-1",
 		Code:      "token-abc",
 		PublicKey: "ssh-ed25519 AAAA...",
+		UserID:    seedUser(t, svc.db, "sub-enroller"),
 		ExpiresAt: expiresAt,
 	}).Error; err != nil {
 		t.Fatalf("failed to seed the enrollment: %v", err)
@@ -892,10 +718,7 @@ func (failingSubscriber) Close() error { return nil }
 func TestCertRequestService_Wait_ShouldSurfaceASubscribeFailure(t *testing.T) {
 	t.Parallel()
 
-	db := newTestDB(t)
-	if err := db.AutoMigrate(&model.CertificateRequest{}, &model.CertificateRequestDecision{}, &model.User{}, &model.Enrollment{}); err != nil {
-		t.Fatalf("failed to migrate test tables: %v", err)
-	}
+	db := testdb.New(t)
 	channel := gochannel.NewGoChannel(gochannel.Config{Persistent: false}, watermill.NewSlogLogger(slog.Default()))
 	t.Cleanup(func() {
 		if err := channel.Close(); err != nil {
@@ -1986,7 +1809,7 @@ func mustCreateUserRequest(t *testing.T, svc *CertRequestService) string {
 // for the loser, preventing a claim overwrite.
 //
 // Because the in-memory SQLite pool uses SetMaxOpenConns(1), actual concurrency
-// is serialized. To test the atomic predicate directly, we simulate the race
+// is serialized there (Postgres runs the same sequence). To test the atomic predicate directly, we simulate the race
 // by having the first approver bind successfully, then manually clear the
 // binding, and then verify a second approver's direct UPDATE (skipping the
 // early req.UserID!=nil check) is prevented by the WHERE guard.
@@ -2186,8 +2009,8 @@ func seedRequestWithUnsupportedType(t *testing.T, db *gorm.DB) string {
 
 	// Suspending the CHECK is dialect-specific. SQLite has a pragma for it;
 	// Postgres has no equivalent session switch, so drop the constraint for
-	// the life of the test instead. Each Postgres test owns its own schema
-	// (see newTestPostgresDB), so dropping it here cannot affect anything
+	// the life of the test instead. Each Postgres test owns its own
+	// database (test/testdb), so dropping it here cannot affect anything
 	// running in parallel.
 	if db.Name() == "postgres" {
 		if err := db.Exec(`ALTER TABLE certificate_requests DROP CONSTRAINT IF EXISTS chk_certificate_requests_type`).Error; err != nil {
@@ -2396,10 +2219,7 @@ func (failingPublisher) Close() error { return nil }
 func TestCertRequestService_Approve_ShouldSurfaceAPublishFailure(t *testing.T) {
 	t.Parallel()
 
-	db := newTestDB(t)
-	if err := db.AutoMigrate(&model.CertificateRequest{}, &model.CertificateRequestDecision{}, &model.User{}, &model.Enrollment{}); err != nil {
-		t.Fatalf("failed to migrate test tables: %v", err)
-	}
+	db := testdb.New(t)
 	channel := gochannel.NewGoChannel(gochannel.Config{Persistent: false}, watermill.NewSlogLogger(slog.Default()))
 	t.Cleanup(func() {
 		if err := channel.Close(); err != nil {
@@ -2518,10 +2338,7 @@ func TestExpire_ShouldBeANoOpTheSecondTime(t *testing.T) {
 func TestNotifyWaiter_ShouldNotPanicWhenPublishingFails(t *testing.T) {
 	t.Parallel()
 
-	db := newTestDB(t)
-	if err := db.AutoMigrate(&model.CertificateRequest{}, &model.CertificateRequestDecision{}, &model.User{}, &model.Enrollment{}); err != nil {
-		t.Fatalf("failed to migrate test tables: %v", err)
-	}
+	db := testdb.New(t)
 	channel := gochannel.NewGoChannel(gochannel.Config{Persistent: false}, watermill.NewSlogLogger(slog.Default()))
 	t.Cleanup(func() {
 		if err := channel.Close(); err != nil {
@@ -2560,10 +2377,7 @@ func TestCertRequestService_Wait_MultiInstance_ShouldDecodeWakeMessageCertificat
 	// Shared database and transport for two "instances" (really just two
 	// service objects). In a real multi-instance setup, these would be
 	// separate processes; here they're in-process but isolated.
-	db := newTestDB(t)
-	if err := db.AutoMigrate(&model.CertificateRequest{}, &model.CertificateRequestDecision{}, &model.User{}); err != nil {
-		t.Fatalf("failed to migrate test tables: %v", err)
-	}
+	db := testdb.New(t)
 
 	channel := gochannel.NewGoChannel(gochannel.Config{Persistent: false}, watermill.NewSlogLogger(slog.Default()))
 	t.Cleanup(func() {

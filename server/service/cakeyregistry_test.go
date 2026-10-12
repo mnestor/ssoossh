@@ -16,6 +16,7 @@ import (
 
 	"github.com/mnestor/ssoossh/server/certmsg"
 	"github.com/mnestor/ssoossh/server/model"
+	"github.com/mnestor/ssoossh/test/testdb"
 )
 
 // generateTestPublicKey returns an authorized_keys-formatted public key for
@@ -37,16 +38,12 @@ func generateTestPublicKey(t *testing.T) string {
 	return strings.TrimRight(string(ssh.MarshalAuthorizedKey(signer.PublicKey())), "\n")
 }
 
-// newTestCAKeyRegistry opens an in-memory sqlite DB migrated for
-// model.CASignerKey and returns a CAKeyRegistry backed by it with the given
-// TTL.
+// newTestCAKeyRegistry returns a CAKeyRegistry over an isolated, migrated
+// database with the given TTL.
 func newTestCAKeyRegistry(t *testing.T, ttl time.Duration) *CAKeyRegistry {
 	t.Helper()
 
-	db := newTestDB(t)
-	if err := db.AutoMigrate(&model.CASignerKey{}); err != nil {
-		t.Fatalf("failed to migrate ca_signer_keys table: %v", err)
-	}
+	db := testdb.New(t)
 
 	reg := NewCAKeyRegistry(db, ttl)
 	if reg == nil {

@@ -19,6 +19,7 @@ import (
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/service"
 	"github.com/mnestor/ssoossh/server/webtypes"
+	"github.com/mnestor/ssoossh/test/testdb"
 )
 
 // adminIdentity is an identity in the configured admin group, which also
@@ -55,7 +56,7 @@ func recordSQL(t *testing.T, db *gorm.DB) func() []string {
 func TestGetUserHandler_ShouldReportACertificateCountFailure(t *testing.T) {
 	t.Parallel()
 
-	db := newTestDB(t)
+	db := testdb.New(t)
 	if err := db.Create(&model.User{ID: "u-alice", Subject: "sub-alice", Username: "alice"}).Error; err != nil {
 		t.Fatalf("seed user: %v", err)
 	}
@@ -79,7 +80,7 @@ func TestGetUserHandler_ShouldReportACertificateCountFailure(t *testing.T) {
 func TestGetUserHandler_ShouldReportAnEnrollmentCountFailure(t *testing.T) {
 	t.Parallel()
 
-	db := newTestDB(t)
+	db := testdb.New(t)
 	if err := db.Create(&model.User{ID: "u-alice", Subject: "sub-alice", Username: "alice"}).Error; err != nil {
 		t.Fatalf("seed user: %v", err)
 	}
@@ -106,7 +107,7 @@ func TestGetUserHandler_ShouldReportAnEnrollmentCountFailure(t *testing.T) {
 func TestDisableUserHandler_ShouldSucceedWhenTheAdvisoryCountFails(t *testing.T) {
 	t.Parallel()
 
-	db := newTestDB(t)
+	db := testdb.New(t)
 	if err := db.Create(&model.User{ID: "u-alice", Subject: "sub-alice", Username: "alice"}).Error; err != nil {
 		t.Fatalf("seed user: %v", err)
 	}
@@ -143,7 +144,7 @@ func TestDisableUserHandler_ShouldSucceedWhenTheAdvisoryCountFails(t *testing.T)
 func TestListUsersHandler_ShouldNotQueryPerDisabledUser(t *testing.T) {
 	t.Parallel()
 
-	db := newTestDB(t)
+	db := testdb.New(t)
 	disabledAt := time.Now()
 	adminID := "u-admin"
 	if err := db.Create(&model.User{ID: adminID, Subject: "sub-admin", Username: "admin"}).Error; err != nil {
@@ -230,7 +231,7 @@ func TestAdminEnrollmentsHandler_ShouldRenderEmptyExtensionsAsAnArray(t *testing
 	t.Parallel()
 
 	cfg := newTestConfig(t)
-	db := newTestDB(t)
+	db := testdb.New(t)
 	r := routerWithEnrollmentService(t, cfg, db, adminIdentity(cfg.Admin.RequireGroup),
 		&fakeEnrollmentServiceWithOptions{})
 

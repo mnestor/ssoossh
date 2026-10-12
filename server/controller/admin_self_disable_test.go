@@ -21,6 +21,7 @@ import (
 	"github.com/mnestor/ssoossh/server/middleware"
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/service"
+	"github.com/mnestor/ssoossh/test/testdb"
 )
 
 // selfDisableReason is the reason the server returns, and the UI shows, when
@@ -44,7 +45,7 @@ func TestDisableUserHandler_ShouldRefuseSelfDisable(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			db := newTestDB(t)
+			db := testdb.New(t)
 			if err := db.Create(&model.User{ID: "u-self", Subject: "sub-self", Username: "self"}).Error; err != nil {
 				t.Fatalf("seed operator: %v", err)
 			}
@@ -78,7 +79,7 @@ func TestDisableUserHandler_ShouldRefuseSelfDisable(t *testing.T) {
 // the refusal happens before any write to the users row: the operator's
 // account reads back exactly as it was seeded.
 func TestDisableUserHandler_ShouldLeaveUserRowUnchangedOnSelfDisable(t *testing.T) {
-	db := newTestDB(t)
+	db := testdb.New(t)
 	seedSelfOperator(t, db)
 	cfg := newTestConfig(t)
 	r := routerWithAuth(t, cfg, db, selfOperatorIdentity(cfg))
@@ -104,7 +105,7 @@ func TestDisableUserHandler_ShouldLeaveUserRowUnchangedOnSelfDisable(t *testing.
 // row a refused self-disable writes. The caller is both actor and target, so
 // counting every row in the table also proves nothing else was written.
 func TestDisableUserHandler_ShouldAuditRefusedSelfDisable(t *testing.T) {
-	db := newTestDB(t)
+	db := testdb.New(t)
 	seedSelfOperator(t, db)
 	cfg := newTestConfig(t)
 	r := routerWithAuth(t, cfg, db, selfOperatorIdentity(cfg))
@@ -151,7 +152,7 @@ func TestDisableUserHandler_ShouldAuditRefusedSelfDisable(t *testing.T) {
 // forwarding header the client wrote: with no trusted proxy configured, an
 // X-Forwarded-For value must be ignored.
 func TestDisableUserHandler_ShouldAuditObservedAddressNotForwardedHeader(t *testing.T) {
-	db := newTestDB(t)
+	db := testdb.New(t)
 	seedSelfOperator(t, db)
 	cfg := newTestConfig(t)
 	r := routerWithAuth(t, cfg, db, selfOperatorIdentity(cfg))
@@ -176,7 +177,7 @@ func TestDisableUserHandler_ShouldAuditObservedAddressNotForwardedHeader(t *test
 // TestDisableUserHandler_ShouldNotAuditCredentialHeadersOnSelfDisable pins
 // the invariant that audit records never capture Cookie or Authorization.
 func TestDisableUserHandler_ShouldNotAuditCredentialHeadersOnSelfDisable(t *testing.T) {
-	db := newTestDB(t)
+	db := testdb.New(t)
 	seedSelfOperator(t, db)
 	cfg := newTestConfig(t)
 	r := routerWithAuth(t, cfg, db, selfOperatorIdentity(cfg))
@@ -198,7 +199,7 @@ func TestDisableUserHandler_ShouldNotAuditCredentialHeadersOnSelfDisable(t *test
 // TestDisableUserHandler_ShouldRefuseSelfDisableWithNoAuditService pins
 // that the refusal still holds when the controller has no audit recorder.
 func TestDisableUserHandler_ShouldRefuseSelfDisableWithNoAuditService(t *testing.T) {
-	db := newTestDB(t)
+	db := testdb.New(t)
 	seedSelfOperator(t, db)
 	cfg := newTestConfig(t)
 	identity := selfOperatorIdentity(cfg)
@@ -226,7 +227,7 @@ func TestDisableUserHandler_ShouldRefuseSelfDisableWithNoAuditService(t *testing
 // operator who names themselves with no reason is told the account is theirs,
 // not that a reason is missing.
 func TestDisableUserHandler_ShouldRefuseSelfDisableWithoutABody(t *testing.T) {
-	db := newTestDB(t)
+	db := testdb.New(t)
 	if err := db.Create(&model.User{ID: "u-self", Subject: "sub-self", Username: "self"}).Error; err != nil {
 		t.Fatalf("seed operator: %v", err)
 	}
@@ -252,7 +253,7 @@ func TestDisableUserHandler_ShouldRefuseSelfDisableWithoutABody(t *testing.T) {
 // pins that the guard refuses only the caller's own id: disabling a different
 // account still succeeds for the same operator.
 func TestDisableUserHandler_ShouldDisableAnotherUserWhenOperatorIsDisabling(t *testing.T) {
-	db := newTestDB(t)
+	db := testdb.New(t)
 	for _, u := range []model.User{
 		{ID: "u-self", Subject: "sub-self", Username: "self"},
 		{ID: "u-other", Subject: "sub-other", Username: "other"},
@@ -287,7 +288,7 @@ func TestDisableUserHandler_ShouldDisableAnotherUserWhenOperatorIsDisabling(t *t
 // that the refusal audit is scoped to self-disable: disabling a different
 // account writes its one user.disabled row and no refusal row.
 func TestDisableUserHandler_ShouldWriteOnlyTheDisabledRowForAnotherUser(t *testing.T) {
-	db := newTestDB(t)
+	db := testdb.New(t)
 	seedSelfOperator(t, db)
 	if err := db.Create(&model.User{ID: "u-other", Subject: "sub-other", Username: "other"}).Error; err != nil {
 		t.Fatalf("seed other: %v", err)

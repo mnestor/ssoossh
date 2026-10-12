@@ -12,6 +12,7 @@ import (
 	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/utils/errorresponses"
+	"github.com/mnestor/ssoossh/test/testdb"
 )
 
 // detailAdmin is an admin block with both role groups configured, so the
@@ -25,10 +26,7 @@ func detailAdmin() *config.AdminConfig {
 func newDetailLevelFixture(t *testing.T) (*DetailLevelService, *gorm.DB) {
 	t.Helper()
 
-	db := newTestDB(t)
-	if err := db.AutoMigrate(&model.User{}); err != nil {
-		t.Fatalf("failed to migrate users: %v", err)
-	}
+	db := testdb.New(t)
 	user := model.User{ID: uuid.NewString(), Subject: "sub-1", Username: "alice", CreatedAt: time.Now(), UpdatedAt: time.Now()}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("failed to create the user: %v", err)

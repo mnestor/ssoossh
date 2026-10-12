@@ -1,11 +1,9 @@
 package service
 
-// Test methodology: the same in-memory sqlite harness the rest of
-// CertRequestService's tests use (see newTestCertRequestService), plus the
-// one thing AutoMigrate cannot build — the partial unique index on
-// user_code, which is a migration artifact. Tests that depend on
-// live-rows-only uniqueness create it explicitly and say so; test/migration
-// is what proves the real schema carries it.
+// Test methodology: the same migrated-database harness the rest of
+// CertRequestService's tests use (see newTestCertRequestService). The
+// migrations carry the partial unique index on user_code, so the
+// live-rows-only uniqueness tests run against the real index.
 
 import (
 	"context"
@@ -31,21 +29,6 @@ func consoleOptions(global, console time.Duration, networks ...string) config.Ce
 			ValidDuration:   30 * time.Second,
 			AllowedNetworks: networks,
 		},
-	}
-}
-
-// addUserCodeIndex builds the partial unique index the console migration
-// adds. AutoMigrate works from the model's struct tags, and a GORM tag
-// cannot express a WHERE clause, so a test that needs live-rows-only
-// uniqueness has to create it.
-func addUserCodeIndex(t *testing.T, db *gorm.DB) {
-	t.Helper()
-
-	err := db.Exec(`CREATE UNIQUE INDEX idx_certificate_requests_user_code
-		ON certificate_requests(user_code)
-		WHERE user_code <> '' AND status IN ('pending', 'signing')`).Error
-	if err != nil {
-		t.Fatalf("failed to create the user_code index: %v", err)
 	}
 }
 
@@ -333,7 +316,6 @@ func TestCreateRequest_ShouldRerollAUserCodeThatCollidesWithALiveRequest(t *test
 	t.Parallel()
 
 	svc := newTestCertRequestServiceWithOptions(t, consoleOptions(5*time.Minute, 2*time.Minute))
-	addUserCodeIndex(t, svc.db)
 
 	// Hand out the same code twice, then a distinct one: the first request
 	// takes it, the second collides once and succeeds on the re-roll.
@@ -365,7 +347,6 @@ func TestCreateRequest_ShouldGiveUpAfterRepeatedUserCodeCollisions(t *testing.T)
 	t.Parallel()
 
 	svc := newTestCertRequestServiceWithOptions(t, consoleOptions(5*time.Minute, 2*time.Minute))
-	addUserCodeIndex(t, svc.db)
 
 	svc.mintUserCode = func() (string, error) { return "K7M4QP2X", nil }
 	newConsoleRequest(t, svc, NewCertRequestParams{})
@@ -390,7 +371,6 @@ func TestUserCodeIndex_ShouldAllowReuseOnceTheRequestIsResolved(t *testing.T) {
 	t.Parallel()
 
 	svc := newTestCertRequestServiceWithOptions(t, consoleOptions(5*time.Minute, 2*time.Minute))
-	addUserCodeIndex(t, svc.db)
 
 	svc.mintUserCode = func() (string, error) { return "K7M4QP2X", nil }
 	first := newConsoleRequest(t, svc, NewCertRequestParams{})

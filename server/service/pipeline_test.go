@@ -45,9 +45,6 @@ func TestPipeline_EndToEnd(t *testing.T) {
 			ValidDuration: time.Hour,
 		},
 	})
-	if err := svc.db.AutoMigrate(&model.Certificate{}, &model.User{}); err != nil {
-		t.Fatalf("failed to migrate certificates table: %v", err)
-	}
 
 	// A throwaway CA, and the signer/listener wired onto the same transport
 	// the service already uses — mirroring bootstrap.initPipeline.
@@ -215,9 +212,6 @@ func TestPipeline_EndToEnd_PAM(t *testing.T) {
 			ValidDuration: 30 * time.Second,
 		},
 	})
-	if err := svc.db.AutoMigrate(&model.Certificate{}, &model.User{}); err != nil {
-		t.Fatalf("failed to migrate certificates table: %v", err)
-	}
 
 	caKeypair, err := keypair.NewEd25519KeyPair()
 	if err != nil {

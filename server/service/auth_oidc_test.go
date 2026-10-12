@@ -30,6 +30,7 @@ import (
 
 	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/model"
+	"github.com/mnestor/ssoossh/test/testdb"
 )
 
 // fakeOIDCProvider is a real OIDC discovery/JWKS/token server backed by a
@@ -162,7 +163,7 @@ func TestNewAuthService_ShouldDiscoverTheProviderAndConstruct(t *testing.T) {
 	t.Parallel()
 
 	provider := newFakeOIDCProvider(t)
-	db := newTestUserDB(t)
+	db := testdb.New(t)
 
 	svc, err := NewAuthService(context.Background(), newTestAuthConfig(provider, "client-1"), db, provider.srv.Client())
 	if err != nil {
@@ -177,7 +178,7 @@ func TestNewAuthService_ShouldRejectMissingRequiredConfig(t *testing.T) {
 	t.Parallel()
 
 	provider := newFakeOIDCProvider(t)
-	db := newTestUserDB(t)
+	db := testdb.New(t)
 
 	tests := []struct {
 		name    string
@@ -218,7 +219,7 @@ func TestNewAuthService_ShouldTrimAWellKnownSuffixFromTheProviderURL(t *testing.
 	c := newTestAuthConfig(provider, "client-1")
 	c.AuthConfig.ProviderURL = provider.srv.URL + "/.well-known/openid-configuration"
 
-	if _, err := NewAuthService(context.Background(), c, newTestUserDB(t), provider.srv.Client()); err != nil {
+	if _, err := NewAuthService(context.Background(), c, testdb.New(t), provider.srv.Client()); err != nil {
 		t.Fatalf("NewAuthService() error = %v", err)
 	}
 }
@@ -232,7 +233,7 @@ func TestNewAuthService_ShouldRejectAnUnreachableProvider(t *testing.T) {
 	c.AuthConfig.Fields.Username = "preferred_username"
 	c.HTTP.PublicURL = "https://ssh.example.com"
 
-	if _, err := NewAuthService(context.Background(), c, newTestUserDB(t), nil); err == nil {
+	if _, err := NewAuthService(context.Background(), c, testdb.New(t), nil); err == nil {
 		t.Error("NewAuthService() error = nil, want an error for an unreachable provider")
 	}
 }
@@ -241,7 +242,7 @@ func TestAuthorizationURL_ShouldEmbedStateAndAFreshNonce(t *testing.T) {
 	t.Parallel()
 
 	provider := newFakeOIDCProvider(t)
-	svc, err := NewAuthService(context.Background(), newTestAuthConfig(provider, "client-1"), newTestUserDB(t), provider.srv.Client())
+	svc, err := NewAuthService(context.Background(), newTestAuthConfig(provider, "client-1"), testdb.New(t), provider.srv.Client())
 	if err != nil {
 		t.Fatalf("NewAuthService() error = %v", err)
 	}
@@ -278,7 +279,7 @@ func TestHandleCallback_ShouldExchangeAndUpsertTheUser(t *testing.T) {
 	t.Parallel()
 
 	provider := newFakeOIDCProvider(t)
-	db := newTestUserDB(t)
+	db := testdb.New(t)
 	svc, err := NewAuthService(context.Background(), newTestAuthConfig(provider, "client-1"), db, provider.srv.Client())
 	if err != nil {
 		t.Fatalf("NewAuthService() error = %v", err)
@@ -334,7 +335,7 @@ func TestHandleCallback_ShouldStoreTheDefaultDetailLevels(t *testing.T) {
 			t.Parallel()
 
 			provider := newFakeOIDCProvider(t)
-			db := newTestUserDB(t)
+			db := testdb.New(t)
 			cfg := newTestAuthConfig(provider, "client-1")
 			cfg.Admin.RequireGroup = "admins"
 			svc, err := NewAuthService(context.Background(), cfg, db, provider.srv.Client())
@@ -371,7 +372,7 @@ func TestHandleCallback_ShouldExtractAndPersistConfiguredExtraFields(t *testing.
 	t.Parallel()
 
 	provider := newFakeOIDCProvider(t)
-	db := newTestUserDB(t)
+	db := testdb.New(t)
 	c := newTestAuthConfig(provider, "client-1")
 	c.AuthConfig.Fields.Extra = map[string]string{
 		"dept":     "department",
@@ -425,7 +426,7 @@ func TestHandleCallback_ShouldSurfaceATokenExchangeFailure(t *testing.T) {
 
 	provider := newFakeOIDCProvider(t)
 	provider.tokenExchangeFails = true
-	svc, err := NewAuthService(context.Background(), newTestAuthConfig(provider, "client-1"), newTestUserDB(t), provider.srv.Client())
+	svc, err := NewAuthService(context.Background(), newTestAuthConfig(provider, "client-1"), testdb.New(t), provider.srv.Client())
 	if err != nil {
 		t.Fatalf("NewAuthService() error = %v", err)
 	}
@@ -440,7 +441,7 @@ func TestHandleCallback_ShouldRejectATokenResponseMissingIDToken(t *testing.T) {
 
 	provider := newFakeOIDCProvider(t)
 	provider.omitIDToken = true
-	svc, err := NewAuthService(context.Background(), newTestAuthConfig(provider, "client-1"), newTestUserDB(t), provider.srv.Client())
+	svc, err := NewAuthService(context.Background(), newTestAuthConfig(provider, "client-1"), testdb.New(t), provider.srv.Client())
 	if err != nil {
 		t.Fatalf("NewAuthService() error = %v", err)
 	}
@@ -458,7 +459,7 @@ func TestHandleCallback_ShouldRejectAnUnverifiableIDToken(t *testing.T) {
 	t.Parallel()
 
 	provider := newFakeOIDCProvider(t)
-	svc, err := NewAuthService(context.Background(), newTestAuthConfig(provider, "client-1"), newTestUserDB(t), provider.srv.Client())
+	svc, err := NewAuthService(context.Background(), newTestAuthConfig(provider, "client-1"), testdb.New(t), provider.srv.Client())
 	if err != nil {
 		t.Fatalf("NewAuthService() error = %v", err)
 	}
@@ -483,7 +484,7 @@ func TestHandleCallback_ShouldSurfaceAnUpsertFailure(t *testing.T) {
 	t.Parallel()
 
 	provider := newFakeOIDCProvider(t)
-	db := newTestUserDB(t)
+	db := testdb.New(t)
 	svc, err := NewAuthService(context.Background(), newTestAuthConfig(provider, "client-1"), db, provider.srv.Client())
 	if err != nil {
 		t.Fatalf("NewAuthService() error = %v", err)
@@ -508,7 +509,7 @@ func TestHandleCallback_ShouldRejectANonceMismatch(t *testing.T) {
 	t.Parallel()
 
 	provider := newFakeOIDCProvider(t)
-	svc, err := NewAuthService(context.Background(), newTestAuthConfig(provider, "client-1"), newTestUserDB(t), provider.srv.Client())
+	svc, err := NewAuthService(context.Background(), newTestAuthConfig(provider, "client-1"), testdb.New(t), provider.srv.Client())
 	if err != nil {
 		t.Fatalf("NewAuthService() error = %v", err)
 	}
@@ -526,7 +527,7 @@ func TestHandleCallback_ShouldRejectATokenMissingTheUsernameClaim(t *testing.T) 
 	t.Parallel()
 
 	provider := newFakeOIDCProvider(t)
-	svc, err := NewAuthService(context.Background(), newTestAuthConfig(provider, "client-1"), newTestUserDB(t), provider.srv.Client())
+	svc, err := NewAuthService(context.Background(), newTestAuthConfig(provider, "client-1"), testdb.New(t), provider.srv.Client())
 	if err != nil {
 		t.Fatalf("NewAuthService() error = %v", err)
 	}
@@ -545,7 +546,7 @@ func TestHandleCallback_ShouldFallBackToTheStandardEmailClaim(t *testing.T) {
 	provider := newFakeOIDCProvider(t)
 	c := newTestAuthConfig(provider, "client-1")
 	c.AuthConfig.Fields.Email = "" // unconfigured: falls back to "email"
-	svc, err := NewAuthService(context.Background(), c, newTestUserDB(t), provider.srv.Client())
+	svc, err := NewAuthService(context.Background(), c, testdb.New(t), provider.srv.Client())
 	if err != nil {
 		t.Fatalf("NewAuthService() error = %v", err)
 	}
@@ -579,7 +580,7 @@ func TestAuthorizationURL_ShouldOmitTheCodeChallengeWhenPKCEIsDisabled(t *testin
 	t.Parallel()
 
 	provider := newFakeOIDCProvider(t)
-	svc, err := NewAuthService(context.Background(), newTestAuthConfigNoPKCE(provider, "client-1"), newTestUserDB(t), provider.srv.Client())
+	svc, err := NewAuthService(context.Background(), newTestAuthConfigNoPKCE(provider, "client-1"), testdb.New(t), provider.srv.Client())
 	if err != nil {
 		t.Fatalf("NewAuthService() error = %v", err)
 	}
@@ -604,7 +605,7 @@ func TestEchoAuthorizationURL_ShouldOmitTheCodeChallengeWhenPKCEIsDisabled(t *te
 	t.Parallel()
 
 	provider := newFakeOIDCProvider(t)
-	svc, err := NewAuthService(context.Background(), newTestAuthConfigNoPKCE(provider, "client-1"), newTestUserDB(t), provider.srv.Client())
+	svc, err := NewAuthService(context.Background(), newTestAuthConfigNoPKCE(provider, "client-1"), testdb.New(t), provider.srv.Client())
 	if err != nil {
 		t.Fatalf("NewAuthService() error = %v", err)
 	}
@@ -630,7 +631,7 @@ func TestHandleCallback_ShouldOmitTheCodeVerifierWhenNoneWasIssued(t *testing.T)
 	t.Parallel()
 
 	provider := newFakeOIDCProvider(t)
-	svc, err := NewAuthService(context.Background(), newTestAuthConfigNoPKCE(provider, "client-1"), newTestUserDB(t), provider.srv.Client())
+	svc, err := NewAuthService(context.Background(), newTestAuthConfigNoPKCE(provider, "client-1"), testdb.New(t), provider.srv.Client())
 	if err != nil {
 		t.Fatalf("NewAuthService() error = %v", err)
 	}
@@ -653,7 +654,7 @@ func TestHandleCallback_ShouldSendTheCodeVerifierWhenOneWasIssued(t *testing.T) 
 	t.Parallel()
 
 	provider := newFakeOIDCProvider(t)
-	svc, err := NewAuthService(context.Background(), newTestAuthConfig(provider, "client-1"), newTestUserDB(t), provider.srv.Client())
+	svc, err := NewAuthService(context.Background(), newTestAuthConfig(provider, "client-1"), testdb.New(t), provider.srv.Client())
 	if err != nil {
 		t.Fatalf("NewAuthService() error = %v", err)
 	}

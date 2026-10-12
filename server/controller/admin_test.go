@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
 	"github.com/mnestor/ssoossh/server/config"
@@ -21,27 +20,18 @@ import (
 	"github.com/mnestor/ssoossh/server/notify"
 	"github.com/mnestor/ssoossh/server/service"
 	"github.com/mnestor/ssoossh/server/webtypes"
+	"github.com/mnestor/ssoossh/test/testdb"
 )
 
-// newTestDB creates an in-memory SQLite database with migrations applied.
-func newTestDB(t *testing.T) *gorm.DB {
+// seedPlainUser writes a users row with id, for rows whose foreign key
+// must point at an account and whose account the test does not inspect.
+func seedPlainUser(t *testing.T, db *gorm.DB, id string) {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("failed to open in-memory sqlite: %v", err)
+	now := time.Now()
+	user := model.User{ID: id, Subject: "sub-" + id, Username: id, CreatedAt: now, UpdatedAt: now}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("seed user %s: %v", id, err)
 	}
-	if err := db.AutoMigrate(
-		&model.User{},
-		&model.Enrollment{},
-		&model.Certificate{},
-		&model.AuditEvent{},
-		&model.UserGroup{},
-		&model.UserLDAP{},
-		&model.NotificationPreference{},
-	); err != nil {
-		t.Fatalf("failed to migrate test database: %v", err)
-	}
-	return db
 }
 
 // newTestConfig returns a minimal config suitable for admin authorization tests.
@@ -105,7 +95,7 @@ func TestAdminUsersListHandler_AnonymousUserDenied(t *testing.T) {
 	t.Parallel()
 
 	cfg := newTestConfig(t)
-	db := newTestDB(t)
+	db := testdb.New(t)
 	r := routerWithAuth(t, cfg, db, nil)
 
 	w := httptest.NewRecorder()
@@ -122,7 +112,7 @@ func TestAdminUsersListHandler_PlainUserDenied(t *testing.T) {
 	t.Parallel()
 
 	cfg := newTestConfig(t)
-	db := newTestDB(t)
+	db := testdb.New(t)
 	identity := &service.Identity{
 		Subject:  "sub-alice",
 		Username: "alice",
@@ -144,7 +134,7 @@ func TestAdminGetUserHandler_AnonymousUserDenied(t *testing.T) {
 	t.Parallel()
 
 	cfg := newTestConfig(t)
-	db := newTestDB(t)
+	db := testdb.New(t)
 	r := routerWithAuth(t, cfg, db, nil)
 
 	w := httptest.NewRecorder()
@@ -161,7 +151,7 @@ func TestAdminGetUserHandler_PlainUserDenied(t *testing.T) {
 	t.Parallel()
 
 	cfg := newTestConfig(t)
-	db := newTestDB(t)
+	db := testdb.New(t)
 	identity := &service.Identity{
 		Subject:  "sub-alice",
 		Username: "alice",
@@ -183,7 +173,7 @@ func TestAdminGetUserHandler_AuditorAllowed(t *testing.T) {
 	t.Parallel()
 
 	cfg := newTestConfig(t)
-	db := newTestDB(t)
+	db := testdb.New(t)
 	testUser := model.User{
 		ID:        "user-1",
 		Subject:   "sub-alice",
@@ -217,7 +207,7 @@ func TestAdminGetUserHandler_AdminAllowed(t *testing.T) {
 	t.Parallel()
 
 	cfg := newTestConfig(t)
-	db := newTestDB(t)
+	db := testdb.New(t)
 	testUser := model.User{
 		ID:        "user-1",
 		Subject:   "sub-alice",
@@ -251,7 +241,7 @@ func TestAdminDisableUserHandler_AnonymousUserDenied(t *testing.T) {
 	t.Parallel()
 
 	cfg := newTestConfig(t)
-	db := newTestDB(t)
+	db := testdb.New(t)
 	r := routerWithAuth(t, cfg, db, nil)
 
 	w := httptest.NewRecorder()
@@ -268,7 +258,7 @@ func TestAdminDisableUserHandler_PlainUserDenied(t *testing.T) {
 	t.Parallel()
 
 	cfg := newTestConfig(t)
-	db := newTestDB(t)
+	db := testdb.New(t)
 	identity := &service.Identity{
 		Subject:  "sub-alice",
 		Username: "alice",
@@ -291,7 +281,7 @@ func TestAdminDisableUserHandler_AuditorDenied(t *testing.T) {
 	t.Parallel()
 
 	cfg := newTestConfig(t)
-	db := newTestDB(t)
+	db := testdb.New(t)
 	// Create a user and an auditor to run the test
 	testUser := model.User{
 		ID:        "user-1",
@@ -338,7 +328,7 @@ func TestAdminDisableUserHandler_AdminAllowed(t *testing.T) {
 	t.Parallel()
 
 	cfg := newTestConfig(t)
-	db := newTestDB(t)
+	db := testdb.New(t)
 	testUser := model.User{
 		ID:        "user-1",
 		Subject:   "sub-alice",
@@ -388,7 +378,7 @@ func TestAdminDisableUserHandler_SOCAllowed(t *testing.T) {
 	t.Parallel()
 
 	cfg := newTestConfig(t)
-	db := newTestDB(t)
+	db := testdb.New(t)
 	testUser := model.User{
 		ID:        "user-1",
 		Subject:   "sub-alice",
@@ -438,7 +428,8 @@ func TestAdminExpireEnrollmentHandler_SOCAllowed(t *testing.T) {
 	t.Parallel()
 
 	cfg := newTestConfig(t)
-	db := newTestDB(t)
+	db := testdb.New(t)
+	seedPlainUser(t, db, "user-1")
 	enrollment := model.Enrollment{
 		ID:        "enroll-1",
 		UserID:    "user-1",
@@ -471,7 +462,8 @@ func TestAdminExpireEnrollmentHandler_AuditorDenied(t *testing.T) {
 	t.Parallel()
 
 	cfg := newTestConfig(t)
-	db := newTestDB(t)
+	db := testdb.New(t)
+	seedPlainUser(t, db, "user-1")
 	enrollment := model.Enrollment{
 		ID:        "enroll-1",
 		UserID:    "user-1",
@@ -503,7 +495,7 @@ func TestAdminUsersListHandler_SOCAllowed(t *testing.T) {
 	t.Parallel()
 
 	cfg := newTestConfig(t)
-	db := newTestDB(t)
+	db := testdb.New(t)
 	identity := &service.Identity{
 		Subject:  "sub-soc",
 		Username: "soc",
@@ -525,7 +517,7 @@ func TestAdminGetUserHandler_NotFound(t *testing.T) {
 	t.Parallel()
 
 	cfg := newTestConfig(t)
-	db := newTestDB(t)
+	db := testdb.New(t)
 	identity := &service.Identity{
 		Subject:  "sub-admin",
 		Username: "admin",
@@ -547,7 +539,7 @@ func TestAdminDisableUserHandler_NotFound(t *testing.T) {
 	t.Parallel()
 
 	cfg := newTestConfig(t)
-	db := newTestDB(t)
+	db := testdb.New(t)
 	adminUser := model.User{
 		ID:        "user-admin",
 		Subject:   "sub-admin",
@@ -584,7 +576,7 @@ func TestAdminEnableUserHandler_NotFound(t *testing.T) {
 	t.Parallel()
 
 	cfg := newTestConfig(t)
-	db := newTestDB(t)
+	db := testdb.New(t)
 	adminUser := model.User{
 		ID:        "user-admin",
 		Subject:   "sub-admin",
@@ -618,7 +610,7 @@ func TestAdminDisableUserHandler_Idempotent(t *testing.T) {
 	t.Parallel()
 
 	cfg := newTestConfig(t)
-	db := newTestDB(t)
+	db := testdb.New(t)
 	testUser := model.User{
 		ID:        "user-1",
 		Subject:   "sub-alice",
@@ -674,7 +666,7 @@ func TestAdminEnableUserHandler_Idempotent(t *testing.T) {
 	t.Parallel()
 
 	cfg := newTestConfig(t)
-	db := newTestDB(t)
+	db := testdb.New(t)
 	disabledTime := time.Now().Add(-time.Hour)
 	testUser := model.User{
 		ID:         "user-1",
@@ -729,7 +721,7 @@ func TestAdminDisableUserHandler_ConsequencesIncludeEnrollmentCount(t *testing.T
 	t.Parallel()
 
 	cfg := newTestConfig(t)
-	db := newTestDB(t)
+	db := testdb.New(t)
 	testUser := model.User{
 		ID:        "user-1",
 		Subject:   "sub-alice",
@@ -746,6 +738,7 @@ func TestAdminDisableUserHandler_ConsequencesIncludeEnrollmentCount(t *testing.T
 	for i := 0; i < 3; i++ {
 		enrollment := model.Enrollment{
 			ID:        fmt.Sprintf("enroll-%d", i),
+			Code:      fmt.Sprintf("code-%d", i), // unique per row
 			UserID:    testUser.ID,
 			ExpiresAt: time.Now().Add(time.Hour),
 		}
@@ -882,7 +875,7 @@ func TestListUsersHandler_AgainstARealDatabase(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			db := newTestDB(t)
+			db := testdb.New(t)
 			for i := range seed {
 				if err := db.Create(&seed[i]).Error; err != nil {
 					t.Fatalf("seed %s: %v", seed[i].Username, err)
@@ -928,7 +921,7 @@ func TestListUsersHandler_AgainstARealDatabase(t *testing.T) {
 // against a real schema, for the same reason as the directory test above: the
 // authorization cases run on a mock handle and cannot see a broken query.
 func TestGetUserHandler_AgainstARealDatabase(t *testing.T) {
-	db := newTestDB(t)
+	db := testdb.New(t)
 	seeded := model.User{
 		ID:              "u-alice",
 		Subject:         "sub-alice",
@@ -1009,7 +1002,7 @@ func TestGetUserHandler_AgainstARealDatabase(t *testing.T) {
 // produces -- which stopped the detail page rendering at all, while a seeded
 // user with populated arrays passed every test.
 func TestGetUserHandler_EmptyAccountListsAreArrays(t *testing.T) {
-	db := newTestDB(t)
+	db := testdb.New(t)
 	if err := db.Create(&model.User{ID: "u-new", Subject: "sub-new", Username: "newcomer"}).Error; err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -1049,7 +1042,7 @@ func TestGetUserHandler_EmptyAccountListsAreArrays(t *testing.T) {
 // producing a 400 carrying {"error": null} while the row had in fact been
 // updated. ShouldBindJSON is what keeps the status and the body agreeing.
 func TestDisableUserHandler_ShouldRejectADisableWithNoReason(t *testing.T) {
-	db := newTestDB(t)
+	db := testdb.New(t)
 	if err := db.Create(&model.User{ID: "u-target", Subject: "sub-target", Username: "target"}).Error; err != nil {
 		t.Fatalf("seed target: %v", err)
 	}
@@ -1101,7 +1094,7 @@ func TestDisableUserHandler_ShouldRejectADisableWithNoReason(t *testing.T) {
 // the reason survives to the users row, where the person deciding whether
 // to re-enable will see it, and to the audit stream.
 func TestDisableUserHandler_ShouldPersistTheReason(t *testing.T) {
-	db := newTestDB(t)
+	db := testdb.New(t)
 	if err := db.Create(&model.User{ID: "u-target", Subject: "sub-target", Username: "target"}).Error; err != nil {
 		t.Fatalf("seed target: %v", err)
 	}
@@ -1447,22 +1440,15 @@ func TestExpireEnrollmentHandler_RequiresAdminAuth(t *testing.T) {
 // TestExpireEnrollmentHandler_ShouldReturn404ForUnknownID pins the fix for a
 // silent success: a valid UPDATE that matches no rows must surface as a 404,
 // not report {"expired": true} for an enrollment that does not exist. Uses a
-// real in-memory DB (the shared mockDB is a bare handle that errors before
-// reaching the zero-rows branch) with only the enrollments table the handler
-// touches.
+// real database (the shared mockDB is a bare handle that errors before
+// reaching the zero-rows branch).
 func TestExpireEnrollmentHandler_ShouldReturn404ForUnknownID(t *testing.T) {
 	t.Parallel()
 
 	gin.SetMode(gin.TestMode)
 	cfg := newTestConfig(t)
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open in-memory sqlite: %v", err)
-	}
-	if err := db.AutoMigrate(&adminEnrollmentModel{}); err != nil {
-		t.Fatalf("migrate enrollments table: %v", err)
-	}
+	db := testdb.New(t)
 
 	r := gin.New()
 	r.Use(middleware.NewErrorHandlerMiddleware().Add())
@@ -1526,14 +1512,7 @@ func TestCertificateHistoryHandler_ShouldReturnEmptyList(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	cfg := newTestConfig(t)
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open in-memory sqlite: %v", err)
-	}
-
-	if err := db.AutoMigrate(&model.Certificate{}, &model.User{}); err != nil {
-		t.Fatalf("migrate tables: %v", err)
-	}
+	db := testdb.New(t)
 
 	r := gin.New()
 	r.Use(middleware.NewErrorHandlerMiddleware().Add())
@@ -1676,15 +1655,7 @@ func TestCertificateHistoryHandler_SearchesCertificates(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	cfg := newTestConfig(t)
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open in-memory sqlite: %v", err)
-	}
-
-	// Migrate tables we need.
-	if err := db.AutoMigrate(&model.User{}, &model.Certificate{}); err != nil {
-		t.Fatalf("migrate tables: %v", err)
-	}
+	db := testdb.New(t)
 
 	// Create a user.
 	user := model.User{
@@ -1764,14 +1735,7 @@ func TestCertificateHistoryHandler_FiltersByType(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	cfg := newTestConfig(t)
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open in-memory sqlite: %v", err)
-	}
-
-	if err := db.AutoMigrate(&model.User{}, &model.Certificate{}); err != nil {
-		t.Fatalf("migrate tables: %v", err)
-	}
+	db := testdb.New(t)
 
 	user := model.User{
 		ID:       "user1",
@@ -1852,14 +1816,7 @@ func TestCertificateHistoryHandler_FiltersByStatus(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	cfg := newTestConfig(t)
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open in-memory sqlite: %v", err)
-	}
-
-	if err := db.AutoMigrate(&model.User{}, &model.Certificate{}); err != nil {
-		t.Fatalf("migrate tables: %v", err)
-	}
+	db := testdb.New(t)
 
 	user := model.User{
 		ID:       "user1",
@@ -1937,14 +1894,7 @@ func TestCertificateHistoryHandler_Pagination(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	cfg := newTestConfig(t)
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open in-memory sqlite: %v", err)
-	}
-
-	if err := db.AutoMigrate(&model.User{}, &model.Certificate{}); err != nil {
-		t.Fatalf("migrate tables: %v", err)
-	}
+	db := testdb.New(t)
 
 	user := model.User{
 		ID:       "user1",
@@ -1960,7 +1910,7 @@ func TestCertificateHistoryHandler_Pagination(t *testing.T) {
 	// Create 10 certificates.
 	for i := 0; i < 10; i++ {
 		cert := model.Certificate{
-			ID:           "cert" + string(rune(i)),
+			ID:           fmt.Sprintf("cert%d", i),
 			Type:         model.CertificateTypeUser,
 			UserID:       &user.ID,
 			SerialNumber: uint64(1000 + i),
@@ -2015,7 +1965,7 @@ func TestCertificateHistoryHandler_Pagination(t *testing.T) {
 func TestAdminGetUserHandler_ShouldReturnEverythingStoredForTheUser(t *testing.T) {
 	t.Parallel()
 
-	db := newTestDB(t)
+	db := testdb.New(t)
 	now := time.Now().UTC().Truncate(time.Second)
 	seen := now.Add(-time.Hour)
 	missing := now.Add(-30 * time.Minute)
@@ -2187,7 +2137,7 @@ func TestAdminGetUserHandler_ShouldReturnEverythingStoredForTheUser(t *testing.T
 func TestAdminGetUserHandler_ShouldOmitADirectoryRecordThatDoesNotExist(t *testing.T) {
 	t.Parallel()
 
-	db := newTestDB(t)
+	db := testdb.New(t)
 	now := time.Now()
 	if err := db.Create(&model.User{
 		ID: "u-bob", Subject: "sub-bob", Username: "bob",
@@ -2228,7 +2178,7 @@ func TestAdminGetUserHandler_ShouldOmitADirectoryRecordThatDoesNotExist(t *testi
 func TestAdminGetUserHandler_ShouldReportWhatDisabledTheAccount(t *testing.T) {
 	t.Parallel()
 
-	db := newTestDB(t)
+	db := testdb.New(t)
 	now := time.Now()
 	source := model.DisabledSourceLDAPSync
 	if err := db.Create(&model.User{
@@ -2271,7 +2221,7 @@ func TestAdminGetUserHandler_ShouldReportWhatDisabledTheAccount(t *testing.T) {
 func TestAdminGetUserHandler_ShouldWithholdTheDirectoryRecordWhenLDAPIsOff(t *testing.T) {
 	t.Parallel()
 
-	db := newTestDB(t)
+	db := testdb.New(t)
 	now := time.Now().UTC().Truncate(time.Second)
 
 	user := model.User{
@@ -2349,7 +2299,7 @@ func TestListUsersHandler_ShouldRejectAnUnknownStatusFilter(t *testing.T) {
 	t.Parallel()
 
 	cfg := newTestConfig(t)
-	db := newTestDB(t)
+	db := testdb.New(t)
 	identity := &service.Identity{Subject: "sub-admin", Username: "admin", Groups: []string{cfg.Admin.RequireGroup}}
 	r := routerWithAuth(t, cfg, db, identity)
 

@@ -1,7 +1,6 @@
 package bootstrap
 
 import (
-	"os"
 	"sort"
 	"strings"
 	"testing"
@@ -13,29 +12,26 @@ import (
 
 	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/resources"
+	"github.com/mnestor/ssoossh/test/testdb"
 )
 
-// livePostgresDSN returns the DSN for a disposable live Postgres instance,
-// or skips the test when none is configured. These tests DROP AND RECREATE
-// the public schema, so the DSN must never point at a database anyone cares
-// about. Gated on an env var rather than a build tag so `go test ./...`
-// stays green on machines without Docker.
+// livePostgresDSN returns the DSN of a fresh, empty database on the run's
+// Postgres (test/testdb), or skips the test on the SQLite backend: these
+// drive the production connect and migrate path against a real server.
 //
-//	docker run -d -e POSTGRES_USER=ssoossh -e POSTGRES_PASSWORD=e2etest \
-//	  -e POSTGRES_DB=ssoossh -p 127.0.0.1:15432:5432 postgres:17-alpine
-//	SSOOSSH_TEST_POSTGRES_DSN='postgres://ssoossh:e2etest@127.0.0.1:15432/ssoossh?sslmode=disable' \
-//	  go test ./server/bootstrap/ -run TestLivePostgres
+//	make test-postgres
+//
+// runs them, with the rest of the suite.
 func livePostgresDSN(t *testing.T) string {
 	t.Helper()
-	dsn := os.Getenv("SSOOSSH_TEST_POSTGRES_DSN")
-	if dsn == "" {
-		t.Skip("SSOOSSH_TEST_POSTGRES_DSN not set; skipping live Postgres test")
-	}
+	testdb.SkipOnSQLite(t, "drives the production Postgres connect and migrate path")
+	_, dsn := testdb.Connection(t)
 	return dsn
 }
 
-// connectLivePostgres connects to the live instance and resets it to an
-// empty schema so every test starts from nothing.
+// connectLivePostgres connects to the live database through the production
+// connect path. The database is new and empty, so every test starts from
+// nothing.
 func connectLivePostgres(t *testing.T, dsn string) *gorm.DB {
 	t.Helper()
 	c := &config.Config{}
@@ -46,9 +42,11 @@ func connectLivePostgres(t *testing.T, dsn string) *gorm.DB {
 	if err != nil {
 		t.Fatalf("failed to connect to live postgres: %v", err)
 	}
-	if err := db.Exec("DROP SCHEMA public CASCADE; CREATE SCHEMA public").Error; err != nil {
-		t.Fatalf("failed to reset schema: %v", err)
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to get sql.DB: %v", err)
 	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
 	return db
 }
 

@@ -9,17 +9,16 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/mnestor/ssoossh/server/model"
+	"github.com/mnestor/ssoossh/test/testdb"
 )
 
-// should read each user's latest login on SQLite. The same table runs on
-// Postgres under the dbparity tag (ldapsync_admin_pg_test.go).
+// should read each user's latest login, on either backend: on Postgres
+// created_at is a TIMESTAMPTZ rather than SQLite's UTC text, and MAX and the
+// join compare instants.
 func TestLatestLoginGroups_shouldReadEachUsersLatestLogin(t *testing.T) {
 	t.Parallel()
 
-	db := newTestDB(t)
-	if err := db.AutoMigrate(&model.AuditEvent{}); err != nil {
-		t.Fatalf("migrate audit_events: %v", err)
-	}
+	db := testdb.New(t)
 	checkLatestLoginGroups(t, db)
 }
 
@@ -101,10 +100,7 @@ func checkLatestLoginGroups(t *testing.T, db *gorm.DB) {
 func TestLoginPayloadPrefix_shouldMatchARecordedLogin(t *testing.T) {
 	t.Parallel()
 
-	db := newTestDB(t)
-	if err := db.AutoMigrate(&model.AuditEvent{}); err != nil {
-		t.Fatalf("migrate audit_events: %v", err)
-	}
+	db := testdb.New(t)
 	recordLogin(t, db, "alice", []string{"ssh-admins"}, time.Now())
 	recordAudit(t, db, AuditAuthLoginDenied, "bob", nil, time.Now())
 

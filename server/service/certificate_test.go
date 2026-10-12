@@ -1,7 +1,7 @@
 package service
 
-// Test methodology: unit tests against a real in-memory sqlite *gorm.DB,
-// same as certrequest_test.go. These cover the scoping rule, which is the
+// Test methodology: unit tests against a real database, same as
+// certrequest_test.go. These cover the scoping rule, which is the
 // only interesting behavior here — a user must see their own certificates
 // and nobody else's. Pagination tests cover the cursor-based seek logic.
 // Decision join tests ensure no ambiguous column selection.
@@ -18,18 +18,9 @@ import (
 )
 
 // newTestCertificateService returns a CertificateService over the same DB as
-// svc, migrated for certificates.
+// svc.
 func newTestCertificateService(t *testing.T, svc *CertRequestService) *CertificateService {
 	t.Helper()
-
-	// EnrollmentRetrieval is in the list because ListForIdentity LEFT JOINs
-	// it to find where a service certificate was fetched from. The join is
-	// on every row, service or not, so the table has to exist even for a
-	// test that only seeds user certificates.
-	if err := svc.db.AutoMigrate(&model.Certificate{}, &model.CertificateRequest{},
-		&model.CertificateRequestDecision{}, &model.EnrollmentRetrieval{}); err != nil {
-		t.Fatalf("failed to migrate certificate tables: %v", err)
-	}
 	return NewCertificateService(svc.db)
 }
 
@@ -631,6 +622,12 @@ func TestCertificateService_ServiceCertificateRetrieval(t *testing.T) {
 		}
 
 		enrollmentID := uuid.NewString()
+		if err := svc.db.Create(&model.Enrollment{
+			ID: enrollmentID, Code: uuid.NewString(), UserID: userID,
+			CreatedAt: time.Now(), ExpiresAt: time.Now().Add(time.Hour),
+		}).Error; err != nil {
+			t.Fatalf("failed to seed enrollment: %v", err)
+		}
 		if !skipRetrieval {
 			if err := svc.db.Create(&model.EnrollmentRetrieval{
 				ID: uuid.NewString(), EnrollmentID: enrollmentID,

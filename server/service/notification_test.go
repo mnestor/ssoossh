@@ -21,6 +21,7 @@ import (
 	"github.com/mnestor/ssoossh/server/mail"
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/notify"
+	"github.com/mnestor/ssoossh/test/testdb"
 )
 
 // recordingSender captures what would have been delivered, and can be made
@@ -75,10 +76,7 @@ func newNotificationFixture(t *testing.T) *notificationFixture {
 func newNotificationFixtureWithSender(t *testing.T, sender *recordingSender) *notificationFixture {
 	t.Helper()
 
-	db := newTestDB(t)
-	if err := db.AutoMigrate(&model.User{}, &model.UserLDAP{}, &model.NotificationPreference{}, &model.Enrollment{}); err != nil {
-		t.Fatalf("failed to migrate test tables: %v", err)
-	}
+	db := testdb.New(t)
 
 	user := model.User{
 		ID:        uuid.NewString(),
@@ -870,6 +868,7 @@ func (f *notificationFixture) seedEnrollment(t *testing.T, id, account, address 
 	enrollment := model.Enrollment{
 		ID:                id,
 		Code:              "code-" + id,
+		UserID:            seedUser(t, f.db, "enrolled-by-"+id),
 		ServiceAccount:    account,
 		NotificationEmail: address,
 		CreatedAt:         time.Now(),

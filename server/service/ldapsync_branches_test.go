@@ -13,8 +13,10 @@ import (
 	"time"
 
 	"github.com/go-ldap/ldap/v3"
+	"gorm.io/gorm"
 
 	"github.com/mnestor/ssoossh/server/model"
+	"github.com/mnestor/ssoossh/test/testdb"
 )
 
 // A sync with nobody to sync must not even dial: with no user_ldap rows the
@@ -61,10 +63,10 @@ func TestSync_ShouldSkipABookkeepingRowWithNoUser(t *testing.T) {
 	dir := &fakeDirectory{}
 	svc, db := newLDAPTestService(t, ldapTestConfig(nil), dir)
 
+	// The schema cascades a user's deletion to this row, so an orphan can
+	// only be seeded with the foreign key out of the way.
 	row := model.UserLDAP{UserID: "vanished", DN: "uid=ghost,ou=people,dc=test"}
-	if err := db.Create(&row).Error; err != nil {
-		t.Fatalf("seeding the orphan row: %v", err)
-	}
+	testdb.WithoutForeignKeys(t, db, func(tx *gorm.DB) error { return tx.Create(&row).Error })
 
 	if err := svc.Sync(context.Background()); err != nil {
 		t.Fatalf("Sync() error = %v", err)

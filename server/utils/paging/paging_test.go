@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
 	"github.com/mnestor/ssoossh/server/utils/errorresponses"
+	"github.com/mnestor/ssoossh/test/testdb"
 )
 
 // TestParse covers the defaults, the bounds, and the rejections. The
@@ -249,9 +249,8 @@ func TestParamsPageNumber(t *testing.T) {
 }
 
 // pagingRow is a throwaway table for the query-building tests. The helpers
-// under test are driver-agnostic string builders, so proving them against
-// SQLite proves the SQL is well-formed; the Postgres parity the LOWER()/
-// ESCAPE choice exists for is covered by test/migration.
+// under test are driver-agnostic string builders, run against both backends
+// (test/testdb), which is where the LOWER()/ESCAPE choice has to hold.
 type pagingRow struct {
 	ID       int    `gorm:"column:id;primaryKey"`
 	Username string `gorm:"column:username"`
@@ -261,15 +260,12 @@ type pagingRow struct {
 // TableName pins the table so GORM does not pluralize it.
 func (pagingRow) TableName() string { return "paging_rows" }
 
-// newPagingDB returns an in-memory database holding rows, for the
+// newPagingDB returns an isolated database holding rows, for the
 // query-building tests.
 func newPagingDB(t *testing.T, rows []pagingRow) *gorm.DB {
 	t.Helper()
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
+	db := testdb.Empty(t)
 	if err := db.AutoMigrate(&pagingRow{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
