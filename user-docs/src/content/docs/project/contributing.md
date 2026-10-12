@@ -27,11 +27,12 @@ Claude or another AI tool to help with your contribution:
 3. **Review carefully.** Before submitting, run `make pre-pr`, read the diff,
    and verify it matches what you intended.
 
-An AI assistant working in the repository should read `client/CLAUDE.md` and
-`server/CLAUDE.md` for each side's role and layout (a root `CLAUDE.md` is a
-personal file, ignored by git, so a clone has none), `./.claude/rules/` for the Go and TypeScript
-conventions, and `AGENTS.md` when several agents work in parallel. The project
-uses `rtk` to minimize token usage in bash commands.
+An AI assistant working in the repository should read the root `CLAUDE.md`
+for project-wide instructions (it loads `SSOOSSH.md`, the product intent),
+`client/CLAUDE.md` and `server/CLAUDE.md` for each side's role and layout,
+`./.claude/rules/` for the Go and TypeScript conventions, and `AGENTS.md` when
+several agents work in parallel. The project uses `rtk` to minimize token usage
+in bash commands.
 
 ### Requirements
 
@@ -65,11 +66,11 @@ you are not sure what exists.
 
 ## Branch naming and commits
 
-Branches follow the pattern `feat/`, `fix/`, or `chore/` followed by a short
-description:
+Branches follow the pattern `feat/`, `fix/`, or `chore/`, then the issue number
+and a short description:
 
 ```bash
-git checkout -b feat/add-token-refresh
+git checkout -b feat/123-add-token-refresh
 ```
 
 Commits use [Conventional Commits](https://www.conventionalcommits.org/):
@@ -333,7 +334,7 @@ marking them done.
 
 ## Submitting a pull request
 
-1. **Create a branch** off `main`: `git checkout -b feat/your-feature`.
+1. **Create a branch** off `main`: `git checkout -b feat/<issue>-your-feature`.
 2. **Make your changes.** Write tests as you go.
 3. **Run the gate locally:** `make pre-pr`.
 4. **Commit with conventional commits.** Keep one concern per commit.

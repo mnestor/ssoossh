@@ -72,6 +72,20 @@ jobs:
               - 'packaging/**'
               - '.goreleaser*.yml'
               - 'docs/openapi.yaml'
+              # Generated outputs and non-Go generator inputs that the
+              # patterns above do not already match, so a PR that edits
+              # only one of them still runs check-generated.
+              - 'docs/man/**'
+              - 'server/config/defaults.yaml'
+              - 'user-docs/src/content/docs/reference/cli/**'
+              - 'user-docs/src/content/docs/reference/config/**'
+              - 'user-docs/cli-sidebar.json'
+              - 'user-docs/config-sidebar.json'
+              - 'Makefile.md'
+              - 'scripts/gen-makefile-docs.sh'
+              - 'docs/wire-contract.json'
+              - 'internal/apitypes/testdata/**'
+              - 'server/controller/testdata/sse_stream_*.sse'
               - 'tygo.yaml'
               - '.redoclyrc.yaml'
               - '.github/workflows/build.yaml'
@@ -94,30 +108,15 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Catches a Go wire type changing without the frontend's generated
-      # TypeScript being regenerated.
-      - name: Check generated frontend types are current
-        run: make types-check
-
-      # docs/openapi.yaml is generated from the swag annotations on the
-      # handlers. Catches a route or response shape changing without the
-      # spec following.
-      - name: Check generated OpenAPI spec is current
-        run: make openapi-check
-
-      - name: Lint OpenAPI spec
-        run: make openapi-lint
-
-      # Man pages are generated from the cobra commands; same staleness
-      # trap as the two above.
-      - name: Check generated man pages are current
-        run: make man-check
-
-      # The docs site's configuration reference comes from the config
-      # structs and its CLI reference from the cobra commands. Catches a
-      # key or a flag changing without the site following.
-      - name: Check generated docs site pages are current
-        run: make confdocs-check clidocs-check
+      # Every gate in the Makefile's GENERATED_GATES: the frontend's
+      # TypeScript types, docs/openapi.yaml (plus its lint), the man pages,
+      # the docs site's config and CLI references, Makefile.md, and
+      # docs/wire-contract.json. Running the aggregate rather than listing
+      # gates here means a gate added to GENERATED_GATES is covered without
+      # editing this file. -k keeps going after the first stale artifact so
+      # one run reports all of them.
+      - name: Check generated artifacts are current
+        run: make -k check-generated
 
       # The server binary embeds server/frontend/dist.
       - name: Build web UI

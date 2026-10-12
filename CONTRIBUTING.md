@@ -27,11 +27,11 @@ If you are Claude or another AI assistant working in this repository:
 
 ## Branch Naming and Commits
 
-Branches follow the pattern: `feat/`, `fix/`, or `chore/` followed by a short description.
+Branches follow the pattern: `feat/`, `fix/`, or `chore/`, then the issue number and a short description.
 
 **Example:**
 ```bash
-git checkout -b feat/add-token-refresh
+git checkout -b feat/123-add-token-refresh
 ```
 
 Commits use [Conventional Commits](https://www.conventionalcommits.org/):
@@ -159,7 +159,7 @@ and fail the merge gate over punctuation.
 
 ## Submitting a Pull Request
 
-1. **Create a branch** off `main`: `git checkout -b feat/your-feature`.
+1. **Create a branch** off `main`: `git checkout -b feat/<issue>-your-feature`.
 2. **Make your changes.** Write tests as you go.
 3. **Run the gate locally:**
    ```bash
