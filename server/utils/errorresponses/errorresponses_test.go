@@ -242,6 +242,7 @@ func TestErrorCode_ShouldReportTheWireCodeForEachError(t *testing.T) {
 		{name: "user status check", err: &UserStatusCheckError{}, wantCode: apitypes.ErrorCodeUnavailable, wantStatus: http.StatusServiceUnavailable},
 		{name: "conflict", err: &ConflictError{Reason: "a directory sync is already running"}, wantCode: apitypes.ErrorCodeConflict, wantStatus: http.StatusConflict},
 		{name: "session write", err: &SessionWriteError{}, wantCode: apitypes.ErrorCodeInternalError, wantStatus: http.StatusInternalServerError},
+		{name: "shutting down", err: &ShuttingDownError{}, wantCode: apitypes.ErrorCodeUnavailable, wantStatus: http.StatusServiceUnavailable},
 	}
 
 	for _, tt := range tests {
@@ -350,5 +351,19 @@ func TestSessionWriteError_ShouldNotDiscloseTheUnderlyingCause(t *testing.T) {
 		if strings.Contains(err.Error(), leak) {
 			t.Errorf("message contains %q, which is the operator's detail rather than the caller's: %q", leak, err.Error())
 		}
+	}
+}
+
+// TestShuttingDownError_ShouldTellTheCallerToReconnect: the message reaches
+// the client in the 503 envelope, and the one thing a caller can do about a
+// shutdown is come back, so the message has to say that and not read as a
+// failed request.
+func TestShuttingDownError_ShouldTellTheCallerToReconnect(t *testing.T) {
+	t.Parallel()
+
+	err := &ShuttingDownError{}
+
+	if got := err.Error(); !strings.Contains(got, "reconnect") {
+		t.Errorf("Error() = %q, want it to tell the caller to reconnect", got)
 	}
 }

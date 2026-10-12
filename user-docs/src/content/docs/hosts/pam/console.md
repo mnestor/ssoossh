@@ -233,6 +233,15 @@ either. Behind a reverse proxy this only means anything with
 without it every request carries the proxy's address and the gate either admits
 everything or nothing.
 
+Each refusal is written to the audit log as `cert.request_refused_network`,
+one event per refused request, with the address the server observed and the
+account the module named (kept as a claim, not as an actor). The caller gets
+the same 403 as before, which does not say which networks are allowed. Nobody
+has to sign in to cause one, so keep
+[`http.rate_limit`](/ssoossh/reference/config/http/#rate_limit) on for an
+internet-facing server; see
+[Unauthenticated events and the row cap](/ssoossh/operations/audit-log/#unauthenticated-events-and-the-row-cap).
+
 Two pages serve the approver: **`/console`**, where a signed-in user types the
 code, and **`/c/<code>`**, the shortcut a QR code encodes so a phone lands
 straight on it, showing the code to confirm against the screen before it

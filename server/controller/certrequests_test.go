@@ -9,6 +9,7 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -499,6 +500,39 @@ func TestEventsHandler_ShouldRegisterErrorOnWaitFailure(t *testing.T) {
 	}
 }
 
+// TestEventsHandler_ShouldEndTheStreamWithA503WhenTheServerShutsDown traces
+// #139's shutdown error to the wire: Wait's ShuttingDownError must reach the
+// client as a 503 error envelope rather than an SSE event, since a 5xx
+// connect is what internal/api's retryableConnect reconnects from.
+func TestEventsHandler_ShouldEndTheStreamWithA503WhenTheServerShutsDown(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	svc := &fakeCertRequestService{waitErr: &errorresponses.ShuttingDownError{}}
+
+	r := gin.New()
+	r.Use(middleware.NewErrorHandlerMiddleware().Add())
+	NewCertRequestController(&r.RouterGroup, svc, passthrough, passthrough, nil)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/certs/requests/req-1/events", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("got status %d, want %d; body: %s", w.Code, http.StatusServiceUnavailable, w.Body.String())
+	}
+	var body struct {
+		Error     string `json:"error"`
+		ErrorCode string `json:"error_code"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("response is not a JSON error envelope: %v; body: %s", err, w.Body.String())
+	}
+	if body.ErrorCode != apitypes.ErrorCodeUnavailable {
+		t.Errorf("got error_code %q, want %q", body.ErrorCode, apitypes.ErrorCodeUnavailable)
+	}
+}
+
 func TestApproveHandler_ShouldReadIdentityFromContext(t *testing.T) {
 	t.Parallel()
 
@@ -702,6 +736,32 @@ func TestDenyHandler_ShouldRegisterErrorWhenServiceFails(t *testing.T) {
 
 	if gotErrors != 1 {
 		t.Fatalf("expected exactly one error to be attached when Deny fails, got %d", gotErrors)
+	}
+}
+
+// TestDenyHandler_ShouldRefuseARequestBoundToAnotherUser runs the service's
+// ownership refusal through the real error handler: a second user denying a
+// request the owner already claimed gets 403 with the binding's reason, as
+// the endpoint's swagger promises.
+func TestDenyHandler_ShouldRefuseARequestBoundToAnotherUser(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	reason := "certificate request belongs to another user"
+	svc := &fakeCertRequestService{denyErr: &errorresponses.ForbiddenError{Reason: reason}}
+
+	r := gin.New()
+	r.Use(middleware.NewErrorHandlerMiddleware().Add())
+	NewCertRequestController(&r.RouterGroup, svc, identityMiddleware(&service.Identity{Subject: "sub-bob"}), passthrough, nil)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/certs/requests/req-1/deny", nil))
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("got status %d, want %d, body: %s", w.Code, http.StatusForbidden, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), reason) {
+		t.Errorf("got body %s, want it to carry %q", w.Body.String(), reason)
 	}
 }
 

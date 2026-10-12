@@ -171,6 +171,8 @@ http:
 
 The maximum number of requests per `rate_duration` allowed per client IP. Zero or negative disables rate limiting entirely. Localhost (127.0.0.1, ::1) bypasses the limit, so health probes and tests from the local frontend are not throttled.
 
+Keep it on for an internet-facing deployment. Some requests write an audit event without a session, such as a console request from outside cert_options.console.allowed_networks, and this limit is what stops one address writing them as fast as it can send.
+
 ```yaml
 http:
   rate_limit: 60

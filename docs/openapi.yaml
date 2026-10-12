@@ -2889,10 +2889,14 @@ paths:
   /api/admin/audit:
     get:
       description: |-
-        Returns the administrative audit stream newest first. The
-        database copy is a bounded cache of recent events; the
-        shipped audit log is the archive, and searching happens
-        there rather than here.
+        Returns the administrative audit stream newest first,
+        optionally filtered to one action, one source address, or
+        both. Both filters are exact matches. The source address is
+        the one the server observed for the client the event is
+        about (detail.source_ip), never the approver's address and
+        never one the client reported. The database copy is a bounded
+        cache of recent events; the shipped audit log is the archive,
+        and any other search happens there.
       parameters:
       - description: Page size (default 25, max 100)
         example: 25
@@ -2906,6 +2910,18 @@ paths:
         name: offset
         schema:
           type: integer
+      - description: Only events of this audit action; must be in the taxonomy
+        example: cert.request_refused_network
+        in: query
+        name: action
+        schema:
+          type: string
+      - description: Only events whose observed source is this IP address
+        example: 192.0.2.10
+        in: query
+        name: source_ip
+        schema:
+          type: string
       responses:
         "200":
           content:
@@ -2918,7 +2934,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
-          description: Invalid paging parameters
+          description: Invalid paging parameters, an unknown action, or a source_ip
+            that is not an IP address
         "401":
           content:
             application/json:
@@ -4019,6 +4036,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/openapidoc.ApproveEnvelope'
           description: Queued for signing
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Malformed body, or a service-type approval that names no service
+            account
         "401":
           content:
             application/json:
@@ -4030,13 +4054,27 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
-          description: Bound to another user, or a cross-origin call
+          description: Bound to another user, refused by the type's require condition,
+            a service account the approver is not associated with, or a cross-origin
+            call
         "404":
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
           description: No such request
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: 'Already decided: denied, or approved and signing or signed'
+        "410":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Expired before it was decided
       security:
       - sessionCookie: []
       summary: Approve a request
@@ -4047,6 +4085,10 @@ paths:
       description: |-
         Session-authed and CSRF-guarded. The waiting client is told over its own
         SSE stream.
+
+        Like approve, this honours the request's claim: an unclaimed request is
+        claimed by the caller and then denied, and one claimed by another user
+        gets 403 and stays pending.
       parameters:
       - description: The certificate request's UUID
         in: path
@@ -4079,6 +4121,18 @@ paths:
               schema:
                 $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
           description: No such request
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: 'Already decided: denied, or approved and signing or signed'
+        "410":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Expired before it was decided
       security:
       - sessionCookie: []
       summary: Deny a request
@@ -4127,6 +4181,13 @@ paths:
                 $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
           description: The certificate was issued but is no longer available. They
             are never persisted, so a client that missed delivery must re-request.
+        "503":
+          content:
+            text/event-stream:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: 'This instance is shutting down. The request is still pending:
+            reconnect.'
       summary: Wait for a request's outcome (SSE)
       tags:
       - client

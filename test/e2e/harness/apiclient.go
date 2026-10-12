@@ -3,7 +3,9 @@
 package harness
 
 import (
+	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +13,7 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 
@@ -130,6 +133,45 @@ func FetchCAKeys(serverBaseURL string) ([]ssh.PublicKey, error) {
 		keys = append(keys, key)
 	}
 	return keys, nil
+}
+
+// TerminalEvent opens requestID's event stream, the same SSE endpoint the
+// waiting client listens on, and returns the name of the first event the
+// server sends: the request's terminal status ("approved", "denied",
+// "expired", ...). For a request that has already resolved the server
+// answers at once from its cached outcome or the database row; for one
+// still pending it blocks, so the call is bounded by timeout.
+//
+// It reads the wire rather than the client's rendering of it, which is
+// what lets a test tell a denial from an expiry independently of the
+// wording the client prints.
+func TerminalEvent(serverBaseURL, requestID string, timeout time.Duration) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, serverBaseURL+"/api/certs/requests/"+requestID+"/events", nil)
+	if err != nil {
+		return "", fmt.Errorf("build the events request: %w", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("get the events stream: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("events stream answered status %d", resp.StatusCode)
+	}
+
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		if name, ok := strings.CutPrefix(scanner.Text(), "event:"); ok {
+			return strings.TrimSpace(name), nil
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return "", fmt.Errorf("read the events stream: %w", err)
+	}
+	return "", fmt.Errorf("the events stream closed without naming an event")
 }
 
 // Approve POSTs approve for requestID as whoever client is authenticated
