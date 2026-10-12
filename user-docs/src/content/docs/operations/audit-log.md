@@ -51,7 +51,7 @@ audit:
 | Key | Default | Notes |
 | --- | --- | --- |
 | [`audit.retention`](/ssoossh/reference/config/audit/#retention) | `1440h` | how long an event stays in the table. Zero disables age-based pruning, leaving `max_rows` as the only bound |
-| [`audit.max_rows`](/ssoossh/reference/config/audit/#max_rows) | `1000000` | the same sweep deletes oldest-first past the cap. Deliberately high: it bounds pathology, not ordinary volume. Zero disables it |
+| [`audit.max_rows`](/ssoossh/reference/config/audit/#max_rows) | `1000000` | the same sweep deletes past the cap: `cert.request_refused_network` rows first, then oldest-first. Deliberately high: it bounds pathology, not ordinary volume. Zero disables it |
 | [`audit.sweep_interval`](/ssoossh/reference/config/audit/#sweep_interval) | `1h` | pruning is not urgent, so this is measured in hours |
 | [`audit.logging.*`](/ssoossh/reference/config/audit/#logging-1) | -- | the durable export. `log_json` defaults to `true` here |
 
@@ -68,6 +68,26 @@ latest `auth.login` row in the last 60 days. A `retention` below 60 days, or a
 `max_rows` cap that has trimmed those logins, shortens that window: an admin
 whose last login the table no longer holds is not emailed. The sync logs the
 window it actually had (`effective_window`) whenever it is under 60 days.
+
+## Unauthenticated events and the row cap
+
+Most events need a signed-in person or the server itself to happen.
+`cert.request_refused_network` does not: anyone who can reach the server from a
+refused network can raise one with a single unauthenticated request. Left
+alone, a burst of them would push the oldest approvals, disables and logins
+out of the table, and so out of the web UI's history.
+
+So when the table is over `max_rows`, the sweep deletes the oldest
+`cert.request_refused_network` rows first, and only deletes other events once
+none of those is left. A burst therefore evicts itself, not the record around
+it. The shipped log keeps every refusal line regardless; only the table copy
+is trimmed.
+
+The cap is a backstop, not a limit on the requests. For an internet-facing
+deployment, keep [`http.rate_limit`](/ssoossh/reference/config/http/#rate_limit)
+on (it is on by default; zero turns it off) and leave
+[`http.cert_request_rate_limit`](/ssoossh/reference/config/http/cert_request_rate_limit/)
+in place, so one address cannot write refusals as fast as it can send.
 
 ## An audit row references nothing that can change
 
@@ -118,6 +138,7 @@ client must render an unknown action rather than assume the list is closed.
 | `cert.claimed` | An approval link bound to the first browser that opened it; a later browser is sent to the "link already opened" page |
 | `cert.expired` | A request that reached its deadline with nobody answering it. A system action, so it carries no actor |
 | `cert.sign_failed` | A request approved but never signed: the signer reported a failure, or the sweep found it stranded |
+| `cert.request_refused_network` | A certificate request refused because its source address is outside the type's `allowed_networks` (today only [`cert_options.console.allowed_networks`](/ssoossh/reference/config/cert_options/console/#allowed_networks)). A system action with no actor: nobody has signed in yet. The detail carries `cert_type`, `source_ip` and the reason; `source_ip` is the address the server observed (through `http.trusted_proxies`), never one the client supplied. The account and host the caller named are kept as `claimed_username` and `claimed_hostname`, never as an actor. One row per refusal, with no de-duplication, so a run of attempts from one place shows every time and source. The caller still gets the same 403, which does not say which networks are allowed, and nothing else is written. See [Unauthenticated events and the row cap](#unauthenticated-events-and-the-row-cap) |
 | `cert.issued` | **Shipped log only.** The UI already has certificate history from the `certificates` table, so a table copy would be duplication; the archive line is the row an incident reviewer joins against target-host `sshd` logs |
 | `enrollment.code_created`, `.redeemed`, `.expired` | Never carries the enrollment code: it is a bearer credential, and the never-log-sensitive-data rule covers payloads and log lines alike |
 | `enrollment.notification_email_set` | Carries both the old and the new address. Redirecting where an enrollment's notifications go is also the quiet way to stop an account's holders hearing about their own credential, so "who changed it, and to what" is the question this exists to answer |
