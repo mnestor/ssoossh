@@ -4,19 +4,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Test methodology: the audit page keeps its two filters (action and source
 // address) in the address, as /logs/me does. The router is stubbed: a fake
-// page for what the address says, and a replaceState that records what the
-// page writes back. fetch answers by URL, and every URL asked for is kept,
+// page for what the address says, and a goto that records what the page
+// writes back. fetch answers by URL, and every URL asked for is kept,
 // which is how a test reads the filters a request carried.
-const { replaceState } = vi.hoisted(() => ({ replaceState: vi.fn() }));
+const { goto } = vi.hoisted(() => ({ goto: vi.fn() }));
 
 vi.mock('$app/state', async () => {
 	const { fakePage } = await import('#lib/testing/page.svelte.js');
 	return { page: fakePage };
 });
-vi.mock('$app/navigation', () => ({ replaceState, goto: vi.fn() }));
+vi.mock('$app/navigation', () => ({ goto }));
 
-import { resetFakePage } from '#lib/testing/page.svelte.js';
+import { fakeGoto, resetFakePage } from '#lib/testing/page.svelte.js';
 import Page from './+page.svelte';
+
+/** shallowReplace is how a filter reaches the address: in place, without a
+ * navigation and without a history entry of its own. */
+const shallowReplace = expect.objectContaining({ shallow: true, replace: true });
 
 /** auditEvent builds one feed row, from a source address when one is given. */
 function auditEvent(id: string, action: string, sourceIP?: string) {
@@ -61,7 +65,11 @@ async function settle() {
 }
 
 beforeEach(() => {
-	replaceState.mockReset();
+	goto.mockReset();
+	// Shallow routing as SvelteKit does it: page.state is reassigned on
+	// every write and page.url never moves. A page that tracked either
+	// would write again on its own write (#178).
+	goto.mockImplementation(fakeGoto);
 	resetFakePage('http://localhost/admin/audit');
 });
 
@@ -135,11 +143,19 @@ describe('audit filters changed on the page', () => {
 		await settle();
 		await userEvent.selectOptions(screen.getByTestId('audit-action-filter'), 'cert.requested');
 		await waitFor(() =>
-			expect(replaceState).toHaveBeenCalledWith(
-				'/admin/audit?action=cert.requested',
-				expect.anything()
-			)
+			expect(goto).toHaveBeenCalledWith('/admin/audit?action=cert.requested', shallowReplace)
 		);
+	});
+
+	// Issue #178: the write used to re-run the effect that made it, which
+	// rewrote the address once per microtask and hung the page.
+	it('should write the address once when the action changes', async () => {
+		stubFeed();
+		render(Page);
+		await settle();
+		await userEvent.selectOptions(screen.getByTestId('audit-action-filter'), 'cert.requested');
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		expect(goto).toHaveBeenCalledTimes(1);
 	});
 
 	it('should request a typed address once Enter settles it', async () => {
@@ -187,9 +203,9 @@ describe('audit filters changed on the page', () => {
 		);
 		await userEvent.type(screen.getByTestId('audit-source-filter'), '192.0.2.7{Enter}');
 		await waitFor(() =>
-			expect(replaceState).toHaveBeenCalledWith(
+			expect(goto).toHaveBeenCalledWith(
 				'/admin/audit?action=cert.request_refused_network&source_ip=192.0.2.7',
-				expect.anything()
+				shallowReplace
 			)
 		);
 	});

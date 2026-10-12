@@ -3,13 +3,13 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // The page reads its filters from the address and writes them back, so the
-// router is stubbed: a fake page for the address, and a replaceState that
-// records nothing. The filter behaviour itself is in page.filters.test.ts.
+// router is stubbed: a fake page for the address, and a goto that records
+// nothing. The filter behaviour itself is in page.filters.test.ts.
 vi.mock('$app/state', async () => {
 	const { fakePage } = await import('#lib/testing/page.svelte.js');
 	return { page: fakePage };
 });
-vi.mock('$app/navigation', () => ({ replaceState: vi.fn(), goto: vi.fn() }));
+vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 
 import { resetFakePage } from '#lib/testing/page.svelte.js';
 import Page from './+page.svelte';

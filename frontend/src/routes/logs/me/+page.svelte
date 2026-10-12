@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { replaceState } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	import { syncAddressSearch } from '#lib/addressSearch.svelte.js';
 	import { listCertificates, listDeniedRequests } from '#lib/api/endpoints.js';
 	import type { CertificateRecord, DeniedRequest } from '#lib/api/types.js';
 	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
@@ -152,18 +152,9 @@
 		return parts.length ? `?${parts.join('&')}` : '';
 	});
 
-	$effect(() => {
-		const search = filterSearch;
-		if (search === page.url.search) {
-			return;
-		}
-		try {
-			replaceState(`${page.url.pathname}${search}`, page.state);
-		} catch {
-			// Before the router is ready (or in a test) the address simply
-			// stays as it was; the filters themselves still apply.
-		}
-	});
+	// Keep the address bar in step with the filters. See #lib/addressSearch
+	// for why a hand-written effect here hung the page (#178).
+	syncAddressSearch(() => filterSearch);
 
 	// What the list holds, for the announcement and the empty states: a
 	// certificate, a refusal, or either.
