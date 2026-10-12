@@ -127,6 +127,22 @@ describe('Admin certificates page', () => {
 			expect(screen.getByRole('group', { name: 'Filter by type' })).toBeInTheDocument();
 		});
 
+		// Below `sm` each group is a labelled select rather than icon-only
+		// chips, so a phone reads the filter's name and its options in words.
+		it.each(['Type', 'Status'])('should offer the %s filter as a named select', async (name) => {
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			expect(screen.getByRole('combobox', { name })).toBeInTheDocument();
+		});
+
+		// The type badge is a mark, not a name: the row says the type in
+		// words, so nobody has to hover the glyph to tell user from PAM.
+		it('should name a user certificate in words on its detail line', async () => {
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			expect(screen.getByTestId('cert-row')).toHaveTextContent(/user certificate issued/);
+		});
+
 		it('should not display pager when single page', async () => {
 			render(Page);
 			await new Promise((resolve) => setTimeout(resolve, 0));
@@ -279,7 +295,9 @@ describe('Admin certificates page', () => {
 		it('should show type filter options', async () => {
 			render(Page);
 			await new Promise((resolve) => setTimeout(resolve, 0));
-			const typeFilter = screen.getByTestId('type-filter');
+			// The chips, not the whole group: the select below `sm` carries
+			// the same words, so the group as a whole holds each one twice.
+			const typeFilter = screen.getByRole('group', { name: 'Filter by type' });
 			expect(within(typeFilter).getByText(/user/i)).toBeInTheDocument();
 			expect(within(typeFilter).getByText(/service/i)).toBeInTheDocument();
 			expect(within(typeFilter).getByText(/pam/i)).toBeInTheDocument();

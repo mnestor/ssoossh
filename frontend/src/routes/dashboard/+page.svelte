@@ -127,7 +127,7 @@
 				<CertRow
 					{cert}
 					{now}
-					event={certificateEvent(cert.type)}
+					event={certificateEvent(cert.type, cert.reported_pam_service)}
 					testid="cert-row"
 					href={certHref(cert.id)}
 				/>

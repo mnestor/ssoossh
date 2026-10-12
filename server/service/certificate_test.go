@@ -493,9 +493,10 @@ func TestCertificateService_CertificateWithDecision(t *testing.T) {
 }
 
 // A history row leads with what asked for the certificate, so the list
-// query reads the decision's reported "user@host" -- and only that pair:
-// the rest of the host-context snapshot is the detail endpoint's.
-func TestCertificateService_ShouldReadTheReportedUserAndHostOnAListRow(t *testing.T) {
+// query reads the decision's reported "user@host" and the PAM service a
+// PAM row names: the rest of the host-context snapshot is the detail
+// endpoint's.
+func TestCertificateService_ShouldReadTheReportedUserHostAndServiceOnAListRow(t *testing.T) {
 	t.Parallel()
 
 	reqSvc := newTestCertRequestService(t, time.Hour)
@@ -530,9 +531,12 @@ func TestCertificateService_ShouldReadTheReportedUserAndHostOnAListRow(t *testin
 		t.Errorf("got reported identity %q@%q, want root@web01",
 			got[0].Decision.ReportedUsername, got[0].Decision.ReportedHostname)
 	}
+	if got[0].Decision.PAMService != "sshd" {
+		t.Errorf("got reported pam service %q, want sshd", got[0].Decision.PAMService)
+	}
 }
 
-// The seven remaining host-context fields are detail-only: reading them on
+// The six remaining host-context fields are detail-only: reading them on
 // every row of a history page is payload nobody displays.
 func TestCertificateService_ShouldLeaveTheRestOfTheHostContextOffAListRow(t *testing.T) {
 	t.Parallel()
@@ -565,9 +569,8 @@ func TestCertificateService_ShouldLeaveTheRestOfTheHostContextOffAListRow(t *tes
 		t.Fatalf("got %d certificates with decision %v, want one with a decision", len(got), got[0].Decision)
 	}
 
-	if got[0].Decision.PAMService != "" || got[0].Decision.TTY != "" {
-		t.Errorf("got pam service %q and tty %q on a list row, want both empty",
-			got[0].Decision.PAMService, got[0].Decision.TTY)
+	if got[0].Decision.TTY != "" {
+		t.Errorf("got tty %q on a list row, want it empty", got[0].Decision.TTY)
 	}
 }
 
