@@ -8,6 +8,11 @@ import "github.com/gin-gonic/gin"
 // MIME-type confusion.
 type XContentTypeOptionsMiddleware struct{}
 
+// xContentTypeOptions is the X-Content-Type-Options value sent on every
+// response. It is also reported to the admin diagnostics through
+// AppSecurityHeaders.
+const xContentTypeOptions = "nosniff"
+
 // NewXContentTypeOptionsMiddleware creates an XContentTypeOptionsMiddleware.
 func NewXContentTypeOptionsMiddleware() *XContentTypeOptionsMiddleware {
 	return &XContentTypeOptionsMiddleware{}
@@ -17,7 +22,7 @@ func NewXContentTypeOptionsMiddleware() *XContentTypeOptionsMiddleware {
 // to nosniff on each response.
 func (m *XContentTypeOptionsMiddleware) Add() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.Header("X-Content-Type-Options", "nosniff")
+		c.Header("X-Content-Type-Options", xContentTypeOptions)
 		c.Next()
 	}
 }
