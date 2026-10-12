@@ -397,11 +397,25 @@ describe('when a slow request finishes after a newer one', () => {
 
 describe('when a filter or search changes', () => {
 	beforeEach(() => {
-		mockFetch({
-			...listWith('one'),
-			total: 100,
-			next_cursor: 'cert-one'
-		});
+		// The first answer has a next page; every later one is a different
+		// certificate, so a Load more appends a row rather than repeating
+		// one (a repeat would be each_key_duplicate, not a passing test).
+		const first = { ...listWith('one'), total: 100, next_cursor: 'cert-one' };
+		let calls = 0;
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(() =>
+				Promise.resolve(
+					new Response(
+						JSON.stringify({
+							data: calls++ === 0 ? first : { ...listWith(`more-${calls}`), total: 100 },
+							error: null
+						}),
+						{ status: 200, headers: { 'Content-Type': 'application/json' } }
+					)
+				)
+			)
+		);
 	});
 
 	/** requestsAfter counts the fetches one interaction causes. */
