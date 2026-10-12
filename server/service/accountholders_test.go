@@ -1,7 +1,7 @@
 package service
 
-// Test methodology: unit tests over usersHoldingAccount against in-memory
-// SQLite, because it is the one answer two features share -- the "Who has
+// Test methodology: unit tests over usersHoldingAccount against a real
+// database, because it is the one answer two features share -- the "Who has
 // access" panel and enrollment notification fan-out -- and it has to match a
 // third, IdentityService.RefreshIdentity, which is what actually authorizes
 // a request. The cases are therefore the places the two sources disagree:
@@ -16,17 +16,13 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/mnestor/ssoossh/server/model"
+	"github.com/mnestor/ssoossh/test/testdb"
 )
 
-// holdersDB is an in-memory database with the two tables the resolver reads.
+// holdersDB is an isolated, migrated database for the resolver to read.
 func holdersDB(t *testing.T) *gorm.DB {
 	t.Helper()
-
-	db := newTestDB(t)
-	if err := db.AutoMigrate(&model.User{}, &model.UserLDAP{}); err != nil {
-		t.Fatalf("failed to migrate test tables: %v", err)
-	}
-	return db
+	return testdb.New(t)
 }
 
 // addHolder inserts one users row. serviceAccounts and otherAccounts are

@@ -1,20 +1,21 @@
 package dbtime_test
 
-// Test methodology: these run against a real in-memory SQLite *gorm.DB
-// rather than asserting on the plugin's reflection in isolation, because
-// the bug being guarded against is a property of what SQLite ends up
-// storing and comparing, not of the Go values. A test that only checked
-// `t.Location() == time.UTC` would pass on code that still wrote local
-// offsets through a path the plugin missed.
+// Test methodology: these run against a real database (test/testdb: SQLite
+// by default, Postgres in that CI leg) rather than asserting on the plugin's
+// reflection in isolation, because the bug being guarded against is a
+// property of what SQLite ends up storing and comparing, not of the Go
+// values. A test that only checked `t.Location() == time.UTC` would pass on
+// code that still wrote local offsets through a path the plugin missed. The
+// tests that read the stored text back are SQLite-only.
 
 import (
 	"testing"
 	"time"
 
-	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
 	"github.com/mnestor/ssoossh/server/dbtime"
+	"github.com/mnestor/ssoossh/test/testdb"
 )
 
 // probe stands in for a model: one of each shape of time field the real
@@ -26,23 +27,13 @@ type probe struct {
 	CreatedAt  time.Time
 }
 
-// newDB opens an in-memory database configured exactly as
-// bootstrap.openWithRetry configures the real one.
+// newDB opens an isolated database configured exactly as
+// bootstrap.openWithRetry configures the real one (test/testdb registers this
+// package's NowFunc and Plugin), with the probe table.
 func newDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{NowFunc: dbtime.NowFunc})
-	if err != nil {
-		t.Fatalf("failed to open in-memory sqlite: %v", err)
-	}
-	if err := db.Use(dbtime.Plugin{}); err != nil {
-		t.Fatalf("failed to register plugin: %v", err)
-	}
-	sqlDB, err := db.DB()
-	if err != nil {
-		t.Fatalf("failed to get underlying sql.DB: %v", err)
-	}
-	sqlDB.SetMaxOpenConns(1)
+	db := testdb.Empty(t)
 	if err := db.AutoMigrate(&probe{}); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
@@ -53,6 +44,8 @@ func newDB(t *testing.T) *gorm.DB {
 // its comparisons actually operate on.
 func storedValue(t *testing.T, db *gorm.DB, id, column string) string {
 	t.Helper()
+	testdb.SkipOnPostgres(t, "reads the DATETIME text SQLite compares; Postgres stores TIMESTAMPTZ instants, "+
+		"which the ordering and range tests cover on both backends")
 
 	var got string
 	if err := db.Raw(`SELECT `+column+` FROM probes WHERE id = ?`, id).Scan(&got).Error; err != nil {

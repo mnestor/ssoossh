@@ -34,7 +34,7 @@ jobs:
       go: ${{ steps.filter.outputs.go || 'true' }}
       frontend: ${{ steps.filter.outputs.frontend || 'true' }}
       docs: ${{ steps.filter.outputs.docs || 'true' }}
-      migrations: ${{ steps.filter.outputs.migrations || 'true' }}
+      postgres: ${{ steps.filter.outputs.postgres || 'true' }}
     steps:
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         if: github.event_name == 'pull_request'
@@ -55,11 +55,16 @@ jobs:
               - 'user-docs/**'
               - 'docs/openapi.yaml'
               - '.github/workflows/resilience.yaml'
-            migrations:
+            # Any Go change can change a query, and a migration changes
+            # the schema every DB-backed test runs on. The goldens are
+            # listed because they are not Go files.
+            postgres:
+              - '**/*.go'
+              - 'go.mod'
+              - 'go.sum'
               - 'server/resources/migrations/**'
-              - 'test/migration/**'
-              - 'test/postgres/**'
-              - 'test/sqlite/**'
+              - 'test/migration/testdata/**'
+              - 'Makefile'
               - '.github/workflows/resilience.yaml'
 
   resilience:
@@ -133,32 +138,93 @@ jobs:
       - name: Run load tests
         run: CGO_ENABLED=1 go test -buildvcs=false -tags=load -race -count=1 -timeout=10m ./test/load/...
 
-  # SQLite/Postgres schema parity. This suite existed and was wired into no
-  # workflow at all, on the reasoning that the e2e tier-1 matrix already runs
-  # both backends -- but that proves the app works on each, which is a
-  # different claim from the two schemas agreeing. A column present on
-  # Postgres and missing on SQLite passes e2e right up until something reads
-  # it.
+  # The whole Go suite again, on Postgres. codecover.yaml's codecheck runs
+  # it on SQLite; this is the other half, so a query that behaves
+  # differently on the two backends (collation, LIKE, time precision,
+  # constraint errors) fails a PR instead of production. Every DB-backed
+  # test takes its database from test/testdb, which gives each one a fresh
+  # database on this server, so a new test runs here with no workflow edit.
+  # It also carries what the Migration Parity job used to run on its own:
+  # the schema parity tests, the goldens and the migrations' data repairs
+  # in test/migration.
   #
-  # Bare runner, not the build container: test/postgres brings its own
-  # postgres up with `docker run`, so it needs a daemon rather than a
-  # services: block. SSOOSSH_REQUIRE_DOCKER makes a missing daemon fail the
-  # job instead of skipping every test and reporting green.
-  migrations:
-    name: Migration Parity
+  # Same image and Postgres version as e2e tier 1. `make test-postgres` is
+  # the local equivalent.
+  postgres:
+    name: Postgres Tests
     needs: changes
-    if: needs.changes.outputs.migrations == 'true'
+    if: needs.changes.outputs.postgres == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
+    container:
+      image: ghcr.io/mnestor/ssoossh-build:latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: test
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+
+      # The dbparity tag used to hide Postgres-only tests from every run but
+      # one. Nothing builds with it any more, so a file still carrying it
+      # would compile nowhere and pass silently: refuse it instead. Before
+      # the web UI build, so node_modules is not there to search.
+      - name: Refuse the retired dbparity build tag
+        run: |
+          if grep -rlE --include='*.go' '^//go:build .*dbparity' .; then
+            echo "::error::the dbparity build tag is retired: delete the //go:build line and call testdb.SkipOnSQLite (test/testdb) instead"
+            exit 1
+          fi
+
+      # Replaces the module/build caching setup-go provided before the Go
+      # toolchain moved into the runner image.
+      - name: Cache Go modules
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          go-version-file: go.mod
-      - name: Run migration parity tests
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            go-${{ runner.os }}-
+
+      # server/frontend embeds server/frontend/dist.
+      - name: Build web UI
+        run: make frontend
+
+      # The DSN names the server, not a database: test/testdb creates and
+      # drops one per test on it.
+      - name: Run the Go suite on Postgres
         env:
-          SSOOSSH_REQUIRE_DOCKER: "1"
-        run: go test -buildvcs=false -tags=dbparity -count=1 -timeout=10m ./test/migration/...
+          SSOOSSH_TEST_DB: postgres
+          SSOOSSH_TEST_POSTGRES_DSN: postgres://postgres:test@postgres:5432/postgres?sslmode=disable
+        run: CGO_ENABLED=1 go test -buildvcs=false -count=1 -timeout=15m ./...
+
+  # The branch ruleset requires a check named "Migration Parity", the job
+  # the Postgres leg above replaced. This reports that leg's outcome under
+  # the old name so the requirement keeps meaning something. Delete it once
+  # the ruleset requires "Postgres Tests" instead.
+  migration-parity:
+    name: Migration Parity
+    needs: [changes, postgres]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Report the Postgres leg's result
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          POSTGRES: ${{ needs.postgres.result }}
+        run: |
+          echo "changes: $CHANGES, Postgres Tests: $POSTGRES"
+          [ "$CHANGES" = success ] || exit 1
+          case "$POSTGRES" in success|skipped) ;; *) exit 1 ;; esac
 
   frontend:
     name: Frontend Tests

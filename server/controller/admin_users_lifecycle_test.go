@@ -20,6 +20,7 @@ import (
 
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/service"
+	"github.com/mnestor/ssoossh/test/testdb"
 )
 
 // seedDisabledUser creates a user already disabled with a recorded reason.
@@ -45,7 +46,7 @@ func seedDisabledUser(t *testing.T, db *gorm.DB, id string) {
 func TestEnableUserHandler_ShouldRejectAnEnableWithNoReason(t *testing.T) {
 	t.Parallel()
 
-	db := newTestDB(t)
+	db := testdb.New(t)
 	seedDisabledUser(t, db, "user-1")
 	r := routerWithAuth(t, newTestConfig(t), db, adminIdentity("ssh-admins"))
 
@@ -61,7 +62,7 @@ func TestEnableUserHandler_ShouldRejectAnEnableWithNoReason(t *testing.T) {
 func TestEnableUserHandler_ShouldRejectAMalformedBody(t *testing.T) {
 	t.Parallel()
 
-	db := newTestDB(t)
+	db := testdb.New(t)
 	seedDisabledUser(t, db, "user-1")
 	r := routerWithAuth(t, newTestConfig(t), db, adminIdentity("ssh-admins"))
 
@@ -77,7 +78,7 @@ func TestEnableUserHandler_ShouldRejectAMalformedBody(t *testing.T) {
 func TestEnableUserHandler_ShouldReportAnUnknownUser(t *testing.T) {
 	t.Parallel()
 
-	r := routerWithAuth(t, newTestConfig(t), newTestDB(t), adminIdentity("ssh-admins"))
+	r := routerWithAuth(t, newTestConfig(t), testdb.New(t), adminIdentity("ssh-admins"))
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodPatch, "/admin/users/nope/enable",
@@ -93,7 +94,7 @@ func TestEnableUserHandler_ShouldReportAnUnknownUser(t *testing.T) {
 func TestEnableUserHandler_ShouldClearTheDisableAndAuditIt(t *testing.T) {
 	t.Parallel()
 
-	db := newTestDB(t)
+	db := testdb.New(t)
 	seedDisabledUser(t, db, "user-1")
 	r := routerWithAuth(t, newTestConfig(t), db, adminIdentity("ssh-admins"))
 
@@ -156,7 +157,7 @@ func seedActingAdmin(t *testing.T, db *gorm.DB) {
 func TestDisableUserHandler_ShouldReportAnUnknownUser(t *testing.T) {
 	t.Parallel()
 
-	db := newTestDB(t)
+	db := testdb.New(t)
 	seedActingAdmin(t, db)
 	r := routerWithAuth(t, newTestConfig(t), db, adminIdentity("ssh-admins"))
 
@@ -172,7 +173,7 @@ func TestDisableUserHandler_ShouldReportAnUnknownUser(t *testing.T) {
 func TestDisableUserHandler_ShouldRejectAMalformedBody(t *testing.T) {
 	t.Parallel()
 
-	db := newTestDB(t)
+	db := testdb.New(t)
 	seedActingAdmin(t, db)
 	seedDisabledUser(t, db, "user-1")
 	r := routerWithAuth(t, newTestConfig(t), db, adminIdentity("ssh-admins"))
@@ -194,7 +195,7 @@ func TestGetUserHandler_ShouldReportAnUnknownUser(t *testing.T) {
 		Username: "auditor",
 		Groups:   []string{"ssh-auditors"},
 	}
-	r := routerWithAuth(t, newTestConfig(t), newTestDB(t), auditor)
+	r := routerWithAuth(t, newTestConfig(t), testdb.New(t), auditor)
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/users/nope", nil))

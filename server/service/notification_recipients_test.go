@@ -1,7 +1,7 @@
 package service
 
 // Test methodology: unit tests over the two fan-out recipient resolvers and
-// the small publication plumbing around them, against in-memory SQLite. The
+// the small publication plumbing around them, against a real database. The
 // properties that matter are the exclusion rules — disabled accounts and
 // addressless users never receive fan-out — and the exact-element matching
 // of the JSON-encoded service account list, where a substring false
@@ -17,17 +17,13 @@ import (
 
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/notify"
+	"github.com/mnestor/ssoossh/test/testdb"
 )
 
-// recipientsDB is an in-memory database with the tables the resolvers read.
+// recipientsDB is an isolated, migrated database for the resolvers to read.
 func recipientsDB(t *testing.T) *gorm.DB {
 	t.Helper()
-
-	db := newTestDB(t)
-	if err := db.AutoMigrate(&model.User{}, &model.UserGroup{}, &model.UserLDAP{}, &model.NotificationPreference{}); err != nil {
-		t.Fatalf("failed to migrate test tables: %v", err)
-	}
-	return db
+	return testdb.New(t)
 }
 
 // addUser inserts one user row and returns it. serviceAccounts is stored

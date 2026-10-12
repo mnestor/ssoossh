@@ -79,7 +79,8 @@ the matching `lint-*`) and the internal check halves
 | `make test-memory-leak` | Memory leak repro tests |
 | `make test-resilience` | Resilience suite (shutdown, db loss, oidc loss) |
 | `make test-load` | Load, soak, and concurrency suite (slow) |
-| `make test-migration` | SQLite/Postgres migration parity checks |
+| `make test-postgres` | Go suite against a throwaway Postgres (needs docker) |
+| `make test-migration` | SQLite/Postgres migration parity checks (needs docker) |
 
 ### Format and lint
 
@@ -147,7 +148,7 @@ satisfies the `//go:embed` pattern. Serving or testing a UI does.
 ## Test
 
 None of the tagged suites run as part of `make test`. Each needs its tag:
-`e2e`, `resilience`, `load`, `dbparity`, `softhsm`, `memory_leak_test`.
+`e2e`, `resilience`, `load`, `softhsm`, `memory_leak_test`.
 
 `test-e2e` tier 3 creates and unlocks a local account and runs sshd as root
 via sudo — read [test/e2e/README.md](test/e2e/README.md) first. That is why it
@@ -241,7 +242,7 @@ plain command report success over code it never looked at:
 
 | What hides | Hidden from | How it bit | Covered by |
 | --- | --- | --- | --- |
-| **Build tags** | `lint` passes none; `test` builds none | A suite behind `e2e`, `resilience`, `load`, `dbparity`, `softhsm`, or `natsintegration` can fail to compile outright while both report success | `lint-tagged` |
+| **Build tags** | `lint` passes none; `test` builds none | A suite behind `e2e`, `resilience`, `load`, `softhsm`, or `natsintegration` can fail to compile outright while both report success | `lint-tagged` |
 | **GOOS** | `lint` runs with the host's | A G115 overflow bug sat in `client/config/policy_windows.go`, on a value an admin sets through Group Policy | `lint-cross` |
 | **cgo** | golangci-lint can't see into a cgo file | Every symbol referenced only from one reports as unused. The devcontainer defaults `CGO_ENABLED=0` | Explicit `CGO_ENABLED=1` per recipe |
 

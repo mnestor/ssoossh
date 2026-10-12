@@ -224,8 +224,8 @@ All 26 placeholder tests with unconditional `t.Skip("requires X")` were deleted.
    - `CGO_ENABLED=1 go test -tags=load -race -count=1 -timeout=5m ./test/load/...`
    - 7 real tests (soak tests skip with `-short` in CI)
 
-3. **migrations job**
-   - `go test -tags=dbparity ./test/migration/...` (schema parity across dialects; added after this summary was written)
+3. **postgres job** (replaced the migrations job after this summary was written)
+   - `go test ./...` with `SSOOSSH_TEST_DB=postgres`: the whole Go suite on Postgres, schema parity across dialects included (`make test-postgres` locally)
 
 4. **a11y job**
    - `cd frontend && pnpm test`

@@ -26,19 +26,10 @@ import (
 )
 
 // newTestEnrollmentService wires an EnrollmentService onto svc's database
-// and transport, migrating the tables Retrieve touches.
+// and transport.
 func newTestEnrollmentService(t *testing.T, svc *CertRequestService) *EnrollmentService {
 	t.Helper()
 
-	if err := svc.db.AutoMigrate(
-		&model.Certificate{},
-		&model.User{},
-		&model.UserLDAP{},
-		&model.EnrollmentRetrieval{},
-		&model.EnrollmentReassignment{},
-	); err != nil {
-		t.Fatalf("failed to migrate retrieval tables: %v", err)
-	}
 	enrollment, err := NewEnrollmentService(svc.config, svc.db, svc.publisher, svc.subscriber)
 	if err != nil {
 		t.Fatalf("NewEnrollmentService() error = %v", err)
@@ -946,11 +937,6 @@ func TestListForAdmin(t *testing.T) {
 			CreatedAt: time.Now(),
 		})
 
-		// Migrate user models so we can load them
-		if err := svc.db.AutoMigrate(&model.User{}, &model.UserLDAP{}); err != nil {
-			t.Fatalf("failed to migrate users: %v", err)
-		}
-
 		list, err := enrollment.ListForAdmin(context.Background(),
 			&Identity{Subject: "sub-auditor", Groups: []string{"auditors"}},
 			AdminListParams{Limit: 25, Query: ""})
@@ -973,9 +959,6 @@ func TestListForAdmin(t *testing.T) {
 		enrollment := newTestEnrollmentService(t, svc)
 
 		// Seed users with specific usernames
-		if err := svc.db.AutoMigrate(&model.User{}, &model.UserLDAP{}); err != nil {
-			t.Fatalf("failed to migrate users: %v", err)
-		}
 		user1 := model.User{
 			ID: uuid.NewString(), Subject: "sub-alice", Username: "alice", Email: "alice@example.com",
 			CreatedAt: time.Now(), UpdatedAt: time.Now(),
@@ -1044,10 +1027,6 @@ func TestListForAdmin(t *testing.T) {
 			Principals: `["svc-a"]`, ServiceAccount: "svc-a", KeyID: "key1", ExpiresAt: time.Now().Add(time.Hour),
 			CreatedAt: time.Now(),
 		})
-
-		if err := svc.db.AutoMigrate(&model.User{}, &model.UserLDAP{}); err != nil {
-			t.Fatalf("failed to migrate users: %v", err)
-		}
 
 		// Search for something that doesn't match
 		list, err := enrollment.ListForAdmin(context.Background(),
@@ -1157,10 +1136,6 @@ func TestListForAdmin_PagingWithSearch(t *testing.T) {
 	auditorCfg := &config.Config{Admin: config.AdminConfig{AuditorGroup: "auditors"}}
 	svc := newTestCertRequestServiceWithConfig(t, auditorCfg)
 	enrollment := newTestEnrollmentService(t, svc)
-
-	if err := svc.db.AutoMigrate(&model.User{}, &model.UserLDAP{}); err != nil {
-		t.Fatalf("failed to migrate users: %v", err)
-	}
 
 	// Create two users
 	alice := model.User{
@@ -1357,9 +1332,6 @@ func newCursorEnrollmentFixture(t *testing.T) (*EnrollmentService, *CertRequestS
 	t.Helper()
 	svc := newTestCertRequestServiceWithConfig(t, &config.Config{Admin: config.AdminConfig{AuditorGroup: "auditors"}})
 	enrollment := newTestEnrollmentService(t, svc)
-	if err := svc.db.AutoMigrate(&model.User{}, &model.UserLDAP{}); err != nil {
-		t.Fatalf("failed to migrate users: %v", err)
-	}
 	for _, name := range []string{"alice", "bob"} {
 		user := model.User{ID: "u-" + name, Subject: "sub-" + name, Username: name, Email: name + "@example.com", CreatedAt: time.Now(), UpdatedAt: time.Now()}
 		if err := svc.db.Create(&user).Error; err != nil {
@@ -1383,10 +1355,6 @@ func TestListForAdmin_SearchFilteringPinnedToSQL(t *testing.T) {
 	auditorCfg := &config.Config{Admin: config.AdminConfig{AuditorGroup: "auditors"}}
 	svc := newTestCertRequestServiceWithConfig(t, auditorCfg)
 	enrollment := newTestEnrollmentService(t, svc)
-
-	if err := svc.db.AutoMigrate(&model.User{}, &model.UserLDAP{}); err != nil {
-		t.Fatalf("failed to migrate users: %v", err)
-	}
 
 	// Create two users with different numbers of enrollments.
 	alice := model.User{

@@ -11,6 +11,7 @@ import (
 
 	"github.com/mnestor/ssoossh/server/middleware"
 	"github.com/mnestor/ssoossh/server/model"
+	"github.com/mnestor/ssoossh/test/testdb"
 )
 
 // The admin certificate list names a PAM row by the service its request
@@ -21,10 +22,22 @@ func TestCertificateHistoryHandler_ShouldCarryTheReportedPAMService(t *testing.T
 
 	gin.SetMode(gin.TestMode)
 	cfg := newTestConfig(t)
-	db := newTestDB(t)
+	db := testdb.New(t)
 
 	now := time.Now()
 	requestID := "req-pam"
+	// The certificate and its decision both point at the request, and the
+	// schema enforces those foreign keys.
+	request := model.CertificateRequest{
+		ID:        requestID,
+		Type:      model.CertificateTypePAM,
+		PublicKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKey pam@host",
+		Status:    model.CertificateRequestStatusApproved,
+		CreatedAt: now,
+	}
+	if err := db.Create(&request).Error; err != nil {
+		t.Fatalf("seed request: %v", err)
+	}
 	certs := []model.Certificate{
 		{ID: "cert-pam", Type: model.CertificateTypePAM, SerialNumber: 1, KeyID: "pam", CertificateRequestID: &requestID, IssuedAt: now, ExpiresAt: now.Add(time.Minute)},
 		// No decision behind it: an orphan must still list, with no service.

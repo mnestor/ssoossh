@@ -2,7 +2,7 @@ package controller
 
 // Test methodology: drive the two auditor-only audit endpoints through the
 // same router-with-real-middleware harness the other admin tests use, with
-// events seeded through the real AuditService against in-memory SQLite. The
+// events seeded through the real AuditService against a test database. The
 // interesting properties are the authorization boundary, the newest-first
 // ordering, the one-row-serves-both-sides user timeline, and the fact that
 // looking at the feed is itself audited exactly once per visit.
@@ -21,6 +21,7 @@ import (
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/service"
 	"github.com/mnestor/ssoossh/server/webtypes"
+	"github.com/mnestor/ssoossh/test/testdb"
 )
 
 // auditorIdentity is a session identity in the auditor group and nothing
@@ -65,7 +66,7 @@ func getAuditPage(t *testing.T, r http.Handler, path string) (int, webtypes.Audi
 func TestAuditFeed_ShouldDenyAnonymous(t *testing.T) {
 	t.Parallel()
 
-	r := routerWithAuth(t, newTestConfig(t), newTestDB(t), nil)
+	r := routerWithAuth(t, newTestConfig(t), testdb.New(t), nil)
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/audit", nil))
@@ -83,7 +84,7 @@ func TestAuditFeed_ShouldDenyAPlainUser(t *testing.T) {
 		Username: "user",
 		Groups:   []string{"ssh-users"},
 	}
-	r := routerWithAuth(t, newTestConfig(t), newTestDB(t), identity)
+	r := routerWithAuth(t, newTestConfig(t), testdb.New(t), identity)
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/audit", nil))
@@ -97,7 +98,7 @@ func TestAuditFeed_ShouldReturnEventsNewestFirst(t *testing.T) {
 	t.Parallel()
 
 	cfg := newTestConfig(t)
-	db := newTestDB(t)
+	db := testdb.New(t)
 
 	base := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
 	for i, action := range []service.AuditAction{
@@ -145,7 +146,7 @@ func TestAuditFeed_ShouldNotRecordTheVisitInTheTable(t *testing.T) {
 	t.Parallel()
 
 	cfg := newTestConfig(t)
-	db := newTestDB(t)
+	db := testdb.New(t)
 	r := routerWithAuth(t, cfg, db, auditorIdentity())
 
 	if code, _ := getAuditPage(t, r, "/admin/audit"); code != http.StatusOK {
@@ -169,7 +170,7 @@ func TestAuditFeed_ShouldNotGrowWhenItIsRead(t *testing.T) {
 	t.Parallel()
 
 	cfg := newTestConfig(t)
-	db := newTestDB(t)
+	db := testdb.New(t)
 	seedAuditEvent(t, db, service.AuditEvent{
 		Action: service.AuditAuthLogin,
 		Actor:  &service.AuditSubject{UserID: "user-0"},
@@ -192,7 +193,7 @@ func TestAuditFeed_ShouldNotGrowWhenItIsRead(t *testing.T) {
 func TestAuditFeed_ShouldRejectMalformedPaging(t *testing.T) {
 	t.Parallel()
 
-	r := routerWithAuth(t, newTestConfig(t), newTestDB(t), auditorIdentity())
+	r := routerWithAuth(t, newTestConfig(t), testdb.New(t), auditorIdentity())
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/audit?limit=abc", nil))
@@ -210,7 +211,7 @@ func TestUserAudit_ShouldDenyAPlainUser(t *testing.T) {
 		Username: "user",
 		Groups:   []string{"ssh-users"},
 	}
-	r := routerWithAuth(t, newTestConfig(t), newTestDB(t), identity)
+	r := routerWithAuth(t, newTestConfig(t), testdb.New(t), identity)
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/users/user-1/audit", nil))
@@ -226,7 +227,7 @@ func TestUserAudit_ShouldReturnActorAndTargetRows(t *testing.T) {
 	t.Parallel()
 
 	cfg := newTestConfig(t)
-	db := newTestDB(t)
+	db := testdb.New(t)
 
 	base := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
 	seedAuditEvent(t, db, service.AuditEvent{
@@ -290,7 +291,7 @@ func TestAuditFeed_ShouldRecordTheCursorOnTheVisit(t *testing.T) {
 			slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, nil)))
 			t.Cleanup(func() { slog.SetDefault(prior) })
 
-			db := newTestDB(t)
+			db := testdb.New(t)
 			seedAuditEvent(t, db, service.AuditEvent{Action: service.AuditAuthLogin, Actor: &service.AuditSubject{UserID: "user-1"}})
 			var row model.AuditEvent
 			if err := db.First(&row).Error; err != nil {

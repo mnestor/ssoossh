@@ -97,7 +97,7 @@ fix.
 
 :::caution[Do not hand-assemble a subset in place of `pre-pr`]
 `make lint` passes no build tags and `make test` does not build the tagged
-suites, so a test behind `e2e`, `resilience`, `load`, `dbparity`, `hsm`,
+suites, so a test behind `e2e`, `resilience`, `load`, `hsm`,
 `softhsm` or `natsintegration` can fail to compile entirely while `lint`, `test`,
 `check-generated` and every frontend gate report success. `make lint` also
 runs with your own `GOOS`, so nothing in that list sees the Windows or macOS
@@ -162,10 +162,11 @@ through `check-generated`) are deliberately left out of both.
 | `make test-e2e-unlocked` | `test-e2e` without the serialising lock, for a deliberate parallel run |
 | `make test-memory-leak` | Memory leak repro tests |
 | `make test-resilience` | Resilience suite (shutdown, db loss, oidc loss) |
-| `make test-migration` | SQLite/Postgres migration parity checks |
+| `make test-postgres` | The whole Go suite on a throwaway Postgres (needs docker, no tag) |
+| `make test-migration` | `test-postgres` for `./test/migration/...` only: SQLite/Postgres migration parity checks |
 | `make test-load` | Load, soak, and concurrency suite (slow) |
 
-Each needs its tag: `e2e`, `resilience`, `load`, `dbparity`, `hsm`,
+Each needs its tag: `e2e`, `resilience`, `load`, `hsm`,
 `softhsm`, `memory_leak_test`. `test-hsm` and `bench-hsm` need both `hsm` and
 `softhsm`. `test-memory-leak` is quarantined: those tests assert
 defects **exist**, so they are meant to fail.
@@ -278,7 +279,7 @@ plain command report success over code it never looked at.
 
 | What hides | Hidden from | How it bit | Covered by |
 | --- | --- | --- | --- |
-| **Build tags** | `lint` passes none; `test` builds none | A suite behind `e2e`, `resilience`, `load`, `dbparity`, `hsm`, `softhsm`, or `natsintegration` can fail to compile outright while both report success | `lint-tagged` |
+| **Build tags** | `lint` passes none; `test` builds none | A suite behind `e2e`, `resilience`, `load`, `hsm`, `softhsm`, or `natsintegration` can fail to compile outright while both report success | `lint-tagged` |
 | **GOOS** | `lint` runs with the host's | A G115 overflow bug sat in `client/config/policy_windows.go`, on a value an admin sets through Group Policy | `lint-cross` |
 | **cgo** | golangci-lint cannot see into a cgo file | Every symbol referenced only from one reports as unused. The devcontainer defaults `CGO_ENABLED=0` | Explicit `CGO_ENABLED=1` per recipe |
 

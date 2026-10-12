@@ -25,6 +25,7 @@ import (
 	"github.com/mnestor/ssoossh/server/logging"
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/service"
+	"github.com/mnestor/ssoossh/test/testdb"
 )
 
 // testCAKeyRegistry is a mock implementation of CAKeyRegistry for testing.
@@ -50,9 +51,8 @@ func (t *testCAKeyRegistry) ActiveKeys(ctx context.Context) ([]string, error) {
 // a services struct holding a real *service.CAService built from a
 // mock registry with a test key (caController.caService is a concrete type,
 // not an interface, so a fake can't be substituted without changing
-// production code), and an in-memory sqlite *gorm.DB (initRouter's session
-// store setup needs a real *gorm.DB - it AutoMigrates its own table on
-// construction).
+// production code), and a migrated test database (test/testdb; initRouter's
+// session store setup needs a real *gorm.DB).
 func newTestApp(t *testing.T, c *config.Config) *app {
 	t.Helper()
 
@@ -66,20 +66,10 @@ func newTestApp(t *testing.T, c *config.Config) *app {
 		t.Fatalf("failed to build CAService: %v", err)
 	}
 
-	dbConfig := &config.Config{}
-	dbConfig.DB.Provider = config.DBProviderSqlite
-	dbConfig.DB.Connection = ":memory:"
-	db, err := connectDatabase(dbConfig)
-	if err != nil {
-		t.Fatalf("failed to connect to in-memory test database: %v", err)
-	}
-
-	// Run the real embedded migrations rather than AutoMigrate: initRouter
+	// The real embedded migrations rather than AutoMigrate: initRouter
 	// reads and writes server_secrets, and a hand-rolled test schema would
 	// let the migrations and the code drift apart without any test noticing.
-	if err := migrateDatabase(dbConfig.DB.Provider, db); err != nil {
-		t.Fatalf("failed to migrate in-memory test database: %v", err)
-	}
+	db := testdb.New(t)
 
 	return &app{config: c, svc: &services{ca: caSvc}, db: db}
 }

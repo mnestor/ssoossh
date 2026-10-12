@@ -1,5 +1,3 @@
-//go:build dbparity
-
 package migration_test
 
 import (
@@ -17,7 +15,6 @@ import (
 // in type names and constraint naming, and the cross-dialect comparison that
 // matters is already TestMigrationParity_SchemasShouldBeIdentical's job.
 func TestMigrations_PostgresSchemaShouldMatchGolden(t *testing.T) {
-	// Not t.Parallel() — see TestMigrationParity_SchemasShouldBeIdentical.
 	ctx := t.Context()
 
 	db, _ := postgres.ConnectAndMigrate(t, ctx)

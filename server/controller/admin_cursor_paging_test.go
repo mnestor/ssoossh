@@ -6,8 +6,8 @@ package controller
 // handler and a real schema with the same cases: walking every page through
 // next_cursor, a row written between two page requests, a filter combined
 // with the cursor, and the refusals for a cursor that names no row and for
-// the retired offset parameter. The cases are shared with the dbparity
-// Postgres run, so both backends are held to the same answers.
+// the retired offset parameter. The cases run on both backends
+// (test/testdb), so both are held to the same answers.
 
 import (
 	"encoding/json"
@@ -25,6 +25,7 @@ import (
 
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/service"
+	"github.com/mnestor/ssoossh/test/testdb"
 )
 
 // cursorRow is one listed row: its id, which is what a cursor names, and the
@@ -472,13 +473,11 @@ func checkCursorPaging(t *testing.T, db *gorm.DB) {
 	})
 }
 
-// should page all five admin lists by cursor, on SQLite.
-func TestAdminLists_ShouldPageByCursorOnSQLite(t *testing.T) {
-	db := newTestDB(t)
-	if err := db.AutoMigrate(&model.EnrollmentRetrieval{}); err != nil {
-		t.Fatalf("migrate enrollment_retrievals: %v", err)
-	}
-	checkCursorPaging(t, db)
+// should page all five admin lists by cursor, on either backend. On
+// Postgres timestamps are microsecond TIMESTAMPTZ and the collation behind
+// LOWER and ORDER BY differs from SQLite's, so the same cases run on both.
+func TestAdminLists_ShouldPageByCursor(t *testing.T) {
+	checkCursorPaging(t, testdb.New(t))
 }
 
 // A database that fails the cursor lookup is a server error, not a refused
@@ -500,10 +499,7 @@ func TestAdminLists_ShouldReportAFailedCursorLookup(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			db := newTestDB(t)
-			if err := db.AutoMigrate(&model.EnrollmentRetrieval{}); err != nil {
-				t.Fatalf("migrate enrollment_retrievals: %v", err)
-			}
+			db := testdb.New(t)
 			if err := db.Callback().Query().Before("gorm:query").Register("test:fail_cursor_lookup", func(tx *gorm.DB) {
 				if strings.Join(tx.Statement.Selects, ",") == tt.selects {
 					_ = tx.AddError(errors.New("database unavailable"))

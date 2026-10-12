@@ -20,6 +20,7 @@ import (
 
 	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/model"
+	"github.com/mnestor/ssoossh/test/testdb"
 )
 
 // fakeDirectory answers searches from a fixed set of entries.
@@ -102,10 +103,7 @@ func ldapTestConfig(fields map[string]config.LDAPField) *config.Config {
 func newLDAPTestService(t *testing.T, cfg *config.Config, dir *fakeDirectory) (*LDAPService, *gorm.DB) {
 	t.Helper()
 
-	db := newTestDB(t)
-	if err := db.AutoMigrate(&model.User{}, &model.UserLDAP{}, &model.UserGroup{}, &model.AuditEvent{}, &model.LDAPSyncRun{}); err != nil {
-		t.Fatalf("failed to migrate the LDAP test database: %v", err)
-	}
+	db := testdb.New(t)
 
 	svc, err := NewLDAPService(cfg, db)
 	if err != nil {

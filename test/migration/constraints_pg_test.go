@@ -1,5 +1,3 @@
-//go:build dbparity
-
 package migration_test
 
 // The SQLite side of these constraints is pinned by constraints_test.go.
@@ -19,7 +17,6 @@ import (
 )
 
 func TestCertificateTypeCheck_PostgresShouldAdmitTheFourTypesAndRefuseTheRest(t *testing.T) {
-	// Not t.Parallel() — see TestMigrationParity_SchemasShouldBeIdentical.
 	ctx := t.Context()
 
 	db, _ := postgres.ConnectAndMigrate(t, ctx)

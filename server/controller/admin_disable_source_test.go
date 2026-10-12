@@ -18,6 +18,7 @@ import (
 
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/service"
+	"github.com/mnestor/ssoossh/test/testdb"
 )
 
 // seedSourceUsers writes the target and the two operators the disable
@@ -106,7 +107,7 @@ func TestDisableUserHandler_ShouldRecordTheRoleItWasTakenUnder(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			db := newTestDB(t)
+			db := testdb.New(t)
 			seedSourceUsers(t, db)
 			if tt.prior != nil {
 				if err := db.Model(&model.User{}).Where("id = ?", "u-target").
@@ -136,7 +137,7 @@ func TestDisableUserHandler_ShouldRecordTheRoleItWasTakenUnder(t *testing.T) {
 func TestEnableUserHandler_ShouldClearTheDisableSource(t *testing.T) {
 	t.Parallel()
 
-	db := newTestDB(t)
+	db := testdb.New(t)
 	seedSourceUsers(t, db)
 	if err := db.Model(&model.User{}).Where("id = ?", "u-target").
 		Updates(map[string]any{

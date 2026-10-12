@@ -1,5 +1,3 @@
-//go:build dbparity
-
 // Package migration_test provides comprehensive tests for database migrations
 // across SQLite and Postgres, verifying that both dialects produce equivalent
 // schemas and behave identically.
@@ -20,11 +18,10 @@ import (
 // This is the live counterpart to static SQL parsing tests — it catches divergences
 // that the database engines interpret differently.
 func TestMigrationParity_SchemasShouldBeIdentical(t *testing.T) {
-	// Deliberately NOT t.Parallel(): the postgres harness binds one fixed
-	// port (test/postgres/container.go), so two container-backed tests
-	// running at once read each other's databases — this one saw
-	// DownShouldReverseUp's mid-cycle schema, resurrected columns and
-	// all. The harness comment always said sequential; this enforces it.
+	// Sequential, as it always was. The Postgres side no longer needs it
+	// (test/testdb gives each test a database of its own), but the
+	// test/sqlite side opens ":memory:?cache=shared" and was never
+	// reviewed for sharing.
 	ctx := t.Context()
 
 	pgDB, _ := postgres.ConnectAndMigrate(t, ctx)
@@ -96,7 +93,6 @@ func TestMigrationParity_SchemasShouldBeIdentical(t *testing.T) {
 // after up migrations returns to a clean state, and that a subsequent up reaches
 // the same schema as the first up.
 func TestMigrationParity_DownShouldReverseUp(t *testing.T) {
-	// Not t.Parallel() — see TestMigrationParity_SchemasShouldBeIdentical.
 	ctx := t.Context()
 
 	pgDB, _ := postgres.ConnectAndMigrate(t, ctx)

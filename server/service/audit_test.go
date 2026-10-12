@@ -1,7 +1,6 @@
 package service
 
-// Test methodology: table-driven unit tests over an in-memory sqlite
-// database. The two properties worth pinning are the ones the audit log
+// Test methodology: table-driven unit tests over a real database. The two properties worth pinning are the ones the audit log
 // exists for: a mutation and its audit row commit together, and a required
 // reason cannot be omitted.
 
@@ -24,16 +23,14 @@ import (
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/service/auditns"
 	"github.com/mnestor/ssoossh/server/utils/errorresponses"
+	"github.com/mnestor/ssoossh/test/testdb"
 )
 
-// newTestAuditService builds a recorder over a migrated in-memory database.
+// newTestAuditService builds a recorder over an isolated, migrated database.
 func newTestAuditService(t *testing.T) (*AuditService, *gorm.DB) {
 	t.Helper()
 
-	db := newTestDB(t)
-	if err := db.AutoMigrate(&model.AuditEvent{}, &model.User{}); err != nil {
-		t.Fatalf("failed to migrate the audit test database: %v", err)
-	}
+	db := testdb.New(t)
 	return NewAuditService(&config.Config{}, db), db
 }
 
