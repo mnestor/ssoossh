@@ -324,7 +324,41 @@ func StartClient(t *testing.T, ssoosshPath string, o ClientOptions) *ClientProce
 		close(cp.done)
 	}()
 
+	// A client the test never waited for is still running when the test
+	// ends: typically a login started only to reach its approval page,
+	// still blocked on its events stream. That open request held
+	// ssoosshd's graceful shutdown to its five-second bound, so every such
+	// test took five seconds longer than its work (#116), and the process
+	// outlived its test besides. t.Cleanup runs last in, first out, and
+	// the server was started before this client, so this runs first.
+	t.Cleanup(func() { cp.stop(t) })
+
 	return cp
+}
+
+// clientStopTimeout bounds how long cleanup waits for a killed client to
+// be reaped. A SIGKILLed process is gone at once; this only guards against
+// something else holding its output pipes open.
+const clientStopTimeout = 5 * time.Second
+
+// stop kills the process if it is still running and waits until it has
+// been reaped, so its connections are closed before anything torn down
+// after it -- ssoosshd above all -- looks at them. A process that already
+// exited is left alone.
+func (cp *ClientProcess) stop(t *testing.T) {
+	select {
+	case <-cp.done:
+		return
+	default:
+	}
+
+	_ = cp.cmd.Process.Kill() //nolint:errcheck // it may exit on its own between the check above and here; gone either way
+
+	select {
+	case <-cp.done:
+	case <-time.After(clientStopTimeout):
+		t.Logf("harness: the ssoossh client was still not reaped %s after being killed", clientStopTimeout)
+	}
 }
 
 // StartLogin runs `ssoossh ssh login` against serverURL with agentSocket as
