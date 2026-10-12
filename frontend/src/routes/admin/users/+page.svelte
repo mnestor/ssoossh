@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
 	import Alert from '#lib/components/Alert.svelte';
+	import LoadMoreFooter from '#lib/components/LoadMoreFooter.svelte';
 	import Icon from '#lib/components/Icon.svelte';
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import EmptyState from '#lib/components/EmptyState.svelte';
@@ -107,10 +108,10 @@
 	}
 
 	/** loadMore appends the page after the last user shown. */
-	function loadMore() {
+	async function loadMore() {
 		const after = users?.next_cursor;
 		if (after) {
-			loadUsers(after);
+			await loadUsers(after);
 		}
 	}
 
@@ -290,27 +291,15 @@
 		<!-- The audit feed's footer: what is on screen, what is left, then
 		     Load more. "more" rather than "older": the directory is sorted
 		     by name, not by time. -->
-		<div class="flex flex-col gap-3">
-			<p class="text-xs text-ink-muted tabular-nums" data-testid="users-count">
-				{describeLoaded(users.users.length, users.total - users.users.length, 'more')}
-			</p>
-			{#if moreError}
-				<Alert
-					variant="error"
-					title="Could not load more users"
-					onretry={loadMore}
-					testid="users-more-error"
-				>
-					{moreError}
-				</Alert>
-			{:else if users.next_cursor}
-				<div>
-					<Button variant="ghost" {busy} onclick={loadMore} testid="users-load-more">
-						{busy ? 'Loading…' : 'Load more'}
-					</Button>
-				</div>
-			{/if}
-		</div>
+		<LoadMoreFooter
+			summary={describeLoaded(users.users.length, users.total - users.users.length, 'more')}
+			hasMore={!!users.next_cursor}
+			{busy}
+			error={moreError}
+			errorTitle="Could not load more users"
+			onmore={loadMore}
+			testid="users"
+		/>
 	{:else if busy}
 		<LoadingBlock shape="table" count={6} testid="users-loading" />
 	{:else}

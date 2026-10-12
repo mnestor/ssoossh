@@ -6,6 +6,7 @@
 	import type { CertificateResponse } from '#lib/api/types.js';
 	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
 	import Alert from '#lib/components/Alert.svelte';
+	import LoadMoreFooter from '#lib/components/LoadMoreFooter.svelte';
 	import Button from '#lib/components/Button.svelte';
 	import CertRow from '#lib/components/CertRow.svelte';
 	import EmptyState from '#lib/components/EmptyState.svelte';
@@ -140,9 +141,12 @@
 	}
 
 	/** loadMore appends the page after the last certificate shown. */
-	function loadMore() {
+	async function loadMore() {
 		if (nextCursor) {
-			loadCertificates({ q: searchQuery, type: typeFilter, status: statusFilter }, nextCursor);
+			await loadCertificates(
+				{ q: searchQuery, type: typeFilter, status: statusFilter },
+				nextCursor
+			);
 		}
 	}
 
@@ -318,31 +322,14 @@
 	{#if !loadError && certificates.length > 0}
 		<!-- The audit feed's footer: what is on screen, what is left, then
 		     Load more. -->
-		<div class="flex flex-col gap-3">
-			<p class="text-xs text-ink-muted tabular-nums" data-testid="certificates-count">
-				{describeLoaded(certificates.length, total - certificates.length, 'older')}
-			</p>
-			{#if moreError}
-				<Alert
-					variant="error"
-					title="Could not load more certificates"
-					onretry={loadMore}
-					testid="certificates-more-error"
-				>
-					{moreError}
-				</Alert>
-			{:else if nextCursor}
-				<div>
-					<Button
-						variant="ghost"
-						busy={isLoading}
-						onclick={loadMore}
-						testid="certificates-load-more"
-					>
-						{isLoading ? 'Loading…' : 'Load more'}
-					</Button>
-				</div>
-			{/if}
-		</div>
+		<LoadMoreFooter
+			summary={describeLoaded(certificates.length, total - certificates.length, 'older')}
+			hasMore={!!nextCursor}
+			busy={isLoading}
+			error={moreError}
+			errorTitle="Could not load more certificates"
+			onmore={loadMore}
+			testid="certificates"
+		/>
 	{/if}
 </PageShell>
