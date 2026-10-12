@@ -48,11 +48,14 @@ func checkLatestLoginGroups(t *testing.T, db *gorm.DB) {
 	// A login whose users row was never resolved has no actor id to key on.
 	recordLogin(t, db, "", []string{"ssh-admins"}, now.Add(-day))
 	// frank: a latest login whose payload cannot be read is no evidence of
-	// a role, even after a readable admin login.
+	// a role, even after a readable admin login. The action column still
+	// names it a login, as the recorder would have written it before the
+	// payload was damaged.
 	recordLogin(t, db, "frank", []string{"ssh-admins"}, now.Add(-3*day))
 	frank := "frank"
 	if err := db.Create(&model.AuditEvent{
 		ID: "corrupt-login", CreatedAt: now.Add(-day).UTC(), ActorUserID: &frank,
+		Action:  string(AuditAuthLogin),
 		Payload: `{"action":"auth.login",not json`,
 	}).Error; err != nil {
 		t.Fatalf("store a corrupt login: %v", err)
@@ -93,40 +96,4 @@ func checkLatestLoginGroups(t *testing.T, db *gorm.DB) {
 			t.Error("a login with no actor id was keyed under the empty id")
 		}
 	})
-}
-
-// The prefix the query matches on depends on how the recorder encodes a
-// login. If that encoding ever moves the action, this fails before the
-// sync silently stops recognising every admin.
-func TestLoginPayloadPrefix_shouldMatchARecordedLogin(t *testing.T) {
-	t.Parallel()
-
-	db := newTestDB(t)
-	if err := db.AutoMigrate(&model.AuditEvent{}); err != nil {
-		t.Fatalf("migrate audit_events: %v", err)
-	}
-	recordLogin(t, db, "alice", []string{"ssh-admins"}, time.Now())
-	recordAudit(t, db, AuditAuthLoginDenied, "bob", nil, time.Now())
-
-	tests := []struct {
-		name   string
-		userID string
-		want   int64
-	}{
-		{name: "should match a successful login", userID: "alice", want: 1},
-		{name: "should not match a denied login", userID: "bob", want: 0},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			var count int64
-			if err := db.Model(&model.AuditEvent{}).
-				Where("actor_user_id = ? AND payload LIKE ?", tc.userID, loginPayloadPrefix).
-				Count(&count).Error; err != nil {
-				t.Fatalf("count: %v", err)
-			}
-			if count != tc.want {
-				t.Errorf("matched %d rows, want %d", count, tc.want)
-			}
-		})
-	}
 }

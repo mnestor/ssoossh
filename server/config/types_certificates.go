@@ -387,6 +387,12 @@ type CertOptionsConsole struct {
 	// (https://mnestor.github.io/ssoossh/project/decisions/). Behind a reverse
 	// proxy this is only meaningful with http.trusted_proxies set; without it
 	// every request carries the proxy's address.
+	//
+	// Every refusal writes one cert.request_refused_network audit event with
+	// the observed source address
+	// (https://mnestor.github.io/ssoossh/operations/audit-log/). The caller
+	// needs no session to cause one, so keep http.rate_limit on when the
+	// server is reachable from the internet.
 	AllowedNetworks []string `mapstructure:"allowed_networks" default:"[]"`
 
 	// ClientTimeout is this type's whole budget: the longest a console
