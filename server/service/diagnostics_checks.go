@@ -120,11 +120,16 @@ func (s *DiagnosticsService) checkProxyTrust(req DiagnosticsRequest) DiagnosticC
 
 // checkHeaderHygiene inspects the security headers actually returned by the
 // public URL. Because the probe traverses the edge, this catches an edge that
-// strips, weakens, or overrides the headers the app itself sets — including
-// the legacy X-XSS-Protection header, which the app does not set at all, so
-// any value seen there came from the edge.
+// strips, weakens, or overrides the headers the app itself sets. Values are
+// graded against what the app emits (see hygieneFindings), not only checked
+// for presence. The legacy X-XSS-Protection header is one the app does not set
+// at all, so any value seen there came from the edge. Without a complete set
+// of the app's values there is nothing to grade against, so the check skips.
 func (s *DiagnosticsService) checkHeaderHygiene(p edgeProbe) DiagnosticCheck {
 	c := DiagnosticCheck{ID: "header_hygiene", Title: "Security header hygiene"}
+	if !s.app.complete() {
+		return skipped(c, "the server did not supply the security header values its middleware sends, so there is nothing to grade the public URL against")
+	}
 	if !p.reached {
 		return skipped(c, "the public URL could not be reached")
 	}
@@ -132,45 +137,15 @@ func (s *DiagnosticsService) checkHeaderHygiene(p edgeProbe) DiagnosticCheck {
 		return skipped(c, "/healthz on the public URL was not answered by ssoosshd, so there is no app response to read")
 	}
 
-	worst := DiagnosticOK
-	bump := func(to DiagnosticStatus) {
-		if severity(to) > severity(worst) {
-			worst = to
-		}
-	}
-
-	h := p.headers
-	if v := h.Get("Strict-Transport-Security"); v == "" {
-		c.Findings = append(c.Findings, "Strict-Transport-Security (HSTS) is missing.")
-		bump(DiagnosticWarn)
-	}
-	if v := h.Get("X-Content-Type-Options"); !strings.EqualFold(v, "nosniff") {
-		c.Findings = append(c.Findings, "X-Content-Type-Options is not \"nosniff\".")
-		bump(DiagnosticWarn)
-	}
-	if h.Get("X-Frame-Options") == "" && !strings.Contains(strings.ToLower(h.Get("Content-Security-Policy")), "frame-ancestors") {
-		c.Findings = append(c.Findings, "Neither X-Frame-Options nor a CSP frame-ancestors directive is present.")
-		bump(DiagnosticWarn)
-	}
-	if h.Get("Referrer-Policy") == "" {
-		c.Findings = append(c.Findings, "Referrer-Policy is missing.")
-		bump(DiagnosticWarn)
-	}
-	// The app never sets X-XSS-Protection. Any value here is the edge's, and
-	// the legacy filter is best disabled (0) rather than enabled, per current
-	// guidance, since the CSP is the real control.
-	if v := h.Get("X-Xss-Protection"); v != "" && !strings.HasPrefix(strings.TrimSpace(v), "0") {
-		c.Findings = append(c.Findings, fmt.Sprintf("X-XSS-Protection is %q. The app does not set this, so an edge added it; the legacy filter should be disabled (0) or removed.", v))
-		bump(DiagnosticWarn)
-	}
-
-	c.Status = worst
-	if worst == DiagnosticOK {
+	c.Findings = s.app.hygieneFindings(p.headers, s.cfg.HTTP.Hsts)
+	if len(c.Findings) == 0 {
+		c.Status = DiagnosticOK
 		c.Summary = "The public URL returns the expected security headers."
 		return c
 	}
+	c.Status = DiagnosticWarn
 	c.Summary = "The public URL is missing or weakening security headers the app sets."
-	c.Remediation = "The app sets HSTS, X-Content-Type-Options, X-Frame-Options and Referrer-Policy itself. Where the edge shows something different it is overriding them; stop the edge rewriting these headers, and drop any X-XSS-Protection it adds."
+	c.Remediation = "The app sets HSTS, X-Content-Type-Options, X-Frame-Options, Content-Security-Policy and Referrer-Policy itself. Where the edge shows a different value, it is overriding them; stop the edge rewriting these headers, and drop any X-XSS-Protection it adds."
 	return c
 }
 
@@ -222,20 +197,6 @@ func skipped(c DiagnosticCheck, why string) DiagnosticCheck {
 	c.Status = DiagnosticSkipped
 	c.Summary = "Skipped: " + why + "."
 	return c
-}
-
-// severity orders the statuses so a check can keep the worst one it saw.
-func severity(s DiagnosticStatus) int {
-	switch s {
-	case DiagnosticCritical:
-		return 3
-	case DiagnosticWarn:
-		return 2
-	case DiagnosticSkipped:
-		return 1
-	default:
-		return 0
-	}
 }
 
 // overBroadProxies returns the trusted-proxy entries that trust every
