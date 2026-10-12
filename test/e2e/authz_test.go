@@ -261,7 +261,8 @@ func TestApprove_EmptyGroupNeverAuthorizes(t *testing.T) {
 // TestApprove_RequestDenialBlocksCertificate denies a request through the
 // API and checks the whole outcome: the event stream reports a denial,
 // the client exits with an error and loads nothing, and a later approval
-// of the same request, even by the person who denied it, issues nothing.
+// or second denial of the same request, even by the person who denied it,
+// is refused with 409 Conflict and issues nothing.
 func TestApprove_RequestDenialBlocksCertificate(t *testing.T) {
 	f := newFixture(t)
 
@@ -280,8 +281,12 @@ func TestApprove_RequestDenialBlocksCertificate(t *testing.T) {
 	assertTerminalEvent(t, f.Server.BaseURL, requestID, "denied")
 
 	got := apiCall(t, client, http.MethodPost, f.Server.BaseURL+"/api/certs/requests/"+requestID+"/approve", "")
-	if got == http.StatusOK {
-		t.Errorf("approving a denied request answered %d, want a refusal", got)
+	if got != http.StatusConflict {
+		t.Errorf("approving a denied request answered %d, want %d", got, http.StatusConflict)
+	}
+	got = apiCall(t, client, http.MethodPost, f.Server.BaseURL+"/api/certs/requests/"+requestID+"/deny", "")
+	if got != http.StatusConflict {
+		t.Errorf("denying a denied request again answered %d, want %d", got, http.StatusConflict)
 	}
 	assertTerminalEvent(t, f.Server.BaseURL, requestID, "denied")
 
@@ -294,7 +299,8 @@ func TestApprove_RequestDenialBlocksCertificate(t *testing.T) {
 // a server with a three-second client budget (an approval window of 2.4s)
 // and checks the expiry end to end: the event stream reports "expired",
 // the client exits on its own with an error saying so and loads nothing,
-// and approving afterwards issues nothing.
+// and approving or denying afterwards is refused with 410 Gone and issues
+// nothing.
 func TestApprove_ExpiredRequestReturnsTimeout(t *testing.T) {
 	f := newFixture(t, func(o *harness.ServerOptions) { o.ClientTimeout = "3s" })
 
@@ -313,8 +319,12 @@ func TestApprove_ExpiredRequestReturnsTimeout(t *testing.T) {
 	client := newBrowserClient(t)
 	authenticate(t, client, f.Server.BaseURL, "/approve/"+requestID, "alice", nil)
 	got := apiCall(t, client, http.MethodPost, f.Server.BaseURL+"/api/certs/requests/"+requestID+"/approve", "")
-	if got == http.StatusOK {
-		t.Errorf("approving an expired request answered %d, want a refusal", got)
+	if got != http.StatusGone {
+		t.Errorf("approving an expired request answered %d, want %d", got, http.StatusGone)
+	}
+	got = apiCall(t, client, http.MethodPost, f.Server.BaseURL+"/api/certs/requests/"+requestID+"/deny", "")
+	if got != http.StatusGone {
+		t.Errorf("denying an expired request answered %d, want %d", got, http.StatusGone)
 	}
 	assertTerminalEvent(t, f.Server.BaseURL, requestID, "expired")
 
