@@ -290,3 +290,25 @@ func (e *UserStatusCheckError) HTTPStatusCode() int { return http.StatusServiceU
 
 // ErrorCode reports the machine-readable error code.
 func (e *UserStatusCheckError) ErrorCode() string { return apitypes.ErrorCodeUnavailable }
+
+// ShuttingDownError indicates a long-lived wait ended because this server
+// instance is shutting down, not because the thing being waited on changed.
+// Its message bus subscription was closed underneath it, so it can no longer
+// be woken and has nothing to report.
+//
+// Rendered as 503 rather than 500 or 410: the request is still pending
+// server-side, and a 5xx is inside the client's SSE retry conditions (see
+// internal/api/sse.go), so the client reconnects, reaching a live instance
+// where there is one, exactly as it does after a dropped stream.
+type ShuttingDownError struct{}
+
+// Error implements the error interface.
+func (e *ShuttingDownError) Error() string {
+	return "the server is shutting down; reconnect to keep waiting"
+}
+
+// HTTPStatusCode reports the HTTP status this error should be rendered as.
+func (e *ShuttingDownError) HTTPStatusCode() int { return http.StatusServiceUnavailable }
+
+// ErrorCode reports the machine-readable error code.
+func (e *ShuttingDownError) ErrorCode() string { return apitypes.ErrorCodeUnavailable }

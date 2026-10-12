@@ -231,7 +231,10 @@ func (s *AuditService) prepare(event AuditEvent) (*model.AuditEvent, AuditEvent,
 		CreatedAt:    event.OccurredAt,
 		ActorUserID:  subjectUserID(event.Actor),
 		TargetUserID: subjectUserID(event.Target),
-		Payload:      string(payload),
+		// Action is encoded into payload just above from this same event,
+		// which is what keeps the indexed copy equal to the record.
+		Action:  string(event.Action),
+		Payload: string(payload),
 	}
 	return row, event, nil
 }

@@ -8,8 +8,8 @@ package service
 // would emit them too.
 
 // AuditAction is a namespaced action name in the audit taxonomy. They are
-// strings inside the payload rather than a database enum, so the set grows
-// without a migration.
+// plain strings, in the payload and in its indexed copy in the action
+// column, rather than a database enum, so the set grows without a migration.
 type AuditAction string
 
 // The taxonomy. Namespaced by subject area: authentication, certificates,
