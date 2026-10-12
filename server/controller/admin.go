@@ -1561,8 +1561,9 @@ func configuredOIDCFields(fields config.OAuthFields) map[string]bool {
 }
 
 // notificationPreferenceRows renders one user's notification standing: every
-// registered kind, in registry order, with the stored choice applied where
-// there is one and the kind's default where there is not.
+// registered kind a user can choose, in registry order, with the stored
+// choice applied where there is one and the kind's default where there is
+// not.
 //
 // Reporting the whole catalogue rather than the stored rows is what makes
 // the section answer the question it is read for. Stored rows alone meant a
@@ -1582,6 +1583,11 @@ func notificationPreferenceRows(stored []model.NotificationPreference) []webtype
 	definitions := notify.Definitions()
 	out := make([]webtypes.AdminUserNotificationPreference, 0, len(definitions)+len(stored))
 	for _, def := range definitions {
+		if def.AlwaysSent {
+			// Not a preference: nobody can turn it off, so listing it
+			// beside the choices would report a setting that does not exist.
+			continue
+		}
 		pref := webtypes.AdminUserNotificationPreference{
 			Kind:        string(def.Kind),
 			Title:       def.Title,

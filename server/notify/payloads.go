@@ -304,3 +304,37 @@ type CertificateIssued struct {
 
 	ServerURL string `json:"server_url"`
 }
+
+// AdminAutoDisabled is the payload for KindAdminAutoDisabled: why the
+// directory sync disabled an admin's account, when, and what to look at in
+// the directory before asking for it back.
+//
+// It deliberately carries no group names. Who counts as an admin is decided
+// from the login the account last made, and the message is about the
+// account, not about the role that made it worth telling.
+type AdminAutoDisabled struct {
+	Reader
+
+	Username   string    `json:"username"`
+	DisabledAt time.Time `json:"disabled_at"`
+
+	// MissingSince opens the window the threshold measured, and MissingFor
+	// is how long it had run; DisableAfter is the threshold itself. All
+	// three, so the reader can tell a long-gone entry from one that only
+	// just crossed the line.
+	MissingSince time.Time     `json:"missing_since"`
+	MissingFor   time.Duration `json:"missing_for"`
+	DisableAfter time.Duration `json:"disable_after"`
+
+	// DirectoryDN and BaseDN are where to look: the entry's last known
+	// location and the subtree the sync searches.
+	DirectoryDN string `json:"directory_dn,omitempty"`
+	BaseDN      string `json:"base_dn,omitempty"`
+
+	// Reenable says whether the entry coming back is enough on its own, or
+	// whether a person has to clear the disable.
+	Reenable bool `json:"reenable,omitempty"`
+
+	SupportEmail string `json:"support_email,omitempty"`
+	ServerURL    string `json:"server_url"`
+}

@@ -523,6 +523,12 @@ type AuditConfig struct {
 	// history, not the deployment's: the shipped log is the archive, so a
 	// short window here loses nothing that matters. Zero disables
 	// age-based pruning, leaving MaxRows as the only bound.
+	//
+	// One thing does read the table back: the directory sync decides who
+	// to email when it disables an admin from the logins recorded here
+	// over the last 60 days. A retention below that, or a MaxRows that
+	// trims those logins, shortens that window, and the sync logs the
+	// window it actually had.
 	Retention time.Duration `mapstructure:"retention,string" default:"1440h"`
 
 	// MaxRows caps the table as a safety valve behind Retention, so a burst

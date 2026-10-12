@@ -653,6 +653,8 @@ Default:
 How long a directory entry may stay missing before the user is auto\-disabled, measured from the first *successful* search that found no entry. A directory outage is never a miss: only a search that succeeds and finds nothing starts or continues the window. Zero disables auto\-disable entirely.
 .IP
 A duration rather than a count of passes, because a count was not a measure of time. Scheduled jobs are not leader\-elected, so every instance runs its own sync and three replicas produced three increments per interval; an operator\-triggered sync added more. The same absence now means the same thing however many passes observe it.
+.IP
+Admins are disabled like anyone else. One whose most recent login in the last 60 days carried the admin group is emailed when the sync disables them; that email is always sent and cannot be turned off.
 Default:
 .BR 45m .
 .TP
@@ -750,6 +752,8 @@ The stream has two sinks and they are not equals. The Logging destination below 
 .TP
 .BI audit.retention: " duration"
 How long an event stays in the database table. The scheduled sweep deletes rows older than this. It bounds the UI's history, not the deployment's: the shipped log is the archive, so a short window here loses nothing that matters. Zero disables age\-based pruning, leaving max_rows as the only bound.
+.IP
+One thing does read the table back: the directory sync decides who to email when it disables an admin from the logins recorded here over the last 60 days. A retention below that, or a max_rows that trims those logins, shortens that window, and the sync logs the window it actually had.
 Default:
 .BR 1440h .
 .TP

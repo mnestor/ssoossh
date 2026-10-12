@@ -207,12 +207,15 @@ func (s *NotificationService) publish(ctx context.Context, kind notify.Kind, bui
 	}
 }
 
-// Preferences returns every registered kind with this user's answer,
-// in registry order so the page's list is stable between loads.
+// Preferences returns every registered kind a user can choose, with this
+// user's answer, in registry order so the page's list is stable between
+// loads.
 //
 // Kinds the user has never answered take their registered default, and
 // stored rows for kinds this build does not register are ignored — see
-// model.NotificationPreference for why both are on purpose.
+// model.NotificationPreference for why both are on purpose. Always-sent
+// kinds are left out: they are not a choice, so the page offers no toggle
+// for them.
 func (s *NotificationService) Preferences(ctx context.Context, userID string) ([]KindPreference, error) {
 	stored, err := s.storedPreferences(ctx, userID)
 	if err != nil {
@@ -222,6 +225,9 @@ func (s *NotificationService) Preferences(ctx context.Context, userID string) ([
 	definitions := notify.Definitions()
 	prefs := make([]KindPreference, 0, len(definitions))
 	for _, def := range definitions {
+		if def.AlwaysSent {
+			continue
+		}
 		enabled := def.DefaultEnabled
 		if choice, ok := stored[def.Kind]; ok {
 			enabled = choice
@@ -245,12 +251,21 @@ func (s *NotificationService) Preferences(ctx context.Context, userID string) ([
 // choices the user did not make, and a rejected one must change nothing.
 func (s *NotificationService) SetPreferences(ctx context.Context, userID string, updates map[notify.Kind]bool) error {
 	for kind := range updates {
-		if _, ok := notify.Lookup(kind); !ok {
+		def, ok := notify.Lookup(kind)
+		if !ok {
 			// The caller sent something this build does not know about —
 			// a typo, or a page from a newer version. Their input, not a
 			// server fault, so it renders as a 400 rather than a 500.
 			return &errorresponses.InvalidRequestError{
 				Reason: fmt.Sprintf("unknown notification kind %q", kind),
+			}
+		}
+		if def.AlwaysSent {
+			// Not a preference, so there is nothing to store: a row here
+			// would be a choice delivery ignores, shown back as if it
+			// counted.
+			return &errorresponses.InvalidRequestError{
+				Reason: fmt.Sprintf("the %q notification is always sent and cannot be turned off", kind),
 			}
 		}
 	}
@@ -370,8 +385,12 @@ func (s *NotificationService) storedPreferences(ctx context.Context, userID stri
 }
 
 // enabledFor reports whether userID wants kind, falling back to the
-// registered default when they have never said.
+// registered default when they have never said. An always-sent kind is
+// wanted whatever is stored, without reading anything.
 func (s *NotificationService) enabledFor(ctx context.Context, userID string, kind notify.Kind) (bool, error) {
+	if notify.AlwaysSent(kind) {
+		return true, nil
+	}
 	var pref model.NotificationPreference
 	err := s.db.WithContext(ctx).
 		Where("user_id = ? AND kind = ?", userID, string(kind)).

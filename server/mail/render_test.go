@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -108,6 +109,19 @@ func samplePayload(t *testing.T, kind notify.Kind) any {
 			ForceCommand:         "/usr/bin/true",
 			SourceAddresses:      []string{"198.51.100.0/24"},
 			ServerURL:            "https://ssoossh.example.com",
+		}
+	case notify.KindAdminAutoDisabled:
+		return &notify.AdminAutoDisabled{
+			Username:     "alice",
+			DisabledAt:   time.Now(),
+			MissingSince: time.Now().Add(-50 * time.Minute),
+			MissingFor:   50 * time.Minute,
+			DisableAfter: 45 * time.Minute,
+			DirectoryDN:  "uid=alice,ou=people,dc=example,dc=com",
+			BaseDN:       "ou=people,dc=example,dc=com",
+			Reenable:     true,
+			SupportEmail: "it-help@example.com",
+			ServerURL:    "https://ssoossh.example.com",
 		}
 	default:
 		t.Fatalf("no sample payload for kind %q", kind)
@@ -654,7 +668,8 @@ func TestRender_shouldLeaveTheSetupRecipeToTheTerminal(t *testing.T) {
 }
 
 // The simplified message keeps what the reader needs to recognise the event;
-// the key ID is one of the ids only the advanced one carries, in every kind.
+// the key ID is one of the ids only the advanced one carries, in every kind
+// that has one. A kind about an account rather than a credential has none.
 func TestRender_shouldCarryTheKeyIDOnlyAtTheAdvancedLevel(t *testing.T) {
 	r, err := NewRenderer("", "")
 	if err != nil {
@@ -662,6 +677,9 @@ func TestRender_shouldCarryTheKeyIDOnlyAtTheAdvancedLevel(t *testing.T) {
 	}
 
 	for _, def := range notify.Definitions() {
+		if !slices.ContainsFunc(def.Fields, func(f notify.Field) bool { return f.Name == "KeyID" }) {
+			continue
+		}
 		for _, tc := range []struct {
 			advanced bool
 			want     bool
@@ -757,5 +775,87 @@ func TestNewRenderer_shouldFailOnAnUnknownFieldInsideTheAdvancedBlock(t *testing
 
 	if _, err := NewRenderer(dir, ""); err == nil {
 		t.Fatal("NewRenderer accepted an override with a typo inside the advanced block")
+	}
+}
+
+// The admin auto-disable email has to answer what happened, when, who can
+// undo it, and what to check, at the simplified level too; the advanced
+// level adds the directory coordinates and nothing below it may carry them.
+func TestRender_shouldExplainAnAdminAutoDisableAtEachLevel(t *testing.T) {
+	r, err := NewRenderer("", "")
+	if err != nil {
+		t.Fatalf("NewRenderer: %v", err)
+	}
+
+	tests := []struct {
+		name     string
+		advanced bool
+		present  []string
+		absent   []string
+	}{
+		{
+			name:     "should explain the disable and what to check when the reader is simplified",
+			advanced: false,
+			present:  []string{"alice", "disabled automatically", "SOC", "re-enable", "Check in the directory", "it-help@example.com", "cannot be turned off"},
+			absent:   []string{"uid=alice,ou=people,dc=example,dc=com", "ldap.sync.disable_after"},
+		},
+		{
+			name:     "should add the directory coordinates when the reader is advanced",
+			advanced: true,
+			present:  []string{"uid=alice,ou=people,dc=example,dc=com", "ou=people,dc=example,dc=com", "ldap.sync.disable_after", "ldap_sync"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := r.Render(notify.KindAdminAutoDisabled, samplePayload(t, notify.KindAdminAutoDisabled), tc.advanced)
+			if err != nil {
+				t.Fatalf("Render: %v", err)
+			}
+			for _, want := range tc.present {
+				if !strings.Contains(out.Text, want) {
+					t.Errorf("text body does not carry %q", want)
+				}
+				if !strings.Contains(out.HTML, want) {
+					t.Errorf("html body does not carry %q", want)
+				}
+			}
+			for _, unwanted := range tc.absent {
+				if strings.Contains(out.Text, unwanted) || strings.Contains(out.HTML, unwanted) {
+					t.Errorf("message carries %q below the advanced level", unwanted)
+				}
+			}
+		})
+	}
+}
+
+// Whether the entry coming back is enough decides what the reader does
+// next, so the message must say which applies.
+func TestRender_shouldSayWhetherTheSyncClearsAnAdminAutoDisable(t *testing.T) {
+	r, err := NewRenderer("", "")
+	if err != nil {
+		t.Fatalf("NewRenderer: %v", err)
+	}
+
+	tests := []struct {
+		name     string
+		reenable bool
+		want     string
+	}{
+		{name: "should promise the sync clears it when reenable is on", reenable: true, want: "clears this disable by itself"},
+		{name: "should say a person must clear it when reenable is off", reenable: false, want: "a person has to"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			payload := samplePayload(t, notify.KindAdminAutoDisabled).(*notify.AdminAutoDisabled)
+			payload.Reenable = tc.reenable
+
+			out, err := r.Render(notify.KindAdminAutoDisabled, payload, false)
+			if err != nil {
+				t.Fatalf("Render: %v", err)
+			}
+			if !strings.Contains(out.Text, tc.want) || !strings.Contains(out.HTML, tc.want) {
+				t.Errorf("message does not say %q", tc.want)
+			}
+		})
 	}
 }

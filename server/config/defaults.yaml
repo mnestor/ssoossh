@@ -792,6 +792,10 @@ ldap:
     # runs its own sync and three replicas produced three increments per
     # interval; an operator-triggered sync added more. The same absence now
     # means the same thing however many passes observe it.
+    #
+    # Admins are disabled like anyone else. One whose most recent login in the
+    # last 60 days carried the admin group is emailed when the sync disables
+    # them; that email is always sent and cannot be turned off.
     disable_after: 45m
 
     # Lets the sync clear its own disables when a directory entry reappears. It
@@ -924,6 +928,12 @@ audit:
   # the shipped log is the archive, so a short window here loses nothing that
   # matters. Zero disables age-based pruning, leaving max_rows as the only
   # bound.
+  #
+  # One thing does read the table back: the directory sync decides who to
+  # email when it disables an admin from the logins recorded here over the
+  # last 60 days. A retention below that, or a max_rows that trims those
+  # logins, shortens that window, and the sync logs the window it actually
+  # had.
   retention: 1440h
 
   # Caps the table as a safety valve behind Retention, so a burst of events

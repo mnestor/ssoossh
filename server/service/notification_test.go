@@ -172,6 +172,126 @@ func (f *notificationFixture) assertNoMessages(t *testing.T) {
 	}
 }
 
+// optionalDefinitions is every registered kind a user can choose: the ones
+// the preferences page lists.
+func optionalDefinitions() []notify.Definition {
+	var out []notify.Definition
+	for _, def := range notify.Definitions() {
+		if !def.AlwaysSent {
+			out = append(out, def)
+		}
+	}
+	return out
+}
+
+// sampleAdminAutoDisabled is a payload with enough filled in to recognize
+// the resulting message at either detail level.
+func sampleAdminAutoDisabled() *notify.AdminAutoDisabled {
+	return &notify.AdminAutoDisabled{
+		Username:     "alice",
+		DisabledAt:   time.Now(),
+		MissingSince: time.Now().Add(-time.Hour),
+		MissingFor:   time.Hour,
+		DisableAfter: 45 * time.Minute,
+		DirectoryDN:  "uid=alice,ou=people,dc=test",
+		BaseDN:       "ou=people,dc=test",
+	}
+}
+
+// The admin auto-disable email is not a preference: it reaches the admin
+// even when they have turned every notification kind off, and even when a
+// row claiming they turned this one off exists.
+func TestNotificationHandler_shouldDeliverAnAlwaysSentKindWhenEveryKindIsOff(t *testing.T) {
+	f := newNotificationFixture(t)
+
+	off := map[notify.Kind]bool{}
+	for _, def := range optionalDefinitions() {
+		off[def.Kind] = false
+	}
+	if err := f.svc.SetPreferences(context.Background(), f.user.ID, off); err != nil {
+		t.Fatalf("SetPreferences: %v", err)
+	}
+	// SetPreferences refuses this kind, so a row for it can only come from
+	// outside the product; delivery must ignore it all the same.
+	if err := f.db.Create(&model.NotificationPreference{
+		ID: uuid.NewString(), UserID: f.user.ID, Kind: string(notify.KindAdminAutoDisabled),
+		Enabled: false, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}).Error; err != nil {
+		t.Fatalf("store a preference row for the always-sent kind: %v", err)
+	}
+
+	f.svc.Notify(context.Background(), notify.KindAdminAutoDisabled, f.user.ID, sampleAdminAutoDisabled())
+
+	msgs := f.waitForMessages(t, 1)
+	if msgs[0].To != f.user.Email {
+		t.Errorf("delivered to %q, want %q", msgs[0].To, f.user.Email)
+	}
+}
+
+// The always-sent email still reads at the recipient's own email detail
+// level: the Details section only for an advanced reader.
+func TestNotificationHandler_shouldRenderAnAlwaysSentKindAtTheReadersLevel(t *testing.T) {
+	tests := []struct {
+		name        string
+		level       model.DetailLevel
+		wantDetails bool
+	}{
+		{name: "should add the details when the reader is advanced", level: model.DetailLevelAdvanced, wantDetails: true},
+		{name: "should leave the details out when the reader is simplified", level: model.DetailLevelSimplified, wantDetails: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newNotificationFixture(t)
+			if err := f.db.Model(&model.User{}).Where("id = ?", f.user.ID).
+				Update("email_detail_level", tc.level).Error; err != nil {
+				t.Fatalf("set the email detail level: %v", err)
+			}
+
+			f.svc.Notify(context.Background(), notify.KindAdminAutoDisabled, f.user.ID, sampleAdminAutoDisabled())
+
+			msgs := f.waitForMessages(t, 1)
+			if got := strings.Contains(msgs[0].Text, "uid=alice,ou=people,dc=test"); got != tc.wantDetails {
+				t.Errorf("message carries the directory DN = %v, want %v", got, tc.wantDetails)
+			}
+		})
+	}
+}
+
+// The preferences page lists what Preferences returns, so leaving the kind
+// out here is what keeps the page from offering a toggle for it.
+func TestPreferences_shouldNotOfferAnAlwaysSentKind(t *testing.T) {
+	f := newNotificationFixture(t)
+
+	prefs, err := f.svc.Preferences(context.Background(), f.user.ID)
+	if err != nil {
+		t.Fatalf("Preferences: %v", err)
+	}
+	for _, pref := range prefs {
+		if notify.AlwaysSent(pref.Kind) {
+			t.Errorf("Preferences offers %q, which cannot be turned off", pref.Kind)
+		}
+	}
+}
+
+// A request to turn the always-sent kind off is refused and stores nothing,
+// so no row can claim a choice delivery ignores.
+func TestSetPreferences_shouldRefuseToTurnOffAnAlwaysSentKind(t *testing.T) {
+	f := newNotificationFixture(t)
+
+	err := f.svc.SetPreferences(context.Background(), f.user.ID, map[notify.Kind]bool{notify.KindAdminAutoDisabled: false})
+	if err == nil {
+		t.Fatal("SetPreferences accepted a choice for an always-sent kind")
+	}
+
+	var count int64
+	if err := f.db.Model(&model.NotificationPreference{}).Count(&count).Error; err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("stored %d rows for a refused update, want 0", count)
+	}
+}
+
 func TestNotify_shouldDeliverToTheUsersAddress(t *testing.T) {
 	f := newNotificationFixture(t)
 
@@ -361,10 +481,11 @@ func TestPreferences_shouldReturnTheRegisteredDefaultsForANewUser(t *testing.T) 
 		t.Fatalf("Preferences: %v", err)
 	}
 
-	if len(prefs) != len(notify.Definitions()) {
-		t.Fatalf("got %d preferences, want one per registered kind (%d)", len(prefs), len(notify.Definitions()))
+	optional := optionalDefinitions()
+	if len(prefs) != len(optional) {
+		t.Fatalf("got %d preferences, want one per registered optional kind (%d)", len(prefs), len(optional))
 	}
-	for i, def := range notify.Definitions() {
+	for i, def := range optional {
 		if prefs[i].Kind != def.Kind {
 			t.Errorf("preference %d is %q, want %q (registry order)", i, prefs[i].Kind, def.Kind)
 		}
@@ -522,8 +643,8 @@ func TestPreferencesForIdentity_shouldResolveTheUserBySubject(t *testing.T) {
 	if settings.Address != f.user.Email {
 		t.Errorf("Address = %q, want %q", settings.Address, f.user.Email)
 	}
-	if len(settings.Kinds) != len(notify.Definitions()) {
-		t.Errorf("got %d kinds, want %d", len(settings.Kinds), len(notify.Definitions()))
+	if len(settings.Kinds) != len(optionalDefinitions()) {
+		t.Errorf("got %d kinds, want %d", len(settings.Kinds), len(optionalDefinitions()))
 	}
 	if !settings.MailEnabled {
 		t.Error("MailEnabled is false, want it to mirror the server configuration")

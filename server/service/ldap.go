@@ -51,6 +51,10 @@ type LDAPService struct {
 
 	auditor *AuditService
 
+	// notifier emails an admin the sync has disabled. Never nil: it
+	// discards until bootstrap attaches the real one (see SetNotifier).
+	notifier Notifier
+
 	// running is the single-flight guard on Sync. One pass at a time per
 	// instance, so an operator pressing the button repeatedly cannot stack
 	// passes over the same users.
@@ -86,6 +90,7 @@ func NewLDAPService(c *config.Config, db *gorm.DB) (*LDAPService, error) {
 		dial:           dialLDAP,
 		log:            logging.Tagged(logging.TagLDAP),
 		groupAllowlist: groupAllowlist(c),
+		notifier:       discardNotifications{},
 	}
 
 	var err error
