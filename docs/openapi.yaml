@@ -3638,7 +3638,8 @@ paths:
   /api/admin/users/{id}/enable:
     patch:
       description: |-
-        Re-enables a previously disabled user. The operation is idempotent.
+        Re-enables a previously disabled user, whichever role or
+        directory sync disabled it. The operation is idempotent.
         Note: service enrollments that have already expired are not
         un-expired; the user must request new enrollments.
       parameters:
@@ -3675,7 +3676,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
-          description: Not authorized as admin
+          description: Not authorized as admin or SOC
         "404":
           content:
             application/json:
@@ -3684,7 +3685,7 @@ paths:
           description: User not found
       security:
       - sessionCookie: []
-      summary: Re-enable a user (admin-only)
+      summary: Re-enable a user (admin or SOC)
       tags:
       - admin
   /api/branding:
