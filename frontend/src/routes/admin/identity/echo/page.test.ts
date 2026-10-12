@@ -51,7 +51,8 @@ const realLocation = Object.getOwnPropertyDescriptor(window, 'location');
 
 beforeEach(() => {
 	window.location.hash = '';
-	// Starting an echo is admin-only; most cases describe what an admin sees.
+	// The page renders only for an admin: the echo layout turns everyone else
+	// away (see layout.test.ts), so the page has no non-admin branch to test.
 	session.user = {
 		username: 'alice',
 		is_admin: true,
@@ -219,30 +220,6 @@ describe('Claims echo page', () => {
 			window.location.hash = '#not-a-payload';
 			render(Page);
 			expect(await screen.findByTestId('echo-read-error')).toBeInTheDocument();
-		});
-	});
-
-	describe('for someone below the admin role', () => {
-		it('should say the echo needs the admin role instead of offering it', () => {
-			session.user = {
-				username: 'sam',
-				is_admin: false,
-				is_soc: true,
-				is_auditor: true
-			} as CurrentUser;
-			render(Page);
-			expect(screen.getByTestId('echo-admin-only')).toBeInTheDocument();
-		});
-
-		it('should not offer the start button', () => {
-			session.user = {
-				username: 'sam',
-				is_admin: false,
-				is_soc: true,
-				is_auditor: true
-			} as CurrentUser;
-			render(Page);
-			expect(screen.queryByTestId('echo-start')).not.toBeInTheDocument();
 		});
 	});
 

@@ -24,17 +24,18 @@ import (
 	"github.com/mnestor/ssoossh/server/webtypes"
 )
 
-// NewAdminController registers SOC-scoped and auditor-scoped routes on
-// group. SOC routes take admin or SOC group membership. Auditor routes
-// require auditor-level access, which admin and SOC membership also satisfy
-// since auditor is a child role of both. No route here is admin-only; the
-// admin-only powers (diagnostics, identity echo, directory admin) live in
-// their own controllers.
+// NewAdminController registers admin-, SOC- and auditor-scoped routes on
+// group. The effective config is admin-only. SOC routes take admin or SOC
+// group membership. Auditor routes require auditor-level access, which
+// admin and SOC membership also satisfy since auditor is a child role of
+// both. The other admin-only powers (diagnostics, identity echo, directory
+// admin) live in their own controllers.
 func NewAdminController(
 	group *gin.RouterGroup,
 	c *config.Config,
 	db *gorm.DB,
 	sessionAuthMiddleware gin.HandlerFunc,
+	adminAuthMiddleware gin.HandlerFunc,
 	socAuthMiddleware gin.HandlerFunc,
 	auditorAuthMiddleware gin.HandlerFunc,
 	csrfMiddleware gin.HandlerFunc,
@@ -42,6 +43,11 @@ func NewAdminController(
 	auditService *service.AuditService,
 ) {
 	a := &adminController{config: c, db: db, enrollmentService: enrollmentService, audit: auditService}
+
+	// Admin route. Viewing the effective config is admin's alone
+	// (SSOOSSH.md), like diagnostics and identity echo.
+	adminGroup := group.Group("/admin", sessionAuthMiddleware, adminAuthMiddleware)
+	adminGroup.GET("/config", a.effectiveConfigHandler)
 
 	// SOC routes (account writes: admin or SOC group). SOC
 	// holds expiring an enrollment and both halves of a user disable:
@@ -55,7 +61,6 @@ func NewAdminController(
 
 	// Auditor routes (read-only operations)
 	auditorGroup := group.Group("/admin", sessionAuthMiddleware, auditorAuthMiddleware)
-	auditorGroup.GET("/config", a.effectiveConfigHandler)
 	auditorGroup.GET("/users", a.listUsersHandler)
 	auditorGroup.GET("/users/:id", a.getUserHandler)
 	auditorGroup.GET("/certificates/history", a.certificateHistoryHandler)
@@ -107,7 +112,7 @@ func (a *adminController) auditActor(g *gin.Context) *service.AuditSubject {
 // the server's effective configuration, grouped into sections, with secrets
 // redacted.
 //
-// @Summary     View effective server configuration (auditor-only)
+// @Summary     View effective server configuration (admin only)
 // @Description Returns every key of the server's effective configuration,
 // @Description grouped by top-level section, with secrets redacted (CA key,
 // @Description HSM PIN, client secret, cookie signing key, database
@@ -118,7 +123,7 @@ func (a *adminController) auditActor(g *gin.Context) *service.AuditSubject {
 // @Produce     json
 // @Success     200 {object} webtypes.EffectiveConfigResponse "Current effective configuration"
 // @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
-// @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as auditor"
+// @Failure     403 {object} openapidoc.ErrorEnvelope "Not an admin"
 // @Security    sessionCookie
 // @Router      /api/admin/config [get]
 func (a *adminController) effectiveConfigHandler(g *gin.Context) {

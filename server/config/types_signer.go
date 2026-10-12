@@ -218,7 +218,7 @@ type SignerConfig struct {
 
 	// resolvedSSHKey is the CA private key PEM after SSHKeyFile has been
 	// read, populated by Validate. Unexported so it cannot arrive from YAML
-	// and cannot be serialized into the auditor-visible effective config --
+	// and cannot be serialized into the admin-visible effective config --
 	// the same reasoning as SMTPConfig.resolvedPassword.
 	resolvedSSHKey string
 

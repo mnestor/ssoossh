@@ -45,8 +45,10 @@ function mockRun(resp: DiagnosticsResponse = report()) {
 	);
 }
 
-/** signedIn puts a user in the session store, admin by default. */
-function signedIn(isAdmin = true) {
+/** signedIn puts an admin in the session store. The page renders only for
+ * an admin: the diagnostics layout turns everyone else away (see
+ * layout.test.ts), so the page itself has no non-admin branch to test. */
+function signedIn() {
 	session.user = {
 		subject: 'sub-alice',
 		username: 'alice',
@@ -58,8 +60,8 @@ function signedIn(isAdmin = true) {
 		approvable_service_accounts: [],
 		user_own_service_accounts: [],
 		extra: {},
-		is_admin: isAdmin,
-		is_soc: isAdmin,
+		is_admin: true,
+		is_soc: true,
 		is_auditor: true,
 		detail_level: 'advanced' as const
 	};
@@ -72,12 +74,6 @@ afterEach(() => {
 });
 
 describe('Diagnostics admin page', () => {
-	it('should tell a non-admin the section is admin-only', () => {
-		signedIn(false);
-		render(Page);
-		expect(screen.getByText('Admin only')).toBeInTheDocument();
-	});
-
 	it('should render each check with its status once run', async () => {
 		signedIn();
 		mockRun();
