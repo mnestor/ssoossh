@@ -18,14 +18,6 @@ import (
 // not logged in for longer is not told, whatever they once held.
 const adminLoginWindow = 60 * 24 * time.Hour
 
-// loginPayloadPrefix matches the stored payload of an auth.login event and
-// nothing else. The action is the payload's first key (AuditEvent declares
-// it first), and the closing quote and comma keep auth.login_denied out. A
-// prefix LIKE reads the same on SQLite and Postgres, where the payload is
-// TEXT on both; TestLoginPayloadPrefix_shouldMatchARecordedLogin fails if
-// the encoding ever moves the action.
-const loginPayloadPrefix = `{"action":"` + string(AuditAuthLogin) + `",%`
-
 // syncAdmins answers, for one sync pass, which users count as admins for
 // the auto-disable email. It is loaded on the first question, so a pass
 // that disables nobody reads nothing, and a pass that disables many reads
@@ -73,7 +65,10 @@ func (s *LDAPService) isSyncAdmin(ctx context.Context, admins *syncAdmins, userI
 // latestLoginGroups returns, per user, the groups their most recent
 // auth.login event at or after since carried. One query for every user,
 // whatever the population: the inner select finds each user's latest login
-// time and the join reads that login's payload.
+// time and the join reads that login's payload. Both sides filter on the
+// action column, which idx_audit_events_action_actor (action,
+// actor_user_id, created_at) answers: the inner select walks one action's
+// actors in order, and the join is an equality lookup on all three.
 //
 // created_at is written in UTC on both backends (see package dbtime), so
 // the SQLite text comparison and MAX agree with Postgres' instants, and
@@ -83,8 +78,8 @@ func (s *LDAPService) isSyncAdmin(ctx context.Context, admins *syncAdmins, userI
 func latestLoginGroups(ctx context.Context, db *gorm.DB, since time.Time) (map[string][]string, error) {
 	latest := db.Model(&model.AuditEvent{}).
 		Select("actor_user_id, MAX(created_at) AS latest_at").
+		Where("action = ?", string(AuditAuthLogin)).
 		Where("actor_user_id IS NOT NULL").
-		Where("payload LIKE ?", loginPayloadPrefix).
 		Where("created_at >= ?", since.UTC()).
 		Group("actor_user_id")
 
@@ -93,7 +88,7 @@ func latestLoginGroups(ctx context.Context, db *gorm.DB, since time.Time) (map[s
 		Table("audit_events AS a").
 		Select("a.id, a.created_at, a.actor_user_id, a.payload").
 		Joins("JOIN (?) AS latest ON latest.actor_user_id = a.actor_user_id AND latest.latest_at = a.created_at", latest).
-		Where("a.payload LIKE ?", loginPayloadPrefix).
+		Where("a.action = ?", string(AuditAuthLogin)).
 		Order("a.id DESC").
 		Find(&rows).Error
 	if err != nil {

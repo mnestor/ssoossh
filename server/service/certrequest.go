@@ -416,6 +416,11 @@ func (s *CertRequestService) CreateRequest(ctx context.Context, p NewCertRequest
 			slog.String("cert_type", string(p.Type)),
 			slog.String("source_ip", p.SourceIP),
 		)
+		// Recorded before the refusal returns, so a SOC reviewer sees every
+		// attempt. Detached from the request's cancellation: a caller that
+		// hangs up straight after sending must not keep its row out of the
+		// table.
+		s.auditRecord(context.WithoutCancel(ctx), refusedNetworkEvent(p))
 		return CreatedRequest{}, &errorresponses.ForbiddenError{
 			Reason: fmt.Sprintf("%s certificate requests are not accepted from this network", p.Type),
 		}
@@ -519,6 +524,30 @@ func (s *CertRequestService) CreateRequest(ctx context.Context, p NewCertRequest
 // caller writing arbitrary volume into the table. Same reasoning as
 // claimUserAgentMaxLen.
 const maxContextFieldLen = 256
+
+// refusedNetworkEvent builds the audit event for a request the type's
+// network gate refused.
+//
+// A system event with no actor: nobody has signed in at this point. The
+// username and hostname are what an unauthenticated caller sent, so they are
+// recorded under claimed_* keys, never as a subject, and bounded the same way
+// the stored context fields are. source_ip is p.SourceIP, which the
+// controller takes from gin's ClientIP: the peer address, or a forwarded
+// address only through http.trusted_proxies. No request header is copied
+// here, so Cookie and Authorization cannot reach the record.
+func refusedNetworkEvent(p NewCertRequestParams) AuditEvent {
+	return AuditEvent{
+		Action: AuditCertRequestRefusedNetwork,
+		System: true,
+		Reason: fmt.Sprintf("the source address is outside cert_options.%s.allowed_networks", p.Type),
+		Detail: map[string]any{
+			"cert_type":        string(p.Type),
+			"source_ip":        p.SourceIP,
+			"claimed_username": truncateContextField(p.Username),
+			"claimed_hostname": truncateContextField(p.Hostname),
+		},
+	}
+}
 
 // truncateContextField bounds one self-reported string. Truncated rather
 // than rejected: a request that fails because a machine has a long hostname
@@ -1805,7 +1834,9 @@ func (s *CertRequestService) Deny(ctx context.Context, requestID string, identit
 
 // Wait blocks until requestID resolves (approved/denied/expired) or ctx is
 // canceled (e.g. the client disconnects), for the events handler in
-// server/controller/certrequests.go to relay to the client.
+// server/controller/certrequests.go to relay to the client. If the wake
+// subscription closes first, because this instance is shutting down, it
+// returns errorresponses.ShuttingDownError so the client reconnects.
 //
 // Safe to call more than once for the same requestID, including after a
 // previous call returned via ctx cancellation — each call re-checks the
@@ -1921,13 +1952,26 @@ func (s *CertRequestService) expiryTimer(req model.CertificateRequest) (<-chan t
 // separate code path is needed for it.
 //
 // It returns the received message so the caller can inspect its payload with
-// requestID in scope, nil when the expiry timer fired or the subscription
-// closed, or ctx.Err() if the context was cancelled.
+// requestID in scope, nil when the expiry timer fired, or ctx.Err() if the
+// context was cancelled.
+//
+// A closed subscription is terminal, not "check again": the channel stays
+// closed, so looping back to it spins Wait through one database read per
+// pass until ctx ends (#139). It closes when the broker shuts down
+// (watermill's Router.Close closes the shared subscriber), so it returns
+// ctx.Err() if the context has also ended, else ShuttingDownError, which the
+// events handler renders as a 503 the client reconnects from.
 func (s *CertRequestService) waitForUpdate(ctx context.Context, messages <-chan *message.Message, expireC <-chan time.Time) (*message.Message, error) {
 	select {
 	case msg, ok := <-messages:
 		if !ok {
-			return nil, nil
+			// select picks at random among ready cases, so a cancelled
+			// context can land here rather than in its own arm. Report the
+			// cancellation then, as the ctx.Done() arm would have.
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			return nil, &errorresponses.ShuttingDownError{}
 		}
 		msg.Ack()
 		return msg, nil

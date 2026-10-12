@@ -136,6 +136,7 @@ func TestDisableUserHandler_ShouldAuditRefusedSelfDisable(t *testing.T) {
 		{name: "should snapshot the target's username", got: usernameOf(event.Target), want: "self"},
 		{name: "should record the refusal reason", got: event.Reason, want: "an operator cannot disable their own account"},
 		{name: "should record the source address the server observed", got: event.Detail["source_ip"], want: "198.51.100.7"},
+		{name: "should index the source address the server observed", got: row.SourceIP, want: "198.51.100.7"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

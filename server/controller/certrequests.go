@@ -495,7 +495,8 @@ func (cr *certRequestController) resolveCodeHandler(g *gin.Context) {
 // error response via ErrorHandlerMiddleware instead of needing to be
 // encoded as an SSE event after the fact. Safe to hit repeatedly for the
 // same :id — e.g. a client reconnecting after a dropped connection — since
-// Wait itself handles that.
+// Wait itself handles that. A server shutting down mid-wait ends the call
+// with a 503, which the client treats like a dropped stream and reconnects.
 //
 // @Summary     Wait for a request's outcome (SSE)
 // @Description A real `text/event-stream`, separate from the creating POST because an
@@ -517,6 +518,7 @@ func (cr *certRequestController) resolveCodeHandler(g *gin.Context) {
 // @Success     200 {string} string "The stream, closed after one terminal event"
 // @Failure     404 {object} openapidoc.ErrorEnvelope "No such request"
 // @Failure     410 {object} openapidoc.ErrorEnvelope "The certificate was issued but is no longer available. They are never persisted, so a client that missed delivery must re-request."
+// @Failure     503 {object} openapidoc.ErrorEnvelope "This instance is shutting down. The request is still pending: reconnect."
 // @Router      /api/certs/requests/{id}/events [get]
 func (cr *certRequestController) eventsHandler(g *gin.Context) {
 	outcome, err := cr.certRequestService.Wait(g.Request.Context(), g.Param("id"))
