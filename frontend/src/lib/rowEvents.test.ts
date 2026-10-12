@@ -19,7 +19,11 @@ describe('certificateEvent', () => {
 	// reported, and never echoes free text.
 	it.each([
 		{ service: 'sudo', want: 'sudo (reported)' },
+		{ service: 'sudo-i', want: 'sudo (reported)' },
 		{ service: 'su', want: 'su (reported)' },
+		{ service: 'su-l', want: 'su (reported)' },
+		{ service: 'sudoers', want: 'PAM login' },
+		{ service: 'sum', want: 'PAM login' },
 		{ service: 'sshd', want: 'SSH login (reported)' },
 		{ service: 'login', want: 'login (reported)' },
 		{ service: '', want: 'PAM login' },

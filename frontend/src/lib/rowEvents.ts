@@ -1,16 +1,19 @@
 import type { CertificateType } from '#lib/api/types.js';
 
 /**
- * pamServiceWords names the PAM services pam_ssoossh is documented for
- * (sudo, su, a password-less sshd stack, console login), in the words a
- * person would use for what they did.
+ * pamServiceWords names a reported PAM service in the words a person would
+ * use for what they did, for the services pam_ssoossh is documented for
+ * (sudo, su, a password-less sshd stack, console login). A distribution's
+ * variants of sudo and su ("sudo-i" for sudo -i, "su-l" for su -) read as
+ * the command itself. Anything else is undefined, never echoed.
  */
-const pamServiceWords: Record<string, string> = {
-	sudo: 'sudo',
-	su: 'su',
-	sshd: 'SSH login',
-	login: 'login'
-};
+function pamServiceWords(service: string): string | undefined {
+	if (service === 'sudo' || service.startsWith('sudo-')) return 'sudo';
+	if (service === 'su' || service.startsWith('su-')) return 'su';
+	if (service === 'sshd') return 'SSH login';
+	if (service === 'login') return 'login';
+	return undefined;
+}
 
 /**
  * certificateEvent is what a certificate row is a record of, by type: the
@@ -23,7 +26,8 @@ const pamServiceWords: Record<string, string> = {
  * what the person did: ran sudo, logged in at a console.
  *
  * A PAM row names the PAM service the module reported (reportedPamService)
- * when it is one pam_ssoossh is documented for, marked "(reported)": the
+ * when it is one pam_ssoossh is documented for, or a variant of sudo or su,
+ * marked "(reported)": the
  * value comes from an unauthenticated caller and is a claim, never a fact.
  * Any other value, or none, reads "PAM login", so a list row never shows
  * free text a caller chose; the certificate page shows the raw value.
@@ -42,11 +46,7 @@ export function certificateEvent(
 		case 'user':
 			return 'user certificate issued';
 		case 'pam': {
-			// Own keys only: a reported "toString" must not find Object's.
-			const words =
-				reportedPamService && Object.hasOwn(pamServiceWords, reportedPamService)
-					? pamServiceWords[reportedPamService]
-					: undefined;
+			const words = reportedPamService ? pamServiceWords(reportedPamService) : undefined;
 			return words ? `${words} (reported)` : 'PAM login';
 		}
 		case 'console':

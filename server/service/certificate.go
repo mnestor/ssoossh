@@ -189,6 +189,7 @@ func (s *CertificateService) ListForIdentity(ctx context.Context, identity *Iden
 		DecisionServiceAccounts      *string
 		DecisionReportedUsername     *string
 		DecisionReportedHostname     *string
+		DecisionPAMService           *string
 		DecisionDecidedAt            *time.Time
 		RetrievalEnrollmentID        *string
 		RetrievalSourceIP            *string
@@ -221,6 +222,7 @@ func (s *CertificateService) ListForIdentity(ctx context.Context, identity *Iden
 			certificate_request_decisions.service_accounts as decision_service_accounts,
 			certificate_request_decisions.reported_username as decision_reported_username,
 			certificate_request_decisions.reported_hostname as decision_reported_hostname,
+			certificate_request_decisions.pam_service as decision_pam_service,
 			certificate_request_decisions.decided_at as decision_decided_at,
 			enrollment_retrievals.enrollment_id as retrieval_enrollment_id,
 			enrollment_retrievals.source_ip as retrieval_source_ip,
@@ -283,10 +285,12 @@ func (s *CertificateService) ListForIdentity(ctx context.Context, identity *Iden
 				OtherAccounts:        *r.DecisionOtherAccounts,
 				ServiceAccounts:      *r.DecisionServiceAccounts,
 				// The "user@host" the request claimed, which is what a
-				// history row leads with. The rest of the host-context
+				// history row leads with, and the PAM service a PAM row
+				// names (sudo, su, sshd). The rest of the host-context
 				// snapshot stays on the detail query -- see GetByID.
 				ReportedUsername: derefOrEmpty(r.DecisionReportedUsername),
 				ReportedHostname: derefOrEmpty(r.DecisionReportedHostname),
+				PAMService:       derefOrEmpty(r.DecisionPAMService),
 				DecidedAt:        *r.DecisionDecidedAt,
 			}
 		}
@@ -683,9 +687,10 @@ func (s *CertificateService) GetByID(ctx context.Context, id string, identity *I
 			GrantedOptions:    derefOrEmpty(result.DecisionGrantedOptions),
 			// The rest of the host context the request claimed,
 			// snapshotted at decision time. Detail page only, like the
-			// three above: the list reads the reported user and host,
-			// which its rows lead with, and seven more strings on every
-			// row of a history page is payload nobody reads.
+			// three above, except that the list also reads the reported
+			// user, host and PAM service its rows lead with; six more
+			// strings on every row of a history page is payload nobody
+			// reads.
 			ReportedUsername: derefOrEmpty(result.DecisionReportedUsername),
 			ReportedHostname: derefOrEmpty(result.DecisionReportedHostname),
 			PAMService:       derefOrEmpty(result.DecisionPAMService),

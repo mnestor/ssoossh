@@ -527,8 +527,9 @@ text-trimmed`, `role="status"`), `info` (`info-circle`, `bg-surface` on the
 - **CertRow**: one certificate as a clickable row: `TypeBadge`, subject,
   what happened and when, naming the type in words (`certificateEvent`:
   "user certificate issued", "console login", ...; a PAM row names the
-  reported service when it is sudo, su, sshd or login, as "sudo
-  (reported)", and reads "PAM login" otherwise), principals, and the validity
+  reported service when it is sudo, su (or a `sudo-`/`su-` variant such as
+  `sudo-i`), sshd or login, as "sudo (reported)", and reads "PAM login"
+  otherwise), principals, and the validity
   glyph
   (`certificate` in `granted` or `certificate-off` in `ink-muted`), the one
   field that moves with the clock. Stacked below `xl`, aligned columns above.
