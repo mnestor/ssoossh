@@ -4085,6 +4085,10 @@ paths:
       description: |-
         Session-authed and CSRF-guarded. The waiting client is told over its own
         SSE stream.
+
+        Like approve, this honours the request's claim: an unclaimed request is
+        claimed by the caller and then denied, and one claimed by another user
+        gets 403 and stays pending.
       parameters:
       - description: The certificate request's UUID
         in: path

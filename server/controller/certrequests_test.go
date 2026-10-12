@@ -739,6 +739,32 @@ func TestDenyHandler_ShouldRegisterErrorWhenServiceFails(t *testing.T) {
 	}
 }
 
+// TestDenyHandler_ShouldRefuseARequestBoundToAnotherUser runs the service's
+// ownership refusal through the real error handler: a second user denying a
+// request the owner already claimed gets 403 with the binding's reason, as
+// the endpoint's swagger promises.
+func TestDenyHandler_ShouldRefuseARequestBoundToAnotherUser(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	reason := "certificate request belongs to another user"
+	svc := &fakeCertRequestService{denyErr: &errorresponses.ForbiddenError{Reason: reason}}
+
+	r := gin.New()
+	r.Use(middleware.NewErrorHandlerMiddleware().Add())
+	NewCertRequestController(&r.RouterGroup, svc, identityMiddleware(&service.Identity{Subject: "sub-bob"}), passthrough, nil)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/certs/requests/req-1/deny", nil))
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("got status %d, want %d, body: %s", w.Code, http.StatusForbidden, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), reason) {
+		t.Errorf("got body %s, want it to carry %q", w.Body.String(), reason)
+	}
+}
+
 // TestDecisionContext_ShouldCaptureExactlyTheAllowlistedHeaders is the
 // regression test for the deliberate header allowlist on
 // service.DecisionContext: it must capture User-Agent/Accept-Language/

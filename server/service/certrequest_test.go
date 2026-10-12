@@ -500,6 +500,7 @@ func TestCertRequestService_Wait_ShouldUnblockOnDeny(t *testing.T) {
 	// exercises the "already blocked" path rather than racing CreateRequest.
 	time.Sleep(10 * time.Millisecond)
 
+	seedUser(t, svc.db, "sub-approver")
 	if err := svc.Deny(context.Background(), requestID, &Identity{Username: "approver", Subject: "sub-approver"}, DecisionContext{}); err != nil {
 		t.Fatalf("unexpected error denying request: %v", err)
 	}
@@ -528,6 +529,7 @@ func TestCertRequestService_Wait_ShouldReturnCachedOutcomeOnLateReconnect(t *tes
 
 	// Resolve it with nobody blocked in Wait yet — simulates the web UI
 	// approving/denying before the client's SSE connection ever attaches.
+	seedUser(t, svc.db, "sub-approver")
 	if err := svc.Deny(context.Background(), requestID, &Identity{Username: "approver", Subject: "sub-approver"}, DecisionContext{}); err != nil {
 		t.Fatalf("unexpected error denying request: %v", err)
 	}
@@ -573,6 +575,7 @@ func TestCertRequestService_Wait_ShouldResumeAfterContextCancellation(t *testing
 	}()
 
 	time.Sleep(10 * time.Millisecond)
+	seedUser(t, svc.db, "sub-approver")
 	if err := svc.Deny(context.Background(), requestID, &Identity{Username: "approver", Subject: "sub-approver"}, DecisionContext{}); err != nil {
 		t.Fatalf("unexpected error denying request: %v", err)
 	}
@@ -836,6 +839,7 @@ func TestCertRequestService_Wait_ShouldReceiveWakeMessageViaPubSub(t *testing.T)
 	// select before Deny (and therefore notifyWaiter's publish) runs.
 	time.Sleep(50 * time.Millisecond)
 
+	seedUser(t, svc.db, "sub-approver")
 	if err := svc.Deny(context.Background(), requestID, &Identity{Username: "approver", Subject: "sub-approver"}, DecisionContext{}); err != nil {
 		t.Fatalf("unexpected error denying request: %v", err)
 	}
@@ -1774,12 +1778,151 @@ func TestCertRequestService_Deny_ShouldErrorWhenNotPending(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error creating request: %v", err)
 	}
+	seedUser(t, svc.db, "sub-approver")
 	if err := svc.Deny(context.Background(), requestID, &Identity{Username: "approver", Subject: "sub-approver"}, DecisionContext{}); err != nil {
 		t.Fatalf("unexpected error on first deny: %v", err)
 	}
 
 	if err := svc.Deny(context.Background(), requestID, &Identity{Username: "approver", Subject: "sub-approver"}, DecisionContext{}); err == nil {
 		t.Fatal("expected an error denying an already-denied request, got nil")
+	}
+}
+
+// auditActionCount counts the stored audit events carrying action, so a
+// test can assert an event is absent without other actions (the
+// cert.requested row every request writes) getting in the way.
+func auditActionCount(t *testing.T, svc *CertRequestService, action AuditAction) int {
+	t.Helper()
+
+	var rows []model.AuditEvent
+	if err := svc.db.Find(&rows).Error; err != nil {
+		t.Fatalf("failed to load audit events: %v", err)
+	}
+	n := 0
+	for _, row := range rows {
+		if decodePayload(t, row).Action == action {
+			n++
+		}
+	}
+	return n
+}
+
+// TestCertRequestService_Deny_ShouldHonourTheClaim pins that Deny goes
+// through bindRequester like Detail and Approve: the first authenticated
+// action on a request claims it, and a denial from anyone but the claimant
+// is refused with nothing changed (no status flip, no audit row, no wake-up
+// for the waiting client).
+func TestCertRequestService_Deny_ShouldHonourTheClaim(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		// claimedBy is who holds the claim before Deny runs: "" for
+		// nobody, "denier" for the caller itself, "owner" for someone else.
+		claimedBy     string
+		wantForbidden bool
+		wantStatus    model.CertificateRequestStatus
+		wantClaimant  string
+		wantDenied    int
+		wantPublished bool
+	}{
+		{
+			name:          "should claim and deny when the request is unclaimed",
+			claimedBy:     "",
+			wantStatus:    model.CertificateRequestStatusDenied,
+			wantClaimant:  "denier",
+			wantDenied:    1,
+			wantPublished: true,
+		},
+		{
+			name:          "should deny when the denier already holds the claim",
+			claimedBy:     "denier",
+			wantStatus:    model.CertificateRequestStatusDenied,
+			wantClaimant:  "denier",
+			wantDenied:    1,
+			wantPublished: true,
+		},
+		{
+			name:          "should refuse and change nothing when another user holds the claim",
+			claimedBy:     "owner",
+			wantForbidden: true,
+			wantStatus:    model.CertificateRequestStatusPending,
+			wantClaimant:  "owner",
+			wantDenied:    0,
+			wantPublished: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			svc := newTestCertRequestService(t, 0)
+			withAuditTable(t, svc)
+			requestID := mustCreateUserRequest(t, svc)
+			users := map[string]string{
+				"denier": seedUser(t, svc.db, "sub-denier"),
+				"owner":  seedUser(t, svc.db, "sub-owner"),
+			}
+			if tt.claimedBy != "" {
+				if err := svc.db.Model(&model.CertificateRequest{}).Where("id = ?", requestID).
+					Update("user_id", users[tt.claimedBy]).Error; err != nil {
+					t.Fatalf("failed to pre-claim the request: %v", err)
+				}
+			}
+
+			ctx, cancel := context.WithCancel(context.Background())
+			t.Cleanup(cancel)
+			wake, err := svc.subscriber.Subscribe(ctx, certmsg.WaitTopic(requestID))
+			if err != nil {
+				t.Fatalf("failed to subscribe to the wake topic: %v", err)
+			}
+
+			err = svc.Deny(context.Background(), requestID, &Identity{Username: "denier", Subject: "sub-denier"}, DecisionContext{})
+
+			var forbidden *errorresponses.ForbiddenError
+			if gotForbidden := errors.As(err, &forbidden); gotForbidden != tt.wantForbidden || (!tt.wantForbidden && err != nil) {
+				t.Fatalf("Deny() error = %v, want forbidden=%v", err, tt.wantForbidden)
+			}
+
+			var req model.CertificateRequest
+			if err := svc.db.First(&req, "id = ?", requestID).Error; err != nil {
+				t.Fatalf("failed to reload the request: %v", err)
+			}
+			if req.Status != tt.wantStatus {
+				t.Errorf("status = %q, want %q", req.Status, tt.wantStatus)
+			}
+			if req.UserID == nil || *req.UserID != users[tt.wantClaimant] {
+				t.Errorf("user_id = %v, want the %s's id %q", req.UserID, tt.wantClaimant, users[tt.wantClaimant])
+			}
+			if got := auditActionCount(t, svc, AuditCertDenied); got != tt.wantDenied {
+				t.Errorf("got %d %s events, want %d", got, AuditCertDenied, tt.wantDenied)
+			}
+
+			// A published wake-up arrives promptly. For the refused row a
+			// short wait is enough: the refusal returns before notifyWaiter
+			// runs, which the absent cached outcome below confirms.
+			timeout := 200 * time.Millisecond
+			if tt.wantPublished {
+				timeout = 2 * time.Second
+			}
+			published := false
+			select {
+			case msg := <-wake:
+				msg.Ack()
+				published = true
+			case <-time.After(timeout):
+			}
+			if published != tt.wantPublished {
+				t.Errorf("wake-up published = %v, want %v", published, tt.wantPublished)
+			}
+			svc.mu.Lock()
+			_, cached := svc.resolved[requestID]
+			svc.mu.Unlock()
+			if cached != tt.wantPublished {
+				t.Errorf("cached outcome present = %v, want %v", cached, tt.wantPublished)
+			}
+		})
 	}
 }
 
@@ -2606,6 +2749,7 @@ func TestCertRequestService_Deny_ShouldApplyTheTTLFilterWhenConfigured(t *testin
 		t.Fatalf("failed to back-date created_at: %v", err)
 	}
 
+	seedUser(t, svc.db, "sub-approver")
 	if err := svc.Deny(context.Background(), requestID, &Identity{Username: "approver", Subject: "sub-approver"}, DecisionContext{}); err == nil {
 		t.Fatal("expected Deny to refuse a request past its TTL, got nil")
 	}
@@ -3098,9 +3242,8 @@ func TestCertRequestService_Deny_ShouldPersistDecisionAudit(t *testing.T) {
 		t.Fatalf("unexpected error creating request: %v", err)
 	}
 
-	// Deny never calls bindRequester (see Deny's doc comment), so no
-	// seedUser call is needed here — unlike every Approve test above.
 	identity := &Identity{Username: "bob", Subject: "sub-denier", Email: "bob@example.com"}
+	seedUser(t, svc.db, identity.Subject)
 	dc := DecisionContext{SourceIP: "203.0.113.9", UserAgent: "Mozilla/5.0"}
 	if err := svc.Deny(context.Background(), requestID, identity, dc); err != nil {
 		t.Fatalf("unexpected error denying request: %v", err)
@@ -3236,6 +3379,7 @@ func TestCertRequestService_Deny_ShouldRollBackStatusWhenDecisionInsertFails(t *
 	}
 
 	identity := &Identity{Username: "bob", Subject: "sub-denier"}
+	seedUser(t, svc.db, identity.Subject)
 	if err := svc.Deny(context.Background(), requestID, identity, DecisionContext{}); err == nil {
 		t.Fatal("expected Deny to fail when the decision insert collides, got nil")
 	}
