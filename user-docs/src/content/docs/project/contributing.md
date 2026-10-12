@@ -65,11 +65,11 @@ you are not sure what exists.
 
 ## Branch naming and commits
 
-Branches follow the pattern `feat/`, `fix/`, or `chore/` followed by a short
-description:
+Branches follow the pattern `feat/`, `fix/`, or `chore/`, then the issue number
+and a short description:
 
 ```bash
-git checkout -b feat/add-token-refresh
+git checkout -b feat/123-add-token-refresh
 ```
 
 Commits use [Conventional Commits](https://www.conventionalcommits.org/):
@@ -333,7 +333,7 @@ marking them done.
 
 ## Submitting a pull request
 
-1. **Create a branch** off `main`: `git checkout -b feat/your-feature`.
+1. **Create a branch** off `main`: `git checkout -b feat/<issue>-your-feature`.
 2. **Make your changes.** Write tests as you go.
 3. **Run the gate locally:** `make pre-pr`.
 4. **Commit with conventional commits.** Keep one concern per commit.

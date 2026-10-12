@@ -8,7 +8,7 @@ paths:
 Project-specific detail split out of `go.md`/`test-go.md` so those stay
 generic and portable to other repos. See also `wire-contract.md`,
 `client-cmd.md`, `database.md`, `server-api.md`, `server-config.md`,
-`server-db.md` for more narrowly-scoped specifics.
+`server-db.md`, `frontend.md`, `git.md` for more narrowly-scoped specifics.
 
 - Module path is `github.com/mnestor/ssoossh`. `golangci-lint`'s
   `goimports` formatter is configured with `local-prefixes:
@@ -34,3 +34,10 @@ generic and portable to other repos. See also `wire-contract.md`,
   `server/signer`'s PKCS#11 paths carry `not covered:` comments where a
   block needs a live HSM token, and `make test-hsm` (softhsm2, behind the
   `softhsm` tag) is the suite that does reach them.
+- Don't add special-case code to blunt abuse that deployment controls
+  already cover: a firewall in front of the server, the shipped audit log
+  offloaded to a SIEM, rate limits. That means no priority rules,
+  carve-outs or extra guards for a flood or abuse case (for example,
+  sweeping one action's audit rows ahead of the rest so a flood cannot push
+  real events out). Document the outside control instead. If a case seems
+  to need code anyway, ask the maintainer before building it.
