@@ -73,9 +73,18 @@ export const adminNav: readonly NavItem[] = [
 	// Admin-only (issue #136): the status names the directory connection
 	// and the sync settings, and the sync and the probe were already admin's.
 	{ href: '/admin/directory', label: 'Directory', icon: 'address-book', adminOnly: true },
-	{ href: '/admin/identity/echo', label: 'Claims echo', icon: 'braces' },
+	// Admin-only (issue #161): starting an echo is the page's only action,
+	// and the server refuses it below admin.
+	{ href: '/admin/identity/echo', label: 'Claims echo', icon: 'braces', adminOnly: true },
 	{ href: '/admin/audit', label: 'Audit log', icon: 'logs' },
-	{ href: '/admin/diagnostics', label: 'Diagnostics', icon: 'activity-heartbeat' }
+	// Admin-only (issue #161): a run makes the server dial its own public
+	// URL, and the server refuses it below admin.
+	{
+		href: '/admin/diagnostics',
+		label: 'Diagnostics',
+		icon: 'activity-heartbeat',
+		adminOnly: true
+	}
 ] as const;
 
 /**

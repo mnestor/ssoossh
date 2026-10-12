@@ -122,19 +122,27 @@ describe('adminNavFor', () => {
 		expect(adminNavFor(true)).toEqual(adminNav);
 	});
 
-	// Issue #136: SOC and auditors are refused the Directory outright, so the
-	// rail must not offer it to them.
-	it('should leave out the Directory when the viewer is not an admin', () => {
-		expect(adminNavFor(false).map((item) => item.href)).not.toContain('/admin/directory');
-	});
+	// Issues #136 and #161: SOC and auditors are refused the Directory,
+	// Claims echo and Diagnostics outright, so the rail must not offer them.
+	const adminOnlyHrefs = ['/admin/directory', '/admin/identity/echo', '/admin/diagnostics'];
+
+	for (const href of adminOnlyHrefs) {
+		it(`should leave out ${href} when the viewer is not an admin`, () => {
+			expect(adminNavFor(false).map((item) => item.href)).not.toContain(href);
+		});
+
+		it(`should offer ${href} when the viewer is an admin`, () => {
+			expect(adminNavFor(true).map((item) => item.href)).toContain(href);
+		});
+	}
 
 	it('should keep every section not marked admin-only when the viewer is not an admin', () => {
 		expect(adminNavFor(false)).toEqual(adminNav.filter((item) => !item.adminOnly));
 	});
 
-	it('should mark only the Directory as admin-only', () => {
-		expect(adminNav.filter((item) => item.adminOnly).map((item) => item.href)).toEqual([
-			'/admin/directory'
-		]);
+	it('should mark only the Directory, Claims echo and Diagnostics as admin-only', () => {
+		expect(adminNav.filter((item) => item.adminOnly).map((item) => item.href)).toEqual(
+			adminOnlyHrefs
+		);
 	});
 });
