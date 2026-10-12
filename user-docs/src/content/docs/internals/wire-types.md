@@ -25,9 +25,10 @@ Nothing to remember here: the compiler does the work.
 The frontend's types are **generated**, not written.
 
 ```text
-server/model/enums.go       ─┐
-internal/apitypes/*.go      ─┼─ tygo ─→ frontend/src/lib/api/generated/
-server/webtypes/webtypes.go ─┘
+server/model/enums.go            ─┐
+server/service/audit_actions.go  ─┤
+internal/apitypes/*.go           ─┼─ tygo ─→ frontend/src/lib/api/generated/
+server/webtypes/webtypes.go      ─┘
 ```
 
 - `server/webtypes` holds the response shapes and nothing else. It exists as
@@ -39,6 +40,12 @@ server/webtypes/webtypes.go ─┘
   the files defining the GORM models so the generator emits the unions without
   also emitting database rows -- `CertificateRequest.FailureReason` is not part
   of any API response and should not appear in the frontend's types.
+- `server/service/audit_actions.go` holds the audit taxonomy and nothing
+  else, for the same reason. It is not a wire type -- an audit event's
+  `action` is a plain string, because a client must render actions it does
+  not know -- but the web UI's audit timeline walks the generated list in
+  `frontend/src/lib/audit.test.ts`, which fails by name for any action
+  without a sentence in `auditPhrasing`.
 - `frontend/src/lib/api/types.ts` is the only hand-written file left, and it
   declares no shapes. It re-exports the generated ones under the names the app
   uses (`RequestDetailResponse` becomes `RequestDetail`).
