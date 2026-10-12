@@ -27,11 +27,12 @@ Claude or another AI tool to help with your contribution:
 3. **Review carefully.** Before submitting, run `make pre-pr`, read the diff,
    and verify it matches what you intended.
 
-An AI assistant working in the repository should read `client/CLAUDE.md` and
-`server/CLAUDE.md` for each side's role and layout (a root `CLAUDE.md` is a
-personal file, ignored by git, so a clone has none), `./.claude/rules/` for the Go and TypeScript
-conventions, and `AGENTS.md` when several agents work in parallel. The project
-uses `rtk` to minimize token usage in bash commands.
+An AI assistant working in the repository should read the root `CLAUDE.md`
+for project-wide instructions (it loads `SSOOSSH.md`, the product intent),
+`client/CLAUDE.md` and `server/CLAUDE.md` for each side's role and layout,
+`./.claude/rules/` for the Go and TypeScript conventions, and `AGENTS.md` when
+several agents work in parallel. The project uses `rtk` to minimize token usage
+in bash commands.
 
 ### Requirements
 

@@ -102,7 +102,6 @@ yarn-error.log*
 # hooks/, and skills/ stay local until someone deliberately un-ignores them.
 /.claude/*
 !/.claude/rules/
-/CLAUDE.md
 /.claudeignore
 /.rtk/
 /devcontainer-lock.json
