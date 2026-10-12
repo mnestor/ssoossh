@@ -19,6 +19,6 @@ paths:
   databases have already applied it and golang-migrate will not re-run it.
   `test/migration`'s goldens pin the schema each dialect's chain builds, so a
   change that lands somewhere else fails rather than passing unnoticed.
-  Refresh them with `go test ./test/migration/ -update` (add `-tags
-  dbparity`, which needs docker, for the Postgres golden) only when the
-  schema change is intended.
+  Refresh them with `go test ./test/migration/ -update` (and
+  `make test-postgres PKGS=./test/migration/ ARGS=-update`, which needs
+  docker, for the Postgres golden) only when the schema change is intended.
