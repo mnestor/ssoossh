@@ -87,16 +87,54 @@ func TestDefinitions_shouldDocumentOnlyRealPayloadFields(t *testing.T) {
 }
 
 // The preferences page shows kinds by group, so a kind whose group is not
-// registered would not appear on it at all.
+// registered would not appear on it at all. An always-sent kind is the
+// exception: no page lists it, so it must have no group to be listed under.
 func TestDefinitions_shouldPlaceEveryKindInARegisteredGroup(t *testing.T) {
 	registered := map[Group]bool{}
 	for _, g := range Groups() {
 		registered[g.Group] = true
 	}
 	for _, def := range Definitions() {
+		if def.AlwaysSent {
+			if def.Group != "" {
+				t.Errorf("%s is always sent but sits in group %q, which would list it on the preferences page", def.Kind, def.Group)
+			}
+			continue
+		}
 		if !registered[def.Group] {
 			t.Errorf("%s is in group %q, which is not registered", def.Kind, def.Group)
 		}
+	}
+}
+
+// An always-sent kind that defaulted off would contradict itself wherever
+// the default is read on its own, such as the admin's view of a user.
+func TestDefinitions_shouldDefaultEveryAlwaysSentKindOn(t *testing.T) {
+	for _, def := range Definitions() {
+		if def.AlwaysSent && !def.DefaultEnabled {
+			t.Errorf("%s is always sent but defaults off", def.Kind)
+		}
+	}
+}
+
+// AlwaysSent is what delivery reads to skip the preference, so it must
+// answer from the registry and never for an unknown kind.
+func TestAlwaysSent_shouldAnswerFromTheRegistry(t *testing.T) {
+	tests := []struct {
+		name string
+		kind Kind
+		want bool
+	}{
+		{name: "should report the admin auto-disable email as always sent", kind: KindAdminAutoDisabled, want: true},
+		{name: "should report an optional kind as not always sent", kind: KindServiceEnrollmentCreated, want: false},
+		{name: "should report an unregistered kind as not always sent", kind: "nope", want: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := AlwaysSent(tc.kind); got != tc.want {
+				t.Errorf("AlwaysSent(%q) = %v, want %v", tc.kind, got, tc.want)
+			}
+		})
 	}
 }
 

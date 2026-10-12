@@ -34,6 +34,8 @@ How long a directory entry may stay missing before the user is auto-disabled, me
 
 A duration rather than a count of passes, because a count was not a measure of time. Scheduled jobs are not leader-elected, so every instance runs its own sync and three replicas produced three increments per interval; an operator-triggered sync added more. The same absence now means the same thing however many passes observe it.
 
+Admins are disabled like anyone else. One whose most recent login in the last 60 days carried the admin group is emailed when the sync disables them; that email is always sent and cannot be turned off.
+
 ```yaml
 ldap:
   sync:

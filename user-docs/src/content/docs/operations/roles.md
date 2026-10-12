@@ -210,7 +210,10 @@ Disabling an account the sync already disabled replaces its source with the
 operator's, so from then on only an admin can restore it, and a re-enable
 clears the source along with the rest. An auto-disable is audited like any
 other containment action, as `user.auto_disabled`, with a generated reason
-and no actor. See [LDAP enrichment](/ssoossh/operations/ldap/).
+and no actor. Admins are not exempt: the sync disables them like anyone else,
+and emails an admin it disables (see
+[When the sync disables an admin](/ssoossh/operations/ldap/#when-the-sync-disables-an-admin)).
+See [LDAP enrichment](/ssoossh/operations/ldap/).
 
 ## Enrollments cannot be reassigned
 

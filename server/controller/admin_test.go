@@ -2308,15 +2308,24 @@ func TestAdminGetUserHandler_ShouldReturnEverythingStoredForTheUser(t *testing.T
 	// Every registered kind is reported, not only the stored ones: a user
 	// who has never opened the preferences page produced an empty list
 	// before, which read as "we send them nothing" and meant the opposite.
-	// The retired row rides along at the end.
-	registered := notify.Definitions()
+	// The retired row rides along at the end. An always-sent kind is not a
+	// preference, so it is not reported as one.
+	var registered []notify.Definition
+	for _, def := range notify.Definitions() {
+		if !def.AlwaysSent {
+			registered = append(registered, def)
+		}
+	}
 	if len(got.NotificationPreferences) != len(registered)+1 {
-		t.Fatalf("notification preferences = %d rows, want every registered kind plus the retired stored one", len(got.NotificationPreferences))
+		t.Fatalf("notification preferences = %d rows, want every registered optional kind plus the retired stored one", len(got.NotificationPreferences))
 	}
 
 	byKind := map[string]webtypes.AdminUserNotificationPreference{}
 	for _, pref := range got.NotificationPreferences {
 		byKind[pref.Kind] = pref
+	}
+	if _, listed := byKind[string(notify.KindAdminAutoDisabled)]; listed {
+		t.Error("the always-sent admin auto-disable email is reported as a preference")
 	}
 
 	chosen := byKind[string(notify.KindServiceEnrollmentExpiring)]

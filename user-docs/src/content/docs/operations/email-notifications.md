@@ -293,6 +293,16 @@ by someone else.
 The preference is read at delivery rather than at publication, so a
 notification queued moments before someone opts out is not delivered anyway.
 
+One kind is not a preference at all. `admin_auto_disabled` tells an admin the
+directory sync has disabled their account, and an admin in that position has
+no session left to find out any other way. It is **always sent**: the
+preferences page does not list it, a request to turn it off is refused, and it
+arrives even when every other kind is off. It still honours the reader's email
+detail level. Only [`mail.enabled`](/ssoossh/reference/config/mail/#enabled)
+being false, or an account with no address, stops it. See
+[When the sync disables an admin](/ssoossh/operations/ldap/#when-the-sync-disables-an-admin)
+for who counts as an admin.
+
 ### Email detail level
 
 Each user also chooses how much every message carries, on the same page:
@@ -316,7 +326,7 @@ identity whose provider releases no email claim.
 
 ## Notification kinds
 
-Seven kinds. Every one ships three templates, named
+Eight kinds. Every one ships three templates, named
 `<kind>.subject.tmpl`, `<kind>.txt.tmpl` and `<kind>.html.tmpl`.
 
 | Kind | Trigger | Recipients | Default |
@@ -328,6 +338,7 @@ Seven kinds. Every one ships three templates, named
 | `user_certificate_issued` | an interactive SSH certificate is signed for you | the person the certificate is for | off |
 | `pam_certificate_issued` | a certificate is signed for a local `sudo` or `su` on your behalf | the person the certificate is for | off |
 | `console_certificate_issued` | a certificate is signed for a console login you approved with a typed code | the person who approved | off |
+| `admin_auto_disabled` | the directory sync disables an account whose most recent login held the admin role | the admin whose account was disabled | always sent |
 
 <!-- BEGIN GENERATED NOTIFICATION REFERENCE -->
 
@@ -625,6 +636,35 @@ Templates:
 | `.SourceAddresses` | `[]string` | The source-address critical option, or empty if unrestricted. |
 | `.NoTouchRequired` | `bool` | Whether the certificate waives the hardware-key touch, which makes it a weaker credential than one that does not. |
 | `.ServerURL` | `string` | The server's public origin, for links back to the certificate. |
+| `.Advanced` | `bool` | True when the recipient chose the advanced email detail level, false for simplified. Set per recipient at delivery; a template that ignores it sends the same message at both levels. |
+
+
+### Admin account disabled by the directory sync
+
+`admin_auto_disabled`
+
+Sent to an admin when the scheduled directory sync disables their account because its directory entry has been missing for longer than ldap.sync.disable_after. Always sent: it cannot be turned off, and it is not sent for a disable a SOC user or an admin made by hand.
+
+Always sent: it is not a preference and cannot be turned off.
+
+Templates:
+
+- `admin_auto_disabled.subject.tmpl`
+- `admin_auto_disabled.txt.tmpl`
+- `admin_auto_disabled.html.tmpl`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `.Username` | `string` | The username of the account that was disabled. |
+| `.DisabledAt` | `time.Time` | When the sync disabled the account. |
+| `.MissingSince` | `time.Time` | When the sync first searched successfully and found no directory entry for the account. |
+| `.MissingFor` | `time.Duration` | How long the entry had been missing when the account was disabled. |
+| `.DisableAfter` | `time.Duration` | The configured ldap.sync.disable_after: how long an entry may stay missing before the sync disables the account. |
+| `.DirectoryDN` | `string` | The last DN the account's entry was found at, or empty if none was recorded. |
+| `.BaseDN` | `string` | The configured ldap.base_dn the sync searches under. |
+| `.Reenable` | `bool` | Whether ldap.sync.reenable is on, in which case the sync clears this disable by itself once the entry is found again. |
+| `.SupportEmail` | `string` | Who to ask about this deployment (branding.support_email), or empty if none is configured. |
+| `.ServerURL` | `string` | The server's public origin, naming the deployment the account belongs to. |
 | `.Advanced` | `bool` | True when the recipient chose the advanced email detail level, false for simplified. Set per recipient at delivery; a template that ignores it sends the same message at both levels. |
 
 <!-- END GENERATED NOTIFICATION REFERENCE -->

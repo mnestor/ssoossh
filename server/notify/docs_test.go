@@ -89,7 +89,11 @@ func renderReference() string {
 		fmt.Fprintf(&b, "\n### %s\n\n", def.Title)
 		fmt.Fprintf(&b, "`%s`\n\n", def.Kind)
 		fmt.Fprintf(&b, "%s\n\n", def.Description)
-		fmt.Fprintf(&b, "Default: **%s**.\n\n", enabledWord(def.DefaultEnabled))
+		if def.AlwaysSent {
+			fmt.Fprintf(&b, "Always sent: it is not a preference and cannot be turned off.\n\n")
+		} else {
+			fmt.Fprintf(&b, "Default: **%s**.\n\n", enabledWord(def.DefaultEnabled))
+		}
 
 		fmt.Fprintf(&b, "Templates:\n\n")
 		for _, part := range []string{"subject", "txt", "html"} {

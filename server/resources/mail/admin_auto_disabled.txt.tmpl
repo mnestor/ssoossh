@@ -1,0 +1,33 @@
+Your account {{ .Username }}{{ if .ServerURL }} on {{ .ServerURL }}{{ end }}
+was disabled automatically at {{ datetime .DisabledAt }}. The directory sync
+has found no directory entry for it for {{ approx .MissingFor }}, longer than
+the {{ approx .DisableAfter }} it allows.
+
+You cannot log in or get certificates until the account is re-enabled. A SOC
+user or another admin can re-enable it under Admin > Users{{ if .SupportEmail }}, or ask
+{{ .SupportEmail }}{{ end }}.
+
+Check in the directory first:
+  - that your entry still exists and has not been deleted or disabled
+  - that it is still inside the part of the directory the server searches
+  - that it was not renamed or moved, so the server's user filter still
+    finds it
+{{ if .Reenable }}
+Once the entry is found again, the next sync clears this disable by itself.
+{{ else }}
+Finding the entry again does not clear this disable: a person has to.
+{{ end }}
+  Disabled at       {{ datetime .DisabledAt }}
+  Missing since     {{ datetime .MissingSince }}
+{{ if .Advanced }}
+DETAILS
+
+  Last known DN     {{ if .DirectoryDN }}{{ .DirectoryDN }}{{ else }}not recorded{{ end }}
+  Searched under    {{ if .BaseDN }}{{ .BaseDN }}{{ else }}not set{{ end }}
+  Missing for       {{ .MissingFor }}
+  Disable after     {{ .DisableAfter }} (ldap.sync.disable_after)
+  Disable source    ldap_sync
+{{ end }}
+Sent because your most recent login held the admin role. This message is
+always sent when the directory sync disables an admin account; it is not a
+notification preference and cannot be turned off.

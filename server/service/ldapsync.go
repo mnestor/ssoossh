@@ -96,8 +96,11 @@ func (s *LDAPService) SyncWithOptions(ctx context.Context, opts SyncOptions) (*m
 		}
 	}()
 
+	// Who counts as an admin is read once for the whole pass, and only if
+	// the pass gets as far as disabling someone.
+	admins := &syncAdmins{}
 	for i := range rows {
-		switch s.syncUser(ctx, conn, &rows[i], run, opts) {
+		switch s.syncUser(ctx, conn, &rows[i], run, opts, admins) {
 		case syncFound:
 			run.Found++
 		case syncMissing:
@@ -210,7 +213,7 @@ const (
 
 // syncUser refreshes one user, returning what the pass concluded and
 // counting any containment action onto run.
-func (s *LDAPService) syncUser(ctx context.Context, conn ldapConn, row *model.UserLDAP, run *model.LDAPSyncRun, opts SyncOptions) syncOutcome {
+func (s *LDAPService) syncUser(ctx context.Context, conn ldapConn, row *model.UserLDAP, run *model.LDAPSyncRun, opts SyncOptions, admins *syncAdmins) syncOutcome {
 	var user model.User
 	if err := s.db.WithContext(ctx).First(&user, "id = ?", row.UserID).Error; err != nil {
 		// The bookkeeping row outlived its user. Nothing to sync, and not
@@ -225,7 +228,7 @@ func (s *LDAPService) syncUser(ctx context.Context, conn ldapConn, row *model.Us
 	case syncFailed:
 		return syncFailed
 	case syncMissing:
-		s.recordMiss(ctx, &user, row, run, opts)
+		s.recordMiss(ctx, &user, row, run, opts, admins)
 		return syncMissing
 	}
 
@@ -297,7 +300,10 @@ func (s *LDAPService) persistSync(ctx context.Context, userID string, entry *lda
 // one by hand, so a count would mean different things in different
 // deployments and would shrink every time someone pressed the button. The
 // counter is still written, for the operator reading a row.
-func (s *LDAPService) recordMiss(ctx context.Context, user *model.User, row *model.UserLDAP, run *model.LDAPSyncRun, opts SyncOptions) {
+//
+// A user the pass disables who counts as an admin (see isSyncAdmin) is
+// emailed; a dry run reports that it would.
+func (s *LDAPService) recordMiss(ctx context.Context, user *model.User, row *model.UserLDAP, run *model.LDAPSyncRun, opts SyncOptions, admins *syncAdmins) {
 	now := time.Now()
 	misses := row.ConsecutiveMisses + 1
 
@@ -342,13 +348,20 @@ func (s *LDAPService) recordMiss(ctx context.Context, user *model.User, row *mod
 	// none.
 	if opts.DryRun {
 		run.Disabled++
-		s.log.InfoContext(ctx, "directory sync dry run: would auto-disable a user whose entry is gone",
-			"user_id", user.ID, "username", user.Username, "missing_for", missingFor.String())
+		attrs := []any{"user_id", user.ID, "username", user.Username, "missing_for", missingFor.String()}
+		if s.isSyncAdmin(ctx, admins, user.ID) {
+			attrs = append(attrs, "would_email", "admin")
+		}
+		s.log.InfoContext(ctx, "directory sync dry run: would auto-disable a user whose entry is gone", attrs...)
 		return
 	}
 
-	if s.autoDisable(ctx, user, missingFor, now) {
-		run.Disabled++
+	if !s.autoDisable(ctx, user, missingFor, now) {
+		return
+	}
+	run.Disabled++
+	if s.isSyncAdmin(ctx, admins, user.ID) {
+		s.emailAutoDisabledAdmin(ctx, user, row, *missingSince, missingFor, now)
 	}
 }
 

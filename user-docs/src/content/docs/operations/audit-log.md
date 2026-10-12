@@ -60,6 +60,14 @@ log; setting it splits them into their own rotating file.
 `retention` bounds the UI's history, not the deployment's. A short window here
 loses nothing that matters, because the shipped log is the archive.
 
+One feature does read the table back. When the
+[directory sync](/ssoossh/operations/ldap/#when-the-sync-disables-an-admin)
+disables someone, it decides whether to email them as an admin from their
+latest `auth.login` row in the last 60 days. A `retention` below 60 days, or a
+`max_rows` cap that has trimmed those logins, shortens that window: an admin
+whose last login the table no longer holds is not emailed. The sync logs the
+window it actually had (`effective_window`) whenever it is under 60 days.
+
 ## An audit row references nothing that can change
 
 An entry must read the same in five years as it did the day it was written. A

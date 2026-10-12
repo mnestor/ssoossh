@@ -372,6 +372,51 @@ touch.
 An auto-disable is audited like any other containment action, as
 `user.auto_disabled` with a generated reason.
 
+### When the sync disables an admin
+
+Admins are not protected from the sync: it disables them like anyone else,
+and a SOC user or another admin re-enables them. What changes is that an admin
+is told. Their session simply ends otherwise, with nothing saying why.
+
+When a live pass disables a user, it checks whether they count as an admin.
+The users row stores no roles, so the answer comes from the audit log: the
+user's **most recent `auth.login` event in the last 60 days** must carry a
+group that the **current** configuration maps to admin
+([`admin.require_group`](/ssoossh/reference/config/admin/#require_group)). A
+group that has since stopped granting admin no longer counts, and someone who
+has not logged in for 60 days is not emailed. The login rows are read once per
+pass, for every user at once, and only when the pass disables someone. The
+snapshot only decides who is told: it grants nothing, and authority still
+comes from the session.
+
+An admin who qualifies gets the `admin_auto_disabled` email at their stored
+address, at their own email detail level. It says the account was disabled
+automatically because its directory entry has been missing for longer than
+`disable_after`, when, that a SOC user or an admin can re-enable it, and what
+to check in the directory first. It is **always sent**: it is not a
+notification preference, the preferences page offers no toggle for it, and it
+arrives even when the admin has turned every other kind off. See
+[Email notifications](/ssoossh/operations/email-notifications/).
+
+Three things send nothing:
+
+- **A disable by hand.** Only a disable whose source is `ldap_sync` emails.
+  An admin or SOC user disabling an admin sends no email.
+- **A non-admin.** Everyone else the sync disables gets no new email.
+- **Mail switched off.** With
+  [`mail.enabled`](/ssoossh/reference/config/mail/#enabled) false the disable
+  still happens and the sync logs that the admin was not emailed. Nothing
+  fails. An admin with no stored address is logged the same way.
+
+:::caution[The 60-day window is only as long as the audit log]
+The sync can only see the logins the audit table still holds. If
+[`audit.retention`](/ssoossh/reference/config/audit/#retention) is below 60
+days, or [`audit.max_rows`](/ssoossh/reference/config/audit/#max_rows) has
+trimmed the login, the effective window is shorter and an admin whose last
+login has gone is not emailed. The sync logs the window it actually had
+(`effective_window`, with what limited it) whenever it is under 60 days.
+:::
+
 **Side effect worth naming:** the sync partially closes the revocation window.
 Removing a user from the directory now disables the account within
 `disable_after` of the first pass that notices, where previously removal took
@@ -393,8 +438,9 @@ Four rules make the button safe:
 - **Dry run is the default.** A dry run reads the directory and changes
   nothing -- no refreshed attributes, no group rows, no miss windows, no
   disables and no re-enables -- and reports the disables and re-enables it
-  *would* have performed. It is the version to press during an incident, and
-  it runs on one press.
+  *would* have performed. A would-be disable of an admin is logged with
+  `would_email=admin` next to "would auto-disable", and no email is sent. It
+  is the version to press during an incident, and it runs on one press.
 - **A live pass asks first.** With **Dry run** cleared, the page warns that a
   live pass can disable accounts, and pressing **Sync now** opens a
   confirmation naming the same consequence; nothing runs until it is
