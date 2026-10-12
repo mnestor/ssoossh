@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { adminNav, isAdminRoute, isCurrent, isFocusRoute, primaryNav, accountNav } from './nav';
+import {
+	adminNav,
+	adminNavFor,
+	isAdminRoute,
+	isCurrent,
+	isFocusRoute,
+	primaryNav,
+	accountNav
+} from './nav';
 
 // Test methodology: table-driven over the path predicates, which are the
 // only part of the model that can be wrong at runtime. The boundary cases
@@ -106,5 +114,27 @@ describe('nav model', () => {
 		const hrefs = [...primaryNav(), ...adminNav, ...accountNav()].map((item) => item.href);
 
 		expect(new Set(hrefs).size).toBe(hrefs.length);
+	});
+});
+
+describe('adminNavFor', () => {
+	it('should offer every admin section when the viewer is an admin', () => {
+		expect(adminNavFor(true)).toEqual(adminNav);
+	});
+
+	// Issue #136: SOC and auditors are refused the Directory outright, so the
+	// rail must not offer it to them.
+	it('should leave out the Directory when the viewer is not an admin', () => {
+		expect(adminNavFor(false).map((item) => item.href)).not.toContain('/admin/directory');
+	});
+
+	it('should keep every section not marked admin-only when the viewer is not an admin', () => {
+		expect(adminNavFor(false)).toEqual(adminNav.filter((item) => !item.adminOnly));
+	});
+
+	it('should mark only the Directory as admin-only', () => {
+		expect(adminNav.filter((item) => item.adminOnly).map((item) => item.href)).toEqual([
+			'/admin/directory'
+		]);
 	});
 });

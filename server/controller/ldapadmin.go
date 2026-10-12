@@ -29,12 +29,15 @@ const (
 
 // NewLDAPAdminController registers the directory diagnostics on group.
 //
-// The split follows the existing one: the status read is auditor-scoped
-// because it names no credential and answers "is the sync even running",
-// while the sync and the probe are admin-only. The sync is not SOC despite
-// being able to disable people, because it restores and refreshes access as
-// readily as it removes it; the probe is not auditor because it makes the
-// server open an outbound connection and read an entry in full.
+// Every route here is admin-only, the status read included. The status names
+// the directory connection, the query the probe is pinned to and the sync
+// settings, which is the directory's operating detail rather than an
+// investigation surface, so SOC and auditors do not see it (issue #136). The
+// sync is not SOC despite being able to disable people, because it restores
+// and refreshes access as readily as it removes it; the probe is not SOC or
+// auditor because it makes the server open an outbound connection and read
+// an entry in full. Narrowing all three to admin keeps the role hierarchy
+// intact: admin still holds everything SOC and auditor hold.
 func NewLDAPAdminController(
 	group *gin.RouterGroup,
 	c *config.Config,
@@ -42,17 +45,16 @@ func NewLDAPAdminController(
 	ldap service.LDAPDiagnostics,
 	sessionAuthMiddleware gin.HandlerFunc,
 	adminAuthMiddleware gin.HandlerFunc,
-	auditorAuthMiddleware gin.HandlerFunc,
 	csrfMiddleware gin.HandlerFunc,
 	probeRateLimit gin.HandlerFunc,
 	auditService *service.AuditService,
 ) {
 	a := &ldapAdminController{config: c, db: db, ldap: ldap, audit: auditService}
 
-	auditorGroup := group.Group("/admin/ldap", sessionAuthMiddleware, auditorAuthMiddleware)
-	auditorGroup.GET("/status", a.statusHandler)
-
+	// One group: the CSRF middleware exempts safe methods, so the GET can
+	// share it with the two POSTs.
 	adminGroup := group.Group("/admin/ldap", sessionAuthMiddleware, adminAuthMiddleware, csrfMiddleware)
+	adminGroup.GET("/status", a.statusHandler)
 	adminGroup.POST("/sync", a.syncHandler)
 	if probeRateLimit != nil {
 		adminGroup.POST("/probe", probeRateLimit, a.probeHandler)
@@ -73,7 +75,7 @@ type ldapAdminController struct {
 
 // statusHandler handles GET /api/admin/ldap/status.
 //
-// @Summary     Directory sync status and probe target (auditor-only)
+// @Summary     Directory sync status and probe target (admin-only)
 // @Description Reports whether directory enrichment is enabled, the
 // @Description connection and query the probe is pinned to, the sync
 // @Description settings, and the most recent sync pass on any instance.
@@ -85,7 +87,7 @@ type ldapAdminController struct {
 // @Produce     json
 // @Success     200 {object} webtypes.LDAPStatusResponse "Directory status"
 // @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
-// @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as auditor"
+// @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as admin"
 // @Security    sessionCookie
 // @Router      /api/admin/ldap/status [get]
 func (a *ldapAdminController) statusHandler(g *gin.Context) {
