@@ -301,6 +301,17 @@ func parseUserStatusFilter(raw string) (userStatusFilter, error) {
 	}
 }
 
+// userDirectoryOrder is the ORDER BY of the admin user list. Users with a
+// name come first, by name ignoring case; users without one follow, by
+// username. Username and id break the remaining ties, and id is unique, so
+// the order is total and offset pages cannot skip or repeat a row.
+//
+// LOWER() is ASCII-only on SQLite and collation-aware on Postgres. Each
+// backend's order is deterministic, but the two can disagree on non-ASCII
+// names. display_name and username are NOT NULL in both schemas, so there is
+// no NULL case to order.
+const userDirectoryOrder = "(display_name = '') ASC, LOWER(display_name) ASC, LOWER(username) ASC, id ASC"
+
 // listUsersHandler handles GET /api/admin/users: returns a paginated,
 // searchable list of all users for auditor review.
 //
@@ -308,6 +319,7 @@ func parseUserStatusFilter(raw string) (userStatusFilter, error) {
 // @Description Returns a paginated list of users, searchable by name,
 // @Description username, email, or subject, and filterable by account state.
 // @Description Useful for user directory and audit.
+// @Description Ordered by name ignoring case (users with no name last, by username), then username, then id.
 // @Tags        admin
 // @Produce     json
 // @Param       limit query int false "Page size (default 25, max 100)" example(25)
@@ -364,8 +376,9 @@ func (a *adminController) listUsersHandler(g *gin.Context) {
 		return
 	}
 
-	// ORDER BY to ensure deterministic pagination
-	q = q.Order("id ASC")
+	// Ordered so a human can scan the directory, and total so offset pages
+	// cannot skip or repeat a row.
+	q = q.Order(userDirectoryOrder)
 	q = paging.Apply(q, params)
 
 	var users []model.User
@@ -542,14 +555,14 @@ func (a *adminController) getUserHandler(g *gin.Context) {
 // @Summary     Disable a user (admin or SOC)
 // @Description Marks a user as disabled, preventing authentication. Service
 // @Description enrollments they approved are unaffected. The operation is
-// @Description idempotent.
+// @Description idempotent. A caller cannot disable their own account.
 // @Tags        admin
 // @Produce     json
 // @Param       id path string true "User ID"
 // @Param       request body webtypes.DisableUserRequestBody true "Disable reason (required)"
 // @Success     200 {object} webtypes.DisableUserConsequences "Consequences of disabling"
 // @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
-// @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as admin or SOC"
+// @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as admin or SOC, or the target is the caller's own account"
 // @Failure     404 {object} openapidoc.ErrorEnvelope "User not found"
 // @Security    sessionCookie
 // @Router      /api/admin/users/{id}/disable [patch]
@@ -574,6 +587,17 @@ func (a *adminController) disableUserHandler(g *gin.Context) {
 		Where("subject = ?", currentIdentity.Subject).
 		First(&currentUser).Error; err != nil {
 		handleError(g, fmt.Errorf("failed to look up current user: %w", err))
+		return
+	}
+
+	// Refused before the body is read and before any write or audit row:
+	// disabling yourself ends your own session, and recovery needs another
+	// admin to re-enable you. Refusals in this package write no audit row
+	// (see certrequest's network refusal and checkUserPrincipalLinkage), so
+	// this one is logged rather than recorded.
+	if currentUser.ID == id {
+		slog.Warn("refused a self-disable", "user_id", id)
+		handleError(g, &errorresponses.ForbiddenError{Reason: "You can't disable your own account. Ask another admin."})
 		return
 	}
 

@@ -229,6 +229,90 @@ describe('Admin user detail', () => {
 		expect(screen.queryByRole('button', { name: /^Disable$/ })).not.toBeInTheDocument();
 	});
 
+	// The server refuses a self-disable, so the page says why in the place
+	// the action would be. Alice is the caller here; the mock account is
+	// Alice too (subject sub-alice).
+	describe("on the caller's own record", () => {
+		beforeEach(() => {
+			session.user = {
+				username: 'alice',
+				subject: 'sub-alice',
+				is_admin: true,
+				is_soc: true,
+				is_auditor: true
+			} as CurrentUser;
+		});
+
+		it('should not offer the Disable action', async () => {
+			mockDetail();
+			render(Page);
+			await screen.findByTestId('user-username');
+			expect(screen.queryByTestId('disable-user')).not.toBeInTheDocument();
+		});
+
+		it('should say why the Disable action is missing', async () => {
+			mockDetail();
+			render(Page);
+			expect(await screen.findByTestId('user-action-self')).toHaveTextContent(
+				"You can't disable your own account. Ask another admin."
+			);
+		});
+	});
+
+	it("should offer the Disable action on another user's record", async () => {
+		session.user = {
+			username: 'root-admin',
+			subject: 'sub-root',
+			is_admin: true,
+			is_soc: true,
+			is_auditor: true
+		} as CurrentUser;
+		mockDetail();
+		render(Page);
+		expect(await screen.findByTestId('disable-user')).toBeInTheDocument();
+	});
+
+	it('should show the server refusal when a self-disable is sent anyway', async () => {
+		session.user = {
+			username: 'root-admin',
+			subject: 'sub-root',
+			is_admin: true,
+			is_soc: true,
+			is_auditor: true
+		} as CurrentUser;
+		mockDetail();
+		// Stand in for a stale page or a direct request: the account is someone
+		// else's on the page, but the PATCH is refused as a self-disable.
+		const answer = vi.mocked(fetch).getMockImplementation()!;
+		vi.stubGlobal(
+			'fetch',
+			vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+				if (init?.method === 'PATCH') {
+					return Promise.resolve(
+						new Response(
+							JSON.stringify({
+								data: null,
+								error: "You can't disable your own account. Ask another admin.",
+								error_code: 'forbidden'
+							}),
+							{ status: 403, headers: { 'Content-Type': 'application/json' } }
+						)
+					);
+				}
+				return answer(input);
+			})
+		);
+		render(Page);
+		await screen.findByTestId('user-username');
+
+		await userEvent.click(screen.getByRole('button', { name: /^Disable$/ }));
+		await screen.findByText(/Disable this account\?/);
+		await userEvent.type(screen.getByTestId('disable-reason'), 'offboarded');
+		await userEvent.click(screen.getByTestId('confirm-disable'));
+
+		expect(await screen.findByText(/You can't disable your own account/)).toBeInTheDocument();
+	});
+
 	it('should tell SOC that re-enabling is an admin action', async () => {
 		session.user = {
 			username: 'sam',

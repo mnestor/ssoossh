@@ -21,10 +21,40 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # No `changes` path gate: the gate job costs about as much as a fraction
-  # of this job, and coverage on every PR is the point of the workflow.
+  # No path gate beyond the image-only skip: coverage on every PR is the
+  # point of the workflow. A PR that changes only the CI image skips it, as
+  # the other PR workflows do; see the changes job.
+  # Image-only gate: a PR whose every changed file is under .github/docker/
+  # or is build-image.yaml skips the rest of CI. In some-with-excludes mode
+  # `other` matches a file under '**' and none of the negations; the positive
+  # '**' is needed, since a filter made only of negations never matches.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+    outputs:
+      image: ${{ steps.filter.outputs.image == 'true' && 'true' || 'false' }}
+      image_only: ${{ steps.filter.outputs.image == 'true' && steps.filter.outputs.other != 'true' && 'true' || 'false' }}
+    steps:
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        if: github.event_name == 'pull_request'
+        id: filter
+        with:
+          predicate-quantifier: 'some-with-excludes'
+          filters: |
+            image:
+              - '.github/docker/**'
+              - '.github/workflows/build-image.yaml'
+            other:
+              - '**'
+              - '!.github/docker/**'
+              - '!.github/workflows/build-image.yaml'
+
   coverage:
     name: codecheck
+    needs: changes
+    if: needs.changes.outputs.image_only != 'true'
     # Job-level grants for octocov, which runs on the default GITHUB_TOKEN:
     # pull-requests to comment the report, actions to store and replace the
     # baseline report in the Actions artifact datastore (upstream's own

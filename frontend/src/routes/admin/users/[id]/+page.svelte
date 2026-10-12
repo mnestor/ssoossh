@@ -170,6 +170,16 @@
 	const canDisable = $derived(session.user?.is_soc ?? false);
 	const canEnable = $derived(session.user?.is_admin ?? false);
 
+	// The caller's own record. The server refuses a self-disable (403), so
+	// the page says why instead of offering the action. Compared by subject,
+	// the identity the server resolves the caller by; an empty subject on
+	// either side is not a match.
+	const isOwnRecord = $derived.by(() => {
+		const accountSubject = user?.subject ?? '';
+		const callerSubject = session.user?.subject ?? '';
+		return accountSubject !== '' && accountSubject === callerSubject;
+	});
+
 	// Who disabled the account, as one phrase: the account name when there
 	// is one, with what kind of disable it was.
 	const disabledBy = $derived.by(() => {
@@ -320,14 +330,20 @@
      caret on <body>. -->
 {#snippet userAction()}
 	{#if user?.disabled_at ? canEnable : canDisable}
-		<Button
-			variant={user?.disabled_at ? 'primary' : 'danger'}
-			testid={user?.disabled_at ? 'enable-user' : 'disable-user'}
-			disabled={actionBusy}
-			onclick={user?.disabled_at ? () => (showEnableConfirm = true) : openDisableConfirm}
-		>
-			{user?.disabled_at ? 'Re-enable' : 'Disable'}
-		</Button>
+		{#if !user?.disabled_at && isOwnRecord}
+			<span class="text-dense text-ink-muted" data-testid="user-action-self">
+				You can't disable your own account. Ask another admin.
+			</span>
+		{:else}
+			<Button
+				variant={user?.disabled_at ? 'primary' : 'danger'}
+				testid={user?.disabled_at ? 'enable-user' : 'disable-user'}
+				disabled={actionBusy}
+				onclick={user?.disabled_at ? () => (showEnableConfirm = true) : openDisableConfirm}
+			>
+				{user?.disabled_at ? 'Re-enable' : 'Disable'}
+			</Button>
+		{/if}
 	{:else}
 		<span class="text-dense text-ink-muted" data-testid="user-action-role">
 			{user?.disabled_at
