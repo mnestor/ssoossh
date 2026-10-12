@@ -378,9 +378,10 @@ type LDAPConfig struct {
 // admin group in the identity provider takes effect at their next login.
 type AdminConfig struct {
 	// RequireGroup is the OIDC group a caller must belong to in order to
-	// access admin-scoped operations (diagnostics, claims echo, directory
-	// sync and probe), plus everything the SOC and auditor roles below can
-	// do. Empty disables admin operations entirely. Fails closed: no
+	// access admin-scoped operations (the effective configuration,
+	// diagnostics, claims echo, the directory status, sync and probe), plus
+	// everything the SOC and auditor
+	// roles below can do. Empty disables admin operations entirely. Fails closed: no
 	// identity, no group, or no configured group all deny.
 	RequireGroup string `mapstructure:"require_group" default:""`
 
@@ -397,8 +398,9 @@ type AdminConfig struct {
 	SOCGroup string `mapstructure:"soc_group" default:""`
 
 	// AuditorGroup is the OIDC group a caller must belong to in order to
-	// access auditor-scoped operations (viewing effective configuration,
-	// cross-user certificate history). Auditor is a child role of both admin
+	// access auditor-scoped operations (cross-user certificate history, the
+	// user and service code directories, the audit feed). Auditor is a child
+	// role of both admin
 	// and SOC, so RequireGroup and SOCGroup members hold auditor access
 	// regardless of this setting; empty therefore narrows auditor operations
 	// to those roles rather than disabling them. Fails closed: no identity,

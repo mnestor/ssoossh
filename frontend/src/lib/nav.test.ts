@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { adminNav, isAdminRoute, isCurrent, isFocusRoute, primaryNav, accountNav } from './nav';
+import {
+	adminNav,
+	adminNavFor,
+	isAdminRoute,
+	isCurrent,
+	isFocusRoute,
+	primaryNav,
+	accountNav
+} from './nav';
 
 // Test methodology: table-driven over the path predicates, which are the
 // only part of the model that can be wrong at runtime. The boundary cases
@@ -106,5 +114,41 @@ describe('nav model', () => {
 		const hrefs = [...primaryNav(), ...adminNav, ...accountNav()].map((item) => item.href);
 
 		expect(new Set(hrefs).size).toBe(hrefs.length);
+	});
+});
+
+describe('adminNavFor', () => {
+	it('should offer every admin section when the viewer is an admin', () => {
+		expect(adminNavFor(true)).toEqual(adminNav);
+	});
+
+	// Issues #136 and #161, and SSOOSSH.md for Config: SOC and auditors are
+	// refused Config, the Directory, Claims echo and Diagnostics outright, so
+	// the rail must not offer them.
+	const adminOnlyHrefs = [
+		'/admin/config',
+		'/admin/directory',
+		'/admin/identity/echo',
+		'/admin/diagnostics'
+	];
+
+	for (const href of adminOnlyHrefs) {
+		it(`should leave out ${href} when the viewer is not an admin`, () => {
+			expect(adminNavFor(false).map((item) => item.href)).not.toContain(href);
+		});
+
+		it(`should offer ${href} when the viewer is an admin`, () => {
+			expect(adminNavFor(true).map((item) => item.href)).toContain(href);
+		});
+	}
+
+	it('should keep every section not marked admin-only when the viewer is not an admin', () => {
+		expect(adminNavFor(false)).toEqual(adminNav.filter((item) => !item.adminOnly));
+	});
+
+	it('should mark only Config, the Directory, Claims echo and Diagnostics as admin-only', () => {
+		expect(adminNav.filter((item) => item.adminOnly).map((item) => item.href)).toEqual(
+			adminOnlyHrefs
+		);
 	});
 });
