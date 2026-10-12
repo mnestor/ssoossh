@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/svelte';
+import { describe, it, expect, vi } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/svelte';
 
 import { formatDateTime } from '#lib/format.js';
 import AuditTimeline from './AuditTimeline.svelte';
@@ -240,5 +240,53 @@ describe('AuditTimeline', () => {
 			props: { events: undefined as unknown as AuditEvent[] }
 		});
 		expect(screen.getByText('No audit events recorded.')).toBeInTheDocument();
+	});
+});
+
+describe('AuditTimeline source links', () => {
+	const refusal = event({
+		action: 'cert.request_refused_network',
+		system: true,
+		detail: { source_ip: '203.0.113.9', approver_ip: '198.51.100.7' }
+	});
+	const href = (ip: string) => `/admin/audit?source_ip=${ip}`;
+
+	it('should link a source address when the feed can filter on it', () => {
+		render(AuditTimeline, { props: { events: [refusal], sourceHref: href } });
+		expect(screen.getByTestId('audit-source-link')).toHaveAttribute(
+			'href',
+			'/admin/audit?source_ip=203.0.113.9'
+		);
+	});
+
+	it('should name what the link does for a screen reader', () => {
+		render(AuditTimeline, { props: { events: [refusal], sourceHref: href } });
+		expect(screen.getByTestId('audit-source-link')).toHaveAccessibleName(
+			'203.0.113.9, show only events from this address'
+		);
+	});
+
+	it('should link only the source address and not the approver address', () => {
+		render(AuditTimeline, { props: { events: [refusal], sourceHref: href } });
+		expect(screen.getAllByTestId('audit-source-link')).toHaveLength(1);
+	});
+
+	it('should leave a source address as text when the timeline cannot filter', () => {
+		render(AuditTimeline, { props: { events: [refusal] } });
+		expect(screen.queryByTestId('audit-source-link')).not.toBeInTheDocument();
+	});
+
+	it('should apply the filter in place on a plain click', async () => {
+		const onsource = vi.fn();
+		render(AuditTimeline, { props: { events: [refusal], sourceHref: href, onsource } });
+		await fireEvent.click(screen.getByTestId('audit-source-link'));
+		expect(onsource).toHaveBeenCalledWith('203.0.113.9');
+	});
+
+	it('should leave a modified click to the browser', async () => {
+		const onsource = vi.fn();
+		render(AuditTimeline, { props: { events: [refusal], sourceHref: href, onsource } });
+		await fireEvent.click(screen.getByTestId('audit-source-link'), { ctrlKey: true });
+		expect(onsource).not.toHaveBeenCalled();
 	});
 });

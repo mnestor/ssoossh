@@ -12,9 +12,42 @@
 		 * Omit it on the global feed, where neither side is "you".
 		 */
 		subjectUserId?: string;
+		/**
+		 * sourceHref, when given, turns each event's source_ip into a link
+		 * that filters the feed to that address: the address of the view
+		 * filtered that way. The global feed passes it; a user's timeline
+		 * does not, since it cannot filter.
+		 */
+		sourceHref?: (ip: string) => string;
+		/**
+		 * onsource, with sourceHref, applies the filter in place on a plain
+		 * click instead of navigating, so the page keeps its state. A
+		 * modified click (a new tab, say) still follows the href.
+		 */
+		onsource?: (ip: string) => void;
 	}
 
-	const { events, subjectUserId = '' }: Props = $props();
+	const { events, subjectUserId = '', sourceHref, onsource }: Props = $props();
+
+	/**
+	 * followSource applies the source filter in place on a plain left click.
+	 * Anything else (a middle click, a modifier key) is left to the browser,
+	 * which opens the href, so the link behaves like every other link.
+	 */
+	function followSource(event: MouseEvent, ip: string) {
+		if (
+			!onsource ||
+			event.button !== 0 ||
+			event.metaKey ||
+			event.ctrlKey ||
+			event.shiftKey ||
+			event.altKey
+		) {
+			return;
+		}
+		event.preventDefault();
+		onsource(ip);
+	}
 
 	// The hidden privileged-view actions and the array guard both live in
 	// #lib/audit, so this and the page that counts what it rendered cannot
@@ -111,7 +144,24 @@
 					>
 						{#each details(event) as [key, value] (key)}
 							<dt>{key}</dt>
-							<dd class="break-all text-ink">{value}</dd>
+							<!-- source_ip is the one field the feed filters on, so
+							     on the feed it is a link to the view filtered to
+							     it. Cobalt because it is a link (DESIGN.md, "Where
+							     cobalt appears"); inline in the field list, so the
+							     target rule's inline-link exemption applies. -->
+							{#if key === 'source_ip' && sourceHref}
+								<dd class="break-all">
+									<a
+										href={sourceHref(value)}
+										onclick={(e) => followSource(e, value)}
+										class="text-accent underline hover:text-accent-hover"
+										data-testid="audit-source-link"
+										>{value}<span class="sr-only">, show only events from this address</span></a
+									>
+								</dd>
+							{:else}
+								<dd class="break-all text-ink">{value}</dd>
+							{/if}
 						{/each}
 					</dl>
 				{/if}
