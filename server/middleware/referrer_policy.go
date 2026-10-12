@@ -8,6 +8,10 @@ import "github.com/gin-gonic/gin"
 // same-origin requests, and only the origin for cross-origin requests.
 type ReferrerPolicyMiddleware struct{}
 
+// referrerPolicy is the Referrer-Policy value sent on every response. It is
+// also reported to the admin diagnostics through AppSecurityHeaders.
+const referrerPolicy = "strict-origin-when-cross-origin"
+
 // NewReferrerPolicyMiddleware creates a ReferrerPolicyMiddleware.
 func NewReferrerPolicyMiddleware() *ReferrerPolicyMiddleware {
 	return &ReferrerPolicyMiddleware{}
@@ -17,7 +21,7 @@ func NewReferrerPolicyMiddleware() *ReferrerPolicyMiddleware {
 // strict-origin-when-cross-origin on each response.
 func (m *ReferrerPolicyMiddleware) Add() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
+		c.Header("Referrer-Policy", referrerPolicy)
 		c.Next()
 	}
 }

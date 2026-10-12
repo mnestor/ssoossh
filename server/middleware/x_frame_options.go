@@ -7,6 +7,10 @@ import "github.com/gin-gonic/gin"
 // embed element (DENY). This mitigates clickjacking attacks.
 type XFrameOptionsMiddleware struct{}
 
+// xFrameOptions is the X-Frame-Options value sent on every response. It is
+// also reported to the admin diagnostics through AppSecurityHeaders.
+const xFrameOptions = "DENY"
+
 // NewXFrameOptionsMiddleware creates an XFrameOptionsMiddleware.
 func NewXFrameOptionsMiddleware() *XFrameOptionsMiddleware {
 	return &XFrameOptionsMiddleware{}
@@ -16,7 +20,7 @@ func NewXFrameOptionsMiddleware() *XFrameOptionsMiddleware {
 // on each response.
 func (m *XFrameOptionsMiddleware) Add() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.Header("X-Frame-Options", "DENY")
+		c.Header("X-Frame-Options", xFrameOptions)
 		c.Next()
 	}
 }

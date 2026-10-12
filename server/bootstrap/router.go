@@ -532,13 +532,15 @@ func (a *app) registerRoutes(r *gin.Engine) error {
 	// The diagnostics run makes the server open an outbound connection to
 	// its own public URL, so it is bounded per caller like the directory
 	// probe. The service is constructed here rather than in the services
-	// struct because it holds only config and an HTTP client.
+	// struct because it holds only config, the header values the middleware
+	// sends (which its header check grades against) and an HTTP client.
 	var diagnosticsRateLimit gin.HandlerFunc
 	if a.config.Production || !a.config.HTTP.RateLimitDisableForDev {
 		diagnosticsRateLimit = middleware.NewEndpointRateLimiter().
 			PerKeys(rate.Every(ldapProbeInterval), ldapProbeBurst, diagnosticsRunRateLimitKeys)
 	}
-	controller.NewDiagnosticsController(apiGroup, service.NewDiagnosticsService(a.config, nil), a.db, a.svc.audit,
+	diagnostics := service.NewDiagnosticsService(a.config, middleware.AppSecurityHeaders(), nil)
+	controller.NewDiagnosticsController(apiGroup, diagnostics, a.db, a.svc.audit,
 		sessionAuth, adminAuth, csrf, diagnosticsRateLimit)
 
 	return nil
