@@ -210,6 +210,43 @@ describe('loading more codes', () => {
 		expect(await screen.findByText('svc-backup')).toBeInTheDocument();
 	});
 
+	// Where keyboard focus lands once the pressed control is gone: the count
+	// line after the last page, Try again after a failure. See
+	// LoadMoreFooter, which owns the rule for every Load more list.
+	const focusCases: { name: string; bodies: (object | string)[]; retry: boolean; lands: string }[] =
+		[
+			{
+				name: 'should move focus to the count line when the last page loads',
+				bodies: [firstPage, lastPage],
+				retry: false,
+				lands: 'enrollments-count'
+			},
+			{
+				name: 'should move focus to Try again when Load more fails',
+				bodies: [firstPage, 'boom'],
+				retry: false,
+				lands: 'enrollments-more-error-retry'
+			},
+			{
+				name: 'should move focus to the count line when a retry loads the last page',
+				bodies: [firstPage, 'boom', lastPage],
+				retry: true,
+				lands: 'enrollments-count'
+			}
+		];
+
+	for (const { name, bodies, retry, lands } of focusCases) {
+		it(name, async () => {
+			stubPages(...bodies);
+			render(Page);
+			await userEvent.click(await screen.findByTestId('enrollments-load-more'));
+			if (retry) {
+				await userEvent.click(await screen.findByTestId('enrollments-more-error-retry'));
+			}
+			await vi.waitFor(() => expect(document.activeElement).toBe(screen.getByTestId(lands)));
+		});
+	}
+
 	it('should start a new search from its first page', async () => {
 		const urls = stubPages(firstPage, lastPage);
 		render(Page);
