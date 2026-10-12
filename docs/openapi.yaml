@@ -4031,13 +4031,26 @@ paths:
               schema:
                 $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
           description: Bound to another user, refused by the type's require condition,
-            or a cross-origin call
+            a service account the approver is not associated with, or a cross-origin
+            call
         "404":
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
           description: No such request
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: 'Already decided: denied, or approved and signing or signed'
+        "410":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Expired before it was decided
       security:
       - sessionCookie: []
       summary: Approve a request
@@ -4080,6 +4093,18 @@ paths:
               schema:
                 $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
           description: No such request
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: 'Already decided: denied, or approved and signing or signed'
+        "410":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Expired before it was decided
       security:
       - sessionCookie: []
       summary: Deny a request

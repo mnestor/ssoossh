@@ -563,8 +563,10 @@ func (cr *certRequestController) eventsHandler(g *gin.Context) {
 // @Param       request body webtypes.ApproveRequestBody false "Service-account selection (service-type requests only)"
 // @Success     200 {object} openapidoc.ApproveEnvelope "Queued for signing"
 // @Failure     401 {object} openapidoc.ErrorEnvelope "No valid session"
-// @Failure     403 {object} openapidoc.ErrorEnvelope "Bound to another user, refused by the type's require condition, or a cross-origin call"
+// @Failure     403 {object} openapidoc.ErrorEnvelope "Bound to another user, refused by the type's require condition, a service account the approver is not associated with, or a cross-origin call"
 // @Failure     404 {object} openapidoc.ErrorEnvelope "No such request"
+// @Failure     409 {object} openapidoc.ErrorEnvelope "Already decided: denied, or approved and signing or signed"
+// @Failure     410 {object} openapidoc.ErrorEnvelope "Expired before it was decided"
 // @Security    sessionCookie
 // @Router      /api/certs/requests/{id}/approve [post]
 func (cr *certRequestController) approveHandler(g *gin.Context) {
@@ -613,6 +615,8 @@ func (cr *certRequestController) approveHandler(g *gin.Context) {
 // @Failure     401 {object} openapidoc.ErrorEnvelope "No valid session"
 // @Failure     403 {object} openapidoc.ErrorEnvelope "Bound to another user, or a cross-origin call"
 // @Failure     404 {object} openapidoc.ErrorEnvelope "No such request"
+// @Failure     409 {object} openapidoc.ErrorEnvelope "Already decided: denied, or approved and signing or signed"
+// @Failure     410 {object} openapidoc.ErrorEnvelope "Expired before it was decided"
 // @Security    sessionCookie
 // @Router      /api/certs/requests/{id}/deny [post]
 func (cr *certRequestController) denyHandler(g *gin.Context) {
