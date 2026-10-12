@@ -32,6 +32,7 @@ import {
 	AuditUserDisabled,
 	AuditUserEnabled
 } from '#lib/api/generated/auditactions.js';
+import * as auditNamespace from '#lib/api/generated/auditnamespaces.js';
 import type { AuditEvent } from '#lib/api/types.js';
 
 /**
@@ -163,7 +164,7 @@ export function describeAuditAction(action: string): string {
  * service.tableSkipped). The feed can never return one, so the action filter
  * does not offer them: choosing one could only ever show an empty list.
  */
-const logOnlyAuditActions = ['cert.issued'];
+const logOnlyAuditActions = [AuditCertIssued];
 
 /** One labelled group of the action filter's options. */
 export interface AuditActionGroup {
@@ -177,13 +178,13 @@ export interface AuditActionGroup {
  * missing here still gets a group, under its raw name, so a new one is never
  * dropped from the filter.
  */
-const auditNamespaceLabels: [string, string][] = [
-	['cert', 'Certificates'],
-	['auth', 'Sign-in'],
-	['user', 'Accounts'],
-	['enrollment', 'Service codes'],
-	['ldap', 'Directory'],
-	['admin', 'Admin views']
+export const auditNamespaceLabels: [string, string][] = [
+	[auditNamespace.Cert, 'Certificates'],
+	[auditNamespace.Auth, 'Sign-in'],
+	[auditNamespace.User, 'Accounts'],
+	[auditNamespace.Enrollment, 'Service codes'],
+	[auditNamespace.LDAP, 'Directory'],
+	[auditNamespace.Admin, 'Admin views']
 ];
 
 /**

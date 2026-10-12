@@ -11,6 +11,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/model"
+	"github.com/mnestor/ssoossh/server/service/auditns"
 )
 
 // newTestAuditService builds a recorder over a migrated in-memory database.
@@ -417,18 +419,18 @@ func TestSweepAuditEvents_ShouldKeepTheNewestPastTheCap(t *testing.T) {
 	}
 }
 
-// auditTaxonomy reads every AuditAction constant declared in
-// audit_actions.go, so a test over "every action" cannot fall behind when
-// one is added. Parsing the source is the only way to enumerate a const
-// block.
-func auditTaxonomy(t *testing.T) []AuditAction {
+// declaredStringConsts reads every constant of type typeName declared in the
+// Go file at path, in order. Parsing the source is the only way to enumerate
+// a const block, and it keeps a test over "every X" from falling behind
+// when one is added.
+func declaredStringConsts(t *testing.T, path, typeName string) []string {
 	t.Helper()
 
-	file, err := parser.ParseFile(token.NewFileSet(), "audit_actions.go", nil, 0)
+	file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
 	if err != nil {
-		t.Fatalf("failed to parse audit_actions.go: %v", err)
+		t.Fatalf("failed to parse %s: %v", path, err)
 	}
-	var actions []AuditAction
+	var values []string
 	for _, decl := range file.Decls {
 		gen, ok := decl.(*ast.GenDecl)
 		if !ok || gen.Tok != token.CONST {
@@ -439,21 +441,33 @@ func auditTaxonomy(t *testing.T) []AuditAction {
 			if !ok {
 				continue
 			}
-			if typ, ok := value.Type.(*ast.Ident); !ok || typ.Name != "AuditAction" {
+			if typ, ok := value.Type.(*ast.Ident); !ok || typ.Name != typeName {
 				continue
 			}
 			for _, v := range value.Values {
 				lit, ok := v.(*ast.BasicLit)
 				if !ok || lit.Kind != token.STRING {
-					t.Fatalf("an AuditAction constant is not a string literal: %#v", v)
+					t.Fatalf("a %s constant is not a string literal: %#v", typeName, v)
 				}
 				name, err := strconv.Unquote(lit.Value)
 				if err != nil {
 					t.Fatalf("failed to unquote %s: %v", lit.Value, err)
 				}
-				actions = append(actions, AuditAction(name))
+				values = append(values, name)
 			}
 		}
+	}
+	return values
+}
+
+// auditTaxonomy reads every AuditAction constant declared in
+// audit_actions.go.
+func auditTaxonomy(t *testing.T) []AuditAction {
+	t.Helper()
+
+	var actions []AuditAction
+	for _, name := range declaredStringConsts(t, "audit_actions.go", "AuditAction") {
+		actions = append(actions, AuditAction(name))
 	}
 	// A floor rather than an exact count: it catches a parse that silently
 	// found nothing without needing an edit for every new action.
@@ -461,6 +475,59 @@ func auditTaxonomy(t *testing.T) []AuditAction {
 		t.Fatalf("found only %d AuditAction constants in audit_actions.go: %v", len(actions), actions)
 	}
 	return actions
+}
+
+// auditNamespaces reads every Namespace constant declared in
+// auditns/auditns.go.
+func auditNamespaces(t *testing.T) []auditns.Namespace {
+	t.Helper()
+
+	var namespaces []auditns.Namespace
+	for _, name := range declaredStringConsts(t, "auditns/auditns.go", "Namespace") {
+		namespaces = append(namespaces, auditns.Namespace(name))
+	}
+	if len(namespaces) == 0 {
+		t.Fatal("found no Namespace constants in auditns/auditns.go")
+	}
+	return namespaces
+}
+
+// The web UI groups its action filter by namespace, from the generated
+// auditns constants, so an action under an undeclared namespace would land
+// in a group with no label.
+func TestAuditTaxonomy_ShouldNameEveryActionUnderADeclaredNamespace(t *testing.T) {
+	t.Parallel()
+
+	namespaces := auditNamespaces(t)
+	for _, action := range auditTaxonomy(t) {
+		t.Run(string(action), func(t *testing.T) {
+			t.Parallel()
+
+			namespace, _, found := strings.Cut(string(action), ".")
+			if !found || !slices.Contains(namespaces, auditns.Namespace(namespace)) {
+				t.Errorf("action %q is not under a namespace declared in auditns: %v", action, namespaces)
+			}
+		})
+	}
+}
+
+// A declared namespace with no action would offer an empty group.
+func TestAuditTaxonomy_ShouldUseEveryDeclaredNamespace(t *testing.T) {
+	t.Parallel()
+
+	actions := auditTaxonomy(t)
+	for _, namespace := range auditNamespaces(t) {
+		t.Run(string(namespace), func(t *testing.T) {
+			t.Parallel()
+
+			used := slices.ContainsFunc(actions, func(action AuditAction) bool {
+				return strings.HasPrefix(string(action), string(namespace)+".")
+			})
+			if !used {
+				t.Errorf("namespace %q has no action in audit_actions.go", namespace)
+			}
+		})
+	}
 }
 
 // Every stored row carries its payload's action in the indexed column, on

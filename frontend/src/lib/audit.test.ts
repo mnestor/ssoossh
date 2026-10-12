@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import * as taxonomy from './api/generated/auditactions';
+import * as namespaces from './api/generated/auditnamespaces';
 import type { AuditEvent } from './api/types';
 import {
 	auditActionGroups,
+	auditNamespaceLabels,
 	auditFilterSearch,
 	auditPhrasing,
 	dedupeAuditEvents,
@@ -159,13 +161,13 @@ describe('auditActionGroups', () => {
 
 	it('should offer every action the feed can return', () => {
 		const expected = all.filter(
-			(action) => !hiddenAuditActions.includes(action) && action !== 'cert.issued'
+			(action) => !hiddenAuditActions.includes(action) && action !== taxonomy.AuditCertIssued
 		);
 		expect([...offered].sort()).toEqual([...expected].sort());
 	});
 
 	it('should not offer an action the feed never returns', () => {
-		expect(offered).not.toContain('cert.issued');
+		expect(offered).not.toContain(taxonomy.AuditCertIssued);
 	});
 
 	it('should put certificates first', () => {
@@ -182,4 +184,15 @@ describe('auditActionGroups', () => {
 	it('should give no groups for an empty taxonomy', () => {
 		expect(auditActionGroups([])).toEqual([]);
 	});
+
+	// Every namespace the server declares gets words of its own, so no group
+	// in the filter is titled with a raw namespace name.
+	const labelled = auditNamespaceLabels.map(([namespace]) => namespace);
+	for (const namespace of Object.values(namespaces).filter(
+		(v): v is string => typeof v === 'string'
+	)) {
+		it(`should label the ${namespace} namespace`, () => {
+			expect(labelled).toContain(namespace);
+		});
+	}
 });
