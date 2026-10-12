@@ -8,6 +8,10 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -409,6 +413,110 @@ func TestSweepAuditEvents_ShouldKeepTheNewestPastTheCap(t *testing.T) {
 	for i, row := range rows {
 		if got := decodePayload(t, row).Detail["n"]; got != float64(i+2) {
 			t.Errorf("row %d has n=%v, want the newest events to survive", i, got)
+		}
+	}
+}
+
+// auditTaxonomy reads every AuditAction constant declared in audit.go, so a
+// test over "every action" cannot fall behind when one is added. Parsing the
+// source is the only way to enumerate a const block.
+func auditTaxonomy(t *testing.T) []AuditAction {
+	t.Helper()
+
+	file, err := parser.ParseFile(token.NewFileSet(), "audit.go", nil, 0)
+	if err != nil {
+		t.Fatalf("failed to parse audit.go: %v", err)
+	}
+	var actions []AuditAction
+	for _, decl := range file.Decls {
+		gen, ok := decl.(*ast.GenDecl)
+		if !ok || gen.Tok != token.CONST {
+			continue
+		}
+		for _, spec := range gen.Specs {
+			value, ok := spec.(*ast.ValueSpec)
+			if !ok {
+				continue
+			}
+			if typ, ok := value.Type.(*ast.Ident); !ok || typ.Name != "AuditAction" {
+				continue
+			}
+			for _, v := range value.Values {
+				lit, ok := v.(*ast.BasicLit)
+				if !ok || lit.Kind != token.STRING {
+					t.Fatalf("an AuditAction constant is not a string literal: %#v", v)
+				}
+				name, err := strconv.Unquote(lit.Value)
+				if err != nil {
+					t.Fatalf("failed to unquote %s: %v", lit.Value, err)
+				}
+				actions = append(actions, AuditAction(name))
+			}
+		}
+	}
+	// A floor rather than an exact count: it catches a parse that silently
+	// found nothing without needing an edit for every new action.
+	if len(actions) < 20 {
+		t.Fatalf("found only %d AuditAction constants in audit.go: %v", len(actions), actions)
+	}
+	return actions
+}
+
+// Every stored row carries its payload's action in the indexed column, on
+// both write paths, so a query on the column finds exactly what a scan of
+// the payloads would. Log-only actions write no row and are left out.
+func TestRecord_ShouldSetTheActionColumnToThePayloadAction(t *testing.T) {
+	t.Parallel()
+
+	writers := []struct {
+		name  string
+		write func(t *testing.T, audit *AuditService, db *gorm.DB, event AuditEvent)
+	}{
+		{
+			name: "Record",
+			write: func(_ *testing.T, audit *AuditService, _ *gorm.DB, event AuditEvent) {
+				audit.Record(context.Background(), event)
+			},
+		},
+		{
+			name: "RecordTx",
+			write: func(t *testing.T, audit *AuditService, db *gorm.DB, event AuditEvent) {
+				if err := db.Transaction(func(tx *gorm.DB) error {
+					return audit.RecordTx(tx, event)
+				}); err != nil {
+					t.Fatalf("RecordTx() error = %v", err)
+				}
+			},
+		},
+	}
+
+	for _, action := range auditTaxonomy(t) {
+		if tableSkipped(action) {
+			continue
+		}
+		for _, writer := range writers {
+			t.Run("should store "+string(action)+" in the column when written by "+writer.name, func(t *testing.T) {
+				t.Parallel()
+
+				audit, db := newTestAuditService(t)
+				writer.write(t, audit, db, AuditEvent{
+					Action: action,
+					Actor:  &AuditSubject{UserID: "u-actor"},
+					Target: &AuditSubject{UserID: "u-target"},
+					Reason: "ticket 42",
+				})
+
+				var rows []model.AuditEvent
+				if err := db.Find(&rows).Error; err != nil {
+					t.Fatalf("load audit events: %v", err)
+				}
+				if len(rows) != 1 {
+					t.Fatalf("got %d rows, want 1", len(rows))
+				}
+				if got, want := rows[0].Action, string(decodePayload(t, rows[0]).Action); got != want || got != string(action) {
+					t.Errorf("action column = %q, payload action = %q, want both %q", got, want, action)
+				}
+			})
 		}
 	}
 }

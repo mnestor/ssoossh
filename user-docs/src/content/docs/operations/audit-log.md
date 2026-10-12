@@ -18,7 +18,8 @@ Every event goes to both:
   to ship, retain, search and analyse. Real audit retention happens there.
 - **The database table** is a bounded cache. It exists only to serve the web
   UI's recent-history views, so it is pruned on a schedule and is deliberately
-  not searchable beyond the two indexed subject columns.
+  not searchable beyond its three indexed columns: the actor, the target and
+  the action.
 
 The consequence to hold onto: the log emit is unconditional because the table
 copy is disposable. A deployment that configures no audit log destination
@@ -81,6 +82,11 @@ ask "everything this account did" and "everything done to this account"
 without a JSON scan. They are indexed grouping keys, never foreign keys and
 never authoritative. If a user row is later deleted or renamed the timeline
 still reads correctly from the payloads; the column merely stops matching.
+
+The `action` column follows the same rule. It copies the payload's action so a
+question about one action ("each user's latest `auth.login`") reads an index
+instead of the JSON. The recorder writes the column and the payload from the
+same event, so they agree, and the payload stays the record.
 
 One row serves both timelines. When a SOC analyst disables alice, the
 analyst's history shows the disable and alice's page shows who did it and why,
