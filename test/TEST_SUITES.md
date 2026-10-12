@@ -170,8 +170,10 @@ resilience:
 load:
   # go test -tags=load -race -count=1 -timeout=5m ./test/load/...
 
-migrations:
-  # go test -tags=dbparity ./test/migration/...  (schema parity, needs docker)
+postgres:
+  # SSOOSSH_TEST_DB=postgres SSOOSSH_TEST_POSTGRES_DSN=... go test ./...
+  # (the whole Go suite on Postgres, schema parity included; locally:
+  # make test-postgres, which needs docker)
 
 a11y:
   # pnpm test (frontend accessibility)

@@ -79,7 +79,8 @@ the matching `lint-*`) and the internal check halves
 | `make test-memory-leak` | Memory leak repro tests |
 | `make test-resilience` | Resilience suite (shutdown, db loss, oidc loss) |
 | `make test-load` | Load, soak, and concurrency suite (slow) |
-| `make test-migration` | SQLite/Postgres migration parity checks |
+| `make test-postgres` | Go suite against a throwaway Postgres (needs docker) |
+| `make test-migration` | SQLite/Postgres migration parity checks (needs docker) |
 
 ### Format and lint
 
