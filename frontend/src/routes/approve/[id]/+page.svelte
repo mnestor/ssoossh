@@ -191,9 +191,10 @@
 	/**
 	 * recheck reads the request again after a decision did not go through.
 	 * The commonest reason is that it closed in the meantime (expired, or
-	 * decided in another tab), and the server answers that only as a
-	 * failure; reading the request back lets the page say which. The pickers
-	 * are kept unless the request really changed.
+	 * decided in another tab). The server refuses that with 409 (decided) or
+	 * 410 (expired) and a short reason; reading the request back lets the
+	 * page show its full closed state instead. The pickers are kept unless
+	 * the request really changed.
 	 */
 	async function recheck() {
 		try {

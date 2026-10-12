@@ -24,17 +24,18 @@ import (
 	"github.com/mnestor/ssoossh/server/webtypes"
 )
 
-// NewAdminController registers SOC-scoped and auditor-scoped routes on
-// group. SOC routes take admin or SOC group membership. Auditor routes
-// require auditor-level access, which admin and SOC membership also satisfy
-// since auditor is a child role of both. No route here is admin-only; the
-// admin-only powers (diagnostics, identity echo, directory admin) live in
-// their own controllers.
+// NewAdminController registers admin-, SOC- and auditor-scoped routes on
+// group. The effective config is admin-only. SOC routes take admin or SOC
+// group membership. Auditor routes require auditor-level access, which
+// admin and SOC membership also satisfy since auditor is a child role of
+// both. The other admin-only powers (diagnostics, identity echo, directory
+// admin) live in their own controllers.
 func NewAdminController(
 	group *gin.RouterGroup,
 	c *config.Config,
 	db *gorm.DB,
 	sessionAuthMiddleware gin.HandlerFunc,
+	adminAuthMiddleware gin.HandlerFunc,
 	socAuthMiddleware gin.HandlerFunc,
 	auditorAuthMiddleware gin.HandlerFunc,
 	csrfMiddleware gin.HandlerFunc,
@@ -42,6 +43,11 @@ func NewAdminController(
 	auditService *service.AuditService,
 ) {
 	a := &adminController{config: c, db: db, enrollmentService: enrollmentService, audit: auditService}
+
+	// Admin route. Viewing the effective config is admin's alone
+	// (SSOOSSH.md), like diagnostics and identity echo.
+	adminGroup := group.Group("/admin", sessionAuthMiddleware, adminAuthMiddleware)
+	adminGroup.GET("/config", a.effectiveConfigHandler)
 
 	// SOC routes (account writes: admin or SOC group). SOC
 	// holds expiring an enrollment and both halves of a user disable:
@@ -55,7 +61,6 @@ func NewAdminController(
 
 	// Auditor routes (read-only operations)
 	auditorGroup := group.Group("/admin", sessionAuthMiddleware, auditorAuthMiddleware)
-	auditorGroup.GET("/config", a.effectiveConfigHandler)
 	auditorGroup.GET("/users", a.listUsersHandler)
 	auditorGroup.GET("/users/:id", a.getUserHandler)
 	auditorGroup.GET("/certificates/history", a.certificateHistoryHandler)
@@ -107,7 +112,7 @@ func (a *adminController) auditActor(g *gin.Context) *service.AuditSubject {
 // the server's effective configuration, grouped into sections, with secrets
 // redacted.
 //
-// @Summary     View effective server configuration (auditor-only)
+// @Summary     View effective server configuration (admin only)
 // @Description Returns every key of the server's effective configuration,
 // @Description grouped by top-level section, with secrets redacted (CA key,
 // @Description HSM PIN, client secret, cookie signing key, database
@@ -118,7 +123,7 @@ func (a *adminController) auditActor(g *gin.Context) *service.AuditSubject {
 // @Produce     json
 // @Success     200 {object} webtypes.EffectiveConfigResponse "Current effective configuration"
 // @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
-// @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as auditor"
+// @Failure     403 {object} openapidoc.ErrorEnvelope "Not an admin"
 // @Security    sessionCookie
 // @Router      /api/admin/config [get]
 func (a *adminController) effectiveConfigHandler(g *gin.Context) {
@@ -833,25 +838,38 @@ func (a *adminController) enableUserHandler(g *gin.Context) {
 	respondData(g, gin.H{"enabled": true})
 }
 
-// auditFeedHandler handles GET /api/admin/audit: the recent-activity feed.
+// auditFeedHandler handles GET /api/admin/audit: the recent-activity feed,
+// optionally narrowed to one action and one observed source address.
 //
 // @Summary     View the recent audit event feed (auditor-only)
-// @Description Returns the administrative audit stream newest first. The
-// @Description database copy is a bounded cache of recent events; the
-// @Description shipped audit log is the archive, and searching happens
-// @Description there rather than here.
+// @Description Returns the administrative audit stream newest first,
+// @Description optionally filtered to one action, one source address, or
+// @Description both. Both filters are exact matches. The source address is
+// @Description the one the server observed for the client the event is
+// @Description about (detail.source_ip), never the approver's address and
+// @Description never one the client reported. The database copy is a bounded
+// @Description cache of recent events; the shipped audit log is the archive,
+// @Description and any other search happens there.
 // @Tags        admin
 // @Produce     json
 // @Param       limit query int false "Page size (default 25, max 100)" example(25)
 // @Param       offset query int false "Results to skip (default 0)" example(0)
+// @Param       action query string false "Only events of this audit action; must be in the taxonomy" example(cert.request_refused_network)
+// @Param       source_ip query string false "Only events whose observed source is this IP address" example(192.0.2.10)
 // @Success     200 {object} webtypes.AuditEventsResponse "Audit events"
-// @Failure     400 {object} openapidoc.ErrorEnvelope "Invalid paging parameters"
+// @Failure     400 {object} openapidoc.ErrorEnvelope "Invalid paging parameters, an unknown action, or a source_ip that is not an IP address"
 // @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
 // @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as auditor"
 // @Security    sessionCookie
 // @Router      /api/admin/audit [get]
 func (a *adminController) auditFeedHandler(g *gin.Context) {
-	params, err := paging.Parse(g.Request.URL.Query())
+	query := g.Request.URL.Query()
+	params, err := paging.Parse(query)
+	if err != nil {
+		handleError(g, err)
+		return
+	}
+	filter, err := service.ParseAuditFilter(query.Get("action"), query.Get("source_ip"))
 	if err != nil {
 		handleError(g, err)
 		return
@@ -861,18 +879,28 @@ func (a *adminController) auditFeedHandler(g *gin.Context) {
 		return
 	}
 
-	page, err := a.audit.ListRecent(g.Request.Context(), params.Limit, params.Offset)
+	page, err := a.audit.ListRecent(g.Request.Context(), filter, params.Limit, params.Offset)
 	if err != nil {
 		handleError(g, err)
 		return
 	}
 
 	// One event per visit to the feed, not one per event displayed, which
-	// settles the recursion question.
+	// settles the recursion question. The filters are the search
+	// parameters the taxonomy asks a list view to record. The address goes
+	// under filter_source_ip, never source_ip: that key is reserved for an
+	// address the server observed (see service.AuditEvent.Detail).
+	detail := map[string]any{"scope": "feed", "limit": params.Limit, "offset": params.Offset}
+	if filter.Action != "" {
+		detail["filter_action"] = string(filter.Action)
+	}
+	if filter.SourceIP != "" {
+		detail["filter_source_ip"] = filter.SourceIP
+	}
 	a.auditRecord(g, service.AuditEvent{
 		Action: service.AuditAdminAuditViewed,
 		Actor:  a.auditActor(g),
-		Detail: map[string]any{"scope": "feed", "limit": params.Limit, "offset": params.Offset},
+		Detail: detail,
 	})
 
 	respondData(g, auditPageResponse(page))

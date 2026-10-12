@@ -429,7 +429,8 @@ out the session, unchanged. See
 ## Running a sync by hand
 
 `/admin/directory` shows the sync settings and the last pass on any instance,
-and gives an admin a button. The pass is the **same code path** the scheduler
+and gives a button to run one. The page is admin-only, status included; see
+[Roles and containment](/ssoossh/operations/roles/). The pass is the **same code path** the scheduler
 runs: a manual sync that behaved differently from a scheduled one would be a
 diagnostic that lies.
 

@@ -134,9 +134,10 @@ function mockApi(options: {
 	return calls;
 }
 
-/** signedInAsAdmin puts an admin in the session store, which gates the
- * sync button and the probe console. */
-function signedInAsAdmin(isAdmin = true) {
+/** signedInAsAdmin puts an admin in the session store. The page renders
+ * only for an admin: the directory layout turns everyone else away (see
+ * layout.test.ts), so the page itself has no non-admin branch to test. */
+function signedInAsAdmin() {
 	session.user = {
 		subject: 'sub-alice',
 		username: 'alice',
@@ -148,8 +149,8 @@ function signedInAsAdmin(isAdmin = true) {
 		approvable_service_accounts: [],
 		user_own_service_accounts: [],
 		extra: {},
-		is_admin: isAdmin,
-		is_soc: isAdmin,
+		is_admin: true,
+		is_soc: true,
 		is_auditor: true,
 		detail_level: 'advanced' as const
 	};
@@ -284,27 +285,9 @@ describe('Directory admin page', () => {
 			await userEvent.click(await screen.findByTestId('ldap-run-sync'));
 			expect(await screen.findByTestId('ldap-sync-error')).toHaveTextContent('already running');
 		});
-
-		it('should not offer the sync to a non-admin', async () => {
-			signedInAsAdmin(false);
-			mockApi({ status: enabledStatus() });
-			render(Page);
-
-			await screen.findByTestId('ldap-sync-card');
-			expect(screen.queryByTestId('ldap-run-sync')).not.toBeInTheDocument();
-		});
 	});
 
 	describe('the probe console', () => {
-		it('should not be offered to a non-admin', async () => {
-			signedInAsAdmin(false);
-			mockApi({ status: enabledStatus() });
-			render(Page);
-
-			await screen.findByTestId('ldap-sync-card');
-			expect(screen.queryByTestId('ldap-probe-card')).not.toBeInTheDocument();
-		});
-
 		it('should warn when certificate verification is off', async () => {
 			signedInAsAdmin();
 			mockApi({ status: enabledStatus({ tls_insecure_skip_verify: true }) });
@@ -492,14 +475,5 @@ describe('the last pass at a glance', () => {
 		mockApi({ status: enabledStatus({ last_run: syncRun({ failed: 2 }) }) });
 		render(Page);
 		expect(await screen.findByTestId('ldap-count-failed')).toHaveClass('text-trimmed');
-	});
-});
-
-describe('for someone below the admin role', () => {
-	it('should say running a sync or probe needs the admin role', async () => {
-		signedInAsAdmin(false);
-		mockApi({ status: enabledStatus({ last_run: syncRun() }) });
-		render(Page);
-		expect(await screen.findByTestId('ldap-admin-only')).toBeInTheDocument();
 	});
 });

@@ -18,8 +18,9 @@ vi.mock('$app/state', async () => {
 	return { page: fakePage };
 });
 
-/** signedInUser is a minimal session user with the given auditor flag. */
-function signedInUser(isAuditor: boolean) {
+/** signedInUser is a minimal session user with the given auditor flag, and
+ * optionally the SOC and admin flags above it. */
+function signedInUser(isAuditor: boolean, { isSOC = false, isAdmin = false } = {}) {
 	return {
 		subject: 'sub-1',
 		username: 'alice',
@@ -31,8 +32,8 @@ function signedInUser(isAuditor: boolean) {
 		approvable_service_accounts: [],
 		user_own_service_accounts: [],
 		extra: {},
-		is_admin: false,
-		is_soc: false,
+		is_admin: isAdmin,
+		is_soc: isSOC,
 		is_auditor: isAuditor,
 		detail_level: 'advanced' as const
 	};
@@ -83,9 +84,9 @@ describe('app rail', () => {
 		expect(screen.queryByRole('link', { name: 'Audit log' })).not.toBeInTheDocument();
 	});
 
-	it('should name every admin section for an auditor', () => {
+	it('should name every admin section when the viewer is an admin', () => {
 		resetFakePage('http://localhost/admin/users');
-		session.user = signedInUser(true);
+		session.user = signedInUser(true, { isSOC: true, isAdmin: true });
 		session.resolved = true;
 
 		render(AppRail, { onsignout: () => {} });
@@ -102,6 +103,31 @@ describe('app rail', () => {
 			'Diagnostics'
 		]);
 	});
+
+	// The Directory (issue #136), Claims echo and Diagnostics (issue #161)
+	// are admin-only: offering them to SOC or an auditor would lead them to a
+	// page that can only refuse them.
+	const belowAdmin: { name: string; user: ReturnType<typeof signedInUser> }[] = [
+		{ name: 'an auditor', user: signedInUser(true) },
+		{ name: 'a SOC member', user: signedInUser(true, { isSOC: true }) }
+	];
+
+	for (const { name, user } of belowAdmin) {
+		it(`should name only the auditor-scoped sections when the viewer is ${name}`, () => {
+			resetFakePage('http://localhost/admin/users');
+			session.user = user;
+			session.resolved = true;
+
+			render(AppRail, { onsignout: () => {} });
+
+			expect(railLinkLabels().slice(4)).toEqual([
+				'Users',
+				'Certificates',
+				'Service codes',
+				'Audit log'
+			]);
+		});
+	}
 
 	it('should mark the destination being viewed as the current page', () => {
 		session.user = signedInUser(false);

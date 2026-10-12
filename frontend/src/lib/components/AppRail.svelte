@@ -7,7 +7,7 @@
 	import RailGroup from './RailGroup.svelte';
 	import RailItem from './RailItem.svelte';
 	import RailUserMenu from './RailUserMenu.svelte';
-	import { adminNav, isAdminRoute, isCurrent, primaryNav } from '#lib/nav.js';
+	import { adminNavFor, isAdminRoute, isCurrent, primaryNav } from '#lib/nav.js';
 	import { rail } from '#lib/rail.svelte.js';
 	import { session } from '#lib/session.svelte.js';
 
@@ -43,6 +43,9 @@
 
 	const collapsed = $derived(forceCollapsed ?? rail.collapsed);
 	const isAuditor = $derived(session.user?.is_auditor ?? false);
+	// The admin group as this viewer may use it: an admin-only section is
+	// left out for SOC and auditors rather than offered and then refused.
+	const adminItems = $derived(adminNavFor(session.user?.is_admin ?? false));
 
 	// The identity is the label on its own row rather than a heading above
 	// one: on a tool that issues credentials, "as whom" is the question the
@@ -171,7 +174,7 @@
 				testid="rail-admin-group"
 				ontoggle={() => rail.toggleAdminOpen()}
 			>
-				{#each adminNav as item (item.href)}
+				{#each adminItems as item (item.href)}
 					<RailItem
 						href={item.href}
 						label={item.label}

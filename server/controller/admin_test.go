@@ -89,6 +89,7 @@ func routerWithEnrollmentService(t *testing.T, cfg *config.Config, db *gorm.DB, 
 		cfg,
 		db,
 		identityMiddleware(identity), // sessionAuthMiddleware
+		middleware.NewAdminAuthMiddleware(cfg).Add(),   // adminAuthMiddleware (real)
 		middleware.NewSOCAuthMiddleware(cfg).Add(),     // socAuthMiddleware (real)
 		middleware.NewAuditorAuthMiddleware(cfg).Add(), // auditorAuthMiddleware (real)
 		func(c *gin.Context) { c.Next() },              // csrfMiddleware (passthrough for tests)
@@ -1239,6 +1240,7 @@ func TestEffectiveConfigHandler_ShouldReturnConfigData(t *testing.T) {
 		cfg,
 		mockDB(),
 		mockSessionAuthMiddleware(true, "user-123"),
+		mockAdminAuthMiddleware(true),
 		mockSOCAuthMiddleware(true),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
@@ -1308,6 +1310,7 @@ func TestEffectiveConfigHandler_ShouldRedactSecretsButNotWhetherTheyAreSet(t *te
 		cfg,
 		mockDB(),
 		mockSessionAuthMiddleware(true, "user-123"),
+		mockAdminAuthMiddleware(true),
 		mockSOCAuthMiddleware(true),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
@@ -1347,35 +1350,35 @@ func TestEffectiveConfigHandler_ShouldRedactSecretsButNotWhetherTheyAreSet(t *te
 	}
 }
 
-// TestEffectiveConfigHandler_RequiresAuditorAuth verifies authorization check.
-func TestEffectiveConfigHandler_RequiresAuditorAuth(t *testing.T) {
+// The effective config is admin-only (SSOOSSH.md): SOC and auditors, who
+// pass every other read on this controller, are refused it.
+func TestEffectiveConfigHandler_ShouldServeAdminsOnly(t *testing.T) {
 	t.Parallel()
 
-	gin.SetMode(gin.TestMode)
-	cfg := newTestConfig(t)
+	tests := []struct {
+		name   string
+		groups []string
+		want   int
+	}{
+		{name: "should serve the config when the caller is an admin", groups: []string{"ssh-admins"}, want: http.StatusOK},
+		{name: "should refuse the config when the caller is SOC", groups: []string{"ssh-soc"}, want: http.StatusForbidden},
+		{name: "should refuse the config when the caller is an auditor", groups: []string{"ssh-auditors"}, want: http.StatusForbidden},
+		{name: "should refuse the config when the caller holds no role", groups: []string{"engineering"}, want: http.StatusForbidden},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-	r := gin.New()
-	r.Use(mockSessionAuthMiddleware(true, "user-123"))
-	r.Use(mockAuditorAuthMiddleware(false)) // Not authorized
+			identity := &service.Identity{Subject: "sub-caller", Username: "caller", Groups: tt.groups}
+			r := routerWithAuth(t, newTestConfig(t), newTestDB(t), identity)
 
-	NewAdminController(
-		&r.RouterGroup,
-		cfg,
-		mockDB(),
-		mockSessionAuthMiddleware(true, "user-123"),
-		mockSOCAuthMiddleware(false),
-		mockAuditorAuthMiddleware(false),
-		mockCSRFMiddleware(),
-		&stubEnrollmentProvider{},
-		nil, // auditor: these cases assert routing and payloads, not auditing
-	)
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/config", nil))
 
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/admin/config", nil)
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusForbidden {
-		t.Errorf("got status %d, want %d", w.Code, http.StatusForbidden)
+			if w.Code != tt.want {
+				t.Errorf("got status %d, want %d", w.Code, tt.want)
+			}
+		})
 	}
 }
 
@@ -1395,6 +1398,7 @@ func TestExpireEnrollmentHandler_ShouldRejectMissingID(t *testing.T) {
 		cfg,
 		mockDB(),
 		mockSessionAuthMiddleware(true, "user-123"),
+		mockAdminAuthMiddleware(true),
 		mockSOCAuthMiddleware(true),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
@@ -1428,6 +1432,7 @@ func TestExpireEnrollmentHandler_RequiresAdminAuth(t *testing.T) {
 		cfg,
 		mockDB(),
 		mockSessionAuthMiddleware(true, "user-123"),
+		mockAdminAuthMiddleware(true),
 		mockSOCAuthMiddleware(false),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
@@ -1471,6 +1476,7 @@ func TestExpireEnrollmentHandler_ShouldReturn404ForUnknownID(t *testing.T) {
 		cfg,
 		db,
 		mockSessionAuthMiddleware(true, "user-123"),
+		mockAdminAuthMiddleware(true),
 		mockSOCAuthMiddleware(true),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
@@ -1503,6 +1509,7 @@ func TestDisableUserHandler_RequiresAdminAuth(t *testing.T) {
 		cfg,
 		mockDB(),
 		mockSessionAuthMiddleware(true, "user-123"),
+		mockAdminAuthMiddleware(true),
 		mockSOCAuthMiddleware(false),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
@@ -1542,6 +1549,7 @@ func TestCertificateHistoryHandler_ShouldReturnEmptyList(t *testing.T) {
 		cfg,
 		db,
 		mockSessionAuthMiddleware(true, "user-123"),
+		mockAdminAuthMiddleware(true),
 		mockSOCAuthMiddleware(true),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
@@ -1592,6 +1600,7 @@ func TestCertificateHistoryHandler_RequiresAuditorAuth(t *testing.T) {
 		cfg,
 		mockDB(),
 		mockSessionAuthMiddleware(true, "user-123"),
+		mockAdminAuthMiddleware(false),
 		mockSOCAuthMiddleware(false),
 		mockAuditorAuthMiddleware(false),
 		mockCSRFMiddleware(),
@@ -1633,6 +1642,7 @@ func TestNewAdminController_RoutesAreRegistered(t *testing.T) {
 		cfg,
 		mockDB(),
 		mockSessionAuthMiddleware(true, "user-123"),
+		mockAdminAuthMiddleware(true),
 		mockSOCAuthMiddleware(true),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
@@ -1721,6 +1731,7 @@ func TestCertificateHistoryHandler_SearchesCertificates(t *testing.T) {
 		cfg,
 		db,
 		mockSessionAuthMiddleware(true, "user-123"),
+		mockAdminAuthMiddleware(true),
 		mockSOCAuthMiddleware(false),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
@@ -1817,6 +1828,7 @@ func TestCertificateHistoryHandler_FiltersByType(t *testing.T) {
 		cfg,
 		db,
 		mockSessionAuthMiddleware(true, "user-123"),
+		mockAdminAuthMiddleware(true),
 		mockSOCAuthMiddleware(false),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
@@ -1905,6 +1917,7 @@ func TestCertificateHistoryHandler_FiltersByStatus(t *testing.T) {
 		cfg,
 		db,
 		mockSessionAuthMiddleware(true, "user-123"),
+		mockAdminAuthMiddleware(true),
 		mockSOCAuthMiddleware(false),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
@@ -1979,6 +1992,7 @@ func TestCertificateHistoryHandler_Pagination(t *testing.T) {
 		cfg,
 		db,
 		mockSessionAuthMiddleware(true, "user-123"),
+		mockAdminAuthMiddleware(true),
 		mockSOCAuthMiddleware(false),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),

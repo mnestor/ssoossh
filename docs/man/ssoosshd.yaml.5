@@ -340,6 +340,8 @@ Default:
 .TP
 .BI http.rate_limit: " int"
 The maximum number of requests per rate_duration allowed per client IP. Zero or negative disables rate limiting entirely. Localhost (127.0.0.1, ::1) bypasses the limit, so health probes and tests from the local frontend are not throttled.
+.IP
+Keep it on for an internet\-facing deployment. Some requests write an audit event without a session, such as a console request from outside cert_options.console.allowed_networks, and this limit is what stops one address writing them as fast as it can send.
 Default:
 .BR 60 .
 .TP
@@ -724,7 +726,7 @@ Default:
 Both group names are optional; empty disables the corresponding role.
 .TP
 .BI admin.require_group: " string"
-The OIDC group a caller must belong to in order to access admin\-scoped operations (diagnostics, claims echo, directory sync and probe), plus everything the SOC and auditor roles below can do. Empty disables admin operations entirely. Fails closed: no identity, no group, or no configured group all deny.
+The OIDC group a caller must belong to in order to access admin\-scoped operations (the effective configuration, diagnostics, claims echo, the directory status, sync and probe), plus everything the SOC and auditor roles below can do. Empty disables admin operations entirely. Fails closed: no identity, no group, or no configured group all deny.
 Default:
 .BR empty .
 .TP
@@ -734,7 +736,7 @@ Default:
 .BR empty .
 .TP
 .BI admin.auditor_group: " string"
-The OIDC group a caller must belong to in order to access auditor\-scoped operations (viewing effective configuration, cross\-user certificate history). Auditor is a child role of both admin and SOC, so require_group and SOCGroup members hold auditor access regardless of this setting; empty therefore narrows auditor operations to those roles rather than disabling them. Fails closed: no identity, or membership in no granting group, denies.
+The OIDC group a caller must belong to in order to access auditor\-scoped operations (cross\-user certificate history, the user and service code directories, the audit feed). Auditor is a child role of both admin and SOC, so require_group and SOCGroup members hold auditor access regardless of this setting; empty therefore narrows auditor operations to those roles rather than disabling them. Fails closed: no identity, or membership in no granting group, denies.
 Default:
 .BR empty .
 .TP
@@ -1536,6 +1538,8 @@ Default:
 Refuses request creation from outside these CIDRs, before a keypair is certified and before any human is asked to approve anything. Empty means no network gate.
 .IP
 The server's half of per\-host policy rests on the source address rather than the hostname because the address is observed by the server and the hostname is a string an unauthenticated caller typed \(em the same reasoning that got host certificates declined (https://mnestor.github.io/ssoossh/project/decisions/). Behind a reverse proxy this is only meaningful with http.trusted_proxies set; without it every request carries the proxy's address.
+.IP
+Every refusal writes one cert.request_refused_network audit event with the observed source address (https://mnestor.github.io/ssoossh/operations/audit\-log/). The caller needs no session to cause one, so keep http.rate_limit on when the server is reachable from the internet.
 Default:
 .BR empty .
 .TP
