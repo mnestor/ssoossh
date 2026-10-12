@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/svelte';
+import { describe, it, expect, vi } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/svelte';
 
 import { formatDateTime } from '#lib/format.js';
 import AuditTimeline from './AuditTimeline.svelte';
@@ -85,6 +85,84 @@ describe('AuditTimeline', () => {
 		);
 	});
 
+	// Each row is shaped as the server records it: cert.claimed has no actor
+	// (nobody has signed in yet), cert.expired, cert.sign_failed and
+	// cert.request_refused_network are system events, and
+	// admin.diagnostics_run names the admin who ran it. None of the first four
+	// has an actor or a target, so they appear only on the global feed; the
+	// per-user rows are what an account's own timeline shows.
+	const admin = { user_id: 'u-alice', username: 'alice' };
+	it.each([
+		{
+			view: 'the global feed',
+			row: event({ action: 'cert.claimed' }),
+			subjectUserId: '',
+			want: 'Someone opened a certificate approval link'
+		},
+		{
+			view: 'the global feed',
+			row: event({ action: 'cert.expired', system: true }),
+			subjectUserId: '',
+			want: 'The server expired an unanswered certificate request'
+		},
+		{
+			view: 'the global feed',
+			row: event({ action: 'cert.sign_failed', system: true }),
+			subjectUserId: '',
+			want: 'The server could not sign an approved certificate'
+		},
+		{
+			view: 'the global feed',
+			row: event({ action: 'cert.request_refused_network', system: true }),
+			subjectUserId: '',
+			want: 'The server refused a certificate request from outside the allowed networks'
+		},
+		{
+			view: 'the global feed',
+			row: event({ action: 'admin.diagnostics_run', actor: admin }),
+			subjectUserId: '',
+			want: 'alice ran the deployment diagnostics'
+		},
+		{
+			view: 'the account timeline',
+			row: event({ action: 'admin.diagnostics_run', actor: admin }),
+			subjectUserId: 'u-alice',
+			want: 'This account ran the deployment diagnostics'
+		},
+		{
+			view: 'another account timeline',
+			row: event({ action: 'admin.diagnostics_run', actor: admin }),
+			subjectUserId: 'u-bob',
+			want: 'alice ran the deployment diagnostics'
+		}
+	])('should phrase $row.action on $view', ({ row, subjectUserId, want }) => {
+		render(AuditTimeline, { props: { events: [row], subjectUserId } });
+		expect(screen.getByTestId('audit-event').querySelector('p')).toHaveTextContent(want);
+	});
+
+	// A network refusal has no actor: the account it names is only what the
+	// caller claimed, and has to read as a field, not as who did it.
+	it.each([
+		{ key: 'source_ip', value: '203.0.113.9' },
+		{ key: 'claimed_username', value: 'root' },
+		{ key: 'cert_type', value: 'console' }
+	])('should show $key on a network refusal', ({ key, value }) => {
+		render(AuditTimeline, {
+			props: {
+				events: [
+					event({
+						action: 'cert.request_refused_network',
+						system: true,
+						reason: 'the source address is outside cert_options.console.allowed_networks',
+						detail: { cert_type: 'console', source_ip: '203.0.113.9', claimed_username: 'root' }
+					})
+				]
+			}
+		});
+		const term = screen.getByText(key);
+		expect(term.nextElementSibling).toHaveTextContent(value);
+	});
+
 	it('should name the actor when one is recorded', () => {
 		render(AuditTimeline, {
 			props: {
@@ -162,5 +240,53 @@ describe('AuditTimeline', () => {
 			props: { events: undefined as unknown as AuditEvent[] }
 		});
 		expect(screen.getByText('No audit events recorded.')).toBeInTheDocument();
+	});
+});
+
+describe('AuditTimeline source links', () => {
+	const refusal = event({
+		action: 'cert.request_refused_network',
+		system: true,
+		detail: { source_ip: '203.0.113.9', approver_ip: '198.51.100.7' }
+	});
+	const href = (ip: string) => `/admin/audit?source_ip=${ip}`;
+
+	it('should link a source address when the feed can filter on it', () => {
+		render(AuditTimeline, { props: { events: [refusal], sourceHref: href } });
+		expect(screen.getByTestId('audit-source-link')).toHaveAttribute(
+			'href',
+			'/admin/audit?source_ip=203.0.113.9'
+		);
+	});
+
+	it('should name what the link does for a screen reader', () => {
+		render(AuditTimeline, { props: { events: [refusal], sourceHref: href } });
+		expect(screen.getByTestId('audit-source-link')).toHaveAccessibleName(
+			'203.0.113.9, show only events from this address'
+		);
+	});
+
+	it('should link only the source address and not the approver address', () => {
+		render(AuditTimeline, { props: { events: [refusal], sourceHref: href } });
+		expect(screen.getAllByTestId('audit-source-link')).toHaveLength(1);
+	});
+
+	it('should leave a source address as text when the timeline cannot filter', () => {
+		render(AuditTimeline, { props: { events: [refusal] } });
+		expect(screen.queryByTestId('audit-source-link')).not.toBeInTheDocument();
+	});
+
+	it('should apply the filter in place on a plain click', async () => {
+		const onsource = vi.fn();
+		render(AuditTimeline, { props: { events: [refusal], sourceHref: href, onsource } });
+		await fireEvent.click(screen.getByTestId('audit-source-link'));
+		expect(onsource).toHaveBeenCalledWith('203.0.113.9');
+	});
+
+	it('should leave a modified click to the browser', async () => {
+		const onsource = vi.fn();
+		render(AuditTimeline, { props: { events: [refusal], sourceHref: href, onsource } });
+		await fireEvent.click(screen.getByTestId('audit-source-link'), { ctrlKey: true });
+		expect(onsource).not.toHaveBeenCalled();
 	});
 });

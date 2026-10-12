@@ -571,7 +571,11 @@ bg-surface-muted`, decorative), a short title, the sentence that says what
   row holds the sentence and, pinned together as one muted group on the
   right, the action name and timestamp. Rows are ruled. Details render as an
   aligned two-column list. Unknown actions fall back to the raw name.
-  Timestamps go through `formatDateTime`.
+  Timestamps go through `formatDateTime`. Given `sourceHref`, a row's
+  `source_ip` is an inline link (cobalt, a link) to the feed filtered to that
+  address; with `onsource` a plain click applies the filter in place and a
+  modified click follows the href. `approver_ip` is never linked: the feed
+  does not filter on it.
 
 ### Identifiers and badges
 
@@ -992,7 +996,18 @@ beneath it.
     never scrolls sideways.
 - **Audit log** (`/admin/audit`, `full`): the bounded table copy of the
   audit stream, with Load more. `AuditTimeline` sits in a surface panel and
-  needs no frame of its own.
+  needs no frame of its own. Two filters above it, kept in the address
+  (`?action=`, `?source_ip=`) as on `/logs/me`, and on screen in every state:
+  - **Action** is a `select` with "Any action" and the taxonomy grouped by
+    namespace (`auditActionGroups`), not a `FilterGroup`: twenty-odd actions
+    are too many chips. Actions the feed never returns are not offered.
+  - **Source address** is a mono text field that filters as typing settles,
+    once the value parses as one IP address. Enter or leaving the field with
+    a value that does not parse marks it (`aria-invalid`, a `text-danger`
+    line) and filters nothing.
+  - Clear filters (ghost) appears once either is set. Filters that match
+    nothing get the "filtered out" `EmptyState` with Clear filters; an empty
+    table gets the "nothing yet" one.
 - **Diagnostics** (`/admin/diagnostics`, admin only): four read-only
   deployment checks run on demand (public URL reachability, proxy trust and
   client IP, security headers, CORS and edge header attribution), one panel

@@ -85,7 +85,7 @@ reaching it means signing in, so it keeps the rail.
 | **Config** | `/admin/config` | The effective server configuration, secrets redacted | auditor and up |
 | **Directory** | `/admin/directory` | The LDAP sync's last pass, a sync (a dry run by default; a live pass asks for confirmation), and a read-only probe | admin |
 | **Claims echo** | `/admin/identity/echo` | Your own decoded ID token, annotated by the field that consumes each claim | admin |
-| **Audit log** | `/admin/audit` | Recent administrative activity | auditor and up |
+| **Audit log** | `/admin/audit` | Recent administrative activity, filterable by action and source address | auditor and up |
 | **Diagnostics** | `/admin/diagnostics` | Read-only checks of the deployment's public URL, proxy trust and edge headers | admin |
 
 What each of these shows, and what the roles mean, is on
