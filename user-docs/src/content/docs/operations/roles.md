@@ -197,6 +197,12 @@ belong to their **service accounts**, not to them, so unattended jobs keep
 running and the account's other holders keep control. If the intent is to stop
 a credential too, expire the enrollment as a separate, recorded action.
 
+Nobody can disable their own account. Doing so would end the operator's own
+session, and only another admin could undo it, so the server refuses with 403
+before it reads the request. The attempt is still recorded, as
+`user.disable_refused`, on that account's audit timeline, with the address the
+server observed. The account itself is not touched.
+
 The current state lives in denormalized columns on the user row --
 `disabled_at`, `disabled_by_user_id`, `disabled_reason`, `disabled_source` --
 which render the directory and the re-enable flow without touching the audit

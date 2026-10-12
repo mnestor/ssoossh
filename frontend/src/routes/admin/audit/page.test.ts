@@ -55,6 +55,16 @@ describe('admin audit page', () => {
 		expect(screen.getByTestId('audit-count')).toHaveTextContent('2 shown');
 	});
 
+	it('should render a refused self-disable with its label', async () => {
+		stubFeed(feedPage([auditEvent('e1', 'user.disable_refused')], 1));
+
+		render(Page);
+
+		expect(await screen.findByTestId('audit-event')).toHaveTextContent(
+			'alice was refused a self-disable'
+		);
+	});
+
 	it('should not offer to load more on the last page', async () => {
 		stubFeed(feedPage([auditEvent('e1', 'auth.login')], 1, 0));
 
