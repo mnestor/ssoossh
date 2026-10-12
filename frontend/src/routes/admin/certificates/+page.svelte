@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import { page } from '$app/state';
+	import { page, type ReadonlyURLSearchParams } from '$app/state';
 	import { syncAddressSearch } from '#lib/addressSearch.svelte.js';
 	import { listAdminCertificates } from '#lib/api/endpoints.js';
 	import type { CertificateResponse } from '#lib/api/types.js';
@@ -32,10 +32,20 @@
 	// Read from the address the page opened at, and written back to it, so
 	// returning from a certificate (whose back chip carries this search)
 	// lands on the same narrowed view instead of the defaults.
-	const opened = page.url.searchParams;
-	let searchQuery = $state(opened.get('q') ?? '');
-	let typeFilter = $state(opened.get('type') ?? '');
-	let statusFilter = $state(opened.get('status') ?? '');
+	let searchQuery = $state('');
+	let typeFilter = $state('');
+	let statusFilter = $state('');
+
+	/**
+	 * readFilters sets every filter from a query string. A key it does not
+	 * carry puts that filter back at its default, so an empty one clears.
+	 */
+	function readFilters(params: ReadonlyURLSearchParams) {
+		searchQuery = params.get('q') ?? '';
+		typeFilter = params.get('type') ?? '';
+		statusFilter = params.get('status') ?? '';
+	}
+	readFilters(page.url.searchParams);
 	let loadError = $state<string | null>(null);
 	let isLoading = $state(false);
 	let hasLoaded = $state(false);
@@ -176,9 +186,10 @@
 		return parts.length ? `?${parts.join('&')}` : '';
 	});
 
-	// Keep the address bar in step with the filters. See #lib/addressSearch
-	// for why a hand-written effect here hung the page (#178).
-	syncAddressSearch(() => filterSearch);
+	// Keep the address bar and the filters in step, both ways: a nav click
+	// to this page starts over (#182). See #lib/addressSearch for why a
+	// hand-written effect here hung the page (#178).
+	syncAddressSearch(() => filterSearch, followAddress);
 
 	// A row opens the certificate's own page, which returns here through its
 	// back chip with the filters it was opened from.
@@ -192,11 +203,18 @@
 	// would leave the old text on screen under an unfiltered list.
 	let searchKey = $state(0);
 
-	function clearFilters() {
-		searchQuery = '';
-		typeFilter = '';
-		statusFilter = '';
+	/**
+	 * followAddress sets the filters from an address this page was sent to
+	 * while already on screen, the search box included.
+	 */
+	function followAddress(params: ReadonlyURLSearchParams) {
+		readFilters(params);
 		searchKey += 1;
+	}
+
+	/** clearFilters returns to the defaults, as the bare address does. */
+	function clearFilters() {
+		followAddress(new URLSearchParams());
 	}
 
 	// What the list just became, for a reader who cannot see the rows
