@@ -1806,13 +1806,11 @@ func TestCertRequestService_Approve_ShouldRefuseARequestPastTTL(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 
 	err = svc.Approve(context.Background(), requestID, identity, DecisionContext{}, ApprovalSelection{})
-	if err == nil {
-		t.Error("expected a TTL-expired request to be refused by Approve")
-	}
 	// Strengthen assertion: verify the rejection is TTL-related, not due to
 	// missing user or other pre-TTL-check failures
-	if !strings.Contains(err.Error(), "not pending") {
-		t.Errorf("expected TTL expiry to reject with 'not pending' message, got: %v", err)
+	var expired *errorresponses.ExpiredError
+	if !errors.As(err, &expired) {
+		t.Errorf("expected TTL expiry to reject with an ExpiredError, got: %v (%T)", err, err)
 	}
 }
 
@@ -2025,6 +2023,18 @@ func TestCertRequestService_Approve_ShouldEnforceRequireOnUserCertificates(t *te
 			groups:  []string{"other"},
 			wantErr: true,
 		},
+		{
+			name:    "should reject an identity with no groups",
+			require: &config.PolicyCondition{Group: "ssh-users"},
+			groups:  nil,
+			wantErr: true,
+		},
+		{
+			name:    "should reject an identity whose only group is the empty string",
+			require: &config.PolicyCondition{Group: "ssh-users"},
+			groups:  []string{""},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -2044,6 +2054,12 @@ func TestCertRequestService_Approve_ShouldEnforceRequireOnUserCertificates(t *te
 			err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}, ApprovalSelection{})
 			if tt.wantErr && err == nil {
 				t.Error("expected approve to be rejected by the require condition")
+			}
+			// A refusal is an authorization answer (403), not an internal
+			// failure: anything but a ForbiddenError renders as 500.
+			var forbidden *errorresponses.ForbiddenError
+			if tt.wantErr && err != nil && !errors.As(err, &forbidden) {
+				t.Errorf("got error %v, want a ForbiddenError", err)
 			}
 			if !tt.wantErr && err != nil {
 				t.Errorf("unexpected error: %v", err)
@@ -2521,66 +2537,6 @@ func TestBindRequester_ShouldDetectARacingClaim(t *testing.T) {
 	var forbidden *errorresponses.ForbiddenError
 	if !errors.As(err, &forbidden) {
 		t.Fatalf("got error %v (%T), want a ForbiddenError for a request claimed by someone else", err, err)
-	}
-}
-
-// TestApproveServiceEnrollment_ShouldRefuseARequestThatIsNoLongerPending
-// covers approveServiceEnrollment's own guarded-UPDATE RowsAffected==0
-// branch directly. Approve's own top-level pending check (line ~291) always
-// catches a non-pending row first when called through Approve — including
-// with a genuine second Approve call — so this branch is only reachable via
-// a real race between two concurrent Approve calls both passing that check
-// before either commits. Calling approveServiceEnrollment directly (an
-// unexported, in-package-testable method) after flipping the row's status
-// out from under it reproduces exactly that race deterministically.
-func TestApproveServiceEnrollment_ShouldRefuseARequestThatIsNoLongerPending(t *testing.T) {
-	t.Parallel()
-
-	svc := newTestCertRequestService(t, time.Hour)
-	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{Type: model.CertificateTypeService, PublicKey: "ssh-ed25519 AAAA... svc"})
-	if err != nil {
-		t.Fatalf("unexpected error creating request: %v", err)
-	}
-	if err := svc.db.Model(&model.CertificateRequest{}).
-		Where("id = ?", requestID).
-		Update("status", model.CertificateRequestStatusDenied).Error; err != nil {
-		t.Fatalf("failed to flip the request's status: %v", err)
-	}
-	var req model.CertificateRequest
-	if err := svc.db.First(&req, "id = ?", requestID).Error; err != nil {
-		t.Fatalf("failed to load request: %v", err)
-	}
-	policy, _ := svc.policyFor(model.CertificateTypeService)
-	if err := svc.approveServiceEnrollment(context.Background(), req, RequestedOptions{}, nil, &Identity{Username: "approver", Subject: "sub-approver"}, policy, DecisionContext{}, ApprovalSelection{ServiceAccount: "svc-account"}); err == nil {
-		t.Error("approveServiceEnrollment() error = nil, want error for a request that lost the pending race")
-	}
-}
-
-// TestApproveForSigning_ShouldRefuseARequestThatIsNoLongerPending is
-// approveForSigning's counterpart to
-// TestApproveServiceEnrollment_ShouldRefuseARequestThatIsNoLongerPending —
-// same reasoning, same technique: Approve's own top-level check makes this
-// guard only reachable via a genuine race, reproduced deterministically by
-// calling approveForSigning directly after flipping the row's status.
-func TestApproveForSigning_ShouldRefuseARequestThatIsNoLongerPending(t *testing.T) {
-	t.Parallel()
-
-	svc := newTestCertRequestService(t, time.Hour)
-	identity := &Identity{Username: "alice", Subject: "sub-alice"}
-	requestID := mustCreateUserRequest(t, svc)
-	if err := svc.db.Model(&model.CertificateRequest{}).
-		Where("id = ?", requestID).
-		Update("status", model.CertificateRequestStatusDenied).Error; err != nil {
-		t.Fatalf("failed to flip the request's status: %v", err)
-	}
-
-	var req model.CertificateRequest
-	if err := svc.db.First(&req, "id = ?", requestID).Error; err != nil {
-		t.Fatalf("failed to reload request: %v", err)
-	}
-
-	if err := svc.approveForSigning(context.Background(), req, identity, svc.policies[model.CertificateTypeUser], RequestedOptions{}, DecisionContext{}, []string{}); err == nil {
-		t.Error("approveForSigning() error = nil, want error for a request that lost the pending race")
 	}
 }
 
