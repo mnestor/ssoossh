@@ -42,6 +42,10 @@
 		'user.disabled': 'disabled an account',
 		'user.enabled': 're-enabled an account',
 		'user.auto_disabled': 'was disabled automatically',
+		// Actor and target are the same account, so onWhom adds nothing and
+		// the phrase has to carry "self" on its own. Worded to match
+		// auth.login_denied, the other refusal on a timeline.
+		'user.disable_refused': 'was refused a self-disable',
 		'ldap.sync_triggered': 'ran the directory sync',
 		'ldap.probed': 'probed the directory',
 		'admin.enrollment_viewed': 'viewed an enrollment',
