@@ -11,7 +11,7 @@ import (
 )
 
 // TestServiceCodes_AdminListSearch verifies the admin list page loads correctly
-// and the search and pager controls are present.
+// and the search control is present.
 func TestServiceCodes_AdminListSearch(t *testing.T) {
 	f := newFixture(t, func(opts *harness.ServerOptions) {
 		opts.AdminRequireGroup = e2eAdminGroup
@@ -37,10 +37,10 @@ func TestServiceCodes_AdminListSearch(t *testing.T) {
 	browser.WaitVisible(t, `[data-testid="enrollments-empty"]`)
 	browser.WaitVisible(t, `[data-testid="search-enrollments"]`)
 
-	// Pager renders nothing when a single page holds everything, which is
-	// its documented contract -- asserting it is present on an empty list
-	// would assert the opposite of what the component does.
-	browser.AssertNotPresent(t, `[data-testid="enrollments-pager"]`)
+	// An empty list has no next cursor, so it offers no "Load more" --
+	// asserting the button is present would assert the opposite of the
+	// paging contract.
+	browser.AssertNotPresent(t, `[data-testid="enrollments-load-more"]`)
 }
 
 // TestServiceCodes_AdminPageRequiresAdminGroup verifies that accessing the admin

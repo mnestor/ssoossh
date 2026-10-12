@@ -167,10 +167,10 @@ func TestAdminCertificateList_SearchAndFilterWorks(t *testing.T) {
 	// Should see type filter
 	browser.WaitVisible(t, `[data-testid="type-filter"]`)
 
-	// One certificate fits on one page, and Pager deliberately renders
-	// nothing when a single page holds everything. Asserting it is present
-	// here would assert the opposite of the component's contract.
-	browser.AssertNotPresent(t, `[data-testid="pager"]`)
+	// One certificate fits on one page, so there is no next cursor and the
+	// list offers no "Load more". Asserting it is present here would assert
+	// the opposite of the paging contract.
+	browser.AssertNotPresent(t, `[data-testid="certificates-load-more"]`)
 }
 
 // TestAdminCertificateList_RowClickNavigatesToDetail tests that clicking a row

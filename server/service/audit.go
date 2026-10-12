@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/netip"
@@ -17,6 +18,7 @@ import (
 	"github.com/mnestor/ssoossh/server/logging"
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/utils/errorresponses"
+	"github.com/mnestor/ssoossh/server/utils/paging"
 )
 
 // auditPayloadVersion is the payload schema version, carried on every
@@ -84,7 +86,8 @@ func IsAuditAction(action string) bool {
 // reads the archive — "who looked at this account" is a real question — so
 // they keep their shipped-log line and lose only the table copy the UI
 // renders. admin.audit_viewed also wrote a new row on every read of the
-// feed, which shifted the offset window under "load more".
+// feed, which shifted the window under "load more" while the feed paged by
+// offset.
 func tableSkipped(action AuditAction) bool {
 	switch action {
 	case AuditCertIssued, AuditAdminAuditViewed, AuditAdminUserViewed:
@@ -409,9 +412,9 @@ func AuditSubjectFromUser(user *model.User) *AuditSubject {
 // AuditPage is one page of audit events, decoded for the UI.
 type AuditPage struct {
 	Events []AuditEventRecord
-	// NextOffset is the offset to pass for the following page, or 0 when
-	// this is the last one.
-	NextOffset int
+	// NextCursor is the after to pass for the following page: the id of
+	// this page's last event, or nil when this is the last page.
+	NextCursor *string
 	Total      int64
 }
 
@@ -427,10 +430,13 @@ type AuditEventRecord struct {
 // newest first — the per-user timeline. One row serves both sides: when a
 // SOC analyst disables alice, the analyst's history shows the disable and
 // alice's page shows who did it and why, from the same event.
-func (s *AuditService) ListForUser(ctx context.Context, userID string, limit, offset int) (*AuditPage, error) {
+//
+// after is the id of the previous page's last event, or "" for the first
+// page; it must be an event on this user's timeline.
+func (s *AuditService) ListForUser(ctx context.Context, userID, after string, limit int) (*AuditPage, error) {
 	q := s.db.WithContext(ctx).Model(&model.AuditEvent{}).
-		Where("actor_user_id = ? OR target_user_id = ?", userID, userID)
-	return s.page(ctx, q, limit, offset)
+		Where("(actor_user_id = ? OR target_user_id = ?)", userID, userID)
+	return s.page(ctx, q, q, after, limit)
 }
 
 // AuditFilter narrows the recent-activity feed. Each field is an equality
@@ -478,31 +484,57 @@ func ParseAuditFilter(action, sourceIP string) (AuditFilter, error) {
 // else (a free-text search, a time range, a field inside the detail) is
 // still the shipped log's job: the table is a bounded cache, not the
 // archive.
-func (s *AuditService) ListRecent(ctx context.Context, filter AuditFilter, limit, offset int) (*AuditPage, error) {
-	q := s.db.WithContext(ctx).Model(&model.AuditEvent{})
+//
+// after is the id of the previous page's last event, or "" for the first
+// page. It must be an event, but need not match the filter: only its
+// position is read.
+func (s *AuditService) ListRecent(ctx context.Context, filter AuditFilter, after string, limit int) (*AuditPage, error) {
+	scope := s.db.WithContext(ctx).Model(&model.AuditEvent{})
+	q := scope.Session(&gorm.Session{})
 	if filter.Action != "" {
 		q = q.Where("action = ?", string(filter.Action))
 	}
 	if filter.SourceIP != "" {
 		q = q.Where("source_ip = ?", filter.SourceIP)
 	}
-	return s.page(ctx, q, limit, offset)
+	return s.page(ctx, scope, q, after, limit)
 }
 
-// page runs one paged query and decodes the payloads.
-func (s *AuditService) page(ctx context.Context, q *gorm.DB, limit, offset int) (*AuditPage, error) {
+// page runs one keyset-paged query, newest first, and decodes the payloads.
+//
+// The cursor is looked up within scope, the list before any filter, so an
+// id from outside it (another user's timeline, say) is refused rather than
+// used as a position. A cursor whose row the retention sweep has since
+// removed is refused the same way: there is no position left to resume
+// from.
+func (s *AuditService) page(ctx context.Context, scope, q *gorm.DB, after string, limit int) (*AuditPage, error) {
 	var total int64
 	if err := q.Session(&gorm.Session{}).Count(&total).Error; err != nil {
 		return nil, fmt.Errorf("failed to count audit events: %w", err)
 	}
 
+	window := q.Session(&gorm.Session{})
+	if after != "" {
+		var cursor model.AuditEvent
+		err := scope.Session(&gorm.Session{}).Select("id", "created_at").Where("id = ?", after).Take(&cursor).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, paging.UnknownCursor()
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to look up the audit cursor: %w", err)
+		}
+		where, args := paging.SeekBefore("created_at", "id", cursor.CreatedAt, cursor.ID)
+		window = window.Where(where, args...)
+	}
+
 	var rows []model.AuditEvent
-	if err := q.Session(&gorm.Session{}).
+	if err := window.
 		Order("created_at DESC, id DESC").
-		Limit(limit).Offset(offset).
+		Limit(limit + 1).
 		Find(&rows).Error; err != nil {
 		return nil, fmt.Errorf("failed to list audit events: %w", err)
 	}
+	rows, next := paging.Trim(rows, limit, func(r model.AuditEvent) string { return r.ID })
 
 	page := &AuditPage{Events: make([]AuditEventRecord, 0, len(rows)), Total: total}
 	for _, row := range rows {
@@ -516,9 +548,7 @@ func (s *AuditService) page(ctx context.Context, q *gorm.DB, limit, offset int) 
 		}
 		page.Events = append(page.Events, record)
 	}
-	if offset+len(rows) < int(total) {
-		page.NextOffset = offset + len(rows)
-	}
+	page.NextCursor = next
 	return page, nil
 }
 

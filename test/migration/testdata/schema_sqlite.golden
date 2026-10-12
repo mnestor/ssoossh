@@ -117,6 +117,7 @@ table certificates
   fk certificate_request_id -> certificate_requests.id on_delete=NO ACTION on_update=NO ACTION
   fk user_id -> users.id on_delete=NO ACTION on_update=NO ACTION
   index idx_certificates_certificate_request_id unique=false columns=certificate_request_id
+  index idx_certificates_issued_at_id unique=false columns=issued_at,id
   index idx_certificates_user_id_issued_at unique=false columns=user_id,issued_at
   index sqlite_autoindex_certificates_1 unique=true columns=id
   index sqlite_autoindex_certificates_2 unique=true columns=serial_number
@@ -162,6 +163,7 @@ table enrollments
   fk certificate_request_id -> certificate_requests.id on_delete=NO ACTION on_update=NO ACTION
   fk user_id -> users.id on_delete=NO ACTION on_update=NO ACTION
   index idx_enrollments_code unique=true columns=code
+  index idx_enrollments_created_at_id unique=false columns=created_at,id
   index idx_enrollments_expiry_reminder unique=false columns=expiry_reminder_sent_at,expires_at
   index idx_enrollments_service_account unique=false columns=service_account
   index idx_enrollments_user_id unique=false columns=user_id

@@ -154,7 +154,7 @@ client must render an unknown action rather than assume the list is closed.
 | `user.auto_disabled` | A system action, so it carries no actor. Raised by the [LDAP sync](/ssoossh/operations/ldap/) |
 | `user.disable_refused` | An admin or SOC analyst tried to disable their own account and the server refused. Actor and target are the same account, the reason is the server's own text, and `source_ip` is the address the server observed (through `http.trusted_proxies`), never one the client supplied. The account is left untouched. Only the self-disable refusal is recorded; other refused admin actions are not |
 | `admin.enrollment_viewed` | One event per enrollment code opened. Not shipped-log only, unlike the two below: a code is a bearer credential, and it is one event per credential rather than one per screen |
-| `admin.user_viewed`, `admin.audit_viewed` | **Shipped log only.** An auditor working through the directory generates one per user opened and one per page of the feed, and within a session they outnumber the decisions this log exists to record. They keep their archive line -- "who looked at this account" is a real question -- and lose the table copy the web UI renders. `admin.audit_viewed` also wrote a new row on every read of the feed, which shifted the offset window under the UI's "load more" |
+| `admin.user_viewed`, `admin.audit_viewed` | **Shipped log only.** An auditor working through the directory generates one per user opened and one per page of the feed, and within a session they outnumber the decisions this log exists to record. They keep their archive line -- "who looked at this account" is a real question -- and lose the table copy the web UI renders. `admin.audit_viewed` also wrote a new row on every read of the feed, which shifted the window under the UI's "load more" while the feed paged by offset |
 | `ldap.sync_triggered` | An admin running the [directory sync](/ssoossh/operations/ldap/) by hand, with the counts the pass produced. A dry run records `dry_run: true` and no change to go with it |
 | `ldap.probed` | One directory probe, with the filter it sent and how many entries matched. The probe writes nothing, but it makes the server open an outbound connection and read an entry in full, which is worth a record |
 | `admin.diagnostics_run` | One run of the [deployment diagnostics](/ssoossh/operations/diagnostics/), with the status each of the four checks returned. Like the probe it writes nothing and makes the server dial out, so it is recorded for the same reason |
@@ -243,7 +243,15 @@ reach through the role hierarchy
 | Endpoint | What it returns |
 | --- | --- |
 | `GET /api/admin/users/:id/audit` | one user's timeline, as actor or target, newest first. This is where the disable reason meets the person deciding whether to re-enable, rendered on the admin user detail page |
-| `GET /api/admin/audit` | the recent-activity feed, in `created_at` order, paged. Optional `action` (one action from the table above) and `source_ip` (one IP address; see [Source addresses](#source-addresses)) narrow it, alone or together. Both are exact matches on indexed columns. An unknown action, or a `source_ip` that is not an IP address, is a 400 rather than an unfiltered page |
+| `GET /api/admin/audit` | the recent-activity feed, newest first. Optional `action` (one action from the table above) and `source_ip` (one IP address; see [Source addresses](#source-addresses)) narrow it, alone or together. Both are exact matches on indexed columns. An unknown action, or a `source_ip` that is not an IP address, is a 400 rather than an unfiltered page |
+
+Both page by cursor, like every admin list and the caller's own history:
+`limit` (25 by default, 100 at most) and `after`, the `next_cursor` the
+previous page returned, which is absent on the last page. A page resumes
+after that event's place in the order, so an event recorded while you read
+neither repeats a row nor pushes one off the next page. An `after` that names
+no event on the list (one the retention sweep has since removed, say) is a
+400, and so is `offset`, which these endpoints no longer take.
 
 The audit page in the web UI offers the same two filters, keeps them in its
 address so a filtered view can be reloaded or shared, and filters to an
