@@ -9,7 +9,7 @@ import type { CertificateOptions, RequestDetail } from '#lib/api/types.js';
  * - `trimmed`: asked for, and will not be. Server config is the outer bound
  *   on every option, and it trims rather than rejects — so the request still
  *   succeeds, just with less in it than the client asked for. Showing this
- *   before approval is a hard constraint (root CLAUDE.md), because otherwise
+ *   before approval is a hard constraint (SSOOSSH.md), because otherwise
  *   a human approves something quietly different from what they were shown.
  * - `added`: present in the granted set without being requested. Today
  *   that is a `source-address` pinned by `pin_source_address` on a service

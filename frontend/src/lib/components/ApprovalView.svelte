@@ -674,8 +674,8 @@
 
 		<!-- The granted set, not the requested set. Options this deployment does
 		     not permit are trimmed rather than rejected, so the two can differ and
-		     the difference has to be visible before anyone approves (root
-		     CLAUDE.md, Hard Constraints). Omitted for PAM and console requests,
+		     the difference has to be visible before anyone approves
+		     (SSOOSSH.md, Invariants). Omitted for PAM and console requests,
 		     where nothing was requested by a person: see isLocalAuth. -->
 		<div class="mt-6 space-y-6">
 			{#if !isLocalAuth}

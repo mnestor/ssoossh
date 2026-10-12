@@ -1,30 +1,30 @@
 # Running Multiple AI Agents in Parallel
 
-This guide explains how multiple AI agents (e.g., different Claude Code sessions) can work on separate features simultaneously without corrupting the repository.
+This guide explains how several AI agents (for example, separate Claude Code sessions) can work on separate features at the same time without corrupting the repository.
 
 ## Quick Rules
 
-1. **One worktree per agent.** Each agent gets its own git worktree so they don't interfere with each other's file state.
-2. **Schema is single-owner.** Only one agent at a time can edit `server/model/` or `server/resources/migrations/` (the database schema).
-3. **Coverage is reported unfiltered.** There is no exclusion list to maintain: a block that cannot be tested carries a `not covered:` comment in place, and `.coverage-floors` ratchets each package's floor. Another agent's edits cannot invalidate either.
-4. **No parallel `make test-e2e`.** The end-to-end test suite uses fixed host resources (a local user account, sshd on fixed ports); run it serially.
-5. **After merging, regenerate.** When a branch lands, the integrator runs `make check-generated` (or the full `make pre-pr`) to catch stale generated files: types, openapi, man pages, confdocs, clidocs, Makefile docs, and the wire contract.
+1. **One worktree per agent.** Each agent works in its own git worktree. The main checkout is shared: an agent working there never switches its branch, and every agent runs `git branch --show-current` before it commits, because `git switch` carries uncommitted changes onto whatever branch it lands on.
+2. **Schema is single-owner.** Only one agent at a time edits `server/model/` or `server/resources/migrations/` (the database schema).
+3. **Coverage is reported unfiltered.** There is no exclusion list to maintain: a block that cannot be tested carries a `not covered:` comment in place, and `.coverage-floors` ratchets each package's floor.
+4. **`make test-e2e` runs one at a time.** It takes an flock on `/tmp/ssoossh-e2e.lock`, so a second run waits instead of interfering. The suite changes host state (the `ssoossh-e2e` account, `sshd` under sudo); read `test/e2e/README.md` first, and use `make test-e2e-unlocked` only for a deliberate parallel run.
+5. **Regenerate after every update from main.** After merging or rebasing `origin/main` into a branch, run `make check-generated` before pushing. tygo copies Go doc comments into the generated TypeScript, so even a comment-only Go change can leave an artifact stale.
 
 ## Detailed Setup
 
 ### Creating a New Agent Worktree
 
-```bash
-# On main, commit or stash any untracked work
-git status
-git stash -u  # if needed
+Branch names carry the issue number (`.claude/rules/git.md`), and the worktree uses the same `<issue>-<slug>`:
 
-# Create a new worktree for the agent (wraps `git worktree add`; see Makefile.md)
-make worktree NAME=<feature>            # BASE=main, WORKTREE_BRANCH=feat/<feature> by default
-cd ../ssoossh-<feature>
+```bash
+git fetch origin
+make worktree NAME=172-load-more-focus BASE=origin/main WORKTREE_BRANCH=fix/172-load-more-focus
+cd ../ssoossh-172-load-more-focus
 ```
 
-The agent now has an independent checkout and index, shared object store with main.
+`make worktree` wraps `git worktree add` (see `Makefile.md`). Without `WORKTREE_BRANCH` the branch is `chore/<NAME>`, and `BASE` defaults to the local `main`, which can lag `origin/main`. The script builds the frontend into the new worktree and checks that commit signing works. Commits are signed as the git config says; never pass `--no-gpg-sign`.
+
+The worktree has its own checkout and index and shares the object store with the main checkout.
 
 ### Assigning Ownership
 
@@ -32,61 +32,34 @@ Before two agents start, assign:
 
 | Resource | Assigned To | Reason |
 | --- | --- | --- |
-| `server/model/` + `server/resources/migrations/` | [Agent Name] | Two branches each adding a numbered migration per dialect will collide on ordering; the schema is one sequence. |
+| `server/model/` + `server/resources/migrations/` | [Agent Name] | Each schema change adds a timestamped migration to both `postgres/` and `sqlite/`. golang-migrate only applies versions above the highest one a database has recorded, so a migration that merges after a newer-timestamped one never runs on a database that already took the newer one. |
 
 ### Parallel Work Phases
 
 **Phase 1: Independent work** (all agents in their own worktrees)
-- Each agent commits to their own branch.
-- Run `make test`, `make lint`, `make cover` in your worktree; they are isolated.
-- `server/frontend/dist` is built per worktree (gitignored) so Go tests compile without conflict.
+- Each agent commits to its own branch.
+- Run `make verify` in the edit loop. Besides `lint`, `test` and `check-generated`, it lints the build-tagged suites and the Windows and macOS builds, which a hand-picked `make lint test` misses.
+- `server/frontend/dist` is per worktree (gitignored). `make worktree` builds it, and `make test` rebuilds it when it is missing or stale.
 
-**Phase 2: Merging** (serial, one branch at a time)
+**Phase 2: Merging** (one branch at a time)
 
-When a branch is ready to merge:
+`main` only accepts pull requests, and a PR merges only when every required check passes and the branch is up to date with `main`. To get a branch there:
 
-1. The branch owner rebases onto the latest `main`:
-   ```bash
-   git fetch origin
-   git rebase origin/main
-   ```
+1. Bring it up to date: `git fetch origin`, then merge `origin/main` into it (or rebase, if the branch has not been pushed).
+2. Run `make check-generated`, then `make pre-pr`, the full merge gate. Never verify with a subset.
+3. Push and open the PR.
+4. When another PR lands first, repeat steps 1 and 2.
 
-2. Push the branch and open a PR. CI runs all checks.
-
-3. Once CI passes, merge the branch.
-
-4. **The integrator** (not the agent) runs the post-merge ritual **immediately**:
-   ```bash
-   cd <main-worktree>
-   git pull
-   
-   # Regenerate and verify every generated artifact (types, openapi, man,
-   # confdocs, clidocs, Makefile docs, wire contract)
-   go mod tidy
-   make check-generated
-   
-   # Verify the gate passes
-   make lint && make test
-   
-   # If changes were made, commit them
-   git add .
-   git commit -m "chore: regenerate after <feature> merge"
-   ```
-
-5. The next branch then rebases onto this updated `main` before merging.
-
-**Do NOT** skip step 4. If you merge two agent branches without regenerating between them:
-
-- Generated files (openapi.yaml, TypeScript types, man pages, the docs-site references, the wire contract) will collide and produce wrong output.
+Nothing is regenerated on `main` after a merge. The up-to-date requirement means every branch is checked against the `main` it will become part of.
 
 ## What Merges Safely in Parallel
 
-These can be edited by multiple branches without conflict:
+These can be edited by several branches without conflict:
 
-- **Controller handler code** — separate endpoints (different POST/GET paths).
-- **Test files** — separate test packages.
-- **Frontend components** — different `.svelte` files.
-- **Client/server logic** — separate packages (e.g., `server/signer/` and `server/service/` can both evolve).
+- **Controller handler code**: separate endpoints (different POST/GET paths).
+- **Test files**: separate test packages.
+- **Frontend components**: different `.svelte` files.
+- **Client/server logic**: separate packages (for example, `server/signer/` and `server/service/` can both evolve).
 
 Merge **serially if**:
 
@@ -95,13 +68,14 @@ Merge **serially if**:
 
 ## Central Collision Points
 
-Features that add routes or services will conflict here (both sides keep their additions):
+Features that add routes, services or settings conflict here (both sides keep their additions):
 
-- `server/bootstrap/router.go` — route registration
-- `server/bootstrap/bootstrap.go` — service construction
-- `server/model/model.go` — model list
+- `server/bootstrap/router.go`: route registration
+- `server/bootstrap/bootstrap.go`: service construction
+- `server/config/defaults.yaml`: one entry per config key
+- `frontend/DESIGN.md`: design tokens, which most UI work touches
 
-These conflicts are **mechanical:** take both sides, run `make check-generated`, and commit.
+These conflicts are **mechanical**: take both sides, run `make check-generated`, and commit.
 
 ## Cleanup
 
@@ -109,27 +83,26 @@ When a branch is merged and the worktree is no longer needed:
 
 ```bash
 cd ..
-git worktree remove ssoossh-<feature>
+git worktree remove ssoossh-<issue>-<slug>
+git -C ssoossh branch -d <prefix>/<issue>-<slug>
 ```
 
 ## Why This Discipline Matters
 
 Two things merge cleanly but are wrong afterwards:
 
-1. **Generated files** — The merger doesn't know that `openapi.yaml` is derived from Go annotations. Two branches both regenerate, outputs collide, and the merged result matches neither.
-2. **Migrations** — Two schema change branches each add a numbered migration. No merge marker because both are "additive" (new files). But if one adds a column named `status` and the other adds a constraint on `status`, the order matters. Silent drift.
+1. **Generated files.** `docs/openapi.yaml` comes from the swag annotations, the TypeScript types from the Go declarations, the man pages and docs-site references from the cobra commands and config structs. A conflict in one is never resolved by hand: take either side and regenerate.
+2. **Migrations.** Two schema branches each add a migration. There is no conflict marker because both are new files, but golang-migrate applies them by version, so merge order and timestamps have to agree. Silent drift.
 
-The post-merge ritual catches the first; serial schema ownership prevents the second.
+Regenerating after every update catches the first; serial schema ownership prevents the second.
 
 ## Worked Example
 
-**Agent A** is adding a new approval flow feature (new service, new routes).  
-**Agent B** is adding a new logging middleware.
+**Agent A** is adding a new approval flow (new service, new routes) for issue 201.
+**Agent B** is adding a logging middleware for issue 202.
 
-1. A creates worktree `ssoossh-approval-flow`, B creates `ssoossh-logging-middleware`.
-2. A owns `server/bootstrap/bootstrap.go` (service registration); B owns new middleware code.
+1. A creates worktree `ssoossh-201-approval-flow` on `feat/201-approval-flow`; B creates `ssoossh-202-logging-middleware` on `feat/202-logging-middleware`.
+2. A owns `server/bootstrap/bootstrap.go` (service registration); B owns the new middleware code.
 3. Both work in parallel in their worktrees.
-4. B's branch lands first. The integrator runs the post-merge ritual.
-5. A rebases onto updated `main`, conflicts in `server/bootstrap/bootstrap.go` are mechanical (both sides' service registration kept), rebase succeeds.
-6. A's PR opens, CI passes, merges. The integrator runs the post-merge ritual again.
-
+4. B's PR merges first.
+5. A merges `origin/main` into its branch. The conflict in `server/bootstrap/bootstrap.go` is mechanical (both sides' registrations kept). A runs `make check-generated` and `make pre-pr`, pushes, and its PR merges once CI passes.
