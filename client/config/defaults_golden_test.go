@@ -19,3 +19,13 @@ func TestEmbeddedDefaults_ShouldMatchGolden(t *testing.T) {
 
 	configgolden.Assert(t, "./client/config/", "defaults.golden", configgolden.Flatten(t, defaultconfig))
 }
+
+// should write every commented-out key in defaults.yaml as "#key:", so it
+// stands apart from the prose and turns on by deleting one character into
+// YAML that loads the key where its indentation says. The file is written
+// by hand, so a block's children keep their indentation after the "#".
+func TestEmbeddedDefaults_ShouldUncommentEverySettingIntoValidYAML(t *testing.T) {
+	t.Parallel()
+
+	configgolden.AssertCommentedSettings(t, defaultconfig, Config{})
+}

@@ -57,7 +57,7 @@
 
 # Base URL of the ssoossh server, e.g. https://ssh.example.com. Overridden by
 # --server. If the scheme is omitted, https is assumed.
-# server:
+#server:
 
 # The server's CA public key. Left empty, the client fetches it from the
 # server on first use and caches it for a day under ~/.cache/ssoossh (or
@@ -66,13 +66,13 @@
 # trusting a fetched key: a pinned key is also the only one reported to the
 # server, so an approval page can warn before this client refuses a
 # certificate.
-# capubkey:
+#capubkey:
 #
 # A list pins more than one, which is what a CA rotation needs -- both keys
 # are live at once while the old one ages out.
-# capubkey:
-#   - "ssh-ed25519 AAAA... ssoossh-ca-old"
-#   - "ssh-ed25519 AAAA... ssoossh-ca-new"
+#capubkey:
+#  - "ssh-ed25519 AAAA... ssoossh-ca-old"
+#  - "ssh-ed25519 AAAA... ssoossh-ca-new"
 
 # Skip TLS verification of the server. For development against a self-signed
 # certificate; it defeats the point of pinning capubkey above.
@@ -112,7 +112,7 @@ request_timeout: 2m
 # Reserved, and currently unused. It was intended to name a service account,
 # but that is chosen in the approval web UI instead — the client cannot
 # validate one, since enrollment requests are unauthenticated.
-# username:
+#username:
 
 # Settings in the named file cannot be overridden by a user's own config: it
 # is merged last of all. Only honored when read from the machine-wide file
@@ -136,7 +136,7 @@ request_timeout: 2m
 # own native fleet-management mechanisms (a Group Policy-managed registry
 # key, or macOS managed preferences pushed by MDM) instead of this file —
 # see https://mnestor.github.io/ssoossh/hosts/client-enforcement/ for the full mapping.
-# enforce: ssoossh-locked.yaml
+#enforce: ssoossh-locked.yaml
 
 # Steer key generation toward algorithms that SSH implementations running in
 # FIPS mode accept. When in effect, configuring a non-approved sshkey.type
@@ -155,7 +155,7 @@ request_timeout: 2m
 # environment for runtime-layer enforcement beneath these checks — an
 # operator wanting that sets it themselves (e.g. in the shell profile or
 # wrapper script that invokes ssoossh).
-# fips: true
+#fips: true
 
 # Key generated for each certificate. Both settings are optional.
 #
@@ -172,9 +172,9 @@ request_timeout: 2m
 # Note RSA generation costs hundreds of milliseconds and is highly variable,
 # paid every time a certificate is obtained; ecdsa and ed25519 are effectively
 # instant. Left unset so the default (ecdsa P-384) applies.
-# sshkey:
-#   type: ecdsa
-#   size: 384
+#sshkey:
+#  type: ecdsa
+#  size: 384
 
 # Certificate extensions requested in an `ssh login` request. Opt out of any
 # by setting the corresponding no_* to true. The default requests the full
@@ -188,9 +188,9 @@ request_timeout: 2m
 # extension outright; that subtraction happens after these settings and a
 # --flag cannot re-add what policy forbids.
 #
-# certificate_extensions:
-#   no_pty: false
-#   no_agent_forwarding: false
-#   no_port_forwarding: false
-#   no_x11_forwarding: false
-#   no_user_rc: false
+#certificate_extensions:
+#  no_pty: false
+#  no_agent_forwarding: false
+#  no_port_forwarding: false
+#  no_x11_forwarding: false
+#  no_user_rc: false
