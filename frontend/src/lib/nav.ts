@@ -16,6 +16,12 @@ export interface NavItem {
 	label: string;
 	/** Icon name from Icon.svelte's map. */
 	icon: string;
+	/**
+	 * Set on a section only an admin may open. The rest of the admin group
+	 * is auditor-scoped; these are dropped from the rail for SOC and
+	 * auditors by adminNavFor, and their route renders AccessDenied.
+	 */
+	adminOnly?: boolean;
 }
 
 /**
@@ -51,8 +57,9 @@ export function primaryNav(): NavItem[] {
 	];
 }
 
-/** adminNav is the auditor-only group. See the file header on why these are
- * plain hrefs. */
+/** adminNav is the admin group, shown to auditors and above. Entries marked
+ * adminOnly are for admins alone; the rail reads adminNavFor, not this list.
+ * See the file header on why these are plain hrefs. */
 export const adminNav: readonly NavItem[] = [
 	{ href: '/admin/users', label: 'Users', icon: 'users' },
 	{ href: '/admin/certificates', label: 'Certificates', icon: 'file-certificate' },
@@ -63,11 +70,25 @@ export const adminNav: readonly NavItem[] = [
 	// a glyph without becoming indistinguishable.
 	{ href: '/admin/service-codes', label: 'Service codes', icon: 'circle-key' },
 	{ href: '/admin/config', label: 'Config', icon: 'adjustments-horizontal' },
-	{ href: '/admin/directory', label: 'Directory', icon: 'address-book' },
+	// Admin-only (issue #136): the status names the directory connection
+	// and the sync settings, and the sync and the probe were already admin's.
+	{ href: '/admin/directory', label: 'Directory', icon: 'address-book', adminOnly: true },
 	{ href: '/admin/identity/echo', label: 'Claims echo', icon: 'braces' },
 	{ href: '/admin/audit', label: 'Audit log', icon: 'logs' },
 	{ href: '/admin/diagnostics', label: 'Diagnostics', icon: 'activity-heartbeat' }
 ] as const;
+
+/**
+ * adminNavFor is the admin group as one viewer may use it: every section for
+ * an admin, and every section not marked adminOnly for SOC and auditors.
+ *
+ * Display only, like the admin layout's gate: the server refuses the
+ * sections' reads on its own. Dropping the entry is what keeps a SOC member
+ * or auditor from being offered a page that can only refuse them.
+ */
+export function adminNavFor(isAdmin: boolean): NavItem[] {
+	return adminNav.filter((item) => isAdmin || !item.adminOnly);
+}
 
 /** accountNav sits in the rail's footer, below the destinations. */
 export function accountNav(): NavItem[] {
