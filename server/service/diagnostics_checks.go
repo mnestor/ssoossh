@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"net"
+	"slices"
 	"strings"
 )
 
@@ -122,9 +123,11 @@ func (s *DiagnosticsService) checkProxyTrust(req DiagnosticsRequest) DiagnosticC
 // public URL. Because the probe traverses the edge, this catches an edge that
 // strips, weakens, or overrides the headers the app itself sets. Values are
 // graded against what the app emits (see hygieneFindings), not only checked
-// for presence. The legacy X-XSS-Protection header is one the app does not set
-// at all, so any value seen there came from the edge. Without a complete set
-// of the app's values there is nothing to grade against, so the check skips.
+// for presence. Informational notes (such as HSTS being off in config) are
+// listed with the findings but leave the status OK. The legacy
+// X-XSS-Protection header is one the app does not set at all, so any value
+// seen there came from the edge. Without a complete set of the app's values
+// there is nothing to grade against, so the check skips.
 func (s *DiagnosticsService) checkHeaderHygiene(p edgeProbe) DiagnosticCheck {
 	c := DiagnosticCheck{ID: "header_hygiene", Title: "Security header hygiene"}
 	if !s.app.complete() {
@@ -137,15 +140,22 @@ func (s *DiagnosticsService) checkHeaderHygiene(p edgeProbe) DiagnosticCheck {
 		return skipped(c, "/healthz on the public URL was not answered by ssoosshd, so there is no app response to read")
 	}
 
-	c.Findings = s.app.hygieneFindings(p.headers, s.cfg.HTTP.Hsts)
-	if len(c.Findings) == 0 {
+	problems, notes := s.app.hygieneFindings(p.headers, s.cfg.HTTP.Hsts)
+	c.Findings = slices.Concat(problems, notes)
+	if len(problems) == 0 {
 		c.Status = DiagnosticOK
 		c.Summary = "The public URL returns the expected security headers."
 		return c
 	}
 	c.Status = DiagnosticWarn
 	c.Summary = "The public URL is missing or weakening security headers the app sets."
-	c.Remediation = "The app sets HSTS, X-Content-Type-Options, X-Frame-Options, Content-Security-Policy and Referrer-Policy itself. Where the edge shows a different value, it is overriding them; stop the edge rewriting these headers, and drop any X-XSS-Protection it adds."
+	sets := "HSTS, X-Content-Type-Options"
+	if s.cfg.HTTP.Hsts == "" {
+		// HSTS is off in config, so the app does not set it; naming it here
+		// would send the operator looking for a header the app never sends.
+		sets = "X-Content-Type-Options"
+	}
+	c.Remediation = "The app sets " + sets + ", X-Frame-Options, Content-Security-Policy and Referrer-Policy itself. Where the edge shows a different value, it is overriding them; stop the edge rewriting these headers, and drop any X-XSS-Protection it adds."
 	return c
 }
 

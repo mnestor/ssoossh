@@ -10,9 +10,9 @@
 	// not look like two different kinds of thing, and the missing focus ring
 	// on one of them is what a second copy of a pattern reliably loses.
 	//
-	// The label is shown from `sm` up and hidden below it, in the component
-	// rather than per caller: "which of these collapse" is not a decision a
-	// filter row should get to make differently from the next one.
+	// Always named: the label is on screen at every width the chip is. It
+	// used to shrink to its glyph below `sm`, which left a reader nothing to
+	// read without hovering; FilterGroup now shows a select there instead.
 	//
 	// A button rather than a link: filtering is a change of view, not a
 	// change of address. The list is paged client-side over what has been
@@ -51,9 +51,5 @@
 	     action's, and a row of cobalt chips competed with it. -->
 	{#if selected}<Icon name="check" size="xs" />{/if}
 	<Icon name={icon} size="xs" />
-	<!-- Named on a desktop, an icon on a phone. Eight chips with their words
-	     wrap a filter row onto three lines on a narrow screen, and the icons
-	     are the same glyphs the rows they filter carry. `sr-only` rather
-	     than `hidden`, so the button never announces as a bare icon. -->
-	<span class="sr-only sm:not-sr-only">{label}</span>
+	<span>{label}</span>
 </button>

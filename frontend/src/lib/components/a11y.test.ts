@@ -239,6 +239,23 @@ const cases: [string, any, Record<string, unknown>][] = [
 			]
 		}
 	],
+	// Both forms render here (no Tailwind in jsdom), so this pass also holds
+	// the below-`sm` select to axe's select-name rule: it must be named by
+	// its visible label, with a selection that is not the "any" option.
+	[
+		'FilterGroup (select, narrowed)',
+		FilterGroup,
+		{
+			label: 'Outcome',
+			selected: 'denied',
+			onselect: vi.fn(),
+			options: [
+				{ value: 'approved', label: 'Approved', icon: 'circle-check' },
+				{ value: 'denied', label: 'Denied', icon: 'circle-x' },
+				{ value: '', label: 'Both', icon: 'filter-off' }
+			]
+		}
+	],
 	['Footer', Footer, {}],
 	['Icon (decorative)', Icon, { name: 'certificate' }],
 	['Icon (labelled)', Icon, { name: 'certificate', ariaLabel: 'Certificate' }],

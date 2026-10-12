@@ -264,7 +264,7 @@ footer rule, no alert outline, no side stripe.
 
 | Utility                  | Token                      | Value | For                                                       |
 | ------------------------ | -------------------------- | ----- | --------------------------------------------------------- |
-| `rounded` / `rounded-sm` | `--radius` / `--radius-sm` | 3px   | Chips, badges, `TypeBadge`, `StatusBadge`                 |
+| `rounded` / `rounded-sm` | `--radius` / `--radius-sm` | 3px   | Chips, badges, `StatusBadge`                              |
 | `rounded-md`             | `--radius-md`              | 4px   | Controls: buttons, fields, segmented controls             |
 | `rounded-lg`             | `--radius-lg`              | 6px   | Panels: sections, rows, strips, alerts, tables            |
 | `rounded-xl`             | `--radius-xl`              | 8px   | Dialogs                                                   |
@@ -363,6 +363,11 @@ vocabulary; an unmapped name renders a visible red `?`.
 - Decorative icons are `aria-hidden`. A meaningful one gets its words in the
   document (`sr-only`), not an `aria-label` on a bare `span`, which browsers
   drop.
+- **A glyph is never the only name.** Anything a reader has to tell apart (a
+  type, an outcome, a filter) has its words on screen next to it: in the
+  control, or in the row's own text. `title` is a fallback for the pointer,
+  not the name; it shows late, and never on touch or keyboard focus. A glyph
+  that needs a hover to be understood has failed.
 
 ### Vocabulary
 
@@ -518,7 +523,12 @@ text-trimmed`, `role="status"`), `info` (`info-circle`, `bg-surface` on the
 - **Rows are links**: every `CertRow` and `ServiceCodeRow` is an `<a>` with
   an href its list resolved, so middle-click, copy-link and Back all work.
 - **CertRow**: one certificate as a clickable row: `TypeBadge`, subject,
-  what happened and when, principals, and the validity glyph
+  what happened and when, naming the type in words (`certificateEvent`:
+  "user certificate issued", "console login", ...; a PAM row names the
+  reported service when it is sudo, su (or a `sudo-`/`su-` variant such as
+  `sudo-i`), sshd or login, as "sudo (reported)", and reads "PAM login"
+  otherwise), principals, and the validity
+  glyph
   (`certificate` in `granted` or `certificate-off` in `ink-muted`), the one
   field that moves with the clock. Stacked below `xl`, aligned columns above.
   `showOutcome` adds the outcome glyph (`circle-check` / `circle-x`), set
@@ -552,14 +562,20 @@ bg-surface-muted`, decorative), a short title, the sentence that says what
   settles and only when it changed. Enter reports immediately; the clear
   button (`x`, `size-target`) reports an empty term at once. `value` seeds the
   box and is not watched; remount with a key to reset.
-- **FilterGroup**: one named group of chips ("Type: All User PAM ..."). The
-  name is not decoration: below `sm` a chip is its icon alone. Every group
-  has its own "any" chip (`filter-off`) rather than clearing by pressing the
-  selected chip again.
+- **FilterGroup**: one named group of filters ("Type: All User PAM ...").
+  From `sm` up, the name and then a row of `FilterChip`s. Below `sm`, a
+  native `<select>` with the name as its `<label>` above it, one option per
+  chip with the same values and words, styled as a field (`min-h-target
+rounded-md border-border-control bg-surface px-3 text-base`, `text-base`
+  because it is an input on touch). Both forms are rendered and CSS chooses,
+  as `CopyableId` does. The group decides the collapse, not the caller. Every
+  group has its own "any" option (the `filter-off` chip; "All", "Any" or
+  "Both" in the select) rather than clearing by pressing the selected chip
+  again.
 - **FilterChip**: glyph, label, pressed state. `rounded`, `min-h-target`,
   unselected `border-control text-ink-muted`, selected ink fill plus `check`
-  plus `aria-pressed`. Named from `sm` up; below `sm` the label is `sr-only`,
-  never `hidden`. Collapsing is the component's decision, not a prop.
+  plus `aria-pressed`. Always named: a chip is never its glyph alone. It
+  appears only from `sm` up; below that its group is a select.
 - **AuditTimeline**: the audit feed as sentences: who did what to whom. Each
   row holds the sentence and, pinned together as one muted group on the
   right, the action name and timestamp. Rows are ruled. Details render as an
@@ -582,9 +598,12 @@ bg-surface-muted`, decorative), a short title, the sentence that says what
 - **MonoChip**: one mono value in a set (a principal, an IP), `rounded`,
   `bg-surface-muted`, hairline `border-subtle`, `text-xs`.
   Chips rather than a comma list so set boundaries are unambiguous.
-- **TypeBadge**: the certificate type as a fixed 26px square, `rounded`,
-  `bg-surface-muted`, glyph only, type in `sr-only` words. Fixed so rows
-  align whatever the type is called.
+- **TypeBadge**: the certificate type as a fixed 26px box with no fill, no
+  radius and no border, the glyph at `sm` (16px) in `ink-muted`, the type in
+  `sr-only` words and a `title`. Fixed so rows align whatever the type is
+  called. No fill because a tinted square reads as an icon button, and this
+  one does nothing. It is never the only name of the type: the row says it in
+  words (`certificateEvent`).
 - **TypeChip**: the labelled form of `TypeBadge` for detail views.
 - **StatusBadge**: request or certificate status as a chip: glyph plus
   capitalised word, `rounded`, `text-xs font-semibold`, coloured by status.
@@ -743,9 +762,11 @@ off, and confirms through a reasonless `ConfirmModal`.
 - **The outcome group picks the endpoint:** Approved reads certificates,
   Denied reads decisions, Both reads each and interleaves by time. A validity
   filter returns no denials.
-- **Narrow screens:** below `sm` there is no outcome group and `/logs/me` is
-  pinned to approvals, so a row never carries an unlabelled outcome. The
-  width is stated once in `#lib/viewport` (`NARROW_QUERY`, `watchNarrow`).
+- **Narrow screens:** below `sm` each filter group is a labelled select (see
+  FilterGroup), and every group stays on offer, Outcome included. `CertRow`
+  drops its outcome glyph there; a `DeniedRow` keeps its own mark and says
+  "denied" in its detail line, so a mixed list still reads. The width is
+  stated once in `#lib/viewport` (`NARROW_QUERY`, `watchNarrow`).
 - **Paging:** every list pages by cursor with "Load more", a ghost button
   under the rows that goes once the last page is in. Every admin list (audit
   feed, a user's audit timeline, users, certificates, service codes) has the
@@ -1018,9 +1039,10 @@ beneath it.
   Directory): four read-only
   deployment checks run on demand (public URL reachability, proxy trust and
   client IP, security headers, CORS and edge header attribution), one panel
-  per check in a single column, in the order they ran, each with an OK,
-  Warning, Critical or Skipped chip and a remediation note. Skipped is not a
-  pass.
+  per check in a single column, worst first (Critical, Warning, OK, then
+  Skipped; checks with the same status keep the order they ran), each with
+  an OK, Warning, Critical or Skipped chip and a remediation note. Skipped
+  is not a pass.
 
 ## 14. Dark mode
 
@@ -1143,7 +1165,8 @@ rule above (36px with a mouse, 44px on touch). `make a11y` holds them.
   every control edge is 3:1 (`border-control`).
 - **Focus:** always visible; never `outline-none`.
 - **Icons:** decorative ones `aria-hidden`; meaningful ones carry `sr-only`
-  words.
+  words, and visible words beside them (see Iconography). `title` is never
+  the only name.
 - **Colour alone:** never. A toggle is filled when pressed and carries
   `aria-pressed`; a mutually exclusive set of views is a group of such
   toggles, not tabs.
