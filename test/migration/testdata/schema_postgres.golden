@@ -4,12 +4,15 @@ table audit_events
   column created_at type=timestamp with time zone nullable=false default=<none>
   column id type=text nullable=false default=<none>
   column payload type=text nullable=false default=''::text
+  column source_ip type=text nullable=false default=''::text
   column target_user_id type=text nullable=true default=<none>
   index audit_events_pkey CREATE UNIQUE INDEX audit_events_pkey ON public.audit_events USING btree (id)
   index idx_audit_events_action CREATE INDEX idx_audit_events_action ON public.audit_events USING btree (action, created_at, id)
   index idx_audit_events_action_actor CREATE INDEX idx_audit_events_action_actor ON public.audit_events USING btree (action, actor_user_id, created_at)
+  index idx_audit_events_action_source_ip CREATE INDEX idx_audit_events_action_source_ip ON public.audit_events USING btree (action, source_ip, created_at, id)
   index idx_audit_events_actor CREATE INDEX idx_audit_events_actor ON public.audit_events USING btree (actor_user_id, created_at)
   index idx_audit_events_created_at CREATE INDEX idx_audit_events_created_at ON public.audit_events USING btree (created_at)
+  index idx_audit_events_source_ip CREATE INDEX idx_audit_events_source_ip ON public.audit_events USING btree (source_ip, created_at, id)
   index idx_audit_events_target CREATE INDEX idx_audit_events_target ON public.audit_events USING btree (target_user_id, created_at)
 table ca_signer_keys
   column created_at type=timestamp with time zone nullable=false default=<none>

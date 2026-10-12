@@ -18,8 +18,8 @@ Every event goes to both:
   to ship, retain, search and analyse. Real audit retention happens there.
 - **The database table** is a bounded cache. It exists only to serve the web
   UI's recent-history views, so it is pruned on a schedule and is deliberately
-  not searchable beyond its three indexed columns: the actor, the target and
-  the action.
+  not searchable beyond its four indexed columns: the actor, the target, the
+  action and the observed source address.
 
 The consequence to hold onto: the log emit is unconditional because the table
 copy is disposable. A deployment that configures no audit log destination
@@ -108,6 +108,11 @@ question about one action ("each user's latest `auth.login`") reads an index
 instead of the JSON. The recorder writes the column and the payload from the
 same event, so they agree, and the payload stays the record.
 
+So does the `source_ip` column, which backs the feed's address filter. It
+copies the payload's `detail.source_ip`, in canonical form (an IPv4-mapped
+IPv6 address is stored as plain IPv4), and is empty for an event with no
+source. See [Source addresses](#source-addresses) for which address that is.
+
 One row serves both timelines. When a SOC analyst disables alice, the
 analyst's history shows the disable and alice's page shows who did it and why,
 from the same event.
@@ -155,6 +160,35 @@ client must render an unknown action rather than assume the list is closed.
 
 There is no logout event: sessions mostly end by expiry, so an explicit logout
 carries too little signal to keep.
+
+## Source addresses
+
+`detail.source_ip` is always an address the server observed: the connection's
+peer, or a forwarded address only when the peer is in
+[`http.trusted_proxies`](/ssoossh/reference/config/http/#trusted_proxies).
+Never one the client wrote into its request. It is also the one address the
+`source_ip` column and the feed's address filter use, with one meaning on
+every row: the client the event is about.
+
+| Action | `source_ip` is |
+| --- | --- |
+| `cert.requested`, `cert.claimed`, `cert.approved`, `cert.denied`, `cert.expired`, `cert.sign_failed`, `enrollment.code_created` | the address the certificate request came from, recorded when it was created. Filtering on it follows one client's requests from request to outcome |
+| `cert.request_refused_network` | the refused caller |
+| `enrollment.redeemed` | the client that retrieved the service certificate |
+| `user.disable_refused` | the browser that asked |
+| every other action | absent, so the column is empty and no address filter matches the row |
+
+Two other addresses appear in some payloads and are deliberately left out of
+the column. `approver_ip`, on `cert.approved` and `cert.denied`, is the
+approving browser: a different party, and mixing it in would make one filter
+answer two questions. `remote_host`, in the host context, is what the client
+reported, not an observation. Both stay in the payload and the shipped log.
+
+Rows written before the column existed were backfilled from the payload as
+their text was written. The recorder has always taken the address from the
+connection, so that text is normally already canonical; a row whose stored
+spelling differs (an IPv4-mapped address forwarded by a proxy, say) is not
+matched by the filter, though its payload is unchanged.
 
 Privileged **detail** views are audited; list views are not. Auditing list
 pagination writes a row per page of the user directory and says nothing. If a
@@ -207,12 +241,19 @@ reach through the role hierarchy
 | Endpoint | What it returns |
 | --- | --- |
 | `GET /api/admin/users/:id/audit` | one user's timeline, as actor or target, newest first. This is where the disable reason meets the person deciding whether to re-enable, rendered on the admin user detail page |
-| `GET /api/admin/audit` | the recent-activity feed, in `created_at` order, paged, with no search |
+| `GET /api/admin/audit` | the recent-activity feed, in `created_at` order, paged. Optional `action` (one action from the table above) and `source_ip` (one IP address; see [Source addresses](#source-addresses)) narrow it, alone or together. Both are exact matches on indexed columns. An unknown action, or a `source_ip` that is not an IP address, is a 400 rather than an unfiltered page |
 
-Searching happens in the external log system. That is the deliberate split: if
-you need to answer "every action by this subject last quarter", the shipped
-archive is where the query belongs, and the database window is sized to the UI
-rather than to the investigation.
+The audit page in the web UI offers the same two filters, keeps them in its
+address so a filtered view can be reloaded or shared, and filters to an
+address when you click one in an event's fields. Filtering to
+`cert.request_refused_network` and then to one address is how a run of
+attempts from one place reads.
+
+Those two filters are the whole of the table's search. Anything else -- free
+text, a time range, a field inside an event's detail, "every action by this
+subject last quarter" -- belongs in the external log system. That is the
+deliberate split: the shipped archive is where an investigation's query runs,
+and the database window is sized to the UI rather than to the investigation.
 
 ## Existing special-purpose tables
 

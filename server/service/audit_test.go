@@ -282,7 +282,7 @@ func TestListRecent_ShouldOrderNewestFirstAndPage(t *testing.T) {
 		})
 	}
 
-	page, err := audit.ListRecent(ctx, 2, 0)
+	page, err := audit.ListRecent(ctx, AuditFilter{}, 2, 0)
 	if err != nil {
 		t.Fatalf("ListRecent() error = %v", err)
 	}
@@ -300,7 +300,7 @@ func TestListRecent_ShouldOrderNewestFirstAndPage(t *testing.T) {
 		t.Errorf("first event n = %v, want 4 (newest first)", got)
 	}
 
-	last, err := audit.ListRecent(ctx, 2, 4)
+	last, err := audit.ListRecent(ctx, AuditFilter{}, 2, 4)
 	if err != nil {
 		t.Fatalf("ListRecent() error = %v", err)
 	}

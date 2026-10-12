@@ -4,11 +4,14 @@ table audit_events
   column created_at type=DATETIME nullable=false pk=false default=<none>
   column id type=TEXT nullable=false pk=true default=<none>
   column payload type=TEXT nullable=false pk=false default=''
+  column source_ip type=TEXT nullable=false pk=false default=''
   column target_user_id type=TEXT nullable=true pk=false default=<none>
   index idx_audit_events_action unique=false columns=action,created_at,id
   index idx_audit_events_action_actor unique=false columns=action,actor_user_id,created_at
+  index idx_audit_events_action_source_ip unique=false columns=action,source_ip,created_at,id
   index idx_audit_events_actor unique=false columns=actor_user_id,created_at
   index idx_audit_events_created_at unique=false columns=created_at
+  index idx_audit_events_source_ip unique=false columns=source_ip,created_at,id
   index idx_audit_events_target unique=false columns=target_user_id,created_at
   index sqlite_autoindex_audit_events_1 unique=true columns=id
 table ca_signer_keys

@@ -833,25 +833,38 @@ func (a *adminController) enableUserHandler(g *gin.Context) {
 	respondData(g, gin.H{"enabled": true})
 }
 
-// auditFeedHandler handles GET /api/admin/audit: the recent-activity feed.
+// auditFeedHandler handles GET /api/admin/audit: the recent-activity feed,
+// optionally narrowed to one action and one observed source address.
 //
 // @Summary     View the recent audit event feed (auditor-only)
-// @Description Returns the administrative audit stream newest first. The
-// @Description database copy is a bounded cache of recent events; the
-// @Description shipped audit log is the archive, and searching happens
-// @Description there rather than here.
+// @Description Returns the administrative audit stream newest first,
+// @Description optionally filtered to one action, one source address, or
+// @Description both. Both filters are exact matches. The source address is
+// @Description the one the server observed for the client the event is
+// @Description about (detail.source_ip), never the approver's address and
+// @Description never one the client reported. The database copy is a bounded
+// @Description cache of recent events; the shipped audit log is the archive,
+// @Description and any other search happens there.
 // @Tags        admin
 // @Produce     json
 // @Param       limit query int false "Page size (default 25, max 100)" example(25)
 // @Param       offset query int false "Results to skip (default 0)" example(0)
+// @Param       action query string false "Only events of this audit action; must be in the taxonomy" example(cert.request_refused_network)
+// @Param       source_ip query string false "Only events whose observed source is this IP address" example(192.0.2.10)
 // @Success     200 {object} webtypes.AuditEventsResponse "Audit events"
-// @Failure     400 {object} openapidoc.ErrorEnvelope "Invalid paging parameters"
+// @Failure     400 {object} openapidoc.ErrorEnvelope "Invalid paging parameters, an unknown action, or a source_ip that is not an IP address"
 // @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
 // @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as auditor"
 // @Security    sessionCookie
 // @Router      /api/admin/audit [get]
 func (a *adminController) auditFeedHandler(g *gin.Context) {
-	params, err := paging.Parse(g.Request.URL.Query())
+	query := g.Request.URL.Query()
+	params, err := paging.Parse(query)
+	if err != nil {
+		handleError(g, err)
+		return
+	}
+	filter, err := service.ParseAuditFilter(query.Get("action"), query.Get("source_ip"))
 	if err != nil {
 		handleError(g, err)
 		return
@@ -861,18 +874,28 @@ func (a *adminController) auditFeedHandler(g *gin.Context) {
 		return
 	}
 
-	page, err := a.audit.ListRecent(g.Request.Context(), params.Limit, params.Offset)
+	page, err := a.audit.ListRecent(g.Request.Context(), filter, params.Limit, params.Offset)
 	if err != nil {
 		handleError(g, err)
 		return
 	}
 
 	// One event per visit to the feed, not one per event displayed, which
-	// settles the recursion question.
+	// settles the recursion question. The filters are the search
+	// parameters the taxonomy asks a list view to record. The address goes
+	// under filter_source_ip, never source_ip: that key is reserved for an
+	// address the server observed (see service.AuditEvent.Detail).
+	detail := map[string]any{"scope": "feed", "limit": params.Limit, "offset": params.Offset}
+	if filter.Action != "" {
+		detail["filter_action"] = string(filter.Action)
+	}
+	if filter.SourceIP != "" {
+		detail["filter_source_ip"] = filter.SourceIP
+	}
 	a.auditRecord(g, service.AuditEvent{
 		Action: service.AuditAdminAuditViewed,
 		Actor:  a.auditActor(g),
-		Detail: map[string]any{"scope": "feed", "limit": params.Limit, "offset": params.Offset},
+		Detail: detail,
 	})
 
 	respondData(g, auditPageResponse(page))
