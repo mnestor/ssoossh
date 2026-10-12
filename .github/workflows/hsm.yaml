@@ -2,12 +2,6 @@ name: hsm
 
 on:
   pull_request:
-    paths:
-      - "server/signer/**"
-      - "server/config/**"
-      - "server/bootstrap/**"
-      - "go.mod"
-      - ".github/workflows/hsm.yaml"
   workflow_dispatch:
 
 permissions:
@@ -18,7 +12,33 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Path gate. An on.pull_request.paths filter would stop the workflow from
+  # starting at all, so softhsm would never report and a ruleset that
+  # requires it would block every PR that doesn't touch these paths. A
+  # skipped job does report, and skipped satisfies a required check.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+    outputs:
+      code: ${{ steps.filter.outputs.code || 'true' }}
+    steps:
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        if: github.event_name == 'pull_request'
+        id: filter
+        with:
+          filters: |
+            code:
+              - 'server/signer/**'
+              - 'server/config/**'
+              - 'server/bootstrap/**'
+              - 'go.mod'
+              - '.github/workflows/hsm.yaml'
+
   softhsm:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

@@ -371,32 +371,59 @@ jobs:
           path: test-results-multi-signer.xml
           retention-days: 7
 
+  # The one check name a ruleset needs for the PR gate. tier 1 is a matrix,
+  # so it reports "tier 1 (wire) (sqlite)" and "(postgres)" when it runs but
+  # only "tier 1 (wire)" when it is skipped; neither form is reported on
+  # every PR. This job always reports on pull requests and pushes: success
+  # when the path gate says e2e is not needed, or when the build and every
+  # tier passed; failure otherwise. It depends on prepare as well, so a
+  # failed build can't skip the tiers and pass by being skipped.
   e2e-summary:
     name: e2e results
-    needs: [tier-1, tier-2, tier-3, multi-signer]
+    needs: [changes, prepare, tier-1, tier-2, tier-3, multi-signer]
+    if: ${{ !cancelled() && github.event_name != 'schedule' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    if: ${{ !cancelled() && needs.tier-1.result != 'skipped' }}
     steps:
       - name: Summarize results
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          CODE: ${{ needs.changes.outputs.code }}
+          PREPARE: ${{ needs.prepare.result }}
+          TIER1: ${{ needs.tier-1.result }}
+          TIER2: ${{ needs.tier-2.result }}
+          TIER3: ${{ needs.tier-3.result }}
+          MULTI: ${{ needs.multi-signer.result }}
         run: |
-          echo "## E2E Test Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Tier | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Tier 1 (wire) | ${{ needs.tier-1.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Tier 2 (browser) | ${{ needs.tier-2.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Tier 3 (sshd) | ${{ needs.tier-3.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Multi-signer | ${{ needs.multi-signer.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## E2E Test Results"
+            echo ""
+            echo "| Job | Status |"
+            echo "|-----|--------|"
+            echo "| Path gate | $CHANGES (e2e needed: $CODE) |"
+            echo "| Build artifacts | $PREPARE |"
+            echo "| Tier 1 (wire) | $TIER1 |"
+            echo "| Tier 2 (browser) | $TIER2 |"
+            echo "| Tier 3 (sshd) | $TIER3 |"
+            echo "| Multi-signer | $MULTI |"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
 
-          if [[ "${{ needs.tier-1.result }}" == "success" && "${{ needs.tier-2.result }}" == "success" && "${{ needs.tier-3.result }}" == "success" && "${{ needs.multi-signer.result }}" == "success" ]]; then
-            echo "All tiers passed" >> $GITHUB_STEP_SUMMARY
-            exit 0
-          else
-            echo "One or more tiers failed" >> $GITHUB_STEP_SUMMARY
+          if [ "$CHANGES" != success ]; then
+            echo "The path gate did not succeed" >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
+          if [ "$CODE" != true ]; then
+            echo "No e2e-relevant changes: tiers skipped" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          for r in "$PREPARE" "$TIER1" "$TIER2" "$TIER3" "$MULTI"; do
+            if [ "$r" != success ]; then
+              echo "One or more jobs did not pass" >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
+          done
+          echo "All tiers passed" >> "$GITHUB_STEP_SUMMARY"
 
   # The weekly double check: the entire suite, unfiltered, five times, so
   # flakes surface here instead of in the PR gate. The only job that runs
