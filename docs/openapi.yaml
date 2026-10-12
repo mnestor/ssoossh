@@ -4019,6 +4019,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/openapidoc.ApproveEnvelope'
           description: Queued for signing
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Malformed body, or a service-type approval that names no service
+            account
         "401":
           content:
             application/json:

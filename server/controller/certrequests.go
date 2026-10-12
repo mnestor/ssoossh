@@ -562,6 +562,7 @@ func (cr *certRequestController) eventsHandler(g *gin.Context) {
 // @Param       id path string true "The certificate request's UUID"
 // @Param       request body webtypes.ApproveRequestBody false "Service-account selection (service-type requests only)"
 // @Success     200 {object} openapidoc.ApproveEnvelope "Queued for signing"
+// @Failure     400 {object} openapidoc.ErrorEnvelope "Malformed body, or a service-type approval that names no service account"
 // @Failure     401 {object} openapidoc.ErrorEnvelope "No valid session"
 // @Failure     403 {object} openapidoc.ErrorEnvelope "Bound to another user, refused by the type's require condition, a service account the approver is not associated with, or a cross-origin call"
 // @Failure     404 {object} openapidoc.ErrorEnvelope "No such request"

@@ -1343,7 +1343,9 @@ func describeAuthorizedKey(authorizedKey string) (fingerprint, keyType string) {
 // choice of principal.
 func checkServiceAccountLinkage(identity *Identity, serviceAccount string, allowUserAccounts bool) error {
 	if serviceAccount == "" {
-		return fmt.Errorf("approving a service certificate requires choosing a service account")
+		// The approver left out a required field: their input, not a
+		// server fault, so it renders as 400 rather than 500.
+		return &errorresponses.InvalidRequestError{Reason: "approving a service certificate requires choosing a service account"}
 	}
 	if slices.Contains(identity.ServiceAccounts, serviceAccount) {
 		return nil

@@ -425,3 +425,20 @@ func TestCheckServiceAccountLinkage_ShouldRefuseWithForbidden(t *testing.T) {
 	}
 	requireStatus(t, err, http.StatusForbidden)
 }
+
+// TestCheckServiceAccountLinkage_ShouldRefuseWithBadRequest pins that an
+// approval naming no service account is the caller's input error (400),
+// not a server fault.
+func TestCheckServiceAccountLinkage_ShouldRefuseWithBadRequest(t *testing.T) {
+	t.Parallel()
+
+	identity := &Identity{Username: "alice", ServiceAccounts: []string{"svc-deploy"}}
+
+	err := checkServiceAccountLinkage(identity, "", true)
+
+	var invalid *errorresponses.InvalidRequestError
+	if !errors.As(err, &invalid) {
+		t.Fatalf("got %v (%T), want an InvalidRequestError", err, err)
+	}
+	requireStatus(t, err, http.StatusBadRequest)
+}
