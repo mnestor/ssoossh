@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -34,6 +33,12 @@ type Browser struct {
 	ctx         context.Context
 	cancelAlloc context.CancelFunc
 	cancelCtx   context.CancelFunc
+
+	// console records what the page wrote to its console, uncaught
+	// exceptions, and the browser's own log (failed loads included), so a
+	// failure says what the page was doing and not only what it looked
+	// like. Written by recordConsole, read by screenshotOnFailure.
+	console *lockedBuffer
 }
 
 // StartBrowser launches a fresh headless browser instance, torn down via
@@ -86,12 +91,37 @@ func StartBrowserWithUserAgent(t *testing.T, userAgent string) *Browser {
 		t.Fatalf("harness: failed to start the browser (is chromium/chrome installed?): %v", err)
 	}
 
-	b := &Browser{ctx: ctx, cancelAlloc: cancelAlloc, cancelCtx: cancelCtx}
+	b := &Browser{ctx: ctx, cancelAlloc: cancelAlloc, cancelCtx: cancelCtx, console: &lockedBuffer{}}
+	done := b.recordConsole()
 	t.Cleanup(func() {
 		b.cancelCtx()
 		b.cancelAlloc()
+		<-done
 	})
 	return b
+}
+
+// recordConsole copies the page's console into b.console until the
+// browser's context ends, and returns a channel closed once the copier has
+// stopped. chromedp.Console subscribes when it is called rather than when
+// the iterator is ranged over, so nothing logged after this returns is lost.
+func (b *Browser) recordConsole() <-chan struct{} {
+	messages := chromedp.Console(b.ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for m, err := range messages {
+			if err != nil {
+				return
+			}
+			line := m.Time.UTC().Format("15:04:05.000") + " " + m.String()
+			if m.URL != "" {
+				line += " (" + m.URL + ")"
+			}
+			b.console.WriteLine(line)
+		}
+	}()
+	return done
 }
 
 // Navigate opens url and waits for selector to be visible.
@@ -423,9 +453,27 @@ func (b *Browser) CompleteIdPLoginWithGroups(t *testing.T, username string, grou
 	}
 }
 
-// screenshotOnFailure best-effort captures a screenshot and the current URL
-// to the test's artifact directory — debugging a browser failure from an
+// visibleTestIDsJS lists the data-testid of every element the page is
+// showing, once each, in document order. It names the state a page is in
+// (a loading block, a load failure, the login view) in a line a CI log can
+// carry.
+const visibleTestIDsJS = `[...new Set([...document.querySelectorAll('[data-testid]')]
+	.filter((el) => el.checkVisibility())
+	.map((el) => el.dataset.testid))]`
+
+// failureConsoleTailLines is how much of the browser console a failure
+// quotes in the test log. The whole console is in browser-console.log.
+const failureConsoleTailLines = 20
+
+// screenshotOnFailure best-effort records what the browser was showing when
+// a step failed: a screenshot, the URL, the page's HTML and its console go
+// to the test's artifact directory, and the URL, the visible test IDs and
+// the end of the console go to the test log, so a CI failure can be read
+// without downloading anything. Debugging a browser failure from an
 // assertion message alone isn't realistic.
+//
+// Each capture stands alone: a page that no longer answers one query may
+// still answer the next, and the console needs no round trip at all.
 //
 // Derived from the browser's own context: a chromedp action needs a chromedp
 // context, and the context.Background() this used before made every capture
@@ -433,24 +481,48 @@ func (b *Browser) CompleteIdPLoginWithGroups(t *testing.T, username string, grou
 func (b *Browser) screenshotOnFailure(t *testing.T) {
 	t.Helper()
 
+	console := b.console.Bytes()
+	writeArtifact(t, "browser-console.log", console)
+
 	ctx, cancel := context.WithTimeout(b.ctx, 5*time.Second)
 	defer cancel()
-	currentURL, err := chromedp.Run(ctx, chromedp.Location())
-	var buf []byte
-	if err == nil {
-		buf, err = chromedp.Run(ctx, chromedp.CaptureScreenshot())
-	}
-	if err != nil {
-		t.Logf("harness: failed to capture failure screenshot: %v", err)
-		return
-	}
 
-	dir := artifactDir(t)
-	if dir == "" {
-		return
-	}
-	if err := os.WriteFile(filepath.Join(dir, "browser-failure.png"), buf, 0o600); err != nil {
-		t.Logf("harness: failed to write failure screenshot: %v", err)
+	currentURL, err := chromedp.Run(ctx, chromedp.Location())
+	if err != nil {
+		currentURL = fmt.Sprintf("(unknown: %v)", err)
 	}
 	writeArtifact(t, "browser-failure-url.txt", []byte(currentURL))
+
+	testIDs, err := chromedp.Run(ctx, chromedp.Evaluate[[]string](visibleTestIDsJS))
+	if err != nil {
+		testIDs = []string{fmt.Sprintf("(unknown: %v)", err)}
+	}
+
+	if html, err := chromedp.Run(ctx, chromedp.Evaluate[string](`document.documentElement.outerHTML`)); err != nil {
+		t.Logf("harness: failed to capture the failure page's HTML: %v", err)
+	} else {
+		writeArtifact(t, "browser-failure.html", []byte(html))
+	}
+
+	if png, err := chromedp.Run(ctx, chromedp.CaptureScreenshot()); err != nil {
+		t.Logf("harness: failed to capture failure screenshot: %v", err)
+	} else {
+		writeArtifact(t, "browser-failure.png", png)
+	}
+
+	t.Logf("harness: the browser was at %s showing test IDs %v; last browser console lines:\n%s",
+		currentURL, testIDs, tailLines(string(console), failureConsoleTailLines))
+}
+
+// tailLines returns the last n lines of s, without a trailing newline, or
+// "(empty)" when s has none.
+func tailLines(s string, n int) string {
+	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
+	if len(lines) == 1 && lines[0] == "" {
+		return "(empty)"
+	}
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.Join(lines, "\n")
 }
