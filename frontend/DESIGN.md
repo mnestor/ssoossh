@@ -526,7 +526,9 @@ text-trimmed`, `role="status"`), `info` (`info-circle`, `bg-surface` on the
   an href its list resolved, so middle-click, copy-link and Back all work.
 - **CertRow**: one certificate as a clickable row: `TypeBadge`, subject,
   what happened and when, naming the type in words (`certificateEvent`:
-  "user certificate issued", "PAM login", ...), principals, and the validity
+  "user certificate issued", "console login", ...; a PAM row names the
+  reported service when it is sudo, su, sshd or login, as "sudo
+  (reported)", and reads "PAM login" otherwise), principals, and the validity
   glyph
   (`certificate` in `granted` or `certificate-off` in `ink-muted`), the one
   field that moves with the clock. Stacked below `xl`, aligned columns above.

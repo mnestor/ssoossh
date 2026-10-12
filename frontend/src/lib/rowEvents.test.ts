@@ -13,4 +13,24 @@ describe('certificateEvent', () => {
 	])('should describe a $type certificate as "$want"', ({ type, want }) => {
 		expect(certificateEvent(type)).toBe(want);
 	});
+
+	// The PAM service is reported by an unauthenticated caller, so a row
+	// names only a service pam_ssoossh is documented for, marked as
+	// reported, and never echoes free text.
+	it.each([
+		{ service: 'sudo', want: 'sudo (reported)' },
+		{ service: 'su', want: 'su (reported)' },
+		{ service: 'sshd', want: 'SSH login (reported)' },
+		{ service: 'login', want: 'login (reported)' },
+		{ service: '', want: 'PAM login' },
+		{ service: undefined, want: 'PAM login' },
+		{ service: 'approved by admin', want: 'PAM login' },
+		{ service: 'toString', want: 'PAM login' }
+	])('should describe a PAM certificate reporting $service as "$want"', ({ service, want }) => {
+		expect(certificateEvent('pam', service)).toBe(want);
+	});
+
+	it('should ignore a reported PAM service when the certificate is not PAM', () => {
+		expect(certificateEvent('user', 'sudo')).toBe('user certificate issued');
+	});
 });
