@@ -51,7 +51,7 @@ audit:
 | Key | Default | Notes |
 | --- | --- | --- |
 | [`audit.retention`](/ssoossh/reference/config/audit/#retention) | `1440h` | how long an event stays in the table. Zero disables age-based pruning, leaving `max_rows` as the only bound |
-| [`audit.max_rows`](/ssoossh/reference/config/audit/#max_rows) | `1000000` | the same sweep deletes past the cap: `cert.request_refused_network` rows first, then oldest-first. Deliberately high: it bounds pathology, not ordinary volume. Zero disables it |
+| [`audit.max_rows`](/ssoossh/reference/config/audit/#max_rows) | `1000000` | the same sweep deletes oldest-first past the cap, whatever the action. Deliberately high: it bounds pathology, not ordinary volume. Zero disables it |
 | [`audit.sweep_interval`](/ssoossh/reference/config/audit/#sweep_interval) | `1h` | pruning is not urgent, so this is measured in hours |
 | [`audit.logging.*`](/ssoossh/reference/config/audit/#logging-1) | -- | the durable export. `log_json` defaults to `true` here |
 
@@ -73,18 +73,20 @@ window it actually had (`effective_window`) whenever it is under 60 days.
 
 Most events need a signed-in person or the server itself to happen.
 `cert.request_refused_network` does not: anyone who can reach the server from a
-refused network can raise one with a single unauthenticated request. Left
-alone, a burst of them would push the oldest approvals, disables and logins
-out of the table, and so out of the web UI's history.
+refused network can raise one with a single unauthenticated request.
 
-So when the table is over `max_rows`, the sweep deletes the oldest
-`cert.request_refused_network` rows first, and only deletes other events once
-none of those is left. A burst therefore evicts itself, not the record around
-it. The shipped log keeps every refusal line regardless; only the table copy
-is trimmed.
+The sweep still treats these rows like any other: over `max_rows`, it deletes
+the oldest rows first whatever their action, so the table always holds one
+unbroken window of time. A large enough burst of refusals can therefore push
+the oldest approvals, disables and logins out of the table, and so out of the
+web UI's history. The shipped log keeps every line regardless; only the table
+copy is trimmed.
 
-The cap is a backstop, not a limit on the requests. For an internet-facing
-deployment, keep [`http.rate_limit`](/ssoossh/reference/config/http/#rate_limit)
+The cap is a backstop, not a limit on the requests, and the table is not the
+archive. Keep refused networks out at the firewall where you can, ship the
+audit log to your log platform (Splunk or similar) so nothing depends on the
+table copy, and for an internet-facing deployment keep
+[`http.rate_limit`](/ssoossh/reference/config/http/#rate_limit)
 on (it is on by default; zero turns it off) and leave
 [`http.cert_request_rate_limit`](/ssoossh/reference/config/http/cert_request_rate_limit/)
 in place, so one address cannot write refusals as fast as it can send.

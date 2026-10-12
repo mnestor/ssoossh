@@ -1830,7 +1830,9 @@ func (s *CertRequestService) Deny(ctx context.Context, requestID string, identit
 
 // Wait blocks until requestID resolves (approved/denied/expired) or ctx is
 // canceled (e.g. the client disconnects), for the events handler in
-// server/controller/certrequests.go to relay to the client.
+// server/controller/certrequests.go to relay to the client. If the wake
+// subscription closes first, because this instance is shutting down, it
+// returns errorresponses.ShuttingDownError so the client reconnects.
 //
 // Safe to call more than once for the same requestID, including after a
 // previous call returned via ctx cancellation — each call re-checks the
@@ -1946,13 +1948,26 @@ func (s *CertRequestService) expiryTimer(req model.CertificateRequest) (<-chan t
 // separate code path is needed for it.
 //
 // It returns the received message so the caller can inspect its payload with
-// requestID in scope, nil when the expiry timer fired or the subscription
-// closed, or ctx.Err() if the context was cancelled.
+// requestID in scope, nil when the expiry timer fired, or ctx.Err() if the
+// context was cancelled.
+//
+// A closed subscription is terminal, not "check again": the channel stays
+// closed, so looping back to it spins Wait through one database read per
+// pass until ctx ends (#139). It closes when the broker shuts down
+// (watermill's Router.Close closes the shared subscriber), so it returns
+// ctx.Err() if the context has also ended, else ShuttingDownError, which the
+// events handler renders as a 503 the client reconnects from.
 func (s *CertRequestService) waitForUpdate(ctx context.Context, messages <-chan *message.Message, expireC <-chan time.Time) (*message.Message, error) {
 	select {
 	case msg, ok := <-messages:
 		if !ok {
-			return nil, nil
+			// select picks at random among ready cases, so a cancelled
+			// context can land here rather than in its own arm. Report the
+			// cancellation then, as the ctx.Done() arm would have.
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			return nil, &errorresponses.ShuttingDownError{}
 		}
 		msg.Ack()
 		return msg, nil

@@ -529,14 +529,16 @@ func (s *AuditService) page(ctx context.Context, q *gorm.DB, limit, offset int) 
 const auditSweepBatch = 1000
 
 // SweepAuditEvents prunes the database copy: rows older than the retention
-// window, then anything past the row cap. The shipped log is the archive, so
-// this loses nothing a deployment should be relying on.
+// window, then the oldest rows past the row cap. The shipped log is the
+// archive, so this loses nothing a deployment should be relying on.
 //
-// Past the cap, cert.request_refused_network rows go first, oldest first,
-// and only then the oldest rows of any action. Anyone on a refused network
-// can raise that event without signing in, so a burst of them would
-// otherwise push approvals, disables and logins out of the UI's history.
-// Their shipped-log lines are kept regardless.
+// Past the cap it is oldest first whatever the action, network refusals
+// included, so the table always holds one unbroken window of time rather
+// than a history with one kind of event cut out early. Anyone on a refused
+// network can raise cert.request_refused_network without signing in, so a
+// burst of them can push older events out of the UI's history. That is left
+// to the deployment: a firewall keeps those networks out, the rate limits
+// slow what gets through, and the shipped log keeps every line regardless.
 //
 // A package-level function rather than a method, so the scheduler can
 // register it without reaching through a service.
@@ -566,41 +568,25 @@ func SweepAuditEvents(ctx context.Context, db *gorm.DB, retention time.Duration,
 	}
 	excess := int(total - maxRows)
 
-	// An equality filter on action, ordered exactly as the index is, so the
-	// select reads idx_audit_events_action (action, created_at, id) alone.
-	// "action <> X" for the second pass would not seek that index, which
-	// is why the second pass is unfiltered: the refusal rows it could see
-	// are the ones the first pass already deleted.
-	refusals, err := deleteOldestAuditEvents(ctx, db, excess, func(q *gorm.DB) *gorm.DB {
-		return q.Where("action = ?", string(AuditCertRequestRefusedNetwork))
-	})
+	deleted, err := deleteOldestAuditEvents(ctx, db, excess)
 	if err != nil {
-		return fmt.Errorf("failed to prune %s audit events past the row cap: %w", AuditCertRequestRefusedNetwork, err)
+		return fmt.Errorf("failed to prune audit events past the row cap: %w", err)
 	}
-	others := 0
-	if excess > refusals {
-		others, err = deleteOldestAuditEvents(ctx, db, excess-refusals, func(q *gorm.DB) *gorm.DB { return q })
-		if err != nil {
-			return fmt.Errorf("failed to prune audit events past the row cap: %w", err)
-		}
-	}
-	slog.Info("pruned audit events past the row cap",
-		"deleted", refusals+others, "network_refusals", refusals, "max_rows", maxRows)
+	slog.Info("pruned audit events past the row cap", "deleted", deleted, "max_rows", maxRows)
 	return nil
 }
 
-// deleteOldestAuditEvents deletes up to limit of the oldest rows that scope
-// selects, in batches of auditSweepBatch, and returns how many it deleted.
-// It stops early when scope runs out of rows.
+// deleteOldestAuditEvents deletes up to limit of the oldest rows, in batches
+// of auditSweepBatch, and returns how many it deleted. It stops early when
+// the table runs out of rows.
 //
 // Each batch selects ids and deletes by id rather than putting a LIMIT on
 // the delete itself, which sqlite and postgres do not share syntax for.
-func deleteOldestAuditEvents(ctx context.Context, db *gorm.DB, limit int, scope func(*gorm.DB) *gorm.DB) (int, error) {
+func deleteOldestAuditEvents(ctx context.Context, db *gorm.DB, limit int) (int, error) {
 	deleted := 0
 	for deleted < limit {
 		var ids []string
 		if err := db.WithContext(ctx).Model(&model.AuditEvent{}).
-			Scopes(scope).
 			Order("created_at ASC, id ASC").
 			Limit(min(limit-deleted, auditSweepBatch)).
 			Pluck("id", &ids).Error; err != nil {

@@ -335,11 +335,12 @@ type refusalSweepCase struct {
 }
 
 // refusalSweepCases are the row-cap cases shared by the SQLite test below and
-// the Postgres one in audit_refused_network_pg_test.go.
+// the Postgres one in audit_refused_network_pg_test.go. Network refusals get
+// no special treatment: the sweep is oldest first whatever the action.
 func refusalSweepCases() []refusalSweepCase {
 	return []refusalSweepCase{
 		{
-			name: "should keep every other event when a newer burst of refusals fills the excess",
+			name: "should delete older events of other actions before a newer burst of refusals",
 			rows: []sweepRow{
 				{label: "approved", action: AuditCertApproved, age: 5 * time.Hour},
 				{label: "disabled", action: AuditUserDisabled, age: 4 * time.Hour},
@@ -349,21 +350,20 @@ func refusalSweepCases() []refusalSweepCase {
 				{label: "refusal-3", action: AuditCertRequestRefusedNetwork, age: time.Minute},
 			},
 			maxRows: 3,
-			want:    []string{"approved", "disabled", "login"},
+			want:    []string{"refusal-1", "refusal-2", "refusal-3"},
 		},
 		{
-			name: "should delete the oldest refusals when there are more refusals than the excess",
+			name: "should delete an older refusal before newer events of other actions",
 			rows: []sweepRow{
+				{label: "refusal-1", action: AuditCertRequestRefusedNetwork, age: 6 * time.Hour},
 				{label: "approved", action: AuditCertApproved, age: 5 * time.Hour},
-				{label: "refusal-1", action: AuditCertRequestRefusedNetwork, age: 3 * time.Minute},
-				{label: "refusal-2", action: AuditCertRequestRefusedNetwork, age: 2 * time.Minute},
-				{label: "refusal-3", action: AuditCertRequestRefusedNetwork, age: time.Minute},
+				{label: "login", action: AuditAuthLogin, age: 3 * time.Hour},
 			},
 			maxRows: 2,
-			want:    []string{"approved", "refusal-3"},
+			want:    []string{"approved", "login"},
 		},
 		{
-			name: "should delete the oldest other events once the refusals are gone",
+			name: "should keep a newer refusal while deleting older events of other actions",
 			rows: []sweepRow{
 				{label: "approved", action: AuditCertApproved, age: 5 * time.Hour},
 				{label: "disabled", action: AuditUserDisabled, age: 4 * time.Hour},
@@ -371,7 +371,7 @@ func refusalSweepCases() []refusalSweepCase {
 				{label: "refusal-1", action: AuditCertRequestRefusedNetwork, age: time.Minute},
 			},
 			maxRows: 2,
-			want:    []string{"disabled", "login"},
+			want:    []string{"login", "refusal-1"},
 		},
 		{
 			name: "should delete oldest first when there are no refusals",
@@ -412,7 +412,7 @@ func checkRefusalSweep(t *testing.T, db *gorm.DB, tt refusalSweepCase) {
 	}
 }
 
-func TestSweepAuditEvents_ShouldDeleteNetworkRefusalsFirst(t *testing.T) {
+func TestSweepAuditEvents_ShouldDeleteOldestFirstWhateverTheAction(t *testing.T) {
 	t.Parallel()
 
 	for _, tt := range refusalSweepCases() {
@@ -425,9 +425,9 @@ func TestSweepAuditEvents_ShouldDeleteNetworkRefusalsFirst(t *testing.T) {
 	}
 }
 
-// A burst larger than one batch is still deleted in full, and nothing else
-// goes with it.
-func TestSweepAuditEvents_ShouldDeleteARefusalBurstLargerThanOneBatch(t *testing.T) {
+// An excess larger than one batch is still deleted in full, and nothing
+// newer goes with it. The burst is the oldest rows, so all of it is excess.
+func TestSweepAuditEvents_ShouldDeleteAnExcessLargerThanOneBatch(t *testing.T) {
 	t.Parallel()
 
 	audit, db := newTestAuditService(t)
@@ -441,7 +441,7 @@ func TestSweepAuditEvents_ShouldDeleteARefusalBurstLargerThanOneBatch(t *testing
 		row, _, err := audit.prepare(AuditEvent{
 			Action:     AuditCertRequestRefusedNetwork,
 			System:     true,
-			OccurredAt: now.Add(-time.Duration(i) * time.Millisecond),
+			OccurredAt: now.Add(-10*time.Hour - time.Duration(i)*time.Millisecond),
 			Detail:     map[string]any{"label": "refusal"},
 		})
 		if err != nil {
@@ -487,31 +487,19 @@ func failAuditStatement(t *testing.T, db *gorm.DB, kind string, match func(sql s
 	}
 }
 
-func TestSweepAuditEvents_ShouldReportAFailureInEitherPass(t *testing.T) {
+func TestSweepAuditEvents_ShouldReportAFailureToPruneThePastCapRows(t *testing.T) {
 	t.Parallel()
 
-	refusalSelect := func(sql string) bool { return strings.Contains(sql, "action =") }
-	otherSelect := func(sql string) bool {
-		return strings.Contains(sql, "ORDER BY created_at ASC, id ASC") && !strings.Contains(sql, "action =")
-	}
-	deleteNumber := func(n int) func(string) bool {
-		seen := 0
-		return func(string) bool {
-			seen++
-			return seen == n
-		}
-	}
+	oldestSelect := func(sql string) bool { return strings.Contains(sql, "ORDER BY created_at ASC, id ASC") }
+	anyDelete := func(string) bool { return true }
 
 	tests := []struct {
-		name    string
-		kind    string
-		match   func(string) bool
-		wantErr string
+		name  string
+		kind  string
+		match func(string) bool
 	}{
-		{name: "should report a failure when the refusal select fails", kind: "query", match: refusalSelect, wantErr: "failed to prune cert.request_refused_network audit events"},
-		{name: "should report a failure when the refusal delete fails", kind: "delete", match: deleteNumber(1), wantErr: "failed to prune cert.request_refused_network audit events"},
-		{name: "should report a failure when the second select fails", kind: "query", match: otherSelect, wantErr: "failed to prune audit events past the row cap"},
-		{name: "should report a failure when the second delete fails", kind: "delete", match: deleteNumber(2), wantErr: "failed to prune audit events past the row cap"},
+		{name: "should report a failure when the select fails", kind: "query", match: oldestSelect},
+		{name: "should report a failure when the delete fails", kind: "delete", match: anyDelete},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -525,9 +513,10 @@ func TestSweepAuditEvents_ShouldReportAFailureInEitherPass(t *testing.T) {
 			})
 			failAuditStatement(t, db, tt.kind, tt.match)
 
+			const wantErr = "failed to prune audit events past the row cap"
 			err := SweepAuditEvents(context.Background(), db, 0, 1)
-			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
-				t.Errorf("SweepAuditEvents() error = %v, want one containing %q", err, tt.wantErr)
+			if err == nil || !strings.Contains(err.Error(), wantErr) {
+				t.Errorf("SweepAuditEvents() error = %v, want one containing %q", err, wantErr)
 			}
 		})
 	}
