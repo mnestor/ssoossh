@@ -307,13 +307,55 @@ func parseUserStatusFilter(raw string) (userStatusFilter, error) {
 // userDirectoryOrder is the ORDER BY of the admin user list. Users with a
 // name come first, by name ignoring case; users without one follow, by
 // username. Username and id break the remaining ties, and id is unique, so
-// the order is total and offset pages cannot skip or repeat a row.
+// the order is total and the keyset seek in userDirectorySeek can resume it
+// exactly.
 //
 // LOWER() is ASCII-only on SQLite and collation-aware on Postgres. Each
 // backend's order is deterministic, but the two can disagree on non-ASCII
 // names. display_name and username are NOT NULL in both schemas, so there is
 // no NULL case to order.
 const userDirectoryOrder = "(display_name = '') ASC, LOWER(display_name) ASC, LOWER(username) ASC, id ASC"
+
+// userDirectoryCursor is the cursor user's place in userDirectoryOrder. The
+// lowered keys are read back from the database rather than lowered in Go, so
+// the seek compares them exactly as the ORDER BY does on each backend.
+type userDirectoryCursor struct {
+	ID          string
+	DisplayName string
+	NameKey     string
+	UsernameKey string
+}
+
+// userDirectorySeek looks up the user after names and returns the WHERE
+// fragment that resumes userDirectoryOrder after them. Only the cursor's
+// position is read, so it need not match the search or the state filter;
+// an id that names no user is an InvalidRequestError.
+//
+// The order's first key is whether the name is empty, so the predicate
+// splits on the cursor's side of it: after a named user come the named users
+// sorting later and then every unnamed one; after an unnamed user, only the
+// unnamed users sorting later.
+func userDirectorySeek(db *gorm.DB, after string) (string, []any, error) {
+	var cursor userDirectoryCursor
+	err := db.Model(&model.User{}).
+		Select("id, display_name, LOWER(display_name) AS name_key, LOWER(username) AS username_key").
+		Where("id = ?", after).
+		Take(&cursor).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", nil, paging.UnknownCursor()
+	}
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to look up the user cursor: %w", err)
+	}
+
+	byUsername := "(LOWER(username) > ? OR (LOWER(username) = ? AND id > ?))"
+	if cursor.DisplayName == "" {
+		return "(display_name = '' AND " + byUsername + ")",
+			[]any{cursor.UsernameKey, cursor.UsernameKey, cursor.ID}, nil
+	}
+	return "(display_name = '' OR LOWER(display_name) > ? OR (LOWER(display_name) = ? AND " + byUsername + "))",
+		[]any{cursor.NameKey, cursor.NameKey, cursor.UsernameKey, cursor.UsernameKey, cursor.ID}, nil
+}
 
 // listUsersHandler handles GET /api/admin/users: returns a paginated,
 // searchable list of all users for auditor review.
@@ -323,14 +365,15 @@ const userDirectoryOrder = "(display_name = '') ASC, LOWER(display_name) ASC, LO
 // @Description username, email, or subject, and filterable by account state.
 // @Description Useful for user directory and audit.
 // @Description Ordered by name ignoring case (users with no name last, by username), then username, then id.
+// @Description Uses cursor-based pagination (not offset): pass the previous page's next_cursor as after.
 // @Tags        admin
 // @Produce     json
+// @Param       after query string false "User ID to start after (cursor): the previous page's next_cursor"
 // @Param       limit query int false "Page size (default 25, max 100)" example(25)
-// @Param       offset query int false "Results to skip (default 0)" example(0)
 // @Param       q query string false "Search term matched against name, username, email, and subject" example(alice)
 // @Param       status query string false "Account state filter: active or disabled; omitted returns both" Enums(active, disabled)
 // @Success     200 {object} webtypes.AdminUsersListResponse "User list"
-// @Failure     400 {object} openapidoc.ErrorEnvelope "Invalid paging/search parameters"
+// @Failure     400 {object} openapidoc.ErrorEnvelope "Invalid paging/search parameters, an after that names no user, or offset"
 // @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
 // @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as auditor"
 // @Security    sessionCookie
@@ -373,22 +416,31 @@ func (a *adminController) listUsersHandler(g *gin.Context) {
 	case userStatusAny:
 	}
 
-	total, err := paging.Count(q)
+	total, err := paging.Count(q.Session(&gorm.Session{}))
 	if err != nil {
 		handleError(g, fmt.Errorf("failed to count users: %w", err))
 		return
 	}
 
-	// Ordered so a human can scan the directory, and total so offset pages
-	// cannot skip or repeat a row.
-	q = q.Order(userDirectoryOrder)
-	q = paging.Apply(q, params)
+	if params.After != "" {
+		where, args, err := userDirectorySeek(a.db.WithContext(g.Request.Context()), params.After)
+		if err != nil {
+			handleError(g, err)
+			return
+		}
+		q = q.Where(where, args...)
+	}
+
+	// Ordered so a human can scan the directory, and total so the seek
+	// above resumes it exactly. One extra row says whether there is more.
+	q = q.Order(userDirectoryOrder).Limit(params.Limit + 1)
 
 	var users []model.User
 	if err := q.Find(&users).Error; err != nil {
 		handleError(g, fmt.Errorf("failed to list users: %w", err))
 		return
 	}
+	users, next := paging.Trim(users, params.Limit, func(u model.User) string { return u.ID })
 
 	// Resolve every "disabled by" name in one query rather than one per
 	// disabled row: this page is up to 100 users, and a lookup inside the
@@ -423,10 +475,10 @@ func (a *adminController) listUsersHandler(g *gin.Context) {
 		summaries[i] = summary
 	}
 
-	meta := newPageMeta(params, total)
 	respondData(g, webtypes.AdminUsersListResponse{
-		Users: summaries,
-		Meta:  meta,
+		Users:      summaries,
+		Total:      total,
+		NextCursor: next,
 	})
 }
 
@@ -850,14 +902,16 @@ func (a *adminController) enableUserHandler(g *gin.Context) {
 // @Description never one the client reported. The database copy is a bounded
 // @Description cache of recent events; the shipped audit log is the archive,
 // @Description and any other search happens there.
+// @Description Uses cursor-based pagination (not offset): pass the previous
+// @Description page's next_cursor as after.
 // @Tags        admin
 // @Produce     json
+// @Param       after query string false "Audit event ID to start after (cursor): the previous page's next_cursor"
 // @Param       limit query int false "Page size (default 25, max 100)" example(25)
-// @Param       offset query int false "Results to skip (default 0)" example(0)
 // @Param       action query string false "Only events of this audit action; must be in the taxonomy" example(cert.request_refused_network)
 // @Param       source_ip query string false "Only events whose observed source is this IP address" example(192.0.2.10)
 // @Success     200 {object} webtypes.AuditEventsResponse "Audit events"
-// @Failure     400 {object} openapidoc.ErrorEnvelope "Invalid paging parameters, an unknown action, or a source_ip that is not an IP address"
+// @Failure     400 {object} openapidoc.ErrorEnvelope "Invalid paging parameters, an after that names no audit event, offset, an unknown action, or a source_ip that is not an IP address"
 // @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
 // @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as auditor"
 // @Security    sessionCookie
@@ -879,7 +933,7 @@ func (a *adminController) auditFeedHandler(g *gin.Context) {
 		return
 	}
 
-	page, err := a.audit.ListRecent(g.Request.Context(), filter, params.Limit, params.Offset)
+	page, err := a.audit.ListRecent(g.Request.Context(), filter, params.After, params.Limit)
 	if err != nil {
 		handleError(g, err)
 		return
@@ -889,8 +943,12 @@ func (a *adminController) auditFeedHandler(g *gin.Context) {
 	// settles the recursion question. The filters are the search
 	// parameters the taxonomy asks a list view to record. The address goes
 	// under filter_source_ip, never source_ip: that key is reserved for an
-	// address the server observed (see service.AuditEvent.Detail).
-	detail := map[string]any{"scope": "feed", "limit": params.Limit, "offset": params.Offset}
+	// address the server observed (see service.AuditEvent.Detail). The
+	// cursor is recorded only past the first page, where there is one.
+	detail := map[string]any{"scope": "feed", "limit": params.Limit}
+	if params.After != "" {
+		detail["after"] = params.After
+	}
 	if filter.Action != "" {
 		detail["filter_action"] = string(filter.Action)
 	}
@@ -913,14 +971,14 @@ func (a *adminController) auditFeedHandler(g *gin.Context) {
 // @Description Returns the audit events where this user is the actor or the
 // @Description target, newest first. One row serves both sides: a disable
 // @Description shows on the analyst's history and on the disabled account's
-// @Description page.
+// @Description page. Uses cursor-based pagination (not offset).
 // @Tags        admin
 // @Produce     json
 // @Param       id path string true "User ID"
+// @Param       after query string false "Audit event ID to start after (cursor): the previous page's next_cursor; must be on this user's timeline"
 // @Param       limit query int false "Page size (default 25, max 100)" example(25)
-// @Param       offset query int false "Results to skip (default 0)" example(0)
 // @Success     200 {object} webtypes.AuditEventsResponse "Audit events"
-// @Failure     400 {object} openapidoc.ErrorEnvelope "Invalid paging parameters"
+// @Failure     400 {object} openapidoc.ErrorEnvelope "Invalid paging parameters, an after that names no event on this timeline, or offset"
 // @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
 // @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as auditor"
 // @Security    sessionCookie
@@ -941,7 +999,7 @@ func (a *adminController) userAuditHandler(g *gin.Context) {
 		return
 	}
 
-	page, err := a.audit.ListForUser(g.Request.Context(), id, params.Limit, params.Offset)
+	page, err := a.audit.ListForUser(g.Request.Context(), id, params.After, params.Limit)
 	if err != nil {
 		handleError(g, err)
 		return
@@ -965,7 +1023,7 @@ func auditPageResponse(page *service.AuditPage) webtypes.AuditEventsResponse {
 	out := webtypes.AuditEventsResponse{
 		Events:     make([]webtypes.AuditEventResponse, 0, len(page.Events)),
 		Total:      page.Total,
-		NextOffset: page.NextOffset,
+		NextCursor: page.NextCursor,
 	}
 	for _, e := range page.Events {
 		out.Events = append(out.Events, webtypes.AuditEventResponse{
@@ -1003,16 +1061,17 @@ func auditSubjectResponse(s *service.AuditSubject) *webtypes.AuditSubjectRespons
 // @Description Returns issued certificates across all users, useful for audits,
 // @Description incident review, and tracking "who issued this?". Supports
 // @Description searching over key ID, principals, serial number, fingerprint, and owner
-// @Description username/email, filtering by type and expiration status, and offset pagination.
+// @Description username/email, filtering by type and expiration status. Newest first, with
+// @Description cursor-based pagination (not offset): pass the previous page's next_cursor as after.
 // @Tags        admin
 // @Produce     json
+// @Param       after query string false "Certificate ID to start after (cursor): the previous page's next_cursor"
 // @Param       limit query int false "Number of results (default 25, max 100)" example(25)
-// @Param       offset query int false "Number of results to skip (default 0)" example(0)
 // @Param       q query string false "Search term (max 200 chars)" example(alice)
 // @Param       type query string false "Filter by certificate type (user/service/pam/console)" example(user)
 // @Param       status query string false "Filter by expiration (live/expired)" example(live)
-// @Success     200 {object} openapidoc.CertificateListAdminEnvelope "Certificates and page metadata"
-// @Failure     400 {object} openapidoc.ErrorEnvelope "Invalid parameters"
+// @Success     200 {object} openapidoc.CertificateListAdminEnvelope "Certificates, newest first, with the total and the cursor for the next page"
+// @Failure     400 {object} openapidoc.ErrorEnvelope "Invalid parameters, an after that names no certificate, or offset"
 // @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
 // @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as auditor"
 // @Security    sessionCookie
@@ -1067,18 +1126,34 @@ func (a *adminController) certificateHistoryHandler(g *gin.Context) {
 		query = query.Where("certificates.expires_at <= ?", now)
 	}
 
-	// Apply deterministic ordering to prevent pagination issues.
-	query = query.Order("certificates.issued_at DESC, certificates.id DESC")
-
 	// Count total matching rows before paging.
-	total, err := paging.Count(query)
+	total, err := paging.Count(query.Session(&gorm.Session{}))
 	if err != nil {
 		handleError(g, err)
 		return
 	}
 
-	// Apply pagination window.
-	query = paging.Apply(query, params)
+	// Resume after the cursor's place in the (issued_at DESC, id DESC)
+	// order. Only its position is read, so it need not match the filters.
+	if params.After != "" {
+		var cursor model.Certificate
+		err := a.db.WithContext(g.Request.Context()).Select("id", "issued_at").
+			Where("id = ?", params.After).Take(&cursor).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			handleError(g, paging.UnknownCursor())
+			return
+		}
+		if err != nil {
+			handleError(g, fmt.Errorf("failed to look up the certificate cursor: %w", err))
+			return
+		}
+		where, args := paging.SeekBefore("certificates.issued_at", "certificates.id", cursor.IssuedAt, cursor.ID)
+		query = query.Where(where, args...)
+	}
+
+	// Deterministic ordering, with the id as the tiebreaker the seek above
+	// relies on. One extra row says whether a next page exists.
+	query = query.Order("certificates.issued_at DESC, certificates.id DESC").Limit(params.Limit + 1)
 
 	// Fetch the results.
 	type certRow struct {
@@ -1100,6 +1175,7 @@ func (a *adminController) certificateHistoryHandler(g *gin.Context) {
 		handleError(g, err)
 		return
 	}
+	rows, next := paging.Trim(rows, params.Limit, func(r certRow) string { return r.ID })
 
 	// Convert to response format.
 	certs := make([]webtypes.CertificateResponse, 0, len(rows))
@@ -1117,10 +1193,10 @@ func (a *adminController) certificateHistoryHandler(g *gin.Context) {
 		certs = append(certs, cert)
 	}
 
-	// Build response with page metadata.
 	resp := webtypes.CertificateListAdminResponse{
 		Certificates: certs,
-		PageMeta:     newPageMeta(params, total),
+		Total:        total,
+		NextCursor:   next,
 	}
 
 	respondData(g, resp)
@@ -1253,12 +1329,15 @@ func (adminEnrollmentModel) TableName() string {
 // @Summary     List all service enrollments (auditor-only)
 // @Description Returns a paged list of all service enrollments across users, searchable
 // @Description by approver name, principals, key ID, or request ID. Visible to auditors.
+// @Description Newest first, with cursor-based pagination (not offset): pass the previous
+// @Description page's next_cursor as after.
 // @Tags        admin
 // @Produce     json
+// @Param       after query string false "Enrollment ID to start after (cursor): the previous page's next_cursor"
 // @Param       limit query int false "Page size (default 25, max 100)" example(25)
-// @Param       offset query int false "Rows to skip (default 0)" example(0)
 // @Param       q query string false "Search query (max 200 chars)" example("alice")
 // @Success     200 {object} webtypes.AdminEnrollmentsResponse "Paged enrollment list"
+// @Failure     400 {object} openapidoc.ErrorEnvelope "Invalid paging/search parameters, an after that names no enrollment, or offset"
 // @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
 // @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as auditor"
 // @Security    sessionCookie
@@ -1277,7 +1356,7 @@ func (a *adminController) listEnrollmentsHandler(g *gin.Context) {
 	}
 
 	list, err := a.enrollmentService.ListForAdmin(g.Request.Context(), identity,
-		service.AdminListParams{Limit: params.Limit, Offset: params.Offset, Query: params.Query})
+		service.AdminListParams{Limit: params.Limit, After: params.After, Query: params.Query})
 	if err != nil {
 		handleError(g, err)
 		return
@@ -1311,17 +1390,10 @@ func (a *adminController) listEnrollmentsHandler(g *gin.Context) {
 		enrollments = append(enrollments, resp)
 	}
 
-	meta := webtypes.PageMeta{
-		Total:     list.Total,
-		Limit:     params.Limit,
-		Offset:    params.Offset,
-		Page:      params.PageNumber(),
-		PageCount: params.PageCount(list.Total),
-	}
-
 	respondData(g, webtypes.AdminEnrollmentsResponse{
 		Enrollments: enrollments,
-		Meta:        meta,
+		Total:       list.Total,
+		NextCursor:  list.NextCursor,
 	})
 }
 

@@ -26,16 +26,7 @@ function stubList(certificates: object[]) {
 			return Promise.resolve(
 				new Response(
 					JSON.stringify({
-						data: {
-							certificates,
-							page_meta: {
-								total: certificates.length,
-								limit: 25,
-								offset: 0,
-								page: 1,
-								page_count: 1
-							}
-						},
+						data: { certificates, total: certificates.length },
 						error: null
 					}),
 					{ status: 200, headers: { 'Content-Type': 'application/json' } }
@@ -82,6 +73,16 @@ describe('admin certificate list', () => {
 		stubList([]);
 		render(Page);
 		await vi.waitFor(() => expect(requested.some((url) => url.includes('type=pam'))).toBe(true));
+	});
+
+	// An address saved while the list paged by offset still opens: the
+	// server now refuses offset, so the page must not pass it along.
+	it('should not send an offset when the address names one', async () => {
+		resetFakePage('http://localhost/admin/certificates?type=user&offset=50');
+		stubList([issued]);
+		render(Page);
+		await screen.findByTestId('cert-row');
+		expect(requested.some((url) => url.includes('offset'))).toBe(false);
 	});
 
 	it('should carry its filters to the certificate page for the back chip', async () => {

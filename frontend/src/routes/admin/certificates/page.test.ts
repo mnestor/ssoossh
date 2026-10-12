@@ -67,7 +67,7 @@ function listWith(keyId: string): CertificateListAdminResponse {
 				expires_at: new Date().toISOString()
 			}
 		],
-		page_meta: { total: 1, limit: 25, offset: 0, page: 1, page_count: 1 }
+		total: 1
 	};
 }
 
@@ -95,13 +95,7 @@ describe('Admin certificates page', () => {
 						expires_at: new Date('2024-08-24T18:00:00Z').toISOString()
 					}
 				],
-				page_meta: {
-					total: 1,
-					limit: 25,
-					offset: 0,
-					page: 1,
-					page_count: 1
-				}
+				total: 1
 			};
 			mockFetch(response);
 		});
@@ -143,11 +137,10 @@ describe('Admin certificates page', () => {
 			expect(screen.getByTestId('cert-row')).toHaveTextContent(/user certificate issued/);
 		});
 
-		it('should not display pager when single page', async () => {
+		it('should not offer Load more when the first page holds everything', async () => {
 			render(Page);
 			await new Promise((resolve) => setTimeout(resolve, 0));
-			const pagers = screen.queryAllByTestId('pager');
-			expect(pagers).toHaveLength(0);
+			expect(screen.queryByTestId('certificates-load-more')).not.toBeInTheDocument();
 		});
 
 		it('should trigger search on input', async () => {
@@ -179,13 +172,7 @@ describe('Admin certificates page', () => {
 		beforeEach(() => {
 			const response: CertificateListAdminResponse = {
 				certificates: [],
-				page_meta: {
-					total: 0,
-					limit: 25,
-					offset: 0,
-					page: 1,
-					page_count: 1
-				}
+				total: 0
 			};
 			mockFetch(response);
 		});
@@ -216,53 +203,121 @@ describe('Admin certificates page', () => {
 	});
 
 	describe('when paging', () => {
-		beforeEach(() => {
-			const response: CertificateListAdminResponse = {
-				certificates: [
-					{
-						id: 'cert-1',
-						type: 'user',
-						serial_number: '100',
-						key_id: 'key1',
-						principals: 'user1',
-						public_key_fingerprint: 'fp1',
-						issued_at: new Date().toISOString(),
-						expires_at: new Date().toISOString()
-					}
-				],
-				page_meta: {
-					total: 50,
-					limit: 25,
-					offset: 0,
-					page: 1,
-					page_count: 2
-				}
+		/** cert builds one row whose key ID identifies it. */
+		function cert(keyId: string) {
+			return {
+				id: `cert-${keyId}`,
+				type: 'user' as const,
+				serial_number: '100',
+				key_id: keyId,
+				principals: 'user1',
+				public_key_fingerprint: 'fp1',
+				issued_at: new Date().toISOString(),
+				expires_at: new Date().toISOString()
 			};
-			mockFetch(response);
-		});
+		}
 
-		it('should display pager when multiple pages exist', async () => {
+		/**
+		 * pages stubs fetch to answer each call with the next body in turn (a
+		 * string body is a failure with that message), and records the URLs.
+		 */
+		function pages(...bodies: (CertificateListAdminResponse | string)[]) {
+			const urls: string[] = [];
+			let call = 0;
+			vi.stubGlobal(
+				'fetch',
+				vi.fn((input: RequestInfo | URL) => {
+					urls.push(String(input));
+					const body = bodies[Math.min(call++, bodies.length - 1)];
+					if (typeof body === 'string') {
+						return Promise.resolve(
+							new Response(JSON.stringify({ data: null, error: { message: body } }), {
+								status: 500,
+								headers: { 'Content-Type': 'application/json' }
+							})
+						);
+					}
+					return Promise.resolve(
+						new Response(JSON.stringify({ data: body, error: null }), {
+							status: 200,
+							headers: { 'Content-Type': 'application/json' }
+						})
+					);
+				})
+			);
+			return urls;
+		}
+
+		const first: CertificateListAdminResponse = {
+			certificates: [cert('page-one')],
+			total: 2,
+			next_cursor: 'cert-page-one'
+		};
+		const second: CertificateListAdminResponse = {
+			certificates: [cert('page-two')],
+			total: 2
+		};
+
+		it('should count the certificates shown and the older still to load', async () => {
+			pages(first);
 			render(Page);
-			await new Promise((resolve) => setTimeout(resolve, 0));
-			expect(screen.getByTestId('pager')).toBeInTheDocument();
+			expect(await screen.findByTestId('certificates-count')).toHaveTextContent(
+				'1 shown, 1 older not loaded'
+			);
 		});
 
-		it('should show next button when more pages exist', async () => {
-			render(Page);
-			await new Promise((resolve) => setTimeout(resolve, 0));
-			expect(screen.getByRole('button', { name: /next/i })).toBeInTheDocument();
-		});
-
-		it('should trigger refetch when paging to next page', async () => {
+		it('should count only what is shown once the last page is in', async () => {
 			const user = userEvent.setup();
+			pages(first, second);
 			render(Page);
-			await new Promise((resolve) => setTimeout(resolve, 0));
+			await user.click(await screen.findByTestId('certificates-load-more'));
+			await screen.findByText(/page-two/);
+			expect(screen.getByTestId('certificates-count')).toHaveTextContent(/^2 shown$/);
+		});
 
-			const nextButton = screen.getByRole('button', { name: /next/i });
-			await user.click(nextButton);
+		it('should offer Load more when more pages exist', async () => {
+			pages(first);
+			render(Page);
+			expect(await screen.findByTestId('certificates-load-more')).toBeInTheDocument();
+		});
 
-			// Should trigger a refetch with offset=25
-			await new Promise((resolve) => setTimeout(resolve, 100));
+		it('should ask for the page after the cursor when Load more is pressed', async () => {
+			const user = userEvent.setup();
+			const urls = pages(first, second);
+			render(Page);
+			await user.click(await screen.findByTestId('certificates-load-more'));
+			await screen.findByText(/page-two/);
+			expect(urls[1]).toContain('after=cert-page-one');
+		});
+
+		it('should append the next page below the rows already shown', async () => {
+			const user = userEvent.setup();
+			pages(first, second);
+			render(Page);
+			await user.click(await screen.findByTestId('certificates-load-more'));
+			await screen.findByText(/page-two/);
+			const rows = screen.getAllByTestId('cert-row');
+			expect(rows.map((row) => row.textContent?.includes('page-one'))).toEqual([true, false]);
+		});
+
+		it('should remove Load more once the last page is in', async () => {
+			const user = userEvent.setup();
+			pages(first, second);
+			render(Page);
+			await user.click(await screen.findByTestId('certificates-load-more'));
+			await screen.findByText(/page-two/);
+			expect(screen.queryByTestId('certificates-load-more')).not.toBeInTheDocument();
+		});
+
+		it('should keep the rows and offer a retry when Load more fails', async () => {
+			const user = userEvent.setup();
+			pages(first, 'boom', second);
+			render(Page);
+			await user.click(await screen.findByTestId('certificates-load-more'));
+			await screen.findByTestId('certificates-more-error');
+			expect(screen.getByText(/page-one/)).toBeInTheDocument();
+			await user.click(screen.getByRole('button', { name: /try again/i }));
+			expect(await screen.findByText(/page-two/)).toBeInTheDocument();
 		});
 	});
 
@@ -281,13 +336,7 @@ describe('Admin certificates page', () => {
 						expires_at: new Date().toISOString()
 					}
 				],
-				page_meta: {
-					total: 1,
-					limit: 25,
-					offset: 0,
-					page: 1,
-					page_count: 1
-				}
+				total: 1
 			};
 			mockFetch(response);
 		});
@@ -322,7 +371,7 @@ describe('Admin certificates page', () => {
 		beforeEach(() => {
 			mockFetch({
 				certificates: [],
-				page_meta: { total: 0, limit: 25, offset: 0, page: 1, page_count: 1 }
+				total: 0
 			});
 		});
 
@@ -382,10 +431,25 @@ describe('when a slow request finishes after a newer one', () => {
 
 describe('when a filter or search changes', () => {
 	beforeEach(() => {
-		mockFetch({
-			certificates: [],
-			page_meta: { total: 100, limit: 25, offset: 0, page: 1, page_count: 4 }
-		});
+		// The first answer has a next page; every later one is a different
+		// certificate, so a Load more appends a row rather than repeating
+		// one (a repeat would be each_key_duplicate, not a passing test).
+		const first = { ...listWith('one'), total: 100, next_cursor: 'cert-one' };
+		let calls = 0;
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(() =>
+				Promise.resolve(
+					new Response(
+						JSON.stringify({
+							data: calls++ === 0 ? first : { ...listWith(`more-${calls}`), total: 100 },
+							error: null
+						}),
+						{ status: 200, headers: { 'Content-Type': 'application/json' } }
+					)
+				)
+			)
+		);
 	});
 
 	/** requestsAfter counts the fetches one interaction causes. */
@@ -419,10 +483,10 @@ describe('when a filter or search changes', () => {
 		expect(calls).toBe(1);
 	});
 
-	it('should issue one request when paging', async () => {
+	it('should issue one request when loading more', async () => {
 		const user = userEvent.setup();
 		const calls = await requestsAfter(async () => {
-			await user.click(screen.getByRole('button', { name: /next/i }));
+			await user.click(screen.getByTestId('certificates-load-more'));
 		});
 		expect(calls).toBe(1);
 	});
@@ -458,10 +522,7 @@ describe('when a load fails', () => {
 				.mockResolvedValue(
 					new Response(
 						JSON.stringify({
-							data: {
-								certificates: [],
-								page_meta: { total: 0, limit: 25, offset: 0, page: 1, page_count: 1 }
-							},
+							data: { certificates: [], total: 0 },
 							error: null
 						}),
 						{ status: 200, headers: { 'Content-Type': 'application/json' } }

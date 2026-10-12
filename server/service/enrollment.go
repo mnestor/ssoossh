@@ -970,9 +970,11 @@ type RetrievalLog struct {
 
 // AdminListParams are the query parameters for listing enrollments as an admin.
 type AdminListParams struct {
-	Limit  int
-	Offset int
-	Query  string
+	Limit int
+	// After is the id of the previous page's last enrollment, or "" for the
+	// first page.
+	After string
+	Query string
 }
 
 // AdminEnrollmentList is a paged view of all enrollments across users,
@@ -980,6 +982,8 @@ type AdminListParams struct {
 type AdminEnrollmentList struct {
 	Enrollments []AdminEnrollmentRow
 	Total       int64
+	// NextCursor is the after for the following page, or nil on the last.
+	NextCursor *string
 }
 
 // AdminEnrollmentRow is one enrollment in the admin list, with approver info
@@ -1258,17 +1262,23 @@ func (s *EnrollmentService) ListForAdmin(ctx context.Context, identity *Identity
 		}
 	}
 
-	// Apply deterministic ordering to prevent pagination issues.
-	query = query.Order("enrollments.created_at DESC, enrollments.id DESC")
-
 	// Count total matching rows before paging.
-	total, err := paging.Count(query)
+	total, err := paging.Count(query.Session(&gorm.Session{}))
 	if err != nil {
 		return AdminEnrollmentList{}, fmt.Errorf("failed to count enrollments: %w", err)
 	}
 
-	// Apply pagination window.
-	query = paging.Apply(query, paging.Params{Limit: params.Limit, Offset: params.Offset, Query: params.Query})
+	if params.After != "" {
+		where, args, err := s.adminListSeek(ctx, params.After)
+		if err != nil {
+			return AdminEnrollmentList{}, err
+		}
+		query = query.Where(where, args...)
+	}
+
+	// Deterministic ordering, with the id as the tiebreaker the seek above
+	// relies on. One extra row says whether a next page exists.
+	query = query.Order("enrollments.created_at DESC, enrollments.id DESC").Limit(params.Limit + 1)
 
 	// Fetch the results.
 	type enrollmentRow struct {
@@ -1300,6 +1310,7 @@ func (s *EnrollmentService) ListForAdmin(ctx context.Context, identity *Identity
 		Scan(&rows).Error; err != nil {
 		return AdminEnrollmentList{}, fmt.Errorf("failed to list enrollments: %w", err)
 	}
+	rows, next := paging.Trim(rows, params.Limit, func(r enrollmentRow) string { return r.ID })
 
 	if len(rows) == 0 {
 		return AdminEnrollmentList{Total: total}, nil
@@ -1365,7 +1376,25 @@ func (s *EnrollmentService) ListForAdmin(ctx context.Context, identity *Identity
 		enrollments = append(enrollments, row)
 	}
 
-	return AdminEnrollmentList{Enrollments: enrollments, Total: total}, nil
+	return AdminEnrollmentList{Enrollments: enrollments, Total: total, NextCursor: next}, nil
+}
+
+// adminListSeek resumes the admin list after the enrollment after names, in
+// its (created_at DESC, id DESC) order. Only the cursor's position is read,
+// so it need not match the search; it must only exist, and an id that names
+// no enrollment is an InvalidRequestError.
+func (s *EnrollmentService) adminListSeek(ctx context.Context, after string) (string, []any, error) {
+	var cursor model.Enrollment
+	err := s.db.WithContext(ctx).Select("id", "created_at").
+		Where("id = ?", after).Take(&cursor).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", nil, paging.UnknownCursor()
+	}
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to look up the enrollment cursor: %w", err)
+	}
+	where, args := paging.SeekBefore("enrollments.created_at", "enrollments.id", cursor.CreatedAt, cursor.ID)
+	return where, args, nil
 }
 
 // GetEnrollmentDetail returns a single enrollment with full details and

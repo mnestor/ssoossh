@@ -49,7 +49,6 @@ export type {
 	NotificationGroupResponse as NotificationGroup,
 	NotificationKindResponse as NotificationKind,
 	NotificationPreferencesResponse as NotificationPreferences,
-	PageMeta,
 	ReEnableUserRequestBody,
 	RequestDetailResponse as RequestDetail,
 	IdentityEchoPayload,

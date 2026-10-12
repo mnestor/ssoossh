@@ -50,6 +50,30 @@ func seedFilterableFeed(t *testing.T, db *gorm.DB) {
 	}
 }
 
+// feedIDsByN maps each seeded event's detail.n to its id, read off the
+// unfiltered feed.
+func feedIDsByN(t *testing.T, r http.Handler) map[int]string {
+	t.Helper()
+	code, page := getAuditPage(t, r, "/admin/audit?limit=100")
+	if code != http.StatusOK {
+		t.Fatalf("GET /admin/audit: got %d, want %d", code, http.StatusOK)
+	}
+	out := make(map[int]string, len(page.Events))
+	for _, e := range page.Events {
+		n, _ := e.Detail["n"].(float64)
+		out[int(n)] = e.ID
+	}
+	return out
+}
+
+// derefOr reads an optional cursor, "" when absent.
+func derefOr(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
 // pageNumbers reads detail.n off a response page, in page order.
 func pageNumbers(page webtypes.AuditEventsResponse) []int {
 	out := make([]int, 0, len(page.Events))
@@ -63,12 +87,15 @@ func pageNumbers(page webtypes.AuditEventsResponse) []int {
 func TestAuditFeed_ShouldFilterByActionAndSource(t *testing.T) {
 	t.Parallel()
 
+	// after and wantNext name rows by detail.n; 0 in wantNext is read with
+	// hasNext, so the oldest row can still be named.
 	tests := []struct {
-		name       string
-		path       string
-		want       []int
-		wantTotal  int64
-		wantOffset int
+		name      string
+		path      string
+		after     *int
+		want      []int
+		wantTotal int64
+		wantNext  *int
 	}{
 		{name: "should return every event when unfiltered", path: "/admin/audit", want: []int{6, 5, 4, 3, 2, 1, 0}, wantTotal: 7},
 		{name: "should keep one action when filtered by action", path: "/admin/audit?action=cert.request_refused_network", want: []int{5, 2, 0}, wantTotal: 3},
@@ -78,18 +105,24 @@ func TestAuditFeed_ShouldFilterByActionAndSource(t *testing.T) {
 		{name: "should match an IPv4-mapped spelling of a stored address", path: "/admin/audit?source_ip=::ffff:203.0.113.9", want: []int{6, 5, 0}, wantTotal: 3},
 		{name: "should treat an empty filter as no filter", path: "/admin/audit?action=&source_ip=", want: []int{6, 5, 4, 3, 2, 1, 0}, wantTotal: 7},
 		{name: "should return an empty page when nothing matches", path: "/admin/audit?source_ip=192.0.2.1", want: []int{}, wantTotal: 0},
-		{name: "should page the first window of a filtered feed", path: "/admin/audit?action=cert.request_refused_network&limit=2", want: []int{5, 2}, wantTotal: 3, wantOffset: 2},
-		{name: "should page the last window of a filtered feed", path: "/admin/audit?action=cert.request_refused_network&limit=2&offset=2", want: []int{0}, wantTotal: 3},
-		{name: "should page both filters together", path: "/admin/audit?action=cert.request_refused_network&source_ip=203.0.113.9&limit=1", want: []int{5}, wantTotal: 2, wantOffset: 1},
+		{name: "should page the first window of a filtered feed", path: "/admin/audit?action=cert.request_refused_network&limit=2", want: []int{5, 2}, wantTotal: 3, wantNext: ptrTo(2)},
+		{name: "should page the last window of a filtered feed", path: "/admin/audit?action=cert.request_refused_network&limit=2", after: ptrTo(2), want: []int{0}, wantTotal: 3},
+		{name: "should page both filters together", path: "/admin/audit?action=cert.request_refused_network&source_ip=203.0.113.9&limit=1", want: []int{5}, wantTotal: 2, wantNext: ptrTo(5)},
+		{name: "should resume both filters together from the cursor", path: "/admin/audit?action=cert.request_refused_network&source_ip=203.0.113.9&limit=1", after: ptrTo(5), want: []int{0}, wantTotal: 2, wantNext: nil},
 	}
 
 	db := newTestDB(t)
 	seedFilterableFeed(t, db)
 	r := routerWithAuth(t, newTestConfig(t), db, auditorIdentity())
+	ids := feedIDsByN(t, r)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			code, page := getAuditPage(t, r, tt.path)
+			path := tt.path
+			if tt.after != nil {
+				path += "&after=" + ids[*tt.after]
+			}
+			code, page := getAuditPage(t, r, path)
 			if code != http.StatusOK {
 				t.Fatalf("GET %s: got %d, want %d", tt.path, code, http.StatusOK)
 			}
@@ -99,8 +132,12 @@ func TestAuditFeed_ShouldFilterByActionAndSource(t *testing.T) {
 			if page.Total != tt.wantTotal {
 				t.Errorf("GET %s total = %d, want %d", tt.path, page.Total, tt.wantTotal)
 			}
-			if page.NextOffset != tt.wantOffset {
-				t.Errorf("GET %s next offset = %d, want %d", tt.path, page.NextOffset, tt.wantOffset)
+			wantNext := ""
+			if tt.wantNext != nil {
+				wantNext = ids[*tt.wantNext]
+			}
+			if got := derefOr(page.NextCursor); got != wantNext {
+				t.Errorf("GET %s next cursor = %q, want %q", path, got, wantNext)
 			}
 		})
 	}

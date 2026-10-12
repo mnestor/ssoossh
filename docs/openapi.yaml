@@ -806,11 +806,18 @@ components:
             $ref: '#/components/schemas/webtypes.AdminEnrollmentResponse'
           type: array
           uniqueItems: false
-        meta:
-          $ref: '#/components/schemas/webtypes.PageMeta'
+        next_cursor:
+          description: |-
+            NextCursor is the after for the following page: the id of this
+            page's last row, absent on the last page.
+          type: string
+        total:
+          description: Total is how many enrollments match the search, across all
+            pages.
+          type: integer
       required:
       - enrollments
-      - meta
+      - total
       type: object
     webtypes.AdminUserDetail:
       properties:
@@ -1204,15 +1211,23 @@ components:
       type: object
     webtypes.AdminUsersListResponse:
       properties:
-        meta:
-          $ref: '#/components/schemas/webtypes.PageMeta'
+        next_cursor:
+          description: |-
+            NextCursor is the after for the following page: the id of this
+            page's last user, absent on the last page.
+          type: string
+        total:
+          description: |-
+            Total is how many users match the search and state filter, across all
+            pages.
+          type: integer
         users:
           items:
             $ref: '#/components/schemas/webtypes.AdminUserSummary'
           type: array
           uniqueItems: false
       required:
-      - meta
+      - total
       - users
       type: object
     webtypes.ApproveRequestBody:
@@ -1300,10 +1315,11 @@ components:
             $ref: '#/components/schemas/webtypes.AuditEventResponse'
           type: array
           uniqueItems: false
-        next_offset:
-          description: NextOffset is the offset for the following page, or 0 on the
-            last one.
-          type: integer
+        next_cursor:
+          description: |-
+            NextCursor is the after for the following page: the id of this
+            page's last event, absent on the last page.
+          type: string
         total:
           type: integer
       required:
@@ -1367,11 +1383,18 @@ components:
             $ref: '#/components/schemas/webtypes.CertificateResponse'
           type: array
           uniqueItems: false
-        page_meta:
-          $ref: '#/components/schemas/webtypes.PageMeta'
+        next_cursor:
+          description: |-
+            NextCursor is the after for the following page: the id of this
+            page's last certificate, absent on the last page.
+          type: string
+        total:
+          description: Total is how many certificates match the filters, across all
+            pages.
+          type: integer
       required:
       - certificates
-      - page_meta
+      - total
       type: object
     webtypes.CertificateListResponse:
       properties:
@@ -2417,36 +2440,6 @@ components:
       - groups
       - kinds
       type: object
-    webtypes.PageMeta:
-      properties:
-        limit:
-          description: |-
-            Limit is the page size actually served, which may be smaller than the
-            one asked for (see paging.MaxLimit).
-          type: integer
-        offset:
-          description: Offset is how many rows were skipped to reach this page.
-          type: integer
-        page:
-          description: |-
-            Page is the 1-based number of this page, and PageCount how many pages
-            Total fills at this size. Both are derivable from the three fields
-            above, and are sent anyway so every list UI computes them the same way
-            — including the "an empty list is page 1 of 1" boundary.
-          type: integer
-        page_count:
-          type: integer
-        total:
-          description: Total is how many rows match the request's filter, across all
-            pages.
-          type: integer
-      required:
-      - limit
-      - offset
-      - page
-      - page_count
-      - total
-      type: object
     webtypes.ReEnableUserRequestBody:
       properties:
         reason:
@@ -2898,17 +2891,19 @@ paths:
         never one the client reported. The database copy is a bounded
         cache of recent events; the shipped audit log is the archive,
         and any other search happens there.
+        Uses cursor-based pagination (not offset): pass the previous
+        page's next_cursor as after.
       parameters:
+      - description: 'Audit event ID to start after (cursor): the previous page''s
+          next_cursor'
+        in: query
+        name: after
+        schema:
+          type: string
       - description: Page size (default 25, max 100)
         example: 25
         in: query
         name: limit
-        schema:
-          type: integer
-      - description: Results to skip (default 0)
-        example: 0
-        in: query
-        name: offset
         schema:
           type: integer
       - description: Only events of this audit action; must be in the taxonomy
@@ -2935,8 +2930,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
-          description: Invalid paging parameters, an unknown action, or a source_ip
-            that is not an IP address
+          description: Invalid paging parameters, an after that names no audit event,
+            offset, an unknown action, or a source_ip that is not an IP address
         "401":
           content:
             application/json:
@@ -2960,18 +2955,19 @@ paths:
         Returns issued certificates across all users, useful for audits,
         incident review, and tracking "who issued this?". Supports
         searching over key ID, principals, serial number, fingerprint, and owner
-        username/email, filtering by type and expiration status, and offset pagination.
+        username/email, filtering by type and expiration status. Newest first, with
+        cursor-based pagination (not offset): pass the previous page's next_cursor as after.
       parameters:
+      - description: 'Certificate ID to start after (cursor): the previous page''s
+          next_cursor'
+        in: query
+        name: after
+        schema:
+          type: string
       - description: Number of results (default 25, max 100)
         example: 25
         in: query
         name: limit
-        schema:
-          type: integer
-      - description: Number of results to skip (default 0)
-        example: 0
-        in: query
-        name: offset
         schema:
           type: integer
       - description: Search term (max 200 chars)
@@ -2998,13 +2994,15 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/openapidoc.CertificateListAdminEnvelope'
-          description: Certificates and page metadata
+          description: Certificates, newest first, with the total and the cursor for
+            the next page
         "400":
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
-          description: Invalid parameters
+          description: Invalid parameters, an after that names no certificate, or
+            offset
         "401":
           content:
             application/json:
@@ -3101,17 +3099,19 @@ paths:
       description: |-
         Returns a paged list of all service enrollments across users, searchable
         by approver name, principals, key ID, or request ID. Visible to auditors.
+        Newest first, with cursor-based pagination (not offset): pass the previous
+        page's next_cursor as after.
       parameters:
+      - description: 'Enrollment ID to start after (cursor): the previous page''s
+          next_cursor'
+        in: query
+        name: after
+        schema:
+          type: string
       - description: Page size (default 25, max 100)
         example: 25
         in: query
         name: limit
-        schema:
-          type: integer
-      - description: Rows to skip (default 0)
-        example: 0
-        in: query
-        name: offset
         schema:
           type: integer
       - description: Search query (max 200 chars)
@@ -3127,6 +3127,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/webtypes.AdminEnrollmentsResponse'
           description: Paged enrollment list
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Invalid paging/search parameters, an after that names no enrollment,
+            or offset
         "401":
           content:
             application/json:
@@ -3445,17 +3452,17 @@ paths:
         username, email, or subject, and filterable by account state.
         Useful for user directory and audit.
         Ordered by name ignoring case (users with no name last, by username), then username, then id.
+        Uses cursor-based pagination (not offset): pass the previous page's next_cursor as after.
       parameters:
+      - description: 'User ID to start after (cursor): the previous page''s next_cursor'
+        in: query
+        name: after
+        schema:
+          type: string
       - description: Page size (default 25, max 100)
         example: 25
         in: query
         name: limit
-        schema:
-          type: integer
-      - description: Results to skip (default 0)
-        example: 0
-        in: query
-        name: offset
         schema:
           type: integer
       - description: Search term matched against name, username, email, and subject
@@ -3484,7 +3491,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
-          description: Invalid paging/search parameters
+          description: Invalid paging/search parameters, an after that names no user,
+            or offset
         "401":
           content:
             application/json:
@@ -3550,7 +3558,7 @@ paths:
         Returns the audit events where this user is the actor or the
         target, newest first. One row serves both sides: a disable
         shows on the analyst's history and on the disabled account's
-        page.
+        page. Uses cursor-based pagination (not offset).
       parameters:
       - description: User ID
         in: path
@@ -3558,16 +3566,16 @@ paths:
         required: true
         schema:
           type: string
+      - description: 'Audit event ID to start after (cursor): the previous page''s
+          next_cursor; must be on this user''s timeline'
+        in: query
+        name: after
+        schema:
+          type: string
       - description: Page size (default 25, max 100)
         example: 25
         in: query
         name: limit
-        schema:
-          type: integer
-      - description: Results to skip (default 0)
-        example: 0
-        in: query
-        name: offset
         schema:
           type: integer
       responses:
@@ -3582,7 +3590,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
-          description: Invalid paging parameters
+          description: Invalid paging parameters, an after that names no event on
+            this timeline, or offset
         "401":
           content:
             application/json:

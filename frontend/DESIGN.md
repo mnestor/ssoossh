@@ -101,8 +101,8 @@ Exactly four jobs:
 4. The current rail item: cobalt label on `accent-wash`, with
    `aria-current="page"`.
 
-Nowhere else: not on icons, labels, stats, selected chips, the current page
-in a pager, tabs, checkboxes or decorative marks. The one exception is
+Nowhere else: not on icons, labels, stats, selected chips, tabs, checkboxes
+or decorative marks. The one exception is
 `BrandMark`, which draws the product's own mark in cobalt.
 
 ### Selected, current and status
@@ -111,9 +111,7 @@ in a pager, tabs, checkboxes or decorative marks. The one exception is
   DetailToggle segment, a segmented filter): ink fill (`bg-ink
 text-surface`), the `check` glyph before the label, and `aria-pressed`.
   Never cobalt.
-- **Current** (where the reader is): the rail item as above. The current page
-  in a `Pager` is an ink fill with `aria-current="page"` and no glyph: it is
-  a location, not a choice.
+- **Current** (where the reader is): the rail item as above.
 - **Status** colours are semantic only. `granted` means approved, valid or
   granted; `trimmed` means narrowed, restricted or a warning; `danger` means
   an error, a denial or destruction. They never mark "configured", "came from
@@ -253,8 +251,8 @@ panel gets a frame: a `dl` uses `divide-y divide-border-subtle`, a
 ### Borders: three jobs
 
 1. A hairline between rows inside a panel: `border-subtle`.
-2. The edge of a control a reader operates (a field, a ghost button, a pager
-   control, an unselected chip): `border-control`, 3:1 or better on every
+2. The edge of a control a reader operates (a field, a ghost button, a
+   segmented control, an unselected chip): `border-control`, 3:1 or better on every
    plane.
 3. The edge of a value chip (`MonoChip`): `border-subtle`. A set of
    principals has to show where one value ends; a fill alone is 1.08:1.
@@ -267,7 +265,7 @@ footer rule, no alert outline, no side stripe.
 | Utility                  | Token                      | Value | For                                                       |
 | ------------------------ | -------------------------- | ----- | --------------------------------------------------------- |
 | `rounded` / `rounded-sm` | `--radius` / `--radius-sm` | 3px   | Chips, badges, `StatusBadge`                              |
-| `rounded-md`             | `--radius-md`              | 4px   | Controls: buttons, fields, segmented controls, pager      |
+| `rounded-md`             | `--radius-md`              | 4px   | Controls: buttons, fields, segmented controls             |
 | `rounded-lg`             | `--radius-lg`              | 6px   | Panels: sections, rows, strips, alerts, tables            |
 | `rounded-xl`             | `--radius-xl`              | 8px   | Dialogs                                                   |
 | `rounded-full`           |                            |       | Only a circular glyph container: `EmptyState`'s icon disc |
@@ -322,7 +320,7 @@ infinite loop is a strobe.
   `--spacing-target`: 2.25rem, raised to 2.75rem under
   `@media (pointer: coarse)` in `app.css`. Every standalone control takes
   it: buttons, every chip a reader presses (filter, principal, extension),
-  segmented controls, pager controls, icon buttons (`size-target`), rail
+  segmented controls, icon buttons (`size-target`), rail
   rows, menu rows, checkbox and radio rows (the whole label is the target),
   the copy button and the back chip. Use `min-h-target` (and
   `min-w-target` where the control is narrow); no control states its own
@@ -560,11 +558,6 @@ bg-surface-muted`, decorative), a short title, the sentence that says what
   search, filter or page turn, silent until the request settles so a
   debounced search does not announce on every keystroke (WCAG 4.1.3). Every
   searchable or paged list carries one.
-- **Pager**: offset pagination for the admin lists from the server's
-  `PageMeta`. Renders nothing when one page holds everything; keeps first and
-  last reachable behind an ellipsis; current page is an ink fill with
-  `aria-current="page"`. Plain buttons with per-page names (`Page 3`), each
-  `min-h-target min-w-target rounded-md`, unselected edge `border-control`.
 - **SearchInput**: debounced search reporting the trimmed term once typing
   settles and only when it changed. Enter reports immediately; the clear
   button (`x`, `size-target`) reports an empty term at once. `value` seeds the
@@ -774,8 +767,16 @@ off, and confirms through a reasonless `ConfirmModal`.
   drops its outcome glyph there; a `DeniedRow` keeps its own mark and says
   "denied" in its detail line, so a mixed list still reads. The width is
   stated once in `#lib/viewport` (`NARROW_QUERY`, `watchNarrow`).
-- **Paging:** the admin lists page by offset with `Pager`; the caller's own
-  history by cursor with "Load more".
+- **Paging:** every list pages by cursor with "Load more", a ghost button
+  under the rows that goes once the last page is in. Every admin list (audit
+  feed, a user's audit timeline, users, certificates, service codes) has the
+  audit feed's footer above that button, worded once by `describeLoaded` in
+  `#lib/listStatus`: `48 shown`, then `, 120 older not loaded` while the
+  server holds more. "older" where the list runs newest first, "more" on the
+  user directory, which is sorted by name. A failed "Load more" is an error `Alert` in the
+  button's place that retries that page; the rows above stay. A cursor names
+  a page, not the rows above it, so the address keeps the filters but not how
+  far the list was loaded.
 - **Service codes:** live codes first, expired ones under their own label
   rather than dropped, because a job that stopped working is explained by the
   code beneath it. Opening an account filters the same list by shallow
@@ -976,7 +977,7 @@ beneath it.
   and re-enable are heading actions.
 - **Certificates** (`/admin/certificates`): every issued certificate,
   searchable by key id, principals, serial, fingerprint, owner username or
-  email, filtered by type and validity, offset-paged, from
+  email, filtered by type and validity, cursor-paged with Load more, from
   `/api/admin/certificates/history`. Orphaned certificates still appear (a
   LEFT JOIN) so an auditor can trace them. Rows open `/certs/<id>`.
 - **Service codes** (`/admin/service-codes`, and `/<id>`): every
@@ -1190,7 +1191,7 @@ change.
 ## 18. Engineering conventions
 
 - **Test ids:** components the e2e tier selects on (`Button`, `PageSection`,
-  `Alert`, `Pager`, `SearchInput`, `CertRow`, `PageHeading`,
+  `Alert`, `SearchInput`, `CertRow`, `PageHeading`,
   `ServiceCodeRow`) take a `testid` prop and render `data-testid` on their
   root. Passing `data-testid` to a component is an unknown prop that Svelte
   drops silently; `make frontend-check` catches it because `Props` are typed.

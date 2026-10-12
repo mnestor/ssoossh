@@ -953,7 +953,7 @@ func TestListForAdmin(t *testing.T) {
 
 		list, err := enrollment.ListForAdmin(context.Background(),
 			&Identity{Subject: "sub-auditor", Groups: []string{"auditors"}},
-			AdminListParams{Limit: 25, Offset: 0, Query: ""})
+			AdminListParams{Limit: 25, Query: ""})
 		if err != nil {
 			t.Fatalf("ListForAdmin() error = %v", err)
 		}
@@ -1005,7 +1005,7 @@ func TestListForAdmin(t *testing.T) {
 		// Search for alice
 		list, err := enrollment.ListForAdmin(context.Background(),
 			&Identity{Subject: "sub-auditor", Groups: []string{"auditors"}},
-			AdminListParams{Limit: 25, Offset: 0, Query: "alice"})
+			AdminListParams{Limit: 25, Query: "alice"})
 		if err != nil {
 			t.Fatalf("ListForAdmin() error = %v", err)
 		}
@@ -1023,7 +1023,7 @@ func TestListForAdmin(t *testing.T) {
 
 		_, err := enrollment.ListForAdmin(context.Background(),
 			&Identity{Subject: "sub-user", Groups: []string{}},
-			AdminListParams{Limit: 25, Offset: 0, Query: ""})
+			AdminListParams{Limit: 25, Query: ""})
 
 		var forbidden *errorresponses.ForbiddenError
 		if !errors.As(err, &forbidden) {
@@ -1052,7 +1052,7 @@ func TestListForAdmin(t *testing.T) {
 		// Search for something that doesn't match
 		list, err := enrollment.ListForAdmin(context.Background(),
 			&Identity{Subject: "sub-auditor", Groups: []string{"auditors"}},
-			AdminListParams{Limit: 25, Offset: 0, Query: "nonexistent"})
+			AdminListParams{Limit: 25, Query: "nonexistent"})
 		if err != nil {
 			t.Fatalf("ListForAdmin() error = %v", err)
 		}
@@ -1217,7 +1217,7 @@ func TestListForAdmin_PagingWithSearch(t *testing.T) {
 	// Search for "alice" should find only 10 enrollments, not the full 30
 	list, err := enrollment.ListForAdmin(context.Background(),
 		&Identity{Subject: "sub-auditor", Groups: []string{"auditors"}},
-		AdminListParams{Limit: 25, Offset: 0, Query: "alice"})
+		AdminListParams{Limit: 25, Query: "alice"})
 	if err != nil {
 		t.Fatalf("ListForAdmin() error = %v", err)
 	}
@@ -1235,6 +1235,138 @@ func TestListForAdmin_PagingWithSearch(t *testing.T) {
 			t.Errorf("got enrollment approved by %q, expected alice", row.Approver.Username)
 		}
 	}
+}
+
+// TestListForAdmin_ShouldPageByCursor walks the admin enrollment list page by
+// page through next cursors, with and without a search, including two rows
+// created in the same instant, and checks every row comes back exactly once
+// in the list's order.
+func TestListForAdmin_ShouldPageByCursor(t *testing.T) {
+	t.Parallel()
+
+	base := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
+	// key is the KeyID each row carries, so the expected order reads as
+	// labels; e1 and e2 share a timestamp, and their ids order them.
+	seed := []struct {
+		id, key, approver string
+		at                time.Time
+	}{
+		{"00000000-0000-0000-0000-000000000001", "e0", "alice", base},
+		{"00000000-0000-0000-0000-000000000002", "e1", "bob", base.Add(time.Minute)},
+		{"00000000-0000-0000-0000-000000000003", "e2", "alice", base.Add(time.Minute)},
+		{"00000000-0000-0000-0000-000000000004", "e3", "alice", base.Add(2 * time.Minute)},
+		{"00000000-0000-0000-0000-000000000005", "e4", "bob", base.Add(3 * time.Minute)},
+	}
+
+	tests := []struct {
+		name  string
+		query string
+		limit int
+		want  []string
+	}{
+		{name: "should return every row once newest first when paged unfiltered", limit: 2, want: []string{"e4", "e3", "e2", "e1", "e0"}},
+		{name: "should keep the search across pages when filtered", query: "alice", limit: 2, want: []string{"e3", "e2", "e0"}},
+		{name: "should return one page and no cursor when the page holds everything", limit: 25, want: []string{"e4", "e3", "e2", "e1", "e0"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			enrollment, svc := newCursorEnrollmentFixture(t)
+			for _, row := range seed {
+				seedEnrollment(t, svc, model.Enrollment{
+					ID: row.id, Code: uuid.NewString(), PublicKey: "key", UserID: "u-" + row.approver,
+					Principals: `["svc"]`, ServiceAccount: "svc", KeyID: row.key,
+					ExpiresAt: base.Add(time.Hour), CreatedAt: row.at,
+				})
+			}
+
+			var got []string
+			after := ""
+			for range len(seed) + 1 {
+				list, err := enrollment.ListForAdmin(context.Background(), cursorAuditor(),
+					AdminListParams{Limit: tt.limit, After: after, Query: tt.query})
+				if err != nil {
+					t.Fatalf("ListForAdmin() error = %v", err)
+				}
+				for _, row := range list.Enrollments {
+					got = append(got, row.Enrollment.KeyID)
+				}
+				if list.NextCursor == nil {
+					break
+				}
+				after = *list.NextCursor
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("paged rows = %v, want %v", got, tt.want)
+			}
+		})
+	}
+
+	t.Run("should neither repeat nor skip a row when one is created between pages", func(t *testing.T) {
+		t.Parallel()
+		enrollment, svc := newCursorEnrollmentFixture(t)
+		for _, row := range seed {
+			seedEnrollment(t, svc, model.Enrollment{
+				ID: row.id, Code: uuid.NewString(), PublicKey: "key", UserID: "u-" + row.approver,
+				Principals: `["svc"]`, ServiceAccount: "svc", KeyID: row.key,
+				ExpiresAt: base.Add(time.Hour), CreatedAt: row.at,
+			})
+		}
+		first, err := enrollment.ListForAdmin(context.Background(), cursorAuditor(), AdminListParams{Limit: 2})
+		if err != nil {
+			t.Fatalf("ListForAdmin() error = %v", err)
+		}
+		seedEnrollment(t, svc, model.Enrollment{
+			ID: uuid.NewString(), Code: uuid.NewString(), PublicKey: "key", UserID: "u-alice",
+			Principals: `["svc"]`, ServiceAccount: "svc", KeyID: "new",
+			ExpiresAt: base.Add(time.Hour), CreatedAt: base.Add(time.Hour),
+		})
+		second, err := enrollment.ListForAdmin(context.Background(), cursorAuditor(), AdminListParams{Limit: 2, After: *first.NextCursor})
+		if err != nil {
+			t.Fatalf("ListForAdmin() error = %v", err)
+		}
+		var got []string
+		for _, row := range append(first.Enrollments, second.Enrollments...) {
+			got = append(got, row.Enrollment.KeyID)
+		}
+		if !slices.Equal(got, []string{"e4", "e3", "e2", "e1"}) {
+			t.Errorf("paged rows = %v, want [e4 e3 e2 e1]", got)
+		}
+	})
+
+	t.Run("should refuse a cursor that names no enrollment", func(t *testing.T) {
+		t.Parallel()
+		enrollment, _ := newCursorEnrollmentFixture(t)
+		_, err := enrollment.ListForAdmin(context.Background(), cursorAuditor(), AdminListParams{Limit: 2, After: "no-such-enrollment"})
+		var invalid *errorresponses.InvalidRequestError
+		if !errors.As(err, &invalid) {
+			t.Errorf("error = %v, want *errorresponses.InvalidRequestError", err)
+		}
+	})
+}
+
+// cursorAuditor is the identity the cursor tests list as.
+func cursorAuditor() *Identity {
+	return &Identity{Subject: "sub-auditor", Groups: []string{"auditors"}}
+}
+
+// newCursorEnrollmentFixture builds an enrollment service whose config grants
+// the auditors group, with alice and bob as approvers.
+func newCursorEnrollmentFixture(t *testing.T) (*EnrollmentService, *CertRequestService) {
+	t.Helper()
+	svc := newTestCertRequestServiceWithConfig(t, &config.Config{Admin: config.AdminConfig{AuditorGroup: "auditors"}})
+	enrollment := newTestEnrollmentService(t, svc)
+	if err := svc.db.AutoMigrate(&model.User{}, &model.UserLDAP{}); err != nil {
+		t.Fatalf("failed to migrate users: %v", err)
+	}
+	for _, name := range []string{"alice", "bob"} {
+		user := model.User{ID: "u-" + name, Subject: "sub-" + name, Username: name, Email: name + "@example.com", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+		if err := svc.db.Create(&user).Error; err != nil {
+			t.Fatalf("failed to seed %s: %v", name, err)
+		}
+	}
+	return enrollment, svc
 }
 
 // TestListForAdmin_SearchFilteringPinnedToSQL verifies that search filtering
@@ -1326,7 +1458,7 @@ func TestListForAdmin_SearchFilteringPinnedToSQL(t *testing.T) {
 
 	list, err := enrollment.ListForAdmin(context.Background(),
 		&Identity{Subject: "sub-auditor", Groups: []string{"auditors"}},
-		AdminListParams{Limit: 10, Offset: 0, Query: "alice"})
+		AdminListParams{Limit: 10, Query: "alice"})
 	if err != nil {
 		t.Fatalf("ListForAdmin() error = %v", err)
 	}
@@ -1886,7 +2018,7 @@ func TestListForAdmin_ShouldFindAnEnrollmentByItsOwnID(t *testing.T) {
 			}
 
 			list, err := enrollment.ListForAdmin(context.Background(), auditor,
-				AdminListParams{Limit: 25, Offset: 0, Query: tt.query})
+				AdminListParams{Limit: 25, Query: tt.query})
 			if err != nil {
 				t.Fatalf("ListForAdmin() error = %v", err)
 			}

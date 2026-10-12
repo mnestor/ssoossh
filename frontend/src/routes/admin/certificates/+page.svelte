@@ -14,14 +14,20 @@
 	import PageShell from '#lib/components/PageShell.svelte';
 	import ListStatus from '#lib/components/ListStatus.svelte';
 	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
-	import Pager from '#lib/components/Pager.svelte';
 	import SearchInput from '#lib/components/SearchInput.svelte';
 	import { statusFilters, typeFilters } from '#lib/filters.js';
-	import { describeList } from '#lib/listStatus.js';
+	import { describeList, describeLoaded } from '#lib/listStatus.js';
 	import { certificateEvent } from '#lib/rowEvents.js';
 
 	let certificates = $state<CertificateResponse[]>([]);
-	let pageInfo = $state({ total: 0, limit: 25, offset: 0, page: 1, page_count: 1 });
+	// How many certificates match the filters, across every page, and the
+	// cursor for the page after the last one shown (null once it is in).
+	let total = $state(0);
+	let nextCursor = $state<string | null>(null);
+	// A failed "Load more" is its own error: the certificates already shown
+	// are still right, so it sits where the button was and retries that
+	// page, rather than replacing the list with the first page again.
+	let moreError = $state<string | null>(null);
 	// Read from the address the page opened at, and written back to it, so
 	// returning from a certificate (whose back chip carries this search)
 	// lands on the same narrowed view instead of the defaults.
@@ -29,7 +35,6 @@
 	let searchQuery = $state(opened.get('q') ?? '');
 	let typeFilter = $state(opened.get('type') ?? '');
 	let statusFilter = $state(opened.get('status') ?? '');
-	let offset = $state(Number(opened.get('offset')) || 0);
 	let loadError = $state<string | null>(null);
 	let isLoading = $state(false);
 	let hasLoaded = $state(false);
@@ -49,21 +54,27 @@
 	// Takes what to fetch rather than reading it. The effect below is the one
 	// place that touches the filter state, which is what keeps its dependency
 	// list deliberate instead of a consequence of where the first await
-	// happens to fall.
-	async function loadCertificates(query: {
-		offset: number;
-		q: string;
-		type: string;
-		status: string;
-	}) {
+	// happens to fall. Given after, the previous page's cursor, it appends
+	// the page that follows, so "Load more" grows one continuous list.
+	async function loadCertificates(
+		query: {
+			q: string;
+			type: string;
+			status: string;
+		},
+		after?: string
+	) {
 		const load = ++latestLoad;
 		isLoading = true;
 		// A new load starts clean: an error from an earlier one says nothing
 		// about this one, and left in place it sat above a list that loaded.
-		loadError = null;
+		moreError = null;
+		if (!after) {
+			loadError = null;
+		}
 		try {
 			const result = await listAdminCertificates(undefined, {
-				offset: query.offset,
+				after,
 				limit: 25,
 				q: query.q || undefined,
 				type: query.type || undefined,
@@ -72,15 +83,20 @@
 			if (load !== latestLoad) {
 				return;
 			}
-			certificates = result.certificates;
-			pageInfo = result.page_meta;
+			certificates = after ? [...certificates, ...result.certificates] : result.certificates;
+			total = result.total;
+			nextCursor = result.next_cursor ?? null;
 			hasLoaded = true;
 		} catch (cause) {
 			if (load !== latestLoad) {
 				return;
 			}
 			if (!redirectIfUnauthenticated(cause)) {
-				loadError = errorMessage(cause);
+				if (after) {
+					moreError = errorMessage(cause);
+				} else {
+					loadError = errorMessage(cause);
+				}
 				hasLoaded = true;
 			}
 		} finally {
@@ -92,7 +108,7 @@
 		}
 	}
 
-	// The only loader. Reading the four inputs here is what subscribes this
+	// The only first-page loader. Reading the three inputs here is what subscribes this
 	// effect to them, so it covers the first load and every change alike.
 	//
 	// The handlers below therefore only move state. They used to also call
@@ -103,14 +119,13 @@
 	// identical requests, one from the handler and one from the effect
 	// re-running.
 	$effect(() => {
-		loadCertificates({ offset, q: searchQuery, type: typeFilter, status: statusFilter });
+		loadCertificates({ q: searchQuery, type: typeFilter, status: statusFilter });
 	});
 
-	// Narrowing the results while looking at page 4 should show the first
-	// page of the new set, not whatever lands at that offset.
+	// Narrowing the results starts the new set from its first page: the
+	// effect above reloads on every filter change.
 	function handleSearch(query: string) {
 		searchQuery = query;
-		offset = 0;
 	}
 
 	// Plain setters, not toggles. Each group carries its own "any" chip now,
@@ -118,24 +133,25 @@
 	// selected one a second time — which looked identical to selecting it.
 	function handleTypeFilter(type: string) {
 		typeFilter = type;
-		offset = 0;
 	}
 
 	function handleStatusFilter(status: string) {
 		statusFilter = status;
-		offset = 0;
 	}
 
-	function handlePage(next: number) {
-		offset = next;
+	/** loadMore appends the page after the last certificate shown. */
+	function loadMore() {
+		if (nextCursor) {
+			loadCertificates({ q: searchQuery, type: typeFilter, status: statusFilter }, nextCursor);
+		}
 	}
 
-	// The way out of a failed load. The effect below only re-runs when one of
-	// the four inputs changes, so without this a reader whose first request
+	// The way out of a failed load. The effect above only re-runs when one of
+	// the three inputs changes, so without this a reader whose first request
 	// failed had to touch a filter to get a second attempt, and the page said
 	// nothing about that being the trick.
 	function retry() {
-		loadCertificates({ offset, q: searchQuery, type: typeFilter, status: statusFilter });
+		loadCertificates({ q: searchQuery, type: typeFilter, status: statusFilter });
 	}
 
 	// Whether anything on screen is narrowing the list. An empty result means
@@ -143,15 +159,16 @@
 	// offering a way back from.
 	const filtered = $derived(searchQuery !== '' || typeFilter !== '' || statusFilter !== '');
 
-	// The filters and page as a query string: what the address carries and
-	// what a certificate's back chip returns to. Defaults are left out.
+	// The filters as a query string: what the address carries and what a
+	// certificate's back chip returns to. Defaults are left out. How far the
+	// list was loaded is not: a cursor names a page, not the rows above it,
+	// so a return opens on the first page of the same filters.
 	const filterSearch = $derived.by(() => {
 		const parts: string[] = [];
 		const add = (key: string, value: string) => parts.push(`${key}=${encodeURIComponent(value)}`);
 		if (searchQuery.trim()) add('q', searchQuery.trim());
 		if (typeFilter) add('type', typeFilter);
 		if (statusFilter) add('status', statusFilter);
-		if (offset > 0) add('offset', String(offset));
 		return parts.length ? `?${parts.join('&')}` : '';
 	});
 
@@ -184,7 +201,6 @@
 		searchQuery = '';
 		typeFilter = '';
 		statusFilter = '';
-		offset = 0;
 		searchKey += 1;
 	}
 
@@ -193,11 +209,9 @@
 	const status = $derived(
 		describeList({
 			noun: 'certificate',
-			total: pageInfo.total,
+			total,
 			loading: isLoading,
 			ready: hasLoaded,
-			page: pageInfo.page,
-			pageCount: pageInfo.page_count,
 			query: searchQuery
 		})
 	);
@@ -301,7 +315,34 @@
 		</div>
 	{/if}
 
-	{#if !loadError}
-		<Pager meta={pageInfo} onpage={handlePage} busy={isLoading} testid="pager" />
+	{#if !loadError && certificates.length > 0}
+		<!-- The audit feed's footer: what is on screen, what is left, then
+		     Load more. -->
+		<div class="flex flex-col gap-3">
+			<p class="text-xs text-ink-muted tabular-nums" data-testid="certificates-count">
+				{describeLoaded(certificates.length, total - certificates.length, 'older')}
+			</p>
+			{#if moreError}
+				<Alert
+					variant="error"
+					title="Could not load more certificates"
+					onretry={loadMore}
+					testid="certificates-more-error"
+				>
+					{moreError}
+				</Alert>
+			{:else if nextCursor}
+				<div>
+					<Button
+						variant="ghost"
+						busy={isLoading}
+						onclick={loadMore}
+						testid="certificates-load-more"
+					>
+						{isLoading ? 'Loading…' : 'Load more'}
+					</Button>
+				</div>
+			{/if}
+		</div>
 	{/if}
 </PageShell>
