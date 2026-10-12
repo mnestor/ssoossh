@@ -573,6 +573,14 @@ describe('Certificate history page', () => {
 				'/certs/cert-1?from=history'
 			);
 		});
+
+		// The type badge is a mark, not a name: the row says the type in
+		// words, so nobody has to hover the glyph to tell user from PAM.
+		it('should name a user certificate in words on its detail line', async () => {
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			expect(screen.getByTestId('cert-row')).toHaveTextContent(/user certificate issued/);
+		});
 	});
 
 	// A phone-width row has space for the subject, the detail line and one

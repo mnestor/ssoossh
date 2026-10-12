@@ -55,6 +55,29 @@ describe('history filters in the address', () => {
 		expect(screen.getByTestId('type-filter-pam')).toHaveAttribute('aria-pressed', 'true');
 	});
 
+	// Below `sm` the groups are selects; they have to open on the same
+	// narrowed view as the chips, or a phone loses the back chip's state.
+	it.each([
+		{ testid: 'type-filter-select', want: 'pam' },
+		{ testid: 'status-filter-select', want: 'expired' },
+		{ testid: 'outcome-filter-select', want: 'denied' }
+	])('should open the $testid on the value the address names', async ({ testid, want }) => {
+		resetFakePage('http://localhost/logs/me?type=pam&status=expired&outcome=denied');
+		render(Page);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(screen.getByTestId(testid)).toHaveValue(want);
+	});
+
+	it('should write a filter picked in a select back to the address', async () => {
+		resetFakePage('http://localhost/logs/me');
+		render(Page);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		await userEvent.selectOptions(screen.getByTestId('type-filter-select'), 'console');
+		await vi.waitFor(() =>
+			expect(replaceState).toHaveBeenCalledWith('/logs/me?type=console', expect.anything())
+		);
+	});
+
 	it('should read the endpoint the outcome in the address asks for', async () => {
 		resetFakePage('http://localhost/logs/me?outcome=denied');
 		render(Page);

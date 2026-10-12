@@ -4,7 +4,7 @@ import { certificateEvent } from './rowEvents';
 
 describe('certificateEvent', () => {
 	it.each([
-		{ type: 'user', want: 'certificate issued' },
+		{ type: 'user', want: 'user certificate issued' },
 		{ type: 'pam', want: 'PAM login' },
 		{ type: 'console', want: 'console login' },
 		{ type: 'service', want: 'service certificate issued' },

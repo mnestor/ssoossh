@@ -9,9 +9,17 @@ import type { CertificateType } from '#lib/api/types.js';
  * In the "issued" tense because the time beside it is issued_at. PAM and
  * console name the operation rather than the certificate, because that is
  * what the person did: ran sudo, logged in at a console.
+ *
+ * Every known type is named in words, because this line is where a row
+ * says its type: TypeBadge's glyph beside it is a mark, not a name, and a
+ * glyph that needs a hover to be understood has failed (DESIGN.md,
+ * Iconography). The default stays unnamed on purpose: it also covers a
+ * missing or unknown type, which must not be labelled "user".
  */
 export function certificateEvent(type: CertificateType | string | undefined): string {
 	switch (type) {
+		case 'user':
+			return 'user certificate issued';
 		case 'pam':
 			return 'PAM login';
 		case 'console':
