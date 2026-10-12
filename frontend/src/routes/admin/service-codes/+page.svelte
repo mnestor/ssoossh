@@ -4,6 +4,7 @@
 	import type { AdminEnrollment } from '#lib/api/types.js';
 	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
 	import Alert from '#lib/components/Alert.svelte';
+	import LoadMoreFooter from '#lib/components/LoadMoreFooter.svelte';
 	import Button from '#lib/components/Button.svelte';
 	import EmptyState from '#lib/components/EmptyState.svelte';
 	import ListStatus from '#lib/components/ListStatus.svelte';
@@ -198,31 +199,14 @@
 
 		<!-- The audit feed's footer: what is on screen, what is left, then
 		     Load more. -->
-		<div class="flex flex-col gap-3">
-			<p class="text-xs text-ink-muted tabular-nums" data-testid="enrollments-count">
-				{describeLoaded(enrollments.length, (total ?? 0) - enrollments.length, 'older')}
-			</p>
-			{#if moreError}
-				<Alert
-					variant="error"
-					title="Could not load more service codes"
-					onretry={loadMore}
-					testid="enrollments-more-error"
-				>
-					{moreError}
-				</Alert>
-			{:else if nextCursor}
-				<div>
-					<Button
-						variant="ghost"
-						busy={loadingMore}
-						onclick={loadMore}
-						testid="enrollments-load-more"
-					>
-						{loadingMore ? 'Loading…' : 'Load more'}
-					</Button>
-				</div>
-			{/if}
-		</div>
+		<LoadMoreFooter
+			summary={describeLoaded(enrollments.length, (total ?? 0) - enrollments.length, 'older')}
+			hasMore={!!nextCursor}
+			busy={loadingMore}
+			error={moreError}
+			errorTitle="Could not load more service codes"
+			onmore={loadMore}
+			testid="enrollments"
+		/>
 	{/if}
 </PageShell>

@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import { getAdminUser, disableUser, enableUser, getUserAudit } from '#lib/api/endpoints.js';
 	import Alert from '#lib/components/Alert.svelte';
+	import LoadMoreFooter from '#lib/components/LoadMoreFooter.svelte';
 	import AuditTimeline from '#lib/components/AuditTimeline.svelte';
 	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
 	import Button from '#lib/components/Button.svelte';
@@ -920,36 +921,21 @@
 					<AuditTimeline events={auditEvents} subjectUserId={userId} />
 					<!-- The audit feed's footer, counted the same way: rows the
 					     timeline rendered, against what the server holds. -->
-					{#if auditEvents.length > 0}
-						<p class="text-xs text-ink-muted tabular-nums" data-testid="user-audit-count">
-							{describeLoaded(
-								visibleAuditEvents(auditEvents).length,
-								auditTotal - auditEvents.length,
-								'older'
-							)}
-						</p>
-					{/if}
-					{#if auditMoreError}
-						<Alert
-							variant="error"
-							title="Could not load older events"
-							onretry={loadMoreAudit}
-							testid="user-audit-more-error"
-						>
-							{auditMoreError}
-						</Alert>
-					{:else if auditNextCursor !== null}
-						<div>
-							<Button
-								variant="ghost"
-								busy={auditLoadingMore}
-								onclick={loadMoreAudit}
-								testid="user-audit-load-more"
-							>
-								{auditLoadingMore ? 'Loading…' : 'Load more'}
-							</Button>
-						</div>
-					{/if}
+					<LoadMoreFooter
+						summary={auditEvents.length > 0
+							? describeLoaded(
+									visibleAuditEvents(auditEvents).length,
+									auditTotal - auditEvents.length,
+									'older'
+								)
+							: ''}
+						hasMore={auditNextCursor !== null}
+						busy={auditLoadingMore}
+						error={auditMoreError}
+						errorTitle="Could not load older events"
+						onmore={loadMoreAudit}
+						testid="user-audit"
+					/>
 				</div>
 			{/if}
 		</PageSection>

@@ -26,6 +26,7 @@ import Footer from './Footer.svelte';
 import Icon from './Icon.svelte';
 import ListStatus from './ListStatus.svelte';
 import LoadingBlock from './LoadingBlock.svelte';
+import LoadMoreFooter from './LoadMoreFooter.svelte';
 import MonoChip from './MonoChip.svelte';
 import OptionDiffList from './OptionDiffList.svelte';
 import PageHeading from './PageHeading.svelte';
@@ -243,6 +244,45 @@ const cases: [string, any, Record<string, unknown>][] = [
 	['Icon (decorative)', Icon, { name: 'certificate' }],
 	['Icon (labelled)', Icon, { name: 'certificate', ariaLabel: 'Certificate' }],
 	['ListStatus', ListStatus, { message: '12 certificates found.' }],
+	[
+		'LoadMoreFooter',
+		LoadMoreFooter,
+		{
+			summary: '25 shown, 25 older not loaded',
+			hasMore: true,
+			busy: false,
+			error: null,
+			errorTitle: 'Could not load more users',
+			onmore: vi.fn(),
+			testid: 'users'
+		}
+	],
+	[
+		'LoadMoreFooter (last page)',
+		LoadMoreFooter,
+		{
+			summary: '50 shown',
+			hasMore: false,
+			busy: false,
+			error: null,
+			errorTitle: 'Could not load more users',
+			onmore: vi.fn(),
+			testid: 'users'
+		}
+	],
+	[
+		'LoadMoreFooter (failed)',
+		LoadMoreFooter,
+		{
+			summary: '25 shown, 25 older not loaded',
+			hasMore: true,
+			busy: false,
+			error: 'The server did not answer.',
+			errorTitle: 'Could not load more users',
+			onmore: vi.fn(),
+			testid: 'users'
+		}
+	],
 	// Only the labelled case. The bars are gated behind 300ms and are
 	// `aria-hidden` when they do arrive, so an unlabelled LoadingBlock hands
 	// axe an empty container and a passing case that checked nothing. The
