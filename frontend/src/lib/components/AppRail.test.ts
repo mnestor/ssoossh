@@ -104,15 +104,16 @@ describe('app rail', () => {
 		]);
 	});
 
-	// The Directory is admin-only (issue #136): offering it to SOC or an
-	// auditor would lead them to a page that can only refuse them.
+	// The Directory (issue #136), Claims echo and Diagnostics (issue #161)
+	// are admin-only: offering them to SOC or an auditor would lead them to a
+	// page that can only refuse them.
 	const belowAdmin: { name: string; user: ReturnType<typeof signedInUser> }[] = [
 		{ name: 'an auditor', user: signedInUser(true) },
 		{ name: 'a SOC member', user: signedInUser(true, { isSOC: true }) }
 	];
 
 	for (const { name, user } of belowAdmin) {
-		it(`should name every section but the Directory when the viewer is ${name}`, () => {
+		it(`should name only the auditor-scoped sections when the viewer is ${name}`, () => {
 			resetFakePage('http://localhost/admin/users');
 			session.user = user;
 			session.resolved = true;
@@ -123,10 +124,7 @@ describe('app rail', () => {
 				'Users',
 				'Certificates',
 				'Service codes',
-				'Config',
-				'Claims echo',
-				'Audit log',
-				'Diagnostics'
+				'Audit log'
 			]);
 		});
 	}

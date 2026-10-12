@@ -3046,10 +3046,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
-          description: Not authorized as auditor
+          description: Not an admin
       security:
       - sessionCookie: []
-      summary: View effective server configuration (auditor-only)
+      summary: View effective server configuration (admin only)
       tags:
       - admin
   /api/admin/diagnostics/run:

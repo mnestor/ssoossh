@@ -14,16 +14,17 @@ point of the design.
 
 ```yaml
 admin:
-  # Deployment-wide operations: diagnostics, claims echo, the directory
-  # status, sync and probe. Plus everything SOC and auditor can do.
+  # Deployment-wide operations: the effective configuration, diagnostics,
+  # claims echo, the directory status, sync and probe. Plus everything SOC
+  # and auditor can do.
   require_group: "ssh-admins"
 
   # Account writes: disabling and re-enabling a user, expiring an
   # enrollment.
   soc_group: "security-ops"
 
-  # Read-only: effective configuration, cross-user certificate history,
-  # the user directory, the audit feed.
+  # Read-only: cross-user certificate history, the user directory, the
+  # audit feed.
   auditor_group: "ssh-auditors"
 
   # Shown on the account-disabled page, under the support contact.
@@ -74,7 +75,6 @@ re-enable of an account an admin disabled deliberately is on the record.
 | Disable a user | yes | yes | no |
 | Re-enable a user | yes | yes | no |
 | Expire any account's enrollment early | yes | yes | no |
-| Effective configuration | yes | yes | yes |
 | User directory and per-user detail | yes | yes | yes |
 | Certificate history across all users | yes | yes | yes |
 | Service code directory and detail | yes | yes | yes |
@@ -84,6 +84,7 @@ re-enable of an account an admin disabled deliberately is on the record.
 | Probe the directory | yes | no | no |
 | Echo your own IdP claims | yes | no | no |
 | Run the deployment diagnostics | yes | no | no |
+| Effective configuration | yes | no | no |
 
 Running the sync is admin-only rather than SOC, even though a pass can
 disable an account: a pass acts on every account at once, restoring and
@@ -95,9 +96,19 @@ entry in full, which is a capability rather than a view. Reading the sync
 directory connection, the query the probe is pinned to and the sync
 settings, which is the directory's operating detail rather than anything a
 SOC or audit investigation needs. The whole Directory page is admin-only as
-a result, and the rail does not offer it to SOC or auditors. The
+a result. The
 [deployment diagnostics](/ssoossh/operations/diagnostics/) are admin-only for
-the probe's reason: a run makes the server dial its own public URL.
+the probe's reason: a run makes the server dial its own public URL. The
+[claims echo](/ssoossh/operations/identity-provider/#seeing-what-your-provider-actually-sends)
+is admin-only because it drives a fresh sign-in against the identity
+provider, and what it shows is a configuration tool rather than an
+investigation one.
+
+The web UI follows the same split. The Directory, Claims echo and
+Diagnostics pages are admin-only as whole pages: the rail does not offer
+them to SOC or auditors, and opening one by its address shows a "You do
+not have access to this page" card rather than a page whose only action the
+server would refuse.
 
 One containment action needs no role at all. A holder of a service account
 can expire that account's own codes from the code's page; the row in the
@@ -169,14 +180,14 @@ a group" is answerable from the page. What it cannot show is a group the
 configuration never references, because those are discarded at capture --
 the [probe console](/ssoossh/operations/ldap/) is what breaks that circle.
 
-### What auditors see of the configuration
+### What admins see of the configuration
 
 The effective-configuration screen renders the server's whole configuration,
 grouped by section in the same order as the file it describes, with every
 field tagged as a secret redacted rather than shown. That covers the CA
 private key, the OIDC client secret, the session cookie key, the database
 connection string, the LDAP bind password, the SMTP password, and the HSM PIN.
-A redacted value still tells an auditor whether the setting is configured,
+A redacted value still tells an admin whether the setting is configured,
 which keeps "is the client secret set?" answerable without disclosing it.
 
 ![The Server configuration page: a filter box, a "Show unset keys" toggle, a count of keys set, and cards per section listing each key and value, with ldap.bind_password and ssh_key shown as [redacted] with a SECRET tag](../../../assets/screens/admin-config.png)
