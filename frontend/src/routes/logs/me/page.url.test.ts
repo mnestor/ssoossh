@@ -5,17 +5,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // The history keeps its filters in the address, so a certificate's back
 // chip (which carries the search) returns to the same narrowed view. The
 // router is stubbed: a fake page for what the address says, and a
-// replaceState that records what the page writes back.
-const { replaceState } = vi.hoisted(() => ({ replaceState: vi.fn() }));
+// goto that records what the page writes back.
+const { goto } = vi.hoisted(() => ({ goto: vi.fn() }));
 
 vi.mock('$app/state', async () => {
 	const { fakePage } = await import('#lib/testing/page.svelte.js');
 	return { page: fakePage };
 });
-vi.mock('$app/navigation', () => ({ replaceState, goto: vi.fn() }));
+vi.mock('$app/navigation', () => ({ goto }));
 
-import { resetFakePage } from '#lib/testing/page.svelte.js';
+import { fakeGoto, resetFakePage } from '#lib/testing/page.svelte.js';
 import Page from './+page.svelte';
+
+/** shallowReplace is how a filter reaches the address: in place, without a
+ * navigation and without a history entry of its own. */
+const shallowReplace = expect.objectContaining({ shallow: true, replace: true });
 
 const requested: string[] = [];
 
@@ -39,7 +43,11 @@ function stubEmpty() {
 }
 
 beforeEach(() => {
-	replaceState.mockReset();
+	goto.mockReset();
+	// Shallow routing as SvelteKit does it: page.state is reassigned on
+	// every write and page.url never moves. A page that tracked either
+	// would write again on its own write (#178).
+	goto.mockImplementation(fakeGoto);
 	stubEmpty();
 });
 
@@ -74,7 +82,7 @@ describe('history filters in the address', () => {
 		await new Promise((resolve) => setTimeout(resolve, 0));
 		await userEvent.selectOptions(screen.getByTestId('type-filter-select'), 'console');
 		await vi.waitFor(() =>
-			expect(replaceState).toHaveBeenCalledWith('/logs/me?type=console', expect.anything())
+			expect(goto).toHaveBeenCalledWith('/logs/me?type=console', shallowReplace)
 		);
 	});
 
@@ -85,13 +93,35 @@ describe('history filters in the address', () => {
 		expect(requested.some((url) => url.includes('/decisions/denied'))).toBe(true);
 	});
 
+	// Issue #178: the write used to re-run the effect that made it, which
+	// rewrote the address once per microtask and hung the page.
+	it.each([
+		{ testid: 'status-filter-live' },
+		{ testid: 'type-filter-user' },
+		{ testid: 'outcome-filter-denied' }
+	])('should write the address once when $testid is picked', async ({ testid }) => {
+		resetFakePage('http://localhost/logs/me');
+		render(Page);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		await userEvent.click(screen.getByTestId(testid));
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		expect(goto).toHaveBeenCalledTimes(1);
+	});
+
+	it('should not write the address when the page opens', async () => {
+		resetFakePage('http://localhost/logs/me?status=live&type=user');
+		render(Page);
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		expect(goto).not.toHaveBeenCalled();
+	});
+
 	it('should write a changed filter back to the address', async () => {
 		resetFakePage('http://localhost/logs/me');
 		render(Page);
 		await new Promise((resolve) => setTimeout(resolve, 0));
 		await userEvent.click(screen.getByTestId('type-filter-console'));
 		await vi.waitFor(() =>
-			expect(replaceState).toHaveBeenCalledWith('/logs/me?type=console', expect.anything())
+			expect(goto).toHaveBeenCalledWith('/logs/me?type=console', shallowReplace)
 		);
 	});
 });

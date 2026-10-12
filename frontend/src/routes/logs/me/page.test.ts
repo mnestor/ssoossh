@@ -5,10 +5,10 @@ import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest';
 import type { CertificateListResponse, DeniedRequest } from '#lib/api/types.js';
 import Page from './+page.svelte';
 
-// The page writes its filters back to the address bar with replaceState.
+// The page writes its filters back to the address bar with a shallow goto.
 // Unmocked, SvelteKit's real client throws on every call, since no app is
 // running under jsdom. page.url.test.ts covers what gets written.
-vi.mock('$app/navigation', () => ({ replaceState: vi.fn(), goto: vi.fn() }));
+vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 
 /**
  * mockFetch stubs the global fetch, answering the certificate list with

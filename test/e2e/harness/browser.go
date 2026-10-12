@@ -185,6 +185,61 @@ func (b *Browser) Attribute(t *testing.T, selector, name string) (string, bool) 
 	return attr.Value, attr.Exists
 }
 
+// SetViewport resizes the page's layout viewport. Headless Chrome opens at
+// 800x600, which is below the `lg` breakpoint where the nav rail stops being
+// a drawer, so a test that clicks the rail sets a desktop size first.
+func (b *Browser) SetViewport(t *testing.T, width, height int64) {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(b.ctx, browserWaitFor)
+	defer cancel()
+	if err := chromedp.Do(ctx, chromedp.EmulateViewport(width, height)); err != nil {
+		t.Fatalf("harness: setting the viewport to %dx%d failed: %v", width, height, err)
+	}
+}
+
+// urlPollInterval is how often WaitURL samples the address.
+const urlPollInterval = 50 * time.Millisecond
+
+// WaitURL blocks until the page's path and query string (location.pathname
+// plus location.search) equal want. A client-side navigation or an address
+// bar update leaves no element of its own to wait for; this is how a test
+// sees one happen.
+func (b *Browser) WaitURL(t *testing.T, want string) {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(b.ctx, browserWaitFor)
+	defer cancel()
+	if err := chromedp.Do(ctx, chromedp.Poll[chromedp.Void](
+		fmt.Sprintf("location.pathname + location.search === %q", want),
+		chromedp.WithPollingInterval(urlPollInterval),
+		chromedp.WithPollingTimeout(browserWaitFor),
+	)); err != nil {
+		b.screenshotOnFailure(t)
+		t.Fatalf("harness: waiting for the address %s failed: %v", want, err)
+	}
+}
+
+// SelectValue picks value in the native <select> matching selector and
+// fires the change event a framework binding listens for. Setting .value
+// alone changes what the control shows but tells no listener.
+func (b *Browser) SelectValue(t *testing.T, selector, value string) {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(b.ctx, browserWaitFor)
+	defer cancel()
+	if err := chromedp.Do(ctx,
+		chromedp.WaitVisible(chromedp.CSS(selector)),
+		chromedp.Evaluate[chromedp.Void](fmt.Sprintf(
+			`(() => { const el = document.querySelector(%q); el.value = %q; el.dispatchEvent(new Event('change', { bubbles: true })); })()`,
+			selector, value,
+		)),
+	); err != nil {
+		b.screenshotOnFailure(t)
+		t.Fatalf("harness: selecting %q in %s failed: %v", value, selector, err)
+	}
+}
+
 // Ctx exposes the browser context so a diagnostic can drive chromedp
 // directly. Tests should prefer the helpers above.
 func (b *Browser) Ctx() context.Context { return b.ctx }

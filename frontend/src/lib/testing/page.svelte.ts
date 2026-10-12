@@ -32,6 +32,11 @@ export function resetFakePage(href: string): void {
  * fakeGoto mirrors SvelteKit's shallow routing: state changes, URL does not.
  * A full navigation is not faked; it rejects so a test that reaches one
  * fails instead of passing on a page that never moved.
+ *
+ * The state is copied, as SvelteKit does (it serializes and parses it), so
+ * every shallow goto assigns a new object even when handed `page.state`
+ * itself. Assigning the same object would notify nobody, and an effect that
+ * re-ran on its own write (#178) would pass here and hang a browser.
  */
 export async function fakeGoto(
 	_url: string | URL,
@@ -40,5 +45,5 @@ export async function fakeGoto(
 	if (!opts?.shallow) {
 		throw new Error('fakeGoto: only shallow navigation is faked');
 	}
-	fakePage.state = opts.state ?? {};
+	fakePage.state = JSON.parse(JSON.stringify(opts.state ?? {}));
 }
