@@ -930,7 +930,10 @@ the result and drops the diagnostic detail an expert compares.
 `src/routes/admin/+layout.svelte` gates the area on auditor access and does
 nothing else. The gate is display-only (the server re-checks every read),
 and a signed-in identity without auditor access is told so rather than sent
-to a login it already passed. Each admin page sets its own width through
+to a login it already passed. That refusal is the `AccessDenied` card, the
+same one the error page gives a 403; a section narrower than the area (the
+Directory) gates in its own `+layout.svelte` with the same card, and is
+marked `adminOnly` in `nav.ts` so the rail does not offer it. Each admin page sets its own width through
 `PageShell`; the rail marks the section for its own path and everything
 beneath it.
 
@@ -957,9 +960,10 @@ beneath it.
   checked; a typed filter overrides that. Secrets are redacted at their Go
   declaration (`secret:"true"`) and still report whether they are set.
   Keys render in mono.
-- **Directory** (`/admin/directory`): LDAP sync status and the last pass's
-  counts for any auditor; Sync now (dry run by default) and the read-only
-  Probe for admins. The probe's three views (entry as returned, field
+- **Directory** (`/admin/directory`, admin only): LDAP sync status and the
+  last pass's counts, Sync now (dry run by default) and the read-only Probe.
+  The rail leaves it out for SOC and auditors, and its own layout shows them
+  the `AccessDenied` card on a direct visit. The probe's three views (entry as returned, field
   mapping, merge and allowlist) are a segmented toggle group, not tabs; a
   mapped attribute carries a "mapped" label, not a colour.
 - **Claims echo** (`/admin/identity/echo`, admin only): re-authenticates
