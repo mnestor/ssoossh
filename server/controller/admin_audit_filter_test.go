@@ -17,6 +17,7 @@ import (
 
 	"github.com/mnestor/ssoossh/server/service"
 	"github.com/mnestor/ssoossh/server/webtypes"
+	"github.com/mnestor/ssoossh/test/testdb"
 )
 
 // seedFilterableFeed records a mix of actions and observed sources, one
@@ -111,7 +112,7 @@ func TestAuditFeed_ShouldFilterByActionAndSource(t *testing.T) {
 		{name: "should resume both filters together from the cursor", path: "/admin/audit?action=cert.request_refused_network&source_ip=203.0.113.9&limit=1", after: ptrTo(5), want: []int{0}, wantTotal: 2, wantNext: nil},
 	}
 
-	db := newTestDB(t)
+	db := testdb.New(t)
 	seedFilterableFeed(t, db)
 	r := routerWithAuth(t, newTestConfig(t), db, auditorIdentity())
 	ids := feedIDsByN(t, r)
@@ -157,7 +158,7 @@ func TestAuditFeed_ShouldRejectAnInvalidFilter(t *testing.T) {
 		{name: "should reject a good action beside a bad source", path: "/admin/audit?action=auth.login&source_ip=nope"},
 	}
 
-	r := routerWithAuth(t, newTestConfig(t), newTestDB(t), auditorIdentity())
+	r := routerWithAuth(t, newTestConfig(t), testdb.New(t), auditorIdentity())
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -175,7 +176,7 @@ func TestAuditFeed_ShouldDenyAPlainUserAFilteredFeed(t *testing.T) {
 	t.Parallel()
 
 	identity := &service.Identity{Subject: "sub-user", Username: "user", Groups: []string{"ssh-users"}}
-	r := routerWithAuth(t, newTestConfig(t), newTestDB(t), identity)
+	r := routerWithAuth(t, newTestConfig(t), testdb.New(t), identity)
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/audit?action=auth.login&source_ip=203.0.113.9", nil))

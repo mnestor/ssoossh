@@ -76,7 +76,7 @@ pre-pr: fmt lint-fix check-generated ci-required ## Format, autofix, then run ev
 # `lint-tagged` and `lint-cross` are the reason this target exists rather
 # than people running `lint` and `test` by hand. `lint` passes no build tags
 # and `test` does not build the tagged suites, so a suite behind `e2e`,
-# `resilience`, `load`, `dbparity`, `softhsm` or `natsintegration` can fail
+# `resilience`, `load`, `softhsm` or `natsintegration` can fail
 # to compile outright while both report success. `lint` also runs with the
 # host GOOS, so nothing here sees the Windows or macOS build at all. Any
 # hand-assembled subset that omits either will believe it has coverage it
@@ -244,7 +244,7 @@ a11y-docs: ## axe sweep over the built documentation site
 
 ##@ Test (tagged suites, not part of `make test`)
 
-.PHONY: test-e2e test-memory-leak test-resilience test-load test-migration test-hsm bench-hsm
+.PHONY: test-e2e test-memory-leak test-resilience test-load test-postgres test-migration test-hsm bench-hsm
 # The HSM key source against a real PKCS#11 token. Behind the `softhsm` tag
 # so `make test` never needs softhsm2 installed; CI installs softhsm2 and
 # opensc for it (see the runner image).
@@ -307,11 +307,40 @@ test-resilience: $(FRONTEND_DIST) ## Resilience suite (shutdown, db loss, oidc l
 test-load: $(FRONTEND_DIST) ## Load, soak, and concurrency suite (slow)
 	CGO_ENABLED=1 go test -tags=load -race -count=1 -timeout=10m ./test/load/...
 
-# SQLite/Postgres schema parity. Not wired into any workflow: the e2e tier-1
-# matrix already runs both backends end to end, so this is the targeted
-# version to reach for when a migration is what changed.
-test-migration: ## SQLite/Postgres migration parity checks
-	go test -tags=dbparity -count=1 ./test/migration/...
+# The whole Go suite on Postgres, the way CI's Postgres leg runs it: a
+# throwaway container, and every DB-backed test in a database of its own
+# (test/testdb). `make test` is the SQLite half. PKGS and ARGS narrow it:
+#   make test-postgres PKGS=./server/service/ ARGS='-run TestApprove'
+#
+# Outside a container the port is published on loopback. Inside one (a
+# devcontainer talking to the host's daemon) a published port lands on the
+# host, not here, so postgres joins this container's network namespace on a
+# fixed port instead.
+PG_IMAGE ?= postgres:17-alpine
+PKGS ?= ./...
+ARGS ?=
+# Durability off: the container is thrown away, and it is the slow part.
+PG_FLAGS := -c fsync=off -c synchronous_commit=off -c full_page_writes=off
+test-postgres: $(FRONTEND_DIST) ## Go suite against a throwaway Postgres (needs docker)
+	@set -e; \
+	if [ -f /.dockerenv ]; then \
+		port=54329; \
+		id=$$(docker run -d --rm -e POSTGRES_PASSWORD=test --network container:$$(hostname) $(PG_IMAGE) -p $$port $(PG_FLAGS)); \
+	else \
+		id=$$(docker run -d --rm -e POSTGRES_PASSWORD=test -p 127.0.0.1:0:5432 $(PG_IMAGE) $(PG_FLAGS)); \
+		port=$$(docker port $$id 5432/tcp | head -n1 | sed 's/.*://'); \
+	fi; \
+	trap 'docker rm -f '$$id' >/dev/null' EXIT; \
+	echo "postgres $$id on 127.0.0.1:$$port"; \
+	until docker exec $$id pg_isready -q -h 127.0.0.1 -p $$( [ -f /.dockerenv ] && echo $$port || echo 5432 ) -U postgres; do sleep 1; done; \
+	SSOOSSH_TEST_DB=postgres \
+	SSOOSSH_TEST_POSTGRES_DSN="postgres://postgres:test@127.0.0.1:$$port/postgres?sslmode=disable" \
+	CGO_ENABLED=1 go test -count=1 $(PKGS) $(ARGS)
+
+# The migration half of test-postgres: SQLite/Postgres schema parity, the
+# goldens, and the migrations' data repairs.
+test-migration: ## SQLite/Postgres migration parity checks (needs docker)
+	$(MAKE) test-postgres PKGS=./test/migration/...
 
 ##@ Format and lint
 
@@ -348,7 +377,7 @@ lint: ## golangci-lint over the whole module (merge gate)
 	CGO_ENABLED=1 golangci-lint run ./...
 
 # `lint` above passes no build tags, so every file behind e2e, resilience,
-# load, dbparity or softhsm is invisible to it -- which is most of test/.
+# load or softhsm is invisible to it -- which is most of test/.
 # Running it over the tagged suites for the first time surfaced findings
 # that had been accumulating unseen in the one part of the tree nobody
 # linted.
@@ -356,7 +385,7 @@ lint: ## golangci-lint over the whole module (merge gate)
 # One invocation per tag set rather than a single combined one: the tags
 # select mutually exclusive views of the tree in places, so a combined run
 # does not typecheck.
-LINT_TAGGED := e2e resilience load dbparity hsm softhsm natsintegration
+LINT_TAGGED := e2e resilience load hsm softhsm natsintegration
 
 .PHONY: lint-tagged
 lint-tagged: ## golangci-lint over the build-tagged suites lint(1) cannot see
@@ -714,7 +743,7 @@ security: govulncheck pnpm-audit semgrep ## Run every security scanner
 # reverses its up; it was wired into no workflow whatsoever. The e2e tier-1
 # matrix proves the app works on both backends, which is a different claim
 # from the schemas agreeing.
-ci-required: fmt-check check-gitignore check-go-version lint lint-tagged lint-cross frontend-lint frontend-check frontend-test actionlint check-generated build csp-check cover-ci cover-floors test-migration semgrep ## Every blocking check CI runs
+ci-required: fmt-check check-gitignore check-go-version lint lint-tagged lint-cross frontend-lint frontend-check frontend-test actionlint check-generated build csp-check cover-ci cover-floors test-postgres semgrep ## Every blocking check CI runs
 
 # Advisory: govulncheck and pnpm audit report to the PR summary rather than
 # blocking, because both can surface a dependency you cannot fix in the same

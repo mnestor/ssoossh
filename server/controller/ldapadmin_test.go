@@ -18,6 +18,7 @@ import (
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/service"
 	"github.com/mnestor/ssoossh/server/webtypes"
+	"github.com/mnestor/ssoossh/test/testdb"
 )
 
 // fakeLDAPDiagnostics stands in for the directory service, recording what
@@ -210,7 +211,7 @@ func TestLDAPAdminRoutes_ShouldEnforceTheRoleSplit(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			db := newTestDB(t)
+			db := testdb.New(t)
 			fake := &fakeLDAPDiagnostics{
 				run:         &model.LDAPSyncRun{ID: "run-1", StartedAt: time.Now()},
 				probeResult: &service.ProbeResult{BaseDN: "dc=example,dc=net", FilterSent: "(uid=alice)"},
@@ -232,7 +233,7 @@ func TestLDAPAdminRoutes_ShouldEnforceTheRoleSplit(t *testing.T) {
 func TestLDAPStatusHandler_ShouldDescribeTheProbeTargetWithoutCredentials(t *testing.T) {
 	t.Parallel()
 
-	db := newTestDB(t)
+	db := testdb.New(t)
 	cfg := ldapAdminTestConfig()
 	cfg.LDAP.BindDN = "cn=svc,dc=example,dc=net"
 	cfg.LDAP.BindPassword = "hunter2"
@@ -291,7 +292,7 @@ func TestLDAPStatusHandler_ShouldReportADisabledDirectory(t *testing.T) {
 	cfg := ldapAdminTestConfig()
 	cfg.LDAP.Enabled = false
 	identity := &service.Identity{Subject: "sub-alice", Groups: []string{"ssh-admins"}}
-	r := ldapRouter(t, cfg, newTestDB(t), identity, nil)
+	r := ldapRouter(t, cfg, testdb.New(t), identity, nil)
 
 	w := doLDAPRequest(r, http.MethodGet, "/admin/ldap/status", nil)
 	if w.Code != http.StatusOK {
@@ -323,7 +324,7 @@ func TestLDAPSyncHandler_ShouldPassTheDryRunThrough(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			db := newTestDB(t)
+			db := testdb.New(t)
 			actor := model.User{ID: "u-1", Subject: "sub-alice", Username: "alice", CreatedAt: time.Now(), UpdatedAt: time.Now()}
 			if err := db.Create(&actor).Error; err != nil {
 				t.Fatalf("seed actor: %v", err)
@@ -369,7 +370,7 @@ func TestLDAPSyncHandler_ShouldRefuseASecondPass(t *testing.T) {
 
 	fake := &fakeLDAPDiagnostics{syncErr: service.ErrSyncInProgress}
 	identity := &service.Identity{Subject: "sub-alice", Groups: []string{"ssh-admins"}}
-	r := ldapRouter(t, ldapAdminTestConfig(), newTestDB(t), identity, fake)
+	r := ldapRouter(t, ldapAdminTestConfig(), testdb.New(t), identity, fake)
 
 	w := doLDAPRequest(r, http.MethodPost, "/admin/ldap/sync", webtypes.LDAPSyncRequestBody{})
 	if w.Code != http.StatusConflict {
@@ -392,7 +393,7 @@ func TestLDAPSyncHandler_ShouldReportAFailedPassAsItsRecord(t *testing.T) {
 		syncErr: errors.New("directory sync could not connect: connection refused"),
 	}
 	identity := &service.Identity{Subject: "sub-alice", Groups: []string{"ssh-admins"}}
-	r := ldapRouter(t, ldapAdminTestConfig(), newTestDB(t), identity, fake)
+	r := ldapRouter(t, ldapAdminTestConfig(), testdb.New(t), identity, fake)
 
 	w := doLDAPRequest(r, http.MethodPost, "/admin/ldap/sync", webtypes.LDAPSyncRequestBody{})
 	if w.Code != http.StatusOK {
@@ -411,7 +412,7 @@ func TestLDAPSyncHandler_ShouldReportAFailedPassAsItsRecord(t *testing.T) {
 func TestLDAPSyncHandler_ShouldAuditTheTrigger(t *testing.T) {
 	t.Parallel()
 
-	db := newTestDB(t)
+	db := testdb.New(t)
 	fake := &fakeLDAPDiagnostics{run: &model.LDAPSyncRun{
 		ID: "run-1", StartedAt: time.Now(), DryRun: true, Disabled: 2, UsersSeen: 9,
 	}}
@@ -495,7 +496,7 @@ func TestLDAPProbeHandler_ShouldResolveBindings(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			db := newTestDB(t)
+			db := testdb.New(t)
 			if tt.seedUser {
 				bob := model.User{
 					ID: "u-bob", Subject: "sub-bob", Username: "bob", Email: "bob@example.com",
@@ -530,7 +531,7 @@ func TestLDAPProbeHandler_ShouldResolveBindings(t *testing.T) {
 func TestLDAPProbeHandler_ShouldBindStoredScalarExtras(t *testing.T) {
 	t.Parallel()
 
-	db := newTestDB(t)
+	db := testdb.New(t)
 	bob := model.User{
 		ID: "u-bob", Subject: "sub-bob", Username: "bob",
 		ExtraFields: `{"employee_id":"E-2","teams":["a","b"]}`,
@@ -583,7 +584,7 @@ func TestLDAPProbeHandler_ShouldValidateTheMode(t *testing.T) {
 
 			fake := &fakeLDAPDiagnostics{probeResult: &service.ProbeResult{BaseDN: "dc=example,dc=net", FilterSent: "(uid=alice)"}}
 			identity := &service.Identity{Subject: "sub-alice", Groups: []string{"ssh-admins"}}
-			r := ldapRouter(t, ldapAdminTestConfig(), newTestDB(t), identity, fake)
+			r := ldapRouter(t, ldapAdminTestConfig(), testdb.New(t), identity, fake)
 
 			w := doLDAPRequest(r, http.MethodPost, "/admin/ldap/probe", webtypes.LDAPProbeRequestBody{Mode: tt.mode})
 			if w.Code != tt.wantStatus {
@@ -611,7 +612,7 @@ func TestLDAPProbeHandler_ShouldCarryTheNoWriteGuarantee(t *testing.T) {
 		Suggestions: []service.ProbeSuggestion{{Reason: "dropped group", YAML: "ldap:\n  sync:\n    extra_groups: [\"vpn-legacy\"]"}},
 	}}
 	identity := &service.Identity{Subject: "sub-alice", Groups: []string{"ssh-admins"}}
-	r := ldapRouter(t, ldapAdminTestConfig(), newTestDB(t), identity, fake)
+	r := ldapRouter(t, ldapAdminTestConfig(), testdb.New(t), identity, fake)
 
 	w := doLDAPRequest(r, http.MethodPost, "/admin/ldap/probe", webtypes.LDAPProbeRequestBody{})
 	if w.Code != http.StatusOK {
@@ -643,7 +644,7 @@ func TestLDAPProbeHandler_ShouldReportAProbeThatCouldNotRun(t *testing.T) {
 
 	fake := &fakeLDAPDiagnostics{probeErr: errors.New("could not reach the directory: connection refused")}
 	identity := &service.Identity{Subject: "sub-alice", Groups: []string{"ssh-admins"}}
-	r := ldapRouter(t, ldapAdminTestConfig(), newTestDB(t), identity, fake)
+	r := ldapRouter(t, ldapAdminTestConfig(), testdb.New(t), identity, fake)
 
 	w := doLDAPRequest(r, http.MethodPost, "/admin/ldap/probe", webtypes.LDAPProbeRequestBody{})
 	if w.Code != http.StatusBadRequest {
@@ -657,7 +658,7 @@ func TestLDAPProbeHandler_ShouldReportAProbeThatCouldNotRun(t *testing.T) {
 func TestLDAPProbeHandler_ShouldAuditEveryProbe(t *testing.T) {
 	t.Parallel()
 
-	db := newTestDB(t)
+	db := testdb.New(t)
 	fake := &fakeLDAPDiagnostics{probeResult: &service.ProbeResult{
 		BaseDN: "dc=example,dc=net", FilterSent: "(uid=alice)", Mode: service.ProbeFilterTemplate, Matched: 1,
 	}}
@@ -689,7 +690,7 @@ func TestLDAPAdminHandlers_ShouldRefuseWithoutADirectory(t *testing.T) {
 			cfg := ldapAdminTestConfig()
 			cfg.LDAP.Enabled = false
 			identity := &service.Identity{Subject: "sub-alice", Groups: []string{"ssh-admins"}}
-			r := ldapRouter(t, cfg, newTestDB(t), identity, nil)
+			r := ldapRouter(t, cfg, testdb.New(t), identity, nil)
 
 			w := doLDAPRequest(r, http.MethodPost, path, nil)
 			if w.Code != http.StatusBadRequest {

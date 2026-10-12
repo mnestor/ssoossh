@@ -1,5 +1,3 @@
-//go:build dbparity
-
 package migration_test
 
 // The Postgres half of audit_source_ip_backfill_test.go: the same payloads,
@@ -13,7 +11,6 @@ import (
 )
 
 func TestAuditSourceIPBackfill_PostgresShouldCopyEachReadablePayloadsObservedSource(t *testing.T) {
-	// Not t.Parallel() — see TestMigrationParity_SchemasShouldBeIdentical.
 	ctx := t.Context()
 
 	db, _ := postgres.ConnectAndMigrate(t, ctx)

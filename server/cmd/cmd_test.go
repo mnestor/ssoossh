@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -21,6 +22,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/mnestor/ssoossh/server/testutil"
+	"github.com/mnestor/ssoossh/test/testdb"
 )
 
 func TestNewCommand_ShouldSetUseToSsoosshd(t *testing.T) {
@@ -96,10 +98,13 @@ func TestNewCommand_ShouldReturnDistinctCommandInstances(t *testing.T) {
 	}
 }
 
-// writeServerTestConfig writes a minimal, valid ssoosshd config (port 0,
-// in-memory SQLite, freshly generated CA key) and returns its path.
+// writeServerTestConfig writes a minimal, valid ssoosshd config (port 0, a
+// fresh database on the run's test backend, freshly generated CA key) and
+// returns its path.
 func writeServerTestConfig(t *testing.T) string {
 	t.Helper()
+
+	provider, connection := testdb.Connection(t)
 
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -127,8 +132,8 @@ authentication:
   fields:
     username: sub
 db:
-  provider: sqlite
-  connection_string: ":memory:"
+  provider: ` + provider + `
+  connection_string: ` + strconv.Quote(connection) + `
 ssh_key: |
   ` + strings.ReplaceAll(keyPEM, "\n", "\n  ") + "\n"
 

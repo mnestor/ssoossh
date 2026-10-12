@@ -6,8 +6,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// Note: Postgres container setup for E2E tests is in test/e2e/harness/postgres.go.
-// This package provides schema utilities and query helpers for testing.
+// Schema utilities and query helpers. The database comes from test/testdb
+// (see ConnectAndMigrate); the e2e harness has its own bring-up in
+// test/e2e/harness/postgres.go.
 
 // Tables returns the list of user-created tables in the public schema,
 // excluding system tables like schema_migrations.

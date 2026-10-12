@@ -2,7 +2,7 @@ package controller
 
 // Test methodology: drive PATCH /admin/users/:id/enable through
 // NewAdminController with the real SOC and auditor middleware, and read the
-// users row and the audit row back from an in-memory database. The
+// users row and the audit row back from a test database. The
 // properties pinned are the ones issue #127 decided: SOC (and so admin)
 // can re-enable anyone whatever disabled them, auditors and plain users
 // cannot, and every re-enable is audited with the caller who performed it.
@@ -25,6 +25,7 @@ import (
 	"github.com/mnestor/ssoossh/server/middleware"
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/service"
+	"github.com/mnestor/ssoossh/test/testdb"
 )
 
 // enableRouter builds the admin routes the way bootstrap orders them:
@@ -67,16 +68,18 @@ func seedEnableUsers(t *testing.T, db *gorm.DB, source model.DisabledSource) {
 
 	now := time.Now()
 	disabledBy := "u-admin"
+	// The target goes last: its disabled_by_user_id references u-admin,
+	// and the foreign key needs that row to exist first.
 	users := []model.User{
+		{ID: "u-admin", Subject: "sub-admin", Username: "admin"},
+		{ID: "u-soc", Subject: "sub-soc", Username: "soc"},
+		{ID: "u-auditor", Subject: "sub-auditor", Username: "auditor"},
+		{ID: "u-plain", Subject: "sub-plain", Username: "plain"},
 		{
 			ID: "u-target", Subject: "sub-target", Username: "target",
 			DisabledAt: &now, DisabledReason: "prior incident INC-7",
 			DisabledSource: &source, DisabledByUserID: &disabledBy,
 		},
-		{ID: "u-admin", Subject: "sub-admin", Username: "admin"},
-		{ID: "u-soc", Subject: "sub-soc", Username: "soc"},
-		{ID: "u-auditor", Subject: "sub-auditor", Username: "auditor"},
-		{ID: "u-plain", Subject: "sub-plain", Username: "plain"},
 	}
 	for _, u := range users {
 		u.CreatedAt = now
@@ -131,7 +134,7 @@ func TestEnableUserHandler_ShouldAuthorizeByRole(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			db := newTestDB(t)
+			db := testdb.New(t)
 			seedEnableUsers(t, db, model.DisabledSourceAdmin)
 			r := enableRouter(t, db, tt.identity)
 
@@ -161,7 +164,7 @@ func TestEnableUserHandler_ShouldLeaveARefusedTargetDisabled(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			db := newTestDB(t)
+			db := testdb.New(t)
 			seedEnableUsers(t, db, model.DisabledSourceAdmin)
 			r := enableRouter(t, db, tt.identity)
 
@@ -197,7 +200,7 @@ func TestEnableUserHandler_ShouldLetSOCReleaseAnyDisable(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			db := newTestDB(t)
+			db := testdb.New(t)
 			seedEnableUsers(t, db, tt.source)
 			r := enableRouter(t, db, caller("sub-soc", "soc", "ssh-soc"))
 
@@ -248,7 +251,7 @@ func TestEnableUserHandler_ShouldRefuseWhenNoCallerReachedIt(t *testing.T) {
 	t.Parallel()
 
 	gin.SetMode(gin.TestMode)
-	db := newTestDB(t)
+	db := testdb.New(t)
 	seedEnableUsers(t, db, model.DisabledSourceAdmin)
 	cfg := newTestConfig(t)
 	a := &adminController{config: cfg, db: db, audit: service.NewAuditService(cfg, db)}

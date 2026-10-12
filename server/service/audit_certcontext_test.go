@@ -38,15 +38,12 @@ func pamApprover() *Identity {
 	}
 }
 
-// withAuditTable attaches a real recorder over the service's own database,
-// with the audit table migrated, and returns a buffer that receives the
+// withAuditTable attaches a real recorder over the service's own database
+// and returns a buffer that receives the
 // shipped-log lines so a table-skipped event can be read back too.
 func withAuditTable(t *testing.T, svc *CertRequestService) *bytes.Buffer {
 	t.Helper()
 
-	if err := svc.db.AutoMigrate(&model.AuditEvent{}); err != nil {
-		t.Fatalf("failed to migrate the audit table: %v", err)
-	}
 	var shipped bytes.Buffer
 	svc.SetAuditor(&AuditService{
 		db:     svc.db,

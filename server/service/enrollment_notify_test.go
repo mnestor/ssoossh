@@ -3,7 +3,7 @@ package service
 // Test methodology: unit tests over the three enrollment-scoped additions to
 // the notification catalogue — the expiry reminder sweep, the expired-code
 // attempt report, and the per-enrollment notification address — against
-// in-memory SQLite with a capturing notifier in place of a broker.
+// a real database with a capturing notifier in place of a broker.
 //
 // The properties that matter are the database-held claims. Both new
 // enrollment kinds are emitted from paths every instance runs, and the
@@ -67,7 +67,7 @@ func seedEnrollmentRow(t *testing.T, db *gorm.DB, account string, expiresAt time
 		KeyID:          "svc/" + account,
 		Principals:     `["` + account + `"]`,
 		ServiceAccount: account,
-		UserID:         uuid.NewString(),
+		UserID:         seedUser(t, db, "enrolled-by-"+uuid.NewString()),
 		CreatedAt:      time.Now().Add(-24 * time.Hour),
 		ExpiresAt:      expiresAt,
 	}

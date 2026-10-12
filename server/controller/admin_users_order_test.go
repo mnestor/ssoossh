@@ -3,8 +3,7 @@ package controller
 // Tests for the order the admin user directory lists people in. Pages are
 // keyset-based, so the order has to be total: every row has exactly one
 // place, and the seek resumes after the cursor user's place in it. The cases
-// are shared with the dbparity Postgres run so both backends are held to
-// the same answers.
+// run on both backends (test/testdb), so both are held to the same answers.
 
 import (
 	"encoding/json"
@@ -17,6 +16,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/mnestor/ssoossh/server/model"
+	"github.com/mnestor/ssoossh/test/testdb"
 )
 
 // userOrderCase seeds a directory and states the user ids it must list, in
@@ -249,7 +249,8 @@ func equalStrings(a, b []string) bool {
 
 // should order the admin user directory by name, case-insensitively, with
 // username and id as tiebreakers, and keep that order under search and
-// filters, when run on SQLite.
-func TestListUsersHandler_ShouldOrderTheDirectoryOnSQLite(t *testing.T) {
-	checkUserOrder(t, newTestDB(t))
+// filters, on whichever backend the run selects (Postgres's collation behind
+// LOWER and ORDER BY differs from SQLite's).
+func TestListUsersHandler_ShouldOrderTheDirectory(t *testing.T) {
+	checkUserOrder(t, testdb.New(t))
 }

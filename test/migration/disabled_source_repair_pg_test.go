@@ -1,5 +1,3 @@
-//go:build dbparity
-
 package migration_test
 
 // The Postgres half of disabled_source_repair_test.go: the same rows, the
@@ -13,7 +11,6 @@ import (
 )
 
 func TestRepairDisabledSource_PostgresShouldClearOnlyStaleLDAPSyncSources(t *testing.T) {
-	// Not t.Parallel() — see TestMigrationParity_SchemasShouldBeIdentical.
 	ctx := t.Context()
 
 	db, _ := postgres.ConnectAndMigrate(t, ctx)

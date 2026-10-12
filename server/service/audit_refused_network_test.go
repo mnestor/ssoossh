@@ -334,9 +334,9 @@ type refusalSweepCase struct {
 	want    []string
 }
 
-// refusalSweepCases are the row-cap cases shared by the SQLite test below and
-// the Postgres one in audit_refused_network_pg_test.go. Network refusals get
-// no special treatment: the sweep is oldest first whatever the action.
+// refusalSweepCases are the row-cap cases the test below runs on both
+// backends (test/testdb). Network refusals get no special treatment: the
+// sweep is oldest first whatever the action.
 func refusalSweepCases() []refusalSweepCase {
 	return []refusalSweepCase{
 		{

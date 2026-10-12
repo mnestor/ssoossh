@@ -20,14 +20,10 @@ import (
 // status, what a waiting client receives) without router scaffolding. The
 // full pipeline is covered by pipeline_test.go.
 
-// newTestSignedReplyHandler returns a handler over svc's database, with the
-// certificates table migrated.
+// newTestSignedReplyHandler returns a handler over svc's database.
 func newTestSignedReplyHandler(t *testing.T, svc *CertRequestService) *SignedReplyHandler {
 	t.Helper()
 
-	if err := svc.db.AutoMigrate(&model.Certificate{}, &model.User{}); err != nil {
-		t.Fatalf("failed to migrate certificates table: %v", err)
-	}
 	return NewSignedReplyHandler(svc.db, svc)
 }
 
