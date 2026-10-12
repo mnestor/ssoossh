@@ -86,7 +86,7 @@ reaching it means signing in, so it keeps the rail.
 | **Users** | `/admin/users` | The user directory, with disable and re-enable | auditor to view; SOC and up to disable or re-enable |
 | **Certificates** | `/admin/certificates` | Certificate history across every user | auditor and up |
 | **Service codes** | `/admin/service-codes` | Every approved enrollment code, searchable by id, account, key ID, request id or approver | auditor and up |
-| **Config** | `/admin/config` | The effective server configuration, secrets redacted | auditor and up |
+| **Config** | `/admin/config` | The effective server configuration, secrets redacted | admin |
 | **Directory** | `/admin/directory` | The LDAP sync's last pass, a sync (a dry run by default; a live pass asks for confirmation), and a read-only probe | admin |
 | **Claims echo** | `/admin/identity/echo` | Your own decoded ID token, annotated by the field that consumes each claim | admin |
 | **Audit log** | `/admin/audit` | Recent administrative activity, filterable by action and source address | auditor and up |

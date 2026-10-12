@@ -349,7 +349,7 @@ export function setEnrollmentNotificationEmail(
 }
 
 /**
- * GET /api/admin/config — the effective server configuration (auditor-only).
+ * GET /api/admin/config — the effective server configuration (admin only).
  */
 export function getAdminConfig(signal?: AbortSignal): Promise<EffectiveConfigResponse> {
 	return request<EffectiveConfigResponse>('/admin/config', { signal });

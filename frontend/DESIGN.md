@@ -936,7 +936,7 @@ nothing else. The gate is display-only (the server re-checks every read),
 and a signed-in identity without auditor access is told so rather than sent
 to a login it already passed. That refusal is the `AccessDenied` card, the
 same one the error page gives a 403; a section narrower than the area (the
-Directory, Claims echo and Diagnostics, all admin only) gates in its own
+Config, Directory, Claims echo and Diagnostics, all admin only) gates in its own
 `+layout.svelte` with the same card, naming the page in the requirement
 ("Diagnostics needs the admin role."), and is marked `adminOnly` in
 `nav.ts` so `adminNavFor` leaves it out of the rail. Behind that gate the
@@ -960,8 +960,9 @@ beneath it.
   LEFT JOIN) so an auditor can trace them. Rows open `/certs/<id>`.
 - **Service codes** (`/admin/service-codes`, and `/<id>`): every
   enrollment; the detail carries Expire for SOC.
-- **Config** (`/admin/config`): every key in effect, grouped by the config
-  file's sections, filtered by key or value. The server reflects over its
+- **Config** (`/admin/config`, admin only, gated like the Directory): every
+  key in effect, grouped by the config file's sections, filtered by key or
+  value. The server reflects over its
   own config struct (`server/config/effective.go`), so the page lists no key
   itself. Keys at their defaults are hidden until "Show unset keys" is
   checked; a typed filter overrides that. Secrets are redacted at their Go

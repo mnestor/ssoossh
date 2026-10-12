@@ -124,7 +124,6 @@ describe('app rail', () => {
 				'Users',
 				'Certificates',
 				'Service codes',
-				'Config',
 				'Audit log'
 			]);
 		});
