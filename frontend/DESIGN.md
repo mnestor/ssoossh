@@ -992,9 +992,10 @@ beneath it.
 - **Diagnostics** (`/admin/diagnostics`, admin only): four read-only
   deployment checks run on demand (public URL reachability, proxy trust and
   client IP, security headers, CORS and edge header attribution), one panel
-  per check in a single column, in the order they ran, each with an OK,
-  Warning, Critical or Skipped chip and a remediation note. Skipped is not a
-  pass.
+  per check in a single column, worst first (Critical, Warning, OK, then
+  Skipped; checks with the same status keep the order they ran), each with
+  an OK, Warning, Critical or Skipped chip and a remediation note. Skipped
+  is not a pass.
 
 ## 14. Dark mode
 
