@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { replaceState } from '$app/navigation';
 	import { page } from '$app/state';
+	import { syncAddressSearch } from '#lib/addressSearch.svelte.js';
 	import { getAuditFeed } from '#lib/api/endpoints.js';
 	import * as taxonomy from '#lib/api/generated/auditactions.js';
 	import type { AuditEvent } from '#lib/api/types.js';
@@ -187,19 +187,9 @@
 		return `${page.url.pathname}${auditFilterSearch(selectedAction, ip)}`;
 	}
 
-	// Write the filters back to the address bar whenever they change.
-	$effect(() => {
-		const search = auditFilterSearch(selectedAction, selectedSource);
-		if (search === page.url.search) {
-			return;
-		}
-		try {
-			replaceState(`${page.url.pathname}${search}`, page.state);
-		} catch {
-			// Before the router is ready (or in a test) the address simply
-			// stays as it was; the filters themselves still apply.
-		}
-	});
+	// Write the filters back to the address bar whenever they change. See
+	// #lib/addressSearch for why a hand-written effect here hung the page (#178).
+	syncAddressSearch(() => auditFilterSearch(selectedAction, selectedSource));
 
 	// Reads the filters, and only the filters: a change reloads from the
 	// first page. Everything load() writes is settled inside it.

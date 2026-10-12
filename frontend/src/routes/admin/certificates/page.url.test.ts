@@ -1,19 +1,24 @@
 import { render, screen } from '@testing-library/svelte';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // The admin list keeps its filters in the address, so a certificate's back
 // chip returns to the narrowed view. The router is stubbed: a fake page for
-// what the address says, and a replaceState that records what is written.
-const { replaceState } = vi.hoisted(() => ({ replaceState: vi.fn() }));
+// what the address says, and a goto that records what is written.
+const { goto } = vi.hoisted(() => ({ goto: vi.fn() }));
 
 vi.mock('$app/state', async () => {
 	const { fakePage } = await import('#lib/testing/page.svelte.js');
 	return { page: fakePage };
 });
-vi.mock('$app/navigation', () => ({ replaceState, goto: vi.fn() }));
+vi.mock('$app/navigation', () => ({ goto }));
 
-import { resetFakePage } from '#lib/testing/page.svelte.js';
+import { fakeGoto, resetFakePage } from '#lib/testing/page.svelte.js';
 import Page from './+page.svelte';
+
+/** shallowReplace is how a filter reaches the address: in place, without a
+ * navigation and without a history entry of its own. */
+const shallowReplace = expect.objectContaining({ shallow: true, replace: true });
 
 const requested: string[] = [];
 
@@ -51,7 +56,11 @@ const issued = {
 };
 
 beforeEach(() => {
-	replaceState.mockReset();
+	goto.mockReset();
+	// Shallow routing as SvelteKit does it: page.state is reassigned on
+	// every write and page.url never moves. A page that tracked either
+	// would write again on its own write (#178).
+	goto.mockImplementation(fakeGoto);
 });
 
 afterEach(() => {
@@ -83,6 +92,27 @@ describe('admin certificate list', () => {
 		render(Page);
 		await screen.findByTestId('cert-row');
 		expect(requested.some((url) => url.includes('offset'))).toBe(false);
+	});
+
+	it('should write a changed filter back to the address', async () => {
+		resetFakePage('http://localhost/admin/certificates');
+		stubList([]);
+		render(Page);
+		await userEvent.click(await screen.findByTestId('status-filter-expired'));
+		await vi.waitFor(() =>
+			expect(goto).toHaveBeenCalledWith('/admin/certificates?status=expired', shallowReplace)
+		);
+	});
+
+	// Issue #178: the write used to re-run the effect that made it, which
+	// rewrote the address once per microtask and hung the page.
+	it('should write the address once when a filter changes', async () => {
+		resetFakePage('http://localhost/admin/certificates');
+		stubList([]);
+		render(Page);
+		await userEvent.click(await screen.findByTestId('status-filter-expired'));
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		expect(goto).toHaveBeenCalledTimes(1);
 	});
 
 	it('should carry its filters to the certificate page for the back chip', async () => {
