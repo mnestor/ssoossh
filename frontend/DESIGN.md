@@ -554,6 +554,10 @@ bg-surface-muted`, decorative), a short title, the sentence that says what
   shorter than that reads as flicker); the gate re-arms on every mount. Bars
   are `aria-hidden`; `label` adds an `sr-only` `role="status"` sentence and
   is empty by default, because lists announce through `ListStatus` instead.
+- **LoadMoreFooter**: the footer under every "Load more" list: the count
+  line, then the ghost Load more button, or the error `Alert` with Try again
+  in the button's place. It owns where focus goes when the pressed control
+  goes away; see Paging under Lists.
 - **ListStatus** (with `describeList`): announces what a list became after a
   search, filter or page turn, silent until the request settles so a
   debounced search does not announce on every keystroke (WCAG 4.1.3). Every
@@ -768,15 +772,28 @@ off, and confirms through a reasonless `ConfirmModal`.
   "denied" in its detail line, so a mixed list still reads. The width is
   stated once in `#lib/viewport` (`NARROW_QUERY`, `watchNarrow`).
 - **Paging:** every list pages by cursor with "Load more", a ghost button
-  under the rows that goes once the last page is in. Every admin list (audit
-  feed, a user's audit timeline, users, certificates, service codes) has the
-  audit feed's footer above that button, worded once by `describeLoaded` in
-  `#lib/listStatus`: `48 shown`, then `, 120 older not loaded` while the
-  server holds more. "older" where the list runs newest first, "more" on the
-  user directory, which is sorted by name. A failed "Load more" is an error `Alert` in the
-  button's place that retries that page; the rows above stay. A cursor names
-  a page, not the rows above it, so the address keeps the filters but not how
-  far the list was loaded.
+  under the rows that goes once the last page is in. Every Load more list
+  (history, audit feed, a user's audit timeline, users, certificates, service
+  codes) renders its footer through `LoadMoreFooter`: the count line above
+  that button, worded once by `describeLoaded` in `#lib/listStatus`:
+  `48 shown`, then `, 120 older not loaded` while the server holds more
+  (history has no server total, so it says only `48 shown`). "older" where
+  the list runs newest first, "more" on the user directory, which is sorted
+  by name. A failed "Load more" is an error `Alert` in the button's place
+  that retries that page; the rows above stay. A cursor names a page, not
+  the rows above it, so the address keeps the filters but not how far the
+  list was loaded.
+- **Focus after Load more:** the button a reader pressed can unmount, and
+  focus on it would fall to the top of the page (WCAG 2.4.3). Once a load
+  from the footer settles, focus moves to what stands in its place: Load
+  more again while more remains, the count line (`tabindex="-1"`, never a
+  Tab stop) once the last page is in, Try again after a failure. The count
+  line rather than the first new row: it is where the button was, so the
+  next Tab and Shift+Tab continue from the same spot; it says the outcome
+  ("120 shown") when a screen reader lands on it; and it exists in every
+  list, where rows are table rows on one page and links or cards on
+  another. Focus the reader moved elsewhere during the load stays put. The
+  `ListStatus` announcements are unchanged.
 - **Service codes:** live codes first, expired ones under their own label
   rather than dropped, because a job that stopped working is explained by the
   code beneath it. Opening an account filters the same list by shallow
@@ -1171,6 +1188,8 @@ rule above (36px with a mouse, 44px on touch). `make a11y` holds them.
   `aria-pressed`; a mutually exclusive set of views is a group of such
   toggles, not tabs.
 - **Status messages:** lists announce through `ListStatus` (4.1.3).
+- **Focus after Load more:** when the pressed button goes, `LoadMoreFooter`
+  hands focus to what replaced it (2.4.3); see Paging under Lists.
 - **Dialogs and drawers:** native `<dialog>` with `showModal()` for focus
   management and an inert background; a dialog dismissed by unmounting
   restores focus itself. The mobile drawer moves focus in on open, cycles
