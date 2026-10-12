@@ -1,9 +1,8 @@
 /**
  * The sentence a list's live region announces once it has settled.
  *
- * Every list in the app answers the same three questions after a search, a
- * filter or a page: how many rows there are now, which window of them is on
- * screen, and what narrowed them. Built here rather than written out per
+ * Every list in the app answers the same two questions after a search or a
+ * filter: how many rows there are now, and what narrowed them. Built here rather than written out per
  * page so the five lists announce one shape — a reader who has learned what
  * the certificate list says knows what the user list will say.
  */
@@ -16,10 +15,6 @@ export interface ListState {
 	loading: boolean;
 	/** False until the first response has been rendered. */
 	ready: boolean;
-	/** 1-based page number, when the list is paged. */
-	page?: number;
-	/** How many pages there are, when the list is paged. */
-	pageCount?: number;
 	/** The settled search term, when the list has one. */
 	query?: string;
 }
@@ -47,15 +42,7 @@ export function describeList(state: ListState): string {
 	}
 
 	const count = `${state.total} ${state.total === 1 ? state.noun : plural(state.noun)}`;
-	const sentence = `${count} found${matching}.`;
-
-	// The page position only earns its place when there is more than one
-	// page. On a single-page list "Page 1 of 1" is three words that say
-	// nothing the count did not already say.
-	if (state.pageCount !== undefined && state.pageCount > 1 && state.page !== undefined) {
-		return `${sentence} Page ${state.page} of ${state.pageCount}.`;
-	}
-	return sentence;
+	return `${count} found${matching}.`;
 }
 
 /**
@@ -68,4 +55,24 @@ export function describeList(state: ListState): string {
  */
 function plural(noun: string): string {
 	return `${noun}s`;
+}
+
+/**
+ * describeLoaded is the footer line under an admin "Load more" list: how
+ * many rows are on screen and, while the server holds more, how many are
+ * still to load ("48 shown, 120 older not loaded"). One wording for every
+ * such list, so the audit feed and the directory read the same way.
+ *
+ * remaining names what is left in the list's own order: "older" where the
+ * list runs newest first, "more" where it does not (the user directory is
+ * sorted by name, so the rest of it is not older). notLoaded at or below
+ * zero says nothing, since everything is in.
+ */
+export function describeLoaded(
+	shown: number,
+	notLoaded: number,
+	remaining: 'older' | 'more'
+): string {
+	const rest = notLoaded > 0 ? `, ${notLoaded} ${remaining} not loaded` : '';
+	return `${shown} shown${rest}`;
 }

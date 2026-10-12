@@ -3,13 +3,9 @@ import { axe, toHaveNoViolations } from 'jest-axe';
 import { createRawSnippet } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 
-import type {
-	CertificateRecord,
-	DeniedRequest,
-	PageMeta,
-	ServiceEnrollment
-} from '#lib/api/types.js';
+import type { CertificateRecord, DeniedRequest, ServiceEnrollment } from '#lib/api/types.js';
 
+import AccessDenied from './AccessDenied.svelte';
 import AccountHoldersPanel from './AccountHoldersPanel.svelte';
 import Alert from './Alert.svelte';
 import AppRail from './AppRail.svelte';
@@ -35,7 +31,6 @@ import OptionDiffList from './OptionDiffList.svelte';
 import PageHeading from './PageHeading.svelte';
 import PageSection from './PageSection.svelte';
 import PageShell from './PageShell.svelte';
-import Pager from './Pager.svelte';
 import RailGroup from './RailGroup.svelte';
 import RailItem from './RailItem.svelte';
 import RailUserMenu from './RailUserMenu.svelte';
@@ -73,10 +68,6 @@ const now = new Date('2026-08-22T12:00:00Z');
 /** text is a `children` snippet holding one string, for the wrappers that take one. */
 function text(content: string) {
 	return createRawSnippet(() => ({ render: () => `<span>${content}</span>` }));
-}
-
-function meta(overrides: Partial<PageMeta> = {}): PageMeta {
-	return { total: 120, limit: 25, offset: 50, page: 3, page_count: 9, ...overrides };
 }
 
 function cert(overrides: Partial<CertificateRecord> = {}): CertificateRecord {
@@ -145,10 +136,8 @@ const parents: Record<string, string> = { DetailRow: 'dl' };
 /**
  * Every component, in the state a reader actually meets.
  *
- * Deliberately the interesting state rather than the empty one: a Pager on
- * page 3 of 9 renders the elision and the `aria-current` that a one-page
- * Pager renders neither of, and a busy button carries a different set of
- * attributes from an idle one. Where a component has two shapes worth
+ * Deliberately the interesting state rather than the empty one: a busy
+ * button carries a different set of attributes from an idle one. Where a component has two shapes worth
  * separating — a rail item collapsed and expanded, an alert that warns and
  * one that errors — both are listed.
  *
@@ -157,6 +146,11 @@ const parents: Record<string, string> = { DetailRow: 'dl' };
  * accepts all of them.
  */
 const cases: [string, any, Record<string, unknown>][] = [
+	[
+		'AccessDenied',
+		AccessDenied,
+		{ requirement: 'The Directory needs the admin role.', testid: 'directory-access-denied' }
+	],
 	['AccountHoldersPanel', AccountHoldersPanel, { enrollmentId: 'enr-1' }],
 	['Alert (info)', Alert, { children: text('Loading request…') }],
 	['Alert (warning)', Alert, { variant: 'warning', title: 'Certificate verification is off' }],
@@ -165,6 +159,26 @@ const cases: [string, any, Record<string, unknown>][] = [
 	['AppRail', AppRail, { onsignout: vi.fn() }],
 	['AppRail (collapsed)', AppRail, { collapsed: true, onsignout: vi.fn() }],
 	['AuditTimeline', AuditTimeline, { events: [] }],
+	[
+		'AuditTimeline (source link)',
+		AuditTimeline,
+		// Under `props`: `events` is also the name of a mount option, so a
+		// bare object with a second prop beside it reads as options.
+		{
+			props: {
+				events: [
+					{
+						id: 'evt-1',
+						created_at: '2026-10-12T09:00:00Z',
+						action: 'cert.request_refused_network',
+						system: true,
+						detail: { source_ip: '203.0.113.9' }
+					}
+				],
+				sourceHref: (ip: string) => `/admin/audit?source_ip=${ip}`
+			}
+		}
+	],
 	['BrandMark', BrandMark, { size: 22 }],
 	['Button (primary)', Button, { children: text('Approve') }],
 	['Button (ghost)', Button, { variant: 'ghost', children: text('Cancel') }],
@@ -225,6 +239,23 @@ const cases: [string, any, Record<string, unknown>][] = [
 			]
 		}
 	],
+	// Both forms render here (no Tailwind in jsdom), so this pass also holds
+	// the below-`sm` select to axe's select-name rule: it must be named by
+	// its visible label, with a selection that is not the "any" option.
+	[
+		'FilterGroup (select, narrowed)',
+		FilterGroup,
+		{
+			label: 'Outcome',
+			selected: 'denied',
+			onselect: vi.fn(),
+			options: [
+				{ value: 'approved', label: 'Approved', icon: 'circle-check' },
+				{ value: 'denied', label: 'Denied', icon: 'circle-x' },
+				{ value: '', label: 'Both', icon: 'filter-off' }
+			]
+		}
+	],
 	['Footer', Footer, {}],
 	['Icon (decorative)', Icon, { name: 'certificate' }],
 	['Icon (labelled)', Icon, { name: 'certificate', ariaLabel: 'Certificate' }],
@@ -245,8 +276,6 @@ const cases: [string, any, Record<string, unknown>][] = [
 	],
 	['PageSection', PageSection, { title: 'Email notifications', children: text('Seven kinds.') }],
 	['PageShell', PageShell, { children: text('Page body') }],
-	['Pager', Pager, { meta: meta(), onpage: vi.fn() }],
-	['Pager (single page)', Pager, { meta: meta({ page_count: 1 }), onpage: vi.fn() }],
 	[
 		'RailGroup',
 		RailGroup,

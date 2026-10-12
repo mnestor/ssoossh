@@ -7,6 +7,12 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +21,8 @@ import (
 
 	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/model"
+	"github.com/mnestor/ssoossh/server/service/auditns"
+	"github.com/mnestor/ssoossh/server/utils/errorresponses"
 	"github.com/mnestor/ssoossh/test/testdb"
 )
 
@@ -237,7 +245,7 @@ func TestListForUser_ShouldReturnEventsAsActorAndAsTarget(t *testing.T) {
 	audit.Record(ctx, AuditEvent{Action: AuditAuthLogin, Actor: &AuditSubject{UserID: "u-carol"}})
 
 	for _, userID := range []string{"u-analyst", "u-alice"} {
-		page, err := audit.ListForUser(ctx, userID, 25, 0)
+		page, err := audit.ListForUser(ctx, userID, "", 25)
 		if err != nil {
 			t.Fatalf("ListForUser(%q) error = %v", userID, err)
 		}
@@ -250,7 +258,7 @@ func TestListForUser_ShouldReturnEventsAsActorAndAsTarget(t *testing.T) {
 	}
 
 	// And an unrelated user's timeline stays empty.
-	page, err := audit.ListForUser(ctx, "u-nobody", 25, 0)
+	page, err := audit.ListForUser(ctx, "u-nobody", "", 25)
 	if err != nil {
 		t.Fatalf("ListForUser() error = %v", err)
 	}
@@ -275,7 +283,7 @@ func TestListRecent_ShouldOrderNewestFirstAndPage(t *testing.T) {
 		})
 	}
 
-	page, err := audit.ListRecent(ctx, 2, 0)
+	page, err := audit.ListRecent(ctx, AuditFilter{}, "", 2)
 	if err != nil {
 		t.Fatalf("ListRecent() error = %v", err)
 	}
@@ -285,20 +293,137 @@ func TestListRecent_ShouldOrderNewestFirstAndPage(t *testing.T) {
 	if len(page.Events) != 2 {
 		t.Fatalf("got %d events, want the page size of 2", len(page.Events))
 	}
-	if page.NextOffset != 2 {
-		t.Errorf("next offset = %d, want 2", page.NextOffset)
+	if page.NextCursor == nil || *page.NextCursor != page.Events[1].ID {
+		t.Errorf("next cursor = %v, want the last served event %q", page.NextCursor, page.Events[1].ID)
 	}
 	// Newest first: the last one recorded carries n=4.
 	if got := page.Events[0].Event.Detail["n"]; got != float64(4) {
 		t.Errorf("first event n = %v, want 4 (newest first)", got)
 	}
 
-	last, err := audit.ListRecent(ctx, 2, 4)
+	second, err := audit.ListRecent(ctx, AuditFilter{}, *page.NextCursor, 2)
 	if err != nil {
 		t.Fatalf("ListRecent() error = %v", err)
 	}
-	if last.NextOffset != 0 {
-		t.Errorf("next offset on the last page = %d, want 0", last.NextOffset)
+	third, err := audit.ListRecent(ctx, AuditFilter{}, *second.NextCursor, 2)
+	if err != nil {
+		t.Fatalf("ListRecent() error = %v", err)
+	}
+	if third.NextCursor != nil {
+		t.Errorf("next cursor on the last page = %q, want nil", *third.NextCursor)
+	}
+	got := slices.Concat(eventNumbers(page), eventNumbers(second), eventNumbers(third))
+	if !slices.Equal(got, []int{4, 3, 2, 1, 0}) {
+		t.Errorf("paged events = %v, want every event once, newest first", got)
+	}
+}
+
+// A row written between two page requests lands above the cursor, so the
+// next page neither repeats the cursor's neighbour (offset paging's failure)
+// nor skips a row.
+func TestListRecent_ShouldNeitherRepeatNorSkipWhenARowArrivesBetweenPages(t *testing.T) {
+	t.Parallel()
+
+	audit, _ := newTestAuditService(t)
+	ctx := context.Background()
+	base := time.Now().Add(-time.Hour)
+	for i := range 4 {
+		audit.Record(ctx, AuditEvent{Action: AuditAuthLogin, OccurredAt: base.Add(time.Duration(i) * time.Minute), Detail: map[string]any{"n": i}})
+	}
+
+	first, err := audit.ListRecent(ctx, AuditFilter{}, "", 2)
+	if err != nil {
+		t.Fatalf("ListRecent() error = %v", err)
+	}
+	audit.Record(ctx, AuditEvent{Action: AuditAuthLogin, OccurredAt: base.Add(10 * time.Minute), Detail: map[string]any{"n": 99}})
+	second, err := audit.ListRecent(ctx, AuditFilter{}, *first.NextCursor, 2)
+	if err != nil {
+		t.Fatalf("ListRecent() error = %v", err)
+	}
+
+	got := slices.Concat(eventNumbers(first), eventNumbers(second))
+	if !slices.Equal(got, []int{3, 2, 1, 0}) {
+		t.Errorf("paged events = %v, want [3 2 1 0]", got)
+	}
+}
+
+// A cursor must name a row of the list being paged; anything else is a 400
+// rather than a silent first page.
+func TestAuditList_ShouldRefuseACursorOutsideTheList(t *testing.T) {
+	t.Parallel()
+
+	audit, _ := newTestAuditService(t)
+	ctx := context.Background()
+	audit.Record(ctx, AuditEvent{Action: AuditAuthLogin, Actor: &AuditSubject{UserID: "u-alice"}})
+	audit.Record(ctx, AuditEvent{Action: AuditAuthLogin, Actor: &AuditSubject{UserID: "u-bob"}})
+	bobs, err := audit.ListForUser(ctx, "u-bob", "", 25)
+	if err != nil || len(bobs.Events) != 1 {
+		t.Fatalf("ListForUser(u-bob) = %v, %v; want one event", bobs, err)
+	}
+
+	tests := []struct {
+		name string
+		list func() error
+	}{
+		{name: "should refuse an unknown id on the feed", list: func() error {
+			_, err := audit.ListRecent(ctx, AuditFilter{}, "no-such-event", 25)
+			return err
+		}},
+		{name: "should refuse an unknown id on a timeline", list: func() error {
+			_, err := audit.ListForUser(ctx, "u-alice", "no-such-event", 25)
+			return err
+		}},
+		{name: "should refuse another user's event on a timeline", list: func() error {
+			_, err := audit.ListForUser(ctx, "u-alice", bobs.Events[0].ID, 25)
+			return err
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var invalid *errorresponses.InvalidRequestError
+			if err := tt.list(); !errors.As(err, &invalid) {
+				t.Errorf("error = %v, want *errorresponses.InvalidRequestError", err)
+			}
+		})
+	}
+}
+
+// One user's timeline pages by cursor across both sides of the OR, so an
+// event where the user is the actor and one where they are the target page
+// in one order.
+func TestListForUser_ShouldPageByCursor(t *testing.T) {
+	t.Parallel()
+
+	audit, _ := newTestAuditService(t)
+	ctx := context.Background()
+	base := time.Now().Add(-time.Hour)
+	for i := range 3 {
+		event := AuditEvent{Action: AuditUserDisabled, Reason: "incident 42", OccurredAt: base.Add(time.Duration(i) * time.Minute), Detail: map[string]any{"n": i}}
+		if i%2 == 0 {
+			event.Actor = &AuditSubject{UserID: "u-alice"}
+		} else {
+			event.Target = &AuditSubject{UserID: "u-alice"}
+		}
+		audit.Record(ctx, event)
+	}
+
+	first, err := audit.ListForUser(ctx, "u-alice", "", 2)
+	if err != nil {
+		t.Fatalf("ListForUser() error = %v", err)
+	}
+	if first.NextCursor == nil {
+		t.Fatalf("first page has no next cursor")
+	}
+	second, err := audit.ListForUser(ctx, "u-alice", *first.NextCursor, 2)
+	if err != nil {
+		t.Fatalf("ListForUser() error = %v", err)
+	}
+	if second.NextCursor != nil {
+		t.Errorf("next cursor on the last page = %q, want nil", *second.NextCursor)
+	}
+	got := slices.Concat(eventNumbers(first), eventNumbers(second))
+	if !slices.Equal(got, []int{2, 1, 0}) {
+		t.Errorf("paged events = %v, want [2 1 0]", got)
 	}
 }
 
@@ -406,6 +531,176 @@ func TestSweepAuditEvents_ShouldKeepTheNewestPastTheCap(t *testing.T) {
 	for i, row := range rows {
 		if got := decodePayload(t, row).Detail["n"]; got != float64(i+2) {
 			t.Errorf("row %d has n=%v, want the newest events to survive", i, got)
+		}
+	}
+}
+
+// declaredStringConsts reads every constant of type typeName declared in the
+// Go file at path, in order. Parsing the source is the only way to enumerate
+// a const block, and it keeps a test over "every X" from falling behind
+// when one is added.
+func declaredStringConsts(t *testing.T, path, typeName string) []string {
+	t.Helper()
+
+	file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+	if err != nil {
+		t.Fatalf("failed to parse %s: %v", path, err)
+	}
+	var values []string
+	for _, decl := range file.Decls {
+		gen, ok := decl.(*ast.GenDecl)
+		if !ok || gen.Tok != token.CONST {
+			continue
+		}
+		for _, spec := range gen.Specs {
+			value, ok := spec.(*ast.ValueSpec)
+			if !ok {
+				continue
+			}
+			if typ, ok := value.Type.(*ast.Ident); !ok || typ.Name != typeName {
+				continue
+			}
+			for _, v := range value.Values {
+				lit, ok := v.(*ast.BasicLit)
+				if !ok || lit.Kind != token.STRING {
+					t.Fatalf("a %s constant is not a string literal: %#v", typeName, v)
+				}
+				name, err := strconv.Unquote(lit.Value)
+				if err != nil {
+					t.Fatalf("failed to unquote %s: %v", lit.Value, err)
+				}
+				values = append(values, name)
+			}
+		}
+	}
+	return values
+}
+
+// auditTaxonomy reads every AuditAction constant declared in
+// audit_actions.go.
+func auditTaxonomy(t *testing.T) []AuditAction {
+	t.Helper()
+
+	var actions []AuditAction
+	for _, name := range declaredStringConsts(t, "audit_actions.go", "AuditAction") {
+		actions = append(actions, AuditAction(name))
+	}
+	// A floor rather than an exact count: it catches a parse that silently
+	// found nothing without needing an edit for every new action.
+	if len(actions) < 20 {
+		t.Fatalf("found only %d AuditAction constants in audit_actions.go: %v", len(actions), actions)
+	}
+	return actions
+}
+
+// auditNamespaces reads every Namespace constant declared in
+// auditns/auditns.go.
+func auditNamespaces(t *testing.T) []auditns.Namespace {
+	t.Helper()
+
+	var namespaces []auditns.Namespace
+	for _, name := range declaredStringConsts(t, "auditns/auditns.go", "Namespace") {
+		namespaces = append(namespaces, auditns.Namespace(name))
+	}
+	if len(namespaces) == 0 {
+		t.Fatal("found no Namespace constants in auditns/auditns.go")
+	}
+	return namespaces
+}
+
+// The web UI groups its action filter by namespace, from the generated
+// auditns constants, so an action under an undeclared namespace would land
+// in a group with no label.
+func TestAuditTaxonomy_ShouldNameEveryActionUnderADeclaredNamespace(t *testing.T) {
+	t.Parallel()
+
+	namespaces := auditNamespaces(t)
+	for _, action := range auditTaxonomy(t) {
+		t.Run(string(action), func(t *testing.T) {
+			t.Parallel()
+
+			namespace, _, found := strings.Cut(string(action), ".")
+			if !found || !slices.Contains(namespaces, auditns.Namespace(namespace)) {
+				t.Errorf("action %q is not under a namespace declared in auditns: %v", action, namespaces)
+			}
+		})
+	}
+}
+
+// A declared namespace with no action would offer an empty group.
+func TestAuditTaxonomy_ShouldUseEveryDeclaredNamespace(t *testing.T) {
+	t.Parallel()
+
+	actions := auditTaxonomy(t)
+	for _, namespace := range auditNamespaces(t) {
+		t.Run(string(namespace), func(t *testing.T) {
+			t.Parallel()
+
+			used := slices.ContainsFunc(actions, func(action AuditAction) bool {
+				return strings.HasPrefix(string(action), string(namespace)+".")
+			})
+			if !used {
+				t.Errorf("namespace %q has no action in audit_actions.go", namespace)
+			}
+		})
+	}
+}
+
+// Every stored row carries its payload's action in the indexed column, on
+// both write paths, so a query on the column finds exactly what a scan of
+// the payloads would. Log-only actions write no row and are left out.
+func TestRecord_ShouldSetTheActionColumnToThePayloadAction(t *testing.T) {
+	t.Parallel()
+
+	writers := []struct {
+		name  string
+		write func(t *testing.T, audit *AuditService, db *gorm.DB, event AuditEvent)
+	}{
+		{
+			name: "Record",
+			write: func(_ *testing.T, audit *AuditService, _ *gorm.DB, event AuditEvent) {
+				audit.Record(context.Background(), event)
+			},
+		},
+		{
+			name: "RecordTx",
+			write: func(t *testing.T, audit *AuditService, db *gorm.DB, event AuditEvent) {
+				if err := db.Transaction(func(tx *gorm.DB) error {
+					return audit.RecordTx(tx, event)
+				}); err != nil {
+					t.Fatalf("RecordTx() error = %v", err)
+				}
+			},
+		},
+	}
+
+	for _, action := range auditTaxonomy(t) {
+		if tableSkipped(action) {
+			continue
+		}
+		for _, writer := range writers {
+			t.Run("should store "+string(action)+" in the column when written by "+writer.name, func(t *testing.T) {
+				t.Parallel()
+
+				audit, db := newTestAuditService(t)
+				writer.write(t, audit, db, AuditEvent{
+					Action: action,
+					Actor:  &AuditSubject{UserID: "u-actor"},
+					Target: &AuditSubject{UserID: "u-target"},
+					Reason: "ticket 42",
+				})
+
+				var rows []model.AuditEvent
+				if err := db.Find(&rows).Error; err != nil {
+					t.Fatalf("load audit events: %v", err)
+				}
+				if len(rows) != 1 {
+					t.Fatalf("got %d rows, want 1", len(rows))
+				}
+				if got, want := rows[0].Action, string(decodePayload(t, rows[0]).Action); got != want || got != string(action) {
+					t.Errorf("action column = %q, payload action = %q, want both %q", got, want, action)
+				}
+			})
 		}
 	}
 }

@@ -3,8 +3,10 @@ package paging
 import (
 	"errors"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -18,12 +20,12 @@ import (
 // ignored.
 func TestParse(t *testing.T) {
 	tests := []struct {
-		name       string
-		query      string
-		wantLimit  int
-		wantOffset int
-		wantQuery  string
-		wantErr    bool
+		name      string
+		query     string
+		wantLimit int
+		wantAfter string
+		wantQuery string
+		wantErr   bool
 	}{
 		{
 			name:      "should apply the defaults when nothing is supplied",
@@ -31,10 +33,16 @@ func TestParse(t *testing.T) {
 			wantLimit: DefaultLimit,
 		},
 		{
-			name:       "should read limit and offset when both are supplied",
-			query:      "limit=10&offset=40",
-			wantLimit:  10,
-			wantOffset: 40,
+			name:      "should read limit and after when both are supplied",
+			query:     "limit=10&after=row-40",
+			wantLimit: 10,
+			wantAfter: "row-40",
+		},
+		{
+			name:      "should trim surrounding whitespace from the cursor",
+			query:     "after=" + url.QueryEscape("  row-40  "),
+			wantLimit: DefaultLimit,
+			wantAfter: "row-40",
 		},
 		{
 			name:      "should clamp a limit above the maximum",
@@ -49,7 +57,7 @@ func TestParse(t *testing.T) {
 		},
 		{
 			name:      "should treat an empty parameter as absent",
-			query:     "limit=&offset=&q=",
+			query:     "limit=&after=&q=",
 			wantLimit: DefaultLimit,
 		},
 		{
@@ -68,13 +76,23 @@ func TestParse(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "should reject a non-numeric offset",
-			query:   "offset=far",
+			name:    "should reject offset when it is supplied",
+			query:   "offset=40",
 			wantErr: true,
 		},
 		{
-			name:    "should reject a negative offset",
-			query:   "offset=-1",
+			name:    "should reject offset when it is supplied empty",
+			query:   "offset=",
+			wantErr: true,
+		},
+		{
+			name:    "should reject offset when it is supplied alongside a cursor",
+			query:   "offset=0&after=row-40",
+			wantErr: true,
+		},
+		{
+			name:    "should reject a cursor longer than any row id",
+			query:   "after=" + strings.Repeat("a", MaxCursorLength+1),
 			wantErr: true,
 		},
 		{
@@ -110,8 +128,8 @@ func TestParse(t *testing.T) {
 			if got.Limit != tt.wantLimit {
 				t.Errorf("Limit = %d, want %d", got.Limit, tt.wantLimit)
 			}
-			if got.Offset != tt.wantOffset {
-				t.Errorf("Offset = %d, want %d", got.Offset, tt.wantOffset)
+			if got.After != tt.wantAfter {
+				t.Errorf("After = %q, want %q", got.After, tt.wantAfter)
 			}
 			if got.Query != tt.wantQuery {
 				t.Errorf("Query = %q, want %q", got.Query, tt.wantQuery)
@@ -196,58 +214,6 @@ func TestFilter(t *testing.T) {
 	}
 }
 
-// TestParamsPageNumber covers the page arithmetic the UI renders, including
-// the boundary an exact multiple of the page size produces.
-func TestParamsPageNumber(t *testing.T) {
-	tests := []struct {
-		name      string
-		params    Params
-		total     int64
-		wantPage  int
-		wantPages int
-	}{
-		{
-			name:      "should report page one of one when the list is empty",
-			params:    Params{Limit: 25},
-			total:     0,
-			wantPage:  1,
-			wantPages: 1,
-		},
-		{
-			name:      "should report page one when the offset is zero",
-			params:    Params{Limit: 25},
-			total:     60,
-			wantPage:  1,
-			wantPages: 3,
-		},
-		{
-			name:      "should report the page the offset lands on",
-			params:    Params{Limit: 25, Offset: 50},
-			total:     60,
-			wantPage:  3,
-			wantPages: 3,
-		},
-		{
-			name:      "should not round an exact multiple up to an empty page",
-			params:    Params{Limit: 25},
-			total:     50,
-			wantPage:  1,
-			wantPages: 2,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.params.PageNumber(); got != tt.wantPage {
-				t.Errorf("PageNumber() = %d, want %d", got, tt.wantPage)
-			}
-			if got := tt.params.PageCount(tt.total); got != tt.wantPages {
-				t.Errorf("PageCount(%d) = %d, want %d", tt.total, got, tt.wantPages)
-			}
-		})
-	}
-}
-
 // pagingRow is a throwaway table for the query-building tests. The helpers
 // under test are driver-agnostic string builders, run against both backends
 // (test/testdb), which is where the LOWER()/ESCAPE choice has to hold.
@@ -277,29 +243,15 @@ func newPagingDB(t *testing.T, rows []pagingRow) *gorm.DB {
 	return db
 }
 
-// TestApplyAndCount covers the window and the total against a real database,
-// so a malformed fragment fails here rather than at the first admin page
-// load.
-func TestApplyAndCount(t *testing.T) {
+// TestCount covers the total against a real database, so a malformed
+// fragment fails here rather than at the first admin page load.
+func TestCount(t *testing.T) {
 	rows := []pagingRow{
 		{ID: 1, Username: "alice", Email: "alice@corp.example"},
 		{ID: 2, Username: "bob", Email: "bob@corp.example"},
 		{ID: 3, Username: "carol", Email: "carol@other.example"},
 		{ID: 4, Username: "svc_deploy", Email: "deploy@corp.example"},
 	}
-
-	t.Run("should return only the requested window", func(t *testing.T) {
-		db := newPagingDB(t, rows)
-
-		var got []pagingRow
-		err := Apply(db.Model(&pagingRow{}).Order("id"), Params{Limit: 2, Offset: 1}).Find(&got).Error
-		if err != nil {
-			t.Fatalf("find: %v", err)
-		}
-		if len(got) != 2 || got[0].Username != "bob" || got[1].Username != "carol" {
-			t.Fatalf("got %+v, want bob and carol", got)
-		}
-	})
 
 	t.Run("should count every row matching the filter, not just the page", func(t *testing.T) {
 		db := newPagingDB(t, rows)
@@ -326,4 +278,109 @@ func TestApplyAndCount(t *testing.T) {
 			t.Fatalf("total = %d, want 1", total)
 		}
 	})
+}
+
+// seekRow is a throwaway table for the keyset tests: a timestamp and a
+// string id, the shape every time-ordered admin list pages over.
+type seekRow struct {
+	ID        string    `gorm:"column:id;primaryKey"`
+	CreatedAt time.Time `gorm:"column:created_at"`
+}
+
+// TableName pins the table so GORM does not pluralize it.
+func (seekRow) TableName() string { return "seek_rows" }
+
+// TestSeekBefore pages a real table through the seek fragment, including two
+// rows that share a timestamp, so the id tiebreak is what keeps them apart.
+func TestSeekBefore(t *testing.T) {
+	base := time.Date(2026, 10, 12, 9, 0, 0, 0, time.UTC)
+	rows := []seekRow{
+		{ID: "a", CreatedAt: base},
+		{ID: "b", CreatedAt: base.Add(time.Minute)},
+		{ID: "c", CreatedAt: base.Add(time.Minute)},
+		{ID: "d", CreatedAt: base.Add(2 * time.Minute)},
+	}
+
+	tests := []struct {
+		name   string
+		cursor seekRow
+		want   []string
+	}{
+		{
+			name:   "should resume after the newest row when the cursor is the first row",
+			cursor: rows[3],
+			want:   []string{"c", "b", "a"},
+		},
+		{
+			name:   "should keep the tied row with the smaller id when the cursor shares its timestamp",
+			cursor: rows[2],
+			want:   []string{"b", "a"},
+		},
+		{
+			name:   "should return nothing when the cursor is the oldest row",
+			cursor: rows[0],
+			want:   []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+			if err != nil {
+				t.Fatalf("open sqlite: %v", err)
+			}
+			if err := db.AutoMigrate(&seekRow{}); err != nil {
+				t.Fatalf("migrate: %v", err)
+			}
+			if err := db.Create(&rows).Error; err != nil {
+				t.Fatalf("seed: %v", err)
+			}
+
+			where, args := SeekBefore("created_at", "id", tt.cursor.CreatedAt, tt.cursor.ID)
+			var got []seekRow
+			if err := db.Where(where, args...).Order("created_at DESC, id DESC").Find(&got).Error; err != nil {
+				t.Fatalf("find: %v", err)
+			}
+			ids := make([]string, 0, len(got))
+			for _, r := range got {
+				ids = append(ids, r.ID)
+			}
+			if !slices.Equal(ids, tt.want) {
+				t.Errorf("ids = %v, want %v", ids, tt.want)
+			}
+		})
+	}
+}
+
+// TestTrim covers the limit+1 convention: the extra row only signals that a
+// next page exists, and is never served.
+func TestTrim(t *testing.T) {
+	id := func(s string) string { return s }
+	tests := []struct {
+		name     string
+		rows     []string
+		limit    int
+		wantRows []string
+		wantNext string
+	}{
+		{name: "should return no cursor when the list is empty", rows: []string{}, limit: 2, wantRows: []string{}},
+		{name: "should return no cursor when the rows fit the page exactly", rows: []string{"a", "b"}, limit: 2, wantRows: []string{"a", "b"}},
+		{name: "should drop the extra row and point at the last served row when there is more", rows: []string{"a", "b", "c"}, limit: 2, wantRows: []string{"a", "b"}, wantNext: "b"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, next := Trim(tt.rows, tt.limit, id)
+			if !slices.Equal(got, tt.wantRows) {
+				t.Errorf("rows = %v, want %v", got, tt.wantRows)
+			}
+			gotNext := ""
+			if next != nil {
+				gotNext = *next
+			}
+			if gotNext != tt.wantNext {
+				t.Errorf("next = %q, want %q", gotNext, tt.wantNext)
+			}
+		})
+	}
 }

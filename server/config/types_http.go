@@ -113,6 +113,11 @@ type HTTPSettings struct {
 	// per client IP. Zero or negative disables rate limiting entirely.
 	// Localhost (127.0.0.1, ::1) bypasses the limit, so health probes and
 	// tests from the local frontend are not throttled.
+	//
+	// Keep it on for an internet-facing deployment. Some requests write an
+	// audit event without a session, such as a console request from outside
+	// cert_options.console.allowed_networks, and this limit is what stops one
+	// address writing them as fast as it can send.
 	RateLimit int `mapstructure:"rate_limit" default:"60"`
 
 	// RateDuration is the time window for rate limiting calculations. With
@@ -141,11 +146,12 @@ type HTTPSettings struct {
 	ConsoleCodeRateLimit ConsoleCodeRateLimitSettings `mapstructure:"console_code_rate_limit"`
 
 	// Hsts (HTTP Strict-Transport-Security) is sent in the Strict-Transport-Security
-	// header on every response, but only when the server terminates TLS itself
-	// (i.e. tls.certificate_file and tls.private_key_file are set). Browsers
-	// ignore HSTS over plain HTTP. Empty disables the header, useful when a
-	// TLS-terminating reverse proxy in front sets its own policy. Typical
-	// values include "max-age=31536000; includeSubDomains".
+	// header on every response, /healthz and /ping included, whether this
+	// process terminates TLS itself or a reverse proxy in front does.
+	// Browsers ignore HSTS over a connection they see as plain HTTP, so
+	// sending it behind a proxy is harmless. Empty disables the header,
+	// useful when a TLS-terminating reverse proxy in front sets its own
+	// policy. Typical values include "max-age=31536000; includeSubDomains".
 	Hsts string `mapstructure:"hsts" default:"max-age=31536000; includeSubDomains"`
 
 	// TLS holds the server's TLS configuration: certificate/key material,

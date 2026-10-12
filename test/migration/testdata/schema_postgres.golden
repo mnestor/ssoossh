@@ -1,12 +1,18 @@
 table audit_events
+  column action type=text nullable=false default=''::text
   column actor_user_id type=text nullable=true default=<none>
   column created_at type=timestamp with time zone nullable=false default=<none>
   column id type=text nullable=false default=<none>
   column payload type=text nullable=false default=''::text
+  column source_ip type=text nullable=false default=''::text
   column target_user_id type=text nullable=true default=<none>
   index audit_events_pkey CREATE UNIQUE INDEX audit_events_pkey ON public.audit_events USING btree (id)
+  index idx_audit_events_action CREATE INDEX idx_audit_events_action ON public.audit_events USING btree (action, created_at, id)
+  index idx_audit_events_action_actor CREATE INDEX idx_audit_events_action_actor ON public.audit_events USING btree (action, actor_user_id, created_at)
+  index idx_audit_events_action_source_ip CREATE INDEX idx_audit_events_action_source_ip ON public.audit_events USING btree (action, source_ip, created_at, id)
   index idx_audit_events_actor CREATE INDEX idx_audit_events_actor ON public.audit_events USING btree (actor_user_id, created_at)
   index idx_audit_events_created_at CREATE INDEX idx_audit_events_created_at ON public.audit_events USING btree (created_at)
+  index idx_audit_events_source_ip CREATE INDEX idx_audit_events_source_ip ON public.audit_events USING btree (source_ip, created_at, id)
   index idx_audit_events_target CREATE INDEX idx_audit_events_target ON public.audit_events USING btree (target_user_id, created_at)
 table ca_signer_keys
   column created_at type=timestamp with time zone nullable=false default=<none>
@@ -113,6 +119,7 @@ table certificates
   index certificates_pkey CREATE UNIQUE INDEX certificates_pkey ON public.certificates USING btree (id)
   index certificates_serial_number_key CREATE UNIQUE INDEX certificates_serial_number_key ON public.certificates USING btree (serial_number)
   index idx_certificates_certificate_request_id CREATE INDEX idx_certificates_certificate_request_id ON public.certificates USING btree (certificate_request_id)
+  index idx_certificates_issued_at_id CREATE INDEX idx_certificates_issued_at_id ON public.certificates USING btree (issued_at, id)
   index idx_certificates_user_id_issued_at CREATE INDEX idx_certificates_user_id_issued_at ON public.certificates USING btree (user_id, issued_at DESC)
 table enrollment_reassignments
   column enrollment_id type=text nullable=false default=<none>
@@ -157,6 +164,7 @@ table enrollments
   fk user_id -> users.id
   index enrollments_pkey CREATE UNIQUE INDEX enrollments_pkey ON public.enrollments USING btree (id)
   index idx_enrollments_code CREATE UNIQUE INDEX idx_enrollments_code ON public.enrollments USING btree (code)
+  index idx_enrollments_created_at_id CREATE INDEX idx_enrollments_created_at_id ON public.enrollments USING btree (created_at, id)
   index idx_enrollments_expiry_reminder CREATE INDEX idx_enrollments_expiry_reminder ON public.enrollments USING btree (expiry_reminder_sent_at, expires_at)
   index idx_enrollments_service_account CREATE INDEX idx_enrollments_service_account ON public.enrollments USING btree (service_account)
   index idx_enrollments_user_id CREATE INDEX idx_enrollments_user_id ON public.enrollments USING btree (user_id)

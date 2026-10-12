@@ -101,6 +101,7 @@ which is the same "not reported" the module produces where it has no source
 | approval page, `webtypes.RequestDetailResponse` | every field |
 | `cert.requested` audit event | every field (`service.fullHostContextDetail`) |
 | `cert.claimed`, `cert.approved`, `cert.denied`, `cert.expired`, `cert.sign_failed`, `cert.issued` | the compact set: `username`, `hostname`, `pam_service`, `tty`, `remote_host`, `requesting_user`, `process`, `machine_id`, `client` (`service.hostContextDetail`) |
+| `cert.request_refused_network` audit event | only `claimed_username` and `claimed_hostname`, bounded like the stored fields. The request was refused before anything was persisted, so there is no row to read the rest from (`service.refusedNetworkEvent`) |
 | `certificate_request_decisions` row | the same compact set, as `reported_username`, `reported_hostname` and one column each for the rest |
 | certificate detail, `webtypes.CertificateResponse` | that snapshot, as `reported_*`. The detail endpoint only; a list row does not carry it |
 | signing job, signer, certificate | nothing. The signer never sees the requester. |
@@ -155,6 +156,6 @@ remains the requester's.
   the signer refused (`error_code` from the reply) or because the stranded
   sweep found the row stuck (`error_code: stranded`).
 
-See `server/service/audit.go` for the taxonomy and the
+See `server/service/audit_actions.go` for the taxonomy and the
 [signing pipeline](/ssoossh/internals/architecture/) for where each stage
 sits.

@@ -9,9 +9,9 @@ import (
 )
 
 // A history row leads with what asked for the certificate, so a list row
-// carries the decision's reported "user@host" -- and only that pair. The
-// rest of the host-context snapshot belongs to the detail endpoint, which
-// is what setReportedContextOnCertificate is for.
+// carries the decision's reported "user@host", plus the PAM service a PAM
+// row names. The rest of the host-context snapshot belongs to the detail
+// endpoint, which is what setReportedContextOnCertificate is for.
 func TestNewCertificateResponsesWithDecisions_ReportedContext(t *testing.T) {
 	issued := time.Date(2026, 8, 22, 10, 0, 0, 0, time.UTC)
 
@@ -51,7 +51,7 @@ func TestNewCertificateResponsesWithDecisions_ReportedContext(t *testing.T) {
 	}{
 		{"should carry the reported username a row leads with", row.ReportedUsername, "root"},
 		{"should carry the reported hostname a row leads with", row.ReportedHostname, "web01"},
-		{"should leave the pam service to the detail endpoint", row.ReportedService, ""},
+		{"should carry the reported pam service a PAM row names", row.ReportedService, "sshd"},
 		{"should leave the terminal to the detail endpoint", row.ReportedTTY, ""},
 		{"should leave the remote host to the detail endpoint", row.ReportedRemoteHost, ""},
 		{"should leave the invoking user to the detail endpoint", row.ReportedRequestingUser, ""},

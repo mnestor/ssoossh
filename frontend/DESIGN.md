@@ -101,8 +101,8 @@ Exactly four jobs:
 4. The current rail item: cobalt label on `accent-wash`, with
    `aria-current="page"`.
 
-Nowhere else: not on icons, labels, stats, selected chips, the current page
-in a pager, tabs, checkboxes or decorative marks. The one exception is
+Nowhere else: not on icons, labels, stats, selected chips, tabs, checkboxes
+or decorative marks. The one exception is
 `BrandMark`, which draws the product's own mark in cobalt.
 
 ### Selected, current and status
@@ -111,9 +111,7 @@ in a pager, tabs, checkboxes or decorative marks. The one exception is
   DetailToggle segment, a segmented filter): ink fill (`bg-ink
 text-surface`), the `check` glyph before the label, and `aria-pressed`.
   Never cobalt.
-- **Current** (where the reader is): the rail item as above. The current page
-  in a `Pager` is an ink fill with `aria-current="page"` and no glyph: it is
-  a location, not a choice.
+- **Current** (where the reader is): the rail item as above.
 - **Status** colours are semantic only. `granted` means approved, valid or
   granted; `trimmed` means narrowed, restricted or a warning; `danger` means
   an error, a denial or destruction. They never mark "configured", "came from
@@ -253,8 +251,8 @@ panel gets a frame: a `dl` uses `divide-y divide-border-subtle`, a
 ### Borders: three jobs
 
 1. A hairline between rows inside a panel: `border-subtle`.
-2. The edge of a control a reader operates (a field, a ghost button, a pager
-   control, an unselected chip): `border-control`, 3:1 or better on every
+2. The edge of a control a reader operates (a field, a ghost button, a
+   segmented control, an unselected chip): `border-control`, 3:1 or better on every
    plane.
 3. The edge of a value chip (`MonoChip`): `border-subtle`. A set of
    principals has to show where one value ends; a fill alone is 1.08:1.
@@ -266,8 +264,8 @@ footer rule, no alert outline, no side stripe.
 
 | Utility                  | Token                      | Value | For                                                       |
 | ------------------------ | -------------------------- | ----- | --------------------------------------------------------- |
-| `rounded` / `rounded-sm` | `--radius` / `--radius-sm` | 3px   | Chips, badges, `TypeBadge`, `StatusBadge`                 |
-| `rounded-md`             | `--radius-md`              | 4px   | Controls: buttons, fields, segmented controls, pager      |
+| `rounded` / `rounded-sm` | `--radius` / `--radius-sm` | 3px   | Chips, badges, `StatusBadge`                              |
+| `rounded-md`             | `--radius-md`              | 4px   | Controls: buttons, fields, segmented controls             |
 | `rounded-lg`             | `--radius-lg`              | 6px   | Panels: sections, rows, strips, alerts, tables            |
 | `rounded-xl`             | `--radius-xl`              | 8px   | Dialogs                                                   |
 | `rounded-full`           |                            |       | Only a circular glyph container: `EmptyState`'s icon disc |
@@ -322,7 +320,7 @@ infinite loop is a strobe.
   `--spacing-target`: 2.25rem, raised to 2.75rem under
   `@media (pointer: coarse)` in `app.css`. Every standalone control takes
   it: buttons, every chip a reader presses (filter, principal, extension),
-  segmented controls, pager controls, icon buttons (`size-target`), rail
+  segmented controls, icon buttons (`size-target`), rail
   rows, menu rows, checkbox and radio rows (the whole label is the target),
   the copy button and the back chip. Use `min-h-target` (and
   `min-w-target` where the control is narrow); no control states its own
@@ -365,6 +363,11 @@ vocabulary; an unmapped name renders a visible red `?`.
 - Decorative icons are `aria-hidden`. A meaningful one gets its words in the
   document (`sr-only`), not an `aria-label` on a bare `span`, which browsers
   drop.
+- **A glyph is never the only name.** Anything a reader has to tell apart (a
+  type, an outcome, a filter) has its words on screen next to it: in the
+  control, or in the row's own text. `title` is a fallback for the pointer,
+  not the name; it shows late, and never on touch or keyboard focus. A glyph
+  that needs a hover to be understood has failed.
 
 ### Vocabulary
 
@@ -520,7 +523,12 @@ text-trimmed`, `role="status"`), `info` (`info-circle`, `bg-surface` on the
 - **Rows are links**: every `CertRow` and `ServiceCodeRow` is an `<a>` with
   an href its list resolved, so middle-click, copy-link and Back all work.
 - **CertRow**: one certificate as a clickable row: `TypeBadge`, subject,
-  what happened and when, principals, and the validity glyph
+  what happened and when, naming the type in words (`certificateEvent`:
+  "user certificate issued", "console login", ...; a PAM row names the
+  reported service when it is sudo, su (or a `sudo-`/`su-` variant such as
+  `sudo-i`), sshd or login, as "sudo (reported)", and reads "PAM login"
+  otherwise), principals, and the validity
+  glyph
   (`certificate` in `granted` or `certificate-off` in `ink-muted`), the one
   field that moves with the clock. Stacked below `xl`, aligned columns above.
   `showOutcome` adds the outcome glyph (`circle-check` / `circle-x`), set
@@ -550,28 +558,33 @@ bg-surface-muted`, decorative), a short title, the sentence that says what
   search, filter or page turn, silent until the request settles so a
   debounced search does not announce on every keystroke (WCAG 4.1.3). Every
   searchable or paged list carries one.
-- **Pager**: offset pagination for the admin lists from the server's
-  `PageMeta`. Renders nothing when one page holds everything; keeps first and
-  last reachable behind an ellipsis; current page is an ink fill with
-  `aria-current="page"`. Plain buttons with per-page names (`Page 3`), each
-  `min-h-target min-w-target rounded-md`, unselected edge `border-control`.
 - **SearchInput**: debounced search reporting the trimmed term once typing
   settles and only when it changed. Enter reports immediately; the clear
   button (`x`, `size-target`) reports an empty term at once. `value` seeds the
   box and is not watched; remount with a key to reset.
-- **FilterGroup**: one named group of chips ("Type: All User PAM ..."). The
-  name is not decoration: below `sm` a chip is its icon alone. Every group
-  has its own "any" chip (`filter-off`) rather than clearing by pressing the
-  selected chip again.
+- **FilterGroup**: one named group of filters ("Type: All User PAM ...").
+  From `sm` up, the name and then a row of `FilterChip`s. Below `sm`, a
+  native `<select>` with the name as its `<label>` above it, one option per
+  chip with the same values and words, styled as a field (`min-h-target
+rounded-md border-border-control bg-surface px-3 text-base`, `text-base`
+  because it is an input on touch). Both forms are rendered and CSS chooses,
+  as `CopyableId` does. The group decides the collapse, not the caller. Every
+  group has its own "any" option (the `filter-off` chip; "All", "Any" or
+  "Both" in the select) rather than clearing by pressing the selected chip
+  again.
 - **FilterChip**: glyph, label, pressed state. `rounded`, `min-h-target`,
   unselected `border-control text-ink-muted`, selected ink fill plus `check`
-  plus `aria-pressed`. Named from `sm` up; below `sm` the label is `sr-only`,
-  never `hidden`. Collapsing is the component's decision, not a prop.
+  plus `aria-pressed`. Always named: a chip is never its glyph alone. It
+  appears only from `sm` up; below that its group is a select.
 - **AuditTimeline**: the audit feed as sentences: who did what to whom. Each
   row holds the sentence and, pinned together as one muted group on the
   right, the action name and timestamp. Rows are ruled. Details render as an
   aligned two-column list. Unknown actions fall back to the raw name.
-  Timestamps go through `formatDateTime`.
+  Timestamps go through `formatDateTime`. Given `sourceHref`, a row's
+  `source_ip` is an inline link (cobalt, a link) to the feed filtered to that
+  address; with `onsource` a plain click applies the filter in place and a
+  modified click follows the href. `approver_ip` is never linked: the feed
+  does not filter on it.
 
 ### Identifiers and badges
 
@@ -585,9 +598,12 @@ bg-surface-muted`, decorative), a short title, the sentence that says what
 - **MonoChip**: one mono value in a set (a principal, an IP), `rounded`,
   `bg-surface-muted`, hairline `border-subtle`, `text-xs`.
   Chips rather than a comma list so set boundaries are unambiguous.
-- **TypeBadge**: the certificate type as a fixed 26px square, `rounded`,
-  `bg-surface-muted`, glyph only, type in `sr-only` words. Fixed so rows
-  align whatever the type is called.
+- **TypeBadge**: the certificate type as a fixed 26px box with no fill, no
+  radius and no border, the glyph at `sm` (16px) in `ink-muted`, the type in
+  `sr-only` words and a `title`. Fixed so rows align whatever the type is
+  called. No fill because a tinted square reads as an icon button, and this
+  one does nothing. It is never the only name of the type: the row says it in
+  words (`certificateEvent`).
 - **TypeChip**: the labelled form of `TypeBadge` for detail views.
 - **StatusBadge**: request or certificate status as a chip: glyph plus
   capitalised word, `rounded`, `text-xs font-semibold`, coloured by status.
@@ -746,11 +762,21 @@ off, and confirms through a reasonless `ConfirmModal`.
 - **The outcome group picks the endpoint:** Approved reads certificates,
   Denied reads decisions, Both reads each and interleaves by time. A validity
   filter returns no denials.
-- **Narrow screens:** below `sm` there is no outcome group and `/logs/me` is
-  pinned to approvals, so a row never carries an unlabelled outcome. The
-  width is stated once in `#lib/viewport` (`NARROW_QUERY`, `watchNarrow`).
-- **Paging:** the admin lists page by offset with `Pager`; the caller's own
-  history by cursor with "Load more".
+- **Narrow screens:** below `sm` each filter group is a labelled select (see
+  FilterGroup), and every group stays on offer, Outcome included. `CertRow`
+  drops its outcome glyph there; a `DeniedRow` keeps its own mark and says
+  "denied" in its detail line, so a mixed list still reads. The width is
+  stated once in `#lib/viewport` (`NARROW_QUERY`, `watchNarrow`).
+- **Paging:** every list pages by cursor with "Load more", a ghost button
+  under the rows that goes once the last page is in. Every admin list (audit
+  feed, a user's audit timeline, users, certificates, service codes) has the
+  audit feed's footer above that button, worded once by `describeLoaded` in
+  `#lib/listStatus`: `48 shown`, then `, 120 older not loaded` while the
+  server holds more. "older" where the list runs newest first, "more" on the
+  user directory, which is sorted by name. A failed "Load more" is an error `Alert` in the
+  button's place that retries that page; the rows above stay. A cursor names
+  a page, not the rows above it, so the address keeps the filters but not how
+  far the list was loaded.
 - **Service codes:** live codes first, expired ones under their own label
   rather than dropped, because a job that stopped working is explained by the
   code beneath it. Opening an account filters the same list by shallow
@@ -930,7 +956,13 @@ the result and drops the diagnostic detail an expert compares.
 `src/routes/admin/+layout.svelte` gates the area on auditor access and does
 nothing else. The gate is display-only (the server re-checks every read),
 and a signed-in identity without auditor access is told so rather than sent
-to a login it already passed. Each admin page sets its own width through
+to a login it already passed. That refusal is the `AccessDenied` card, the
+same one the error page gives a 403; a section narrower than the area (the
+Config, Directory, Claims echo and Diagnostics, all admin only) gates in its own
+`+layout.svelte` with the same card, naming the page in the requirement
+("Diagnostics needs the admin role."), and is marked `adminOnly` in
+`nav.ts` so `adminNavFor` leaves it out of the rail. Behind that gate the
+page has no non-admin branch. Each admin page sets its own width through
 `PageShell`; the rail marks the section for its own path and everything
 beneath it.
 
@@ -945,24 +977,27 @@ beneath it.
   and re-enable are heading actions.
 - **Certificates** (`/admin/certificates`): every issued certificate,
   searchable by key id, principals, serial, fingerprint, owner username or
-  email, filtered by type and validity, offset-paged, from
+  email, filtered by type and validity, cursor-paged with Load more, from
   `/api/admin/certificates/history`. Orphaned certificates still appear (a
   LEFT JOIN) so an auditor can trace them. Rows open `/certs/<id>`.
 - **Service codes** (`/admin/service-codes`, and `/<id>`): every
   enrollment; the detail carries Expire for SOC.
-- **Config** (`/admin/config`): every key in effect, grouped by the config
-  file's sections, filtered by key or value. The server reflects over its
+- **Config** (`/admin/config`, admin only, gated like the Directory): every
+  key in effect, grouped by the config file's sections, filtered by key or
+  value. The server reflects over its
   own config struct (`server/config/effective.go`), so the page lists no key
   itself. Keys at their defaults are hidden until "Show unset keys" is
   checked; a typed filter overrides that. Secrets are redacted at their Go
   declaration (`secret:"true"`) and still report whether they are set.
   Keys render in mono.
-- **Directory** (`/admin/directory`): LDAP sync status and the last pass's
-  counts for any auditor; Sync now (dry run by default) and the read-only
-  Probe for admins. The probe's three views (entry as returned, field
+- **Directory** (`/admin/directory`, admin only): LDAP sync status and the
+  last pass's counts, Sync now (dry run by default) and the read-only Probe.
+  The rail leaves it out for SOC and auditors, and its own layout shows them
+  the `AccessDenied` card on a direct visit. The probe's three views (entry as returned, field
   mapping, merge and allowlist) are a segmented toggle group, not tabs; a
   mapped attribute carries a "mapped" label, not a colour.
-- **Claims echo** (`/admin/identity/echo`, admin only): re-authenticates
+- **Claims echo** (`/admin/identity/echo`, admin only, gated like the
+  Directory): re-authenticates
   with `prompt=login` and renders the decoded ID token, each claim annotated
   by the field that reads it, plus the `fields.extra` block that would
   capture the unread ones. Nothing is stored; the token arrives in the URL
@@ -988,13 +1023,26 @@ beneath it.
     never scrolls sideways.
 - **Audit log** (`/admin/audit`, `full`): the bounded table copy of the
   audit stream, with Load more. `AuditTimeline` sits in a surface panel and
-  needs no frame of its own.
-- **Diagnostics** (`/admin/diagnostics`, admin only): four read-only
+  needs no frame of its own. Two filters above it, kept in the address
+  (`?action=`, `?source_ip=`) as on `/logs/me`, and on screen in every state:
+  - **Action** is a `select` with "Any action" and the taxonomy grouped by
+    namespace (`auditActionGroups`), not a `FilterGroup`: twenty-odd actions
+    are too many chips. Actions the feed never returns are not offered.
+  - **Source address** is a mono text field that filters as typing settles,
+    once the value parses as one IP address. Enter or leaving the field with
+    a value that does not parse marks it (`aria-invalid`, a `text-danger`
+    line) and filters nothing.
+  - Clear filters (ghost) appears once either is set. Filters that match
+    nothing get the "filtered out" `EmptyState` with Clear filters; an empty
+    table gets the "nothing yet" one.
+- **Diagnostics** (`/admin/diagnostics`, admin only, gated like the
+  Directory): four read-only
   deployment checks run on demand (public URL reachability, proxy trust and
   client IP, security headers, CORS and edge header attribution), one panel
-  per check in a single column, in the order they ran, each with an OK,
-  Warning, Critical or Skipped chip and a remediation note. Skipped is not a
-  pass.
+  per check in a single column, worst first (Critical, Warning, OK, then
+  Skipped; checks with the same status keep the order they ran), each with
+  an OK, Warning, Critical or Skipped chip and a remediation note. Skipped
+  is not a pass.
 
 ## 14. Dark mode
 
@@ -1117,7 +1165,8 @@ rule above (36px with a mouse, 44px on touch). `make a11y` holds them.
   every control edge is 3:1 (`border-control`).
 - **Focus:** always visible; never `outline-none`.
 - **Icons:** decorative ones `aria-hidden`; meaningful ones carry `sr-only`
-  words.
+  words, and visible words beside them (see Iconography). `title` is never
+  the only name.
 - **Colour alone:** never. A toggle is filled when pressed and carries
   `aria-pressed`; a mutually exclusive set of views is a group of such
   toggles, not tabs.
@@ -1142,7 +1191,7 @@ change.
 ## 18. Engineering conventions
 
 - **Test ids:** components the e2e tier selects on (`Button`, `PageSection`,
-  `Alert`, `Pager`, `SearchInput`, `CertRow`, `PageHeading`,
+  `Alert`, `SearchInput`, `CertRow`, `PageHeading`,
   `ServiceCodeRow`) take a `testid` prop and render `data-testid` on their
   root. Passing `data-testid` to a component is an unknown prop that Svelte
   drops silently; `make frontend-check` catches it because `Props` are typed.

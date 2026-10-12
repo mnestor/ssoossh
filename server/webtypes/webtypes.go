@@ -24,33 +24,6 @@ import (
 	"github.com/mnestor/ssoossh/server/model"
 )
 
-// PageMeta describes the window a paged list endpoint served, so a UI can
-// render page numbers and decide whether "next" is reachable. Shared by every
-// admin and auditor list; see server/utils/paging for the parameters that
-// produce it.
-//
-// Total is the count of rows matching the search, not the count on this page:
-// it is what "page 3 of 12" is computed from. It stays accurate to the
-// filtered set, so a search that narrows the list narrows Total with it.
-type PageMeta struct {
-	// Total is how many rows match the request's filter, across all pages.
-	Total int64 `json:"total" validate:"required"`
-
-	// Limit is the page size actually served, which may be smaller than the
-	// one asked for (see paging.MaxLimit).
-	Limit int `json:"limit" validate:"required"`
-
-	// Offset is how many rows were skipped to reach this page.
-	Offset int `json:"offset" validate:"required"`
-
-	// Page is the 1-based number of this page, and PageCount how many pages
-	// Total fills at this size. Both are derivable from the three fields
-	// above, and are sent anyway so every list UI computes them the same way
-	// — including the "an empty list is page 1 of 1" boundary.
-	Page      int `json:"page" validate:"required"`
-	PageCount int `json:"page_count" validate:"required"`
-}
-
 // CurrentUserResponse is the authenticated identity, for the UI to render
 // who it is acting as and decide what to show.
 //
@@ -434,11 +407,15 @@ type AdminEnrollmentResponse struct {
 	NotificationEmail string `json:"notification_email,omitempty"`
 }
 
-// AdminEnrollmentsResponse is the paged list of all service enrollments,
-// visible to auditors and admins.
+// AdminEnrollmentsResponse is one page of all service enrollments, newest
+// first, visible to auditors and admins.
 type AdminEnrollmentsResponse struct {
 	Enrollments []AdminEnrollmentResponse `json:"enrollments" validate:"required"`
-	Meta        PageMeta                  `json:"meta" validate:"required"`
+	// Total is how many enrollments match the search, across all pages.
+	Total int64 `json:"total" validate:"required"`
+	// NextCursor is the after for the following page: the id of this
+	// page's last row, absent on the last page.
+	NextCursor *string `json:"next_cursor,omitempty"`
 }
 
 // ClientPolicyResponse is the requesting machine's asserted administrative
@@ -711,8 +688,9 @@ type CertificateResponse struct {
 	// The pair is on a list row too, because it is what a history row leads
 	// with: the row's subject is where the certificate was fetched from, and
 	// the approver's identity is the same value on every row of a person's
-	// own history. The remaining seven stay detail-only -- seven more strings
-	// on every row is payload nobody reads.
+	// own history. So is ReportedService, which a PAM row names (sudo, su,
+	// sshd). The remaining six stay detail-only -- six more strings on every
+	// row is payload nobody reads.
 	ReportedUsername       string `json:"reported_username,omitempty"`
 	ReportedHostname       string `json:"reported_hostname,omitempty"`
 	ReportedService        string `json:"reported_pam_service,omitempty"`
@@ -794,11 +772,16 @@ type DeniedRequestListResponse struct {
 	NextCursor *string                 `json:"next_cursor,omitempty"`
 }
 
-// CertificateListAdminResponse is the payload for the admin certificate history
-// endpoint, showing certificates across all users with offset pagination and metadata.
+// CertificateListAdminResponse is one page of the admin certificate history,
+// certificates across all users newest first, with the same cursor paging
+// as the caller's own history.
 type CertificateListAdminResponse struct {
 	Certificates []CertificateResponse `json:"certificates" validate:"required"`
-	PageMeta     PageMeta              `json:"page_meta" validate:"required"`
+	// Total is how many certificates match the filters, across all pages.
+	Total int64 `json:"total" validate:"required"`
+	// NextCursor is the after for the following page: the id of this
+	// page's last certificate, absent on the last page.
+	NextCursor *string `json:"next_cursor,omitempty"`
 }
 
 // BrandingResponse is optional branding for the login page and web UI.
@@ -1009,10 +992,15 @@ type AdminUserSummary struct {
 	UpdatedAt time.Time `json:"updated_at" validate:"required"`
 }
 
-// AdminUsersListResponse is one page of the auditor user list, with paging info.
+// AdminUsersListResponse is one page of the auditor user list.
 type AdminUsersListResponse struct {
 	Users []AdminUserSummary `json:"users" validate:"required"`
-	Meta  PageMeta           `json:"meta" validate:"required"`
+	// Total is how many users match the search and state filter, across all
+	// pages.
+	Total int64 `json:"total" validate:"required"`
+	// NextCursor is the after for the following page: the id of this
+	// page's last user, absent on the last page.
+	NextCursor *string `json:"next_cursor,omitempty"`
 }
 
 // AdminUserDetail is the full details of one user for the auditor detail view,
@@ -1354,8 +1342,9 @@ type AuditEventResponse struct {
 type AuditEventsResponse struct {
 	Events []AuditEventResponse `json:"events" validate:"required"`
 	Total  int64                `json:"total"`
-	// NextOffset is the offset for the following page, or 0 on the last one.
-	NextOffset int `json:"next_offset,omitempty"`
+	// NextCursor is the after for the following page: the id of this
+	// page's last event, absent on the last page.
+	NextCursor *string `json:"next_cursor,omitempty"`
 }
 
 // LDAPSyncRunResponse is one recorded directory sync pass.

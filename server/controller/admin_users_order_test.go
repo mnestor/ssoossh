@@ -1,8 +1,8 @@
 package controller
 
 // Tests for the order the admin user directory lists people in. Pages are
-// offset-based, so the order has to be total: every row has exactly one
-// place, and two pages cannot disagree about where a row sits. The cases
+// keyset-based, so the order has to be total: every row has exactly one
+// place, and the seek resumes after the cursor user's place in it. The cases
 // run on both backends (test/testdb), so both are held to the same answers.
 
 import (
@@ -150,7 +150,7 @@ func checkUserOrder(t *testing.T, db *gorm.DB) {
 			resetUsers(t, db)
 			seedDirectory(t, db, tc.users)
 
-			got := listUserIDs(t, r, tc.query)
+			got, _ := listUserIDs(t, r, tc.query)
 			if !equalStrings(got, tc.want) {
 				t.Errorf("GET /admin/users?%s listed %v, want %v", tc.query, got, tc.want)
 			}
@@ -163,15 +163,14 @@ func checkUserOrder(t *testing.T, db *gorm.DB) {
 			seedDirectory(t, db, paginationDirectory())
 
 			var paged []string
-			for offset := 0; ; offset += limit {
-				page := listUserIDs(t, r, fmt.Sprintf("limit=%d&offset=%d", limit, offset))
-				if len(page) == 0 {
+			query := fmt.Sprintf("limit=%d", limit)
+			for range len(paginationWant) + 1 {
+				page, next := listUserIDs(t, r, query)
+				paged = append(paged, page...)
+				if next == "" {
 					break
 				}
-				paged = append(paged, page...)
-				if offset > len(paginationWant) {
-					t.Fatalf("paging did not terminate after %d rows, got %v", len(paged), paged)
-				}
+				query = fmt.Sprintf("limit=%d&after=%s", limit, next)
 			}
 
 			if !equalStrings(paged, paginationWant) {
@@ -203,8 +202,8 @@ func seedDirectory(t *testing.T, db *gorm.DB, users []model.User) {
 }
 
 // listUserIDs calls GET /admin/users with query and returns the ids in the
-// order the response lists them.
-func listUserIDs(t *testing.T, r http.Handler, query string) []string {
+// order the response lists them, and the next cursor ("" on the last page).
+func listUserIDs(t *testing.T, r http.Handler, query string) ([]string, string) {
 	t.Helper()
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/users?"+query, nil))
@@ -217,6 +216,7 @@ func listUserIDs(t *testing.T, r http.Handler, query string) []string {
 			Users []struct {
 				ID string `json:"id"`
 			} `json:"users"`
+			NextCursor *string `json:"next_cursor"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
@@ -226,7 +226,11 @@ func listUserIDs(t *testing.T, r http.Handler, query string) []string {
 	for _, u := range resp.Data.Users {
 		ids = append(ids, u.ID)
 	}
-	return ids
+	next := ""
+	if resp.Data.NextCursor != nil {
+		next = *resp.Data.NextCursor
+	}
+	return ids, next
 }
 
 // equalStrings reports whether a and b hold the same strings in the same

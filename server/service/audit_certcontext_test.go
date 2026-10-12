@@ -148,6 +148,7 @@ func TestAudit_ShouldRecordTheClaimedAccountAndHostWhenAPAMRequestIsDenied(t *te
 	withAuditTable(t, svc)
 	requestID := pamRequest(t, svc)
 
+	seedUser(t, svc.db, pamApprover().Subject)
 	if err := svc.Deny(context.Background(), requestID, pamApprover(), DecisionContext{}); err != nil {
 		t.Fatalf("unexpected error denying the request: %v", err)
 	}

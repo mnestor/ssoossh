@@ -219,6 +219,7 @@ func TestSignedReplyHandler_ShouldNotOverwriteAnAlreadyResolvedRequest(t *testin
 	if err != nil {
 		t.Fatalf("unexpected error creating request: %v", err)
 	}
+	seedUser(t, svc.db, "sub-approver")
 	if err := svc.Deny(context.Background(), requestID, &Identity{Username: "approver", Subject: "sub-approver"}, DecisionContext{}); err != nil {
 		t.Fatalf("unexpected error denying request: %v", err)
 	}

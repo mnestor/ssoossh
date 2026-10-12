@@ -51,6 +51,7 @@ func enableRouter(t *testing.T, db *gorm.DB, identity *service.Identity) *gin.En
 		cfg,
 		db,
 		sessionAuth,
+		middleware.NewAdminAuthMiddleware(cfg).Add(),
 		middleware.NewSOCAuthMiddleware(cfg).Add(),
 		middleware.NewAuditorAuthMiddleware(cfg).Add(),
 		func(c *gin.Context) { c.Next() },

@@ -13,7 +13,6 @@ import (
 	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/service"
-	"github.com/mnestor/ssoossh/server/utils/paging"
 	"github.com/mnestor/ssoossh/server/webtypes"
 )
 
@@ -52,21 +51,6 @@ func orEmpty[T any](s []T) []T {
 		return []T{}
 	}
 	return s
-}
-
-// newPageMeta converts a page request and its total row count to the wire
-// shape every paged admin/auditor list carries. Page and PageCount are
-// derived here rather than in each list UI so the boundaries — an empty list,
-// a total that is an exact multiple of the page size — read the same way
-// everywhere.
-func newPageMeta(p paging.Params, total int64) webtypes.PageMeta {
-	return webtypes.PageMeta{
-		Total:     total,
-		Limit:     p.Limit,
-		Offset:    p.Offset,
-		Page:      p.PageNumber(),
-		PageCount: p.PageCount(total),
-	}
 }
 
 // newCurrentUserResponse converts the session identity to its wire shape.
@@ -398,12 +382,14 @@ func newCertificateResponsesWithDecisions(certsWithDecisions []service.Certifica
 		// Populate decision fields if a decision record exists.
 		if cd.Decision != nil {
 			setDecisionFieldsOnCertificate(&resp, cd.Decision)
-			// The reported "user@host" alone, not the whole host-context
-			// snapshot setReportedContextOnCertificate copies: a row leads
-			// with what asked for the certificate, and the rest of the
-			// context is a question asked of one certificate.
+			// The reported "user@host" and PAM service, not the whole
+			// host-context snapshot setReportedContextOnCertificate copies:
+			// a row leads with what asked for the certificate and names what
+			// a PAM row was for (sudo, su, sshd), and the rest of the context
+			// is a question asked of one certificate.
 			resp.ReportedUsername = cd.Decision.ReportedUsername
 			resp.ReportedHostname = cd.Decision.ReportedHostname
+			resp.ReportedService = cd.Decision.PAMService
 		}
 
 		// Only a service certificate has one. It is what says where this

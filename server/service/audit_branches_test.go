@@ -169,7 +169,7 @@ func TestListRecent_ShouldSurfaceACorruptPayloadRow(t *testing.T) {
 		t.Fatalf("planting the corrupt row: %v", err)
 	}
 
-	page, err := svc.ListRecent(t.Context(), 10, 0)
+	page, err := svc.ListRecent(t.Context(), AuditFilter{}, "", 10)
 	if err != nil {
 		t.Fatalf("ListRecent: %v", err)
 	}
@@ -187,7 +187,7 @@ func TestListRecent_ShouldReportADatabaseFailure(t *testing.T) {
 	svc, db := newTestAuditService(t)
 	closeDB(t, db)
 
-	if _, err := svc.ListRecent(context.Background(), 10, 0); err == nil {
+	if _, err := svc.ListRecent(context.Background(), AuditFilter{}, "", 10); err == nil {
 		t.Error("ListRecent on a closed database returned no error")
 	}
 }

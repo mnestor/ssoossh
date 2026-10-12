@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
 
 import type { CertificateRecord } from '#lib/api/types.js';
+import { certificateEvent } from '#lib/rowEvents.js';
 import CertRow from './CertRow.svelte';
 
 const now = new Date('2026-08-22T12:00:00Z');
@@ -167,6 +168,23 @@ describe('CertRow', () => {
 			href: '/certs/cert-1'
 		});
 		expect(screen.getByText(/service enrollment requested/)).toBeInTheDocument();
+	});
+
+	// The lists pass certificateEvent, which names every known type in
+	// words; the TypeBadge glyph beside it is never the only name.
+	it.each([
+		{ type: 'user', want: 'user certificate issued' },
+		{ type: 'pam', want: 'PAM login' },
+		{ type: 'console', want: 'console login' },
+		{ type: 'service', want: 'service certificate issued' }
+	] as const)('should say a $type certificate in words on its detail line', ({ type, want }) => {
+		render(CertRow, {
+			cert: cert({ type }),
+			now,
+			event: certificateEvent(type),
+			href: '/certs/cert-1'
+		});
+		expect(screen.getByRole('link')).toHaveTextContent(`${want} 2h ago`);
 	});
 
 	it('should list the principals', () => {

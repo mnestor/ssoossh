@@ -2,10 +2,8 @@
 	import { page } from '$app/state';
 	import { session } from '#lib/session.svelte.js';
 	import { goToLogin } from '#lib/auth.js';
-	import { resolve } from '$app/paths';
+	import AccessDenied from '#lib/components/AccessDenied.svelte';
 	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
-	import PageHeading from '#lib/components/PageHeading.svelte';
-	import PageShell from '#lib/components/PageShell.svelte';
 	import type { Snippet } from 'svelte';
 
 	let { children }: { children: Snippet } = $props();
@@ -39,22 +37,10 @@
 	<!-- Signed in, but without auditor access. The same card the error page
 	     gives a 403, rather than one muted sentence with no heading and no
 	     way out. -->
-	<PageShell width="focus">
-		<div data-testid="admin-access-denied" class="rounded-lg bg-surface p-5">
-			<PageHeading title="You do not have access to this page">
-				{#snippet sub()}
-					The admin area needs an admin, SOC or auditor role. Ask an administrator if you need it.
-				{/snippet}
-			</PageHeading>
-			<p class="mt-4 text-sm">
-				<a
-					class="inline-flex min-h-target items-center text-accent hover:underline"
-					href={resolve('dashboard')}
-					data-testid="admin-access-denied-dashboard">Back to the dashboard</a
-				>
-			</p>
-		</div>
-	</PageShell>
+	<AccessDenied
+		requirement="The admin area needs an admin, SOC or auditor role. Ask an administrator if you need it."
+		testid="admin-access-denied"
+	/>
 {:else}
 	<!-- Loading -->
 	<div class="flex flex-col justify-center gap-4 py-12">
