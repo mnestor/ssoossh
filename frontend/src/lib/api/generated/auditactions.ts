@@ -5,8 +5,8 @@
 
 /**
  * AuditAction is a namespaced action name in the audit taxonomy. They are
- * strings inside the payload rather than a database enum, so the set grows
- * without a migration.
+ * plain strings, in the payload and in its indexed copy in the action
+ * column, rather than a database enum, so the set grows without a migration.
  */
 export type AuditAction = string;
 /**
