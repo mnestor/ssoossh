@@ -310,7 +310,7 @@
 						retrieved_at: cert.retrieved_at || undefined,
 						enrollment_id: cert.enrollment_id || undefined
 					}}
-					event={certificateEvent(cert.type)}
+					event={certificateEvent(cert.type, cert.reported_pam_service)}
 					approvedBy={cert.decided_by_username || cert.decided_by_email || undefined}
 					testid="cert-row"
 					href={certHref(cert.id)}

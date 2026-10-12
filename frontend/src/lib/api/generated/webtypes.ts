@@ -755,8 +755,9 @@ export interface CertificateResponse {
 	 * The pair is on a list row too, because it is what a history row leads
 	 * with: the row's subject is where the certificate was fetched from, and
 	 * the approver's identity is the same value on every row of a person's
-	 * own history. The remaining seven stay detail-only -- seven more strings
-	 * on every row is payload nobody reads.
+	 * own history. So is ReportedService, which a PAM row names (sudo, su,
+	 * sshd). The remaining six stay detail-only -- six more strings on every
+	 * row is payload nobody reads.
 	 */
 	reported_username?: string;
 	reported_hostname?: string;
