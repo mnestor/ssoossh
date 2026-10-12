@@ -12,7 +12,7 @@
 	import PageShell from '#lib/components/PageShell.svelte';
 	import SearchInput from '#lib/components/SearchInput.svelte';
 	import ServiceCodeRow from '#lib/components/ServiceCodeRow.svelte';
-	import { describeList } from '#lib/listStatus.js';
+	import { describeList, describeLoaded } from '#lib/listStatus.js';
 
 	let enrollments = $state<AdminEnrollment[]>([]);
 	let loadError = $state<string | null>(null);
@@ -196,26 +196,33 @@
 			{/each}
 		</div>
 
-		{#if moreError}
-			<Alert
-				variant="error"
-				title="Could not load more service codes"
-				onretry={loadMore}
-				testid="enrollments-more-error"
-			>
-				{moreError}
-			</Alert>
-		{:else if nextCursor}
-			<div class="flex justify-center">
-				<Button
-					variant="ghost"
-					busy={loadingMore}
-					onclick={loadMore}
-					testid="enrollments-load-more"
+		<!-- The audit feed's footer: what is on screen, what is left, then
+		     Load more. -->
+		<div class="flex flex-col gap-3">
+			<p class="text-xs text-ink-muted tabular-nums" data-testid="enrollments-count">
+				{describeLoaded(enrollments.length, (total ?? 0) - enrollments.length, 'older')}
+			</p>
+			{#if moreError}
+				<Alert
+					variant="error"
+					title="Could not load more service codes"
+					onretry={loadMore}
+					testid="enrollments-more-error"
 				>
-					{loadingMore ? 'Loading…' : 'Load more'}
-				</Button>
-			</div>
-		{/if}
+					{moreError}
+				</Alert>
+			{:else if nextCursor}
+				<div>
+					<Button
+						variant="ghost"
+						busy={loadingMore}
+						onclick={loadMore}
+						testid="enrollments-load-more"
+					>
+						{loadingMore ? 'Loading…' : 'Load more'}
+					</Button>
+				</div>
+			{/if}
+		</div>
 	{/if}
 </PageShell>

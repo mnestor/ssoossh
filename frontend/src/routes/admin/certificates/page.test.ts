@@ -242,6 +242,23 @@ describe('Admin certificates page', () => {
 			total: 2
 		};
 
+		it('should count the certificates shown and the older still to load', async () => {
+			pages(first);
+			render(Page);
+			expect(await screen.findByTestId('certificates-count')).toHaveTextContent(
+				'1 shown, 1 older not loaded'
+			);
+		});
+
+		it('should count only what is shown once the last page is in', async () => {
+			const user = userEvent.setup();
+			pages(first, second);
+			render(Page);
+			await user.click(await screen.findByTestId('certificates-load-more'));
+			await screen.findByText(/page-two/);
+			expect(screen.getByTestId('certificates-count')).toHaveTextContent(/^2 shown$/);
+		});
+
 		it('should offer Load more when more pages exist', async () => {
 			pages(first);
 			render(Page);

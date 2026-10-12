@@ -56,3 +56,23 @@ export function describeList(state: ListState): string {
 function plural(noun: string): string {
 	return `${noun}s`;
 }
+
+/**
+ * describeLoaded is the footer line under an admin "Load more" list: how
+ * many rows are on screen and, while the server holds more, how many are
+ * still to load ("48 shown, 120 older not loaded"). One wording for every
+ * such list, so the audit feed and the directory read the same way.
+ *
+ * remaining names what is left in the list's own order: "older" where the
+ * list runs newest first, "more" where it does not (the user directory is
+ * sorted by name, so the rest of it is not older). notLoaded at or below
+ * zero says nothing, since everything is in.
+ */
+export function describeLoaded(
+	shown: number,
+	notLoaded: number,
+	remaining: 'older' | 'more'
+): string {
+	const rest = notLoaded > 0 ? `, ${notLoaded} ${remaining} not loaded` : '';
+	return `${shown} shown${rest}`;
+}

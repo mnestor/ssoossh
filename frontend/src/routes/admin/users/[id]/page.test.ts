@@ -1089,6 +1089,22 @@ describe('when the audit timeline runs past one page', () => {
 	const first = { events: [timelineEvent('e1', 'first page reason')], total: 2, next_cursor: 'e1' };
 	const last = { events: [timelineEvent('e2', 'second page reason')], total: 2 };
 
+	it('should count the events shown and the older still to load', async () => {
+		mockTimeline(first);
+		render(Page);
+		expect(await screen.findByTestId('user-audit-count')).toHaveTextContent(
+			'1 shown, 1 older not loaded'
+		);
+	});
+
+	it('should count only what is shown once the oldest event is in', async () => {
+		mockTimeline(first, last);
+		render(Page);
+		await userEvent.click(await screen.findByTestId('user-audit-load-more'));
+		await screen.findByText(/second page reason/);
+		expect(screen.getByTestId('user-audit-count')).toHaveTextContent(/^2 shown$/);
+	});
+
 	it('should offer Load more when older events remain', async () => {
 		mockTimeline(first);
 		render(Page);

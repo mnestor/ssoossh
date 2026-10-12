@@ -154,6 +154,22 @@ describe('admin service codes page', () => {
 });
 
 describe('loading more codes', () => {
+	it('should count the codes shown and the older still to load', async () => {
+		stubPages(firstPage);
+		render(Page);
+		expect(await screen.findByTestId('enrollments-count')).toHaveTextContent(
+			'1 shown, 1 older not loaded'
+		);
+	});
+
+	it('should count only what is shown once the last page is in', async () => {
+		stubPages(firstPage, lastPage);
+		render(Page);
+		await userEvent.click(await screen.findByTestId('enrollments-load-more'));
+		await screen.findByText('svc-backup');
+		expect(screen.getByTestId('enrollments-count')).toHaveTextContent(/^2 shown$/);
+	});
+
 	it('should offer Load more when more codes exist', async () => {
 		stubPages(firstPage);
 		render(Page);

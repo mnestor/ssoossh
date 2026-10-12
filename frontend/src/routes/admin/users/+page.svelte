@@ -11,7 +11,7 @@
 	import ListStatus from '#lib/components/ListStatus.svelte';
 	import { getAdminUsers } from '#lib/api/endpoints.js';
 	import type { AdminUsersListResponse } from '#lib/api/types.js';
-	import { describeList } from '#lib/listStatus.js';
+	import { describeList, describeLoaded } from '#lib/listStatus.js';
 	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
 	import { formatDateTime } from '#lib/format.js';
 	import Button from '#lib/components/Button.svelte';
@@ -287,22 +287,30 @@
 			</table>
 		</div>
 
-		{#if moreError}
-			<Alert
-				variant="error"
-				title="Could not load more users"
-				onretry={loadMore}
-				testid="users-more-error"
-			>
-				{moreError}
-			</Alert>
-		{:else if users.next_cursor}
-			<div class="flex justify-center">
-				<Button variant="ghost" {busy} onclick={loadMore} testid="users-load-more">
-					{busy ? 'Loading…' : 'Load more'}
-				</Button>
-			</div>
-		{/if}
+		<!-- The audit feed's footer: what is on screen, what is left, then
+		     Load more. "more" rather than "older": the directory is sorted
+		     by name, not by time. -->
+		<div class="flex flex-col gap-3">
+			<p class="text-xs text-ink-muted tabular-nums" data-testid="users-count">
+				{describeLoaded(users.users.length, users.total - users.users.length, 'more')}
+			</p>
+			{#if moreError}
+				<Alert
+					variant="error"
+					title="Could not load more users"
+					onretry={loadMore}
+					testid="users-more-error"
+				>
+					{moreError}
+				</Alert>
+			{:else if users.next_cursor}
+				<div>
+					<Button variant="ghost" {busy} onclick={loadMore} testid="users-load-more">
+						{busy ? 'Loading…' : 'Load more'}
+					</Button>
+				</div>
+			{/if}
+		</div>
 	{:else if busy}
 		<LoadingBlock shape="table" count={6} testid="users-loading" />
 	{:else}

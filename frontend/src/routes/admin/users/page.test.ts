@@ -190,6 +190,22 @@ describe('Admin users list', () => {
 		expect(screen.getByText('alice')).toBeInTheDocument();
 	});
 
+	it('should count the users shown and the more still to load', async () => {
+		twoPages();
+		render(Page);
+		expect(await screen.findByTestId('users-count')).toHaveTextContent(
+			'1 shown, 1 more not loaded'
+		);
+	});
+
+	it('should count only what is shown once the last page is in', async () => {
+		twoPages();
+		render(Page);
+		await userEvent.click(await screen.findByTestId('users-load-more'));
+		await screen.findByText('bob');
+		expect(screen.getByTestId('users-count')).toHaveTextContent(/^2 shown$/);
+	});
+
 	it('should offer Load more when more users exist', async () => {
 		twoPages();
 		render(Page);

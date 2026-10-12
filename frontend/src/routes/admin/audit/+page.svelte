@@ -19,7 +19,7 @@
 	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import PageShell from '#lib/components/PageShell.svelte';
-	import { describeList } from '#lib/listStatus.js';
+	import { describeList, describeLoaded } from '#lib/listStatus.js';
 
 	const pageSize = 50;
 
@@ -369,7 +369,7 @@
 
 		<div class="flex flex-col gap-3">
 			<p class="text-xs text-ink-muted tabular-nums" data-testid="audit-count">
-				{shownCount} shown{#if notLoaded > 0}, {notLoaded} older not loaded{/if}
+				{describeLoaded(shownCount, notLoaded, 'older')}
 			</p>
 			{#if moreError}
 				<Alert

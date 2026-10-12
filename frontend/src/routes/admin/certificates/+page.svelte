@@ -16,7 +16,7 @@
 	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
 	import SearchInput from '#lib/components/SearchInput.svelte';
 	import { statusFilters, typeFilters } from '#lib/filters.js';
-	import { describeList } from '#lib/listStatus.js';
+	import { describeList, describeLoaded } from '#lib/listStatus.js';
 	import { certificateEvent } from '#lib/rowEvents.js';
 
 	let certificates = $state<CertificateResponse[]>([]);
@@ -316,21 +316,33 @@
 	{/if}
 
 	{#if !loadError && certificates.length > 0}
-		{#if moreError}
-			<Alert
-				variant="error"
-				title="Could not load more certificates"
-				onretry={loadMore}
-				testid="certificates-more-error"
-			>
-				{moreError}
-			</Alert>
-		{:else if nextCursor}
-			<div class="flex justify-center">
-				<Button variant="ghost" busy={isLoading} onclick={loadMore} testid="certificates-load-more">
-					{isLoading ? 'Loading…' : 'Load more'}
-				</Button>
-			</div>
-		{/if}
+		<!-- The audit feed's footer: what is on screen, what is left, then
+		     Load more. -->
+		<div class="flex flex-col gap-3">
+			<p class="text-xs text-ink-muted tabular-nums" data-testid="certificates-count">
+				{describeLoaded(certificates.length, total - certificates.length, 'older')}
+			</p>
+			{#if moreError}
+				<Alert
+					variant="error"
+					title="Could not load more certificates"
+					onretry={loadMore}
+					testid="certificates-more-error"
+				>
+					{moreError}
+				</Alert>
+			{:else if nextCursor}
+				<div>
+					<Button
+						variant="ghost"
+						busy={isLoading}
+						onclick={loadMore}
+						testid="certificates-load-more"
+					>
+						{isLoading ? 'Loading…' : 'Load more'}
+					</Button>
+				</div>
+			{/if}
+		</div>
 	{/if}
 </PageShell>

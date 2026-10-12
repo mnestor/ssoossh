@@ -747,10 +747,12 @@ off, and confirms through a reasonless `ConfirmModal`.
   pinned to approvals, so a row never carries an unlabelled outcome. The
   width is stated once in `#lib/viewport` (`NARROW_QUERY`, `watchNarrow`).
 - **Paging:** every list pages by cursor with "Load more", a ghost button
-  under the rows that goes once the last page is in. On the admin row lists
-  (users, certificates, service codes) it is centred and stands alone, with
-  no "N of M" count; the audit views keep their own count line (see Audit
-  log). A failed "Load more" is an error `Alert` in the
+  under the rows that goes once the last page is in. Every admin list (audit
+  feed, a user's audit timeline, users, certificates, service codes) has the
+  audit feed's footer above that button, worded once by `describeLoaded` in
+  `#lib/listStatus`: `48 shown`, then `, 120 older not loaded` while the
+  server holds more. "older" where the list runs newest first, "more" on the
+  user directory, which is sorted by name. A failed "Load more" is an error `Alert` in the
   button's place that retries that page; the rows above stay. A cursor names
   a page, not the rows above it, so the address keeps the filters but not how
   far the list was loaded.

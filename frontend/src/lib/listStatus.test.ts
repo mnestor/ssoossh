@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { describeList, type ListState } from './listStatus';
+import { describeList, describeLoaded, type ListState } from './listStatus';
 
 /** state builds a settled single-page list, overriding only what a case cares about. */
 function state(overrides: Partial<ListState> = {}): ListState {
@@ -50,5 +50,47 @@ describe('describeList', () => {
 
 	it('should handle a multi-word noun', () => {
 		expect(describeList(state({ noun: 'audit event', total: 2 }))).toBe('2 audit events found.');
+	});
+});
+
+describe('describeLoaded', () => {
+	it.each([
+		{
+			name: 'should say only what is shown when everything is in',
+			shown: 25,
+			notLoaded: 0,
+			remaining: 'older',
+			want: '25 shown'
+		},
+		{
+			name: 'should name the older rows still to load when a newest-first list has more',
+			shown: 48,
+			notLoaded: 120,
+			remaining: 'older',
+			want: '48 shown, 120 older not loaded'
+		},
+		{
+			name: 'should say more rather than older when the list is not ordered by time',
+			shown: 25,
+			notLoaded: 3,
+			remaining: 'more',
+			want: '25 shown, 3 more not loaded'
+		},
+		{
+			name: 'should say nothing is left when the count to load is negative',
+			shown: 2,
+			notLoaded: -1,
+			remaining: 'more',
+			want: '2 shown'
+		},
+		{
+			name: 'should read zero shown when nothing is on screen',
+			shown: 0,
+			notLoaded: 0,
+			remaining: 'older',
+			want: '0 shown'
+		}
+	] as const)('$name', ({ shown, notLoaded, remaining, want }) => {
+		expect(describeLoaded(shown, notLoaded, remaining)).toBe(want);
 	});
 });
