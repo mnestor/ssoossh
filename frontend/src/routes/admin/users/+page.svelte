@@ -297,13 +297,10 @@
 				{moreError}
 			</Alert>
 		{:else if users.next_cursor}
-			<div class="flex flex-col items-center gap-1">
+			<div class="flex justify-center">
 				<Button variant="ghost" {busy} onclick={loadMore} testid="users-load-more">
 					{busy ? 'Loading…' : 'Load more'}
 				</Button>
-				<span class="text-xs text-ink-muted tabular-nums" data-testid="users-count"
-					>{users.users.length} of {users.total} shown</span
-				>
 			</div>
 		{/if}
 	{:else if busy}

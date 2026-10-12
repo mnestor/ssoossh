@@ -326,13 +326,10 @@
 				{moreError}
 			</Alert>
 		{:else if nextCursor}
-			<div class="flex flex-col items-center gap-1">
+			<div class="flex justify-center">
 				<Button variant="ghost" busy={isLoading} onclick={loadMore} testid="certificates-load-more">
 					{isLoading ? 'Loading…' : 'Load more'}
 				</Button>
-				<span class="text-xs text-ink-muted tabular-nums" data-testid="certificates-count"
-					>{certificates.length} of {total} shown</span
-				>
 			</div>
 		{/if}
 	{/if}

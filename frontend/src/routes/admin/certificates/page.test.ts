@@ -242,11 +242,10 @@ describe('Admin certificates page', () => {
 			total: 2
 		};
 
-		it('should offer Load more with the count when more pages exist', async () => {
+		it('should offer Load more when more pages exist', async () => {
 			pages(first);
 			render(Page);
 			expect(await screen.findByTestId('certificates-load-more')).toBeInTheDocument();
-			expect(screen.getByTestId('certificates-count')).toHaveTextContent('1 of 2 shown');
 		});
 
 		it('should ask for the page after the cursor when Load more is pressed', async () => {

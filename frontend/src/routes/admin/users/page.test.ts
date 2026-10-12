@@ -190,10 +190,10 @@ describe('Admin users list', () => {
 		expect(screen.getByText('alice')).toBeInTheDocument();
 	});
 
-	it('should say how many of the total are shown while more remain', async () => {
+	it('should offer Load more when more users exist', async () => {
 		twoPages();
 		render(Page);
-		expect(await screen.findByTestId('users-count')).toHaveTextContent('1 of 2 shown');
+		expect(await screen.findByTestId('users-load-more')).toBeInTheDocument();
 	});
 
 	it('should remove Load more once the last page is in', async () => {

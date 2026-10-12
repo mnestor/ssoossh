@@ -154,11 +154,10 @@ describe('admin service codes page', () => {
 });
 
 describe('loading more codes', () => {
-	it('should offer Load more with the count when more codes exist', async () => {
+	it('should offer Load more when more codes exist', async () => {
 		stubPages(firstPage);
 		render(Page);
 		expect(await screen.findByTestId('enrollments-load-more')).toBeInTheDocument();
-		expect(screen.getByTestId('enrollments-count')).toHaveTextContent('1 of 2 shown');
 	});
 
 	it('should ask for the page after the cursor when Load more is pressed', async () => {
