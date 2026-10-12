@@ -1088,14 +1088,20 @@ func (a *adminController) certificateHistoryHandler(g *gin.Context) {
 	certTypeFilter := g.Query("type")
 	statusFilter := g.Query("status")
 
-	// Build the query: select certificates with their owner's username/email.
+	// Build the query: select certificates with their owner's username/email
+	// and the PAM service the request reported, which a PAM row names
+	// ("sudo (reported)"). A request has at most one decision (UNIQUE on
+	// certificate_request_id), so the decision join cannot repeat a row;
+	// LEFT, so a certificate with no decision still lists.
 	query := a.db.WithContext(g.Request.Context()).
 		Model(&model.Certificate{}).
 		Select(`certificates.id, certificates.type, certificates.serial_number,
 			certificates.key_id, certificates.principals, certificates.public_key_fingerprint,
 			certificates.issued_at, certificates.expires_at, certificates.user_id,
-			users.username, users.email`).
-		Joins("LEFT JOIN users ON certificates.user_id = users.id")
+			users.username, users.email,
+			certificate_request_decisions.pam_service AS reported_pam_service`).
+		Joins("LEFT JOIN users ON certificates.user_id = users.id").
+		Joins("LEFT JOIN certificate_request_decisions ON certificate_request_decisions.certificate_request_id = certificates.certificate_request_id")
 
 	// Apply search filter across key ID, principals, serial, fingerprint, username, email.
 	if params.Query != "" {
@@ -1168,6 +1174,7 @@ func (a *adminController) certificateHistoryHandler(g *gin.Context) {
 		UserID               *string
 		Username             *string
 		Email                *string
+		ReportedPAMService   *string `gorm:"column:reported_pam_service"`
 	}
 
 	var rows []certRow
@@ -1189,6 +1196,9 @@ func (a *adminController) certificateHistoryHandler(g *gin.Context) {
 			Fingerprint:  r.PublicKeyFingerprint,
 			IssuedAt:     r.IssuedAt,
 			ExpiresAt:    r.ExpiresAt,
+		}
+		if r.ReportedPAMService != nil {
+			cert.ReportedService = *r.ReportedPAMService
 		}
 		certs = append(certs, cert)
 	}

@@ -34,6 +34,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 		&model.User{},
 		&model.Enrollment{},
 		&model.Certificate{},
+		&model.CertificateRequestDecision{},
 		&model.AuditEvent{},
 		&model.UserGroup{},
 		&model.UserLDAP{},
@@ -1538,7 +1539,7 @@ func TestCertificateHistoryHandler_ShouldReturnEmptyList(t *testing.T) {
 		t.Fatalf("open in-memory sqlite: %v", err)
 	}
 
-	if err := db.AutoMigrate(&model.Certificate{}, &model.User{}); err != nil {
+	if err := db.AutoMigrate(&model.Certificate{}, &model.CertificateRequestDecision{}, &model.User{}); err != nil {
 		t.Fatalf("migrate tables: %v", err)
 	}
 
@@ -1696,7 +1697,7 @@ func TestCertificateHistoryHandler_SearchesCertificates(t *testing.T) {
 	}
 
 	// Migrate tables we need.
-	if err := db.AutoMigrate(&model.User{}, &model.Certificate{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.Certificate{}, &model.CertificateRequestDecision{}); err != nil {
 		t.Fatalf("migrate tables: %v", err)
 	}
 
@@ -1784,7 +1785,7 @@ func TestCertificateHistoryHandler_FiltersByType(t *testing.T) {
 		t.Fatalf("open in-memory sqlite: %v", err)
 	}
 
-	if err := db.AutoMigrate(&model.User{}, &model.Certificate{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.Certificate{}, &model.CertificateRequestDecision{}); err != nil {
 		t.Fatalf("migrate tables: %v", err)
 	}
 
@@ -1873,7 +1874,7 @@ func TestCertificateHistoryHandler_FiltersByStatus(t *testing.T) {
 		t.Fatalf("open in-memory sqlite: %v", err)
 	}
 
-	if err := db.AutoMigrate(&model.User{}, &model.Certificate{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.Certificate{}, &model.CertificateRequestDecision{}); err != nil {
 		t.Fatalf("migrate tables: %v", err)
 	}
 
@@ -1960,7 +1961,7 @@ func TestCertificateHistoryHandler_Pagination(t *testing.T) {
 		t.Fatalf("open in-memory sqlite: %v", err)
 	}
 
-	if err := db.AutoMigrate(&model.User{}, &model.Certificate{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.Certificate{}, &model.CertificateRequestDecision{}); err != nil {
 		t.Fatalf("migrate tables: %v", err)
 	}
 
