@@ -409,6 +409,35 @@ describe('ApprovalView', () => {
 			mount({ outcome: 'denied' });
 			expect(screen.getByText('Denied')).toBeInTheDocument();
 		});
+
+		// The page does not read the request again after a decision, so the
+		// badge has to follow the outcome or it keeps saying pending (#191).
+		// The badge prints the lowercase status; the outcome alert's title is
+		// capitalised, so exact text tells the two apart.
+		it.each([
+			{ type: 'user' as const, outcome: 'approved' as const, badge: 'approved' },
+			{ type: 'pam' as const, outcome: 'approved' as const, badge: 'approved' },
+			{ type: 'console' as const, outcome: 'approved' as const, badge: 'approved' },
+			{ type: 'service' as const, outcome: 'approved' as const, badge: 'enrolled' },
+			{ type: 'user' as const, outcome: 'denied' as const, badge: 'denied' },
+			{ type: 'service' as const, outcome: 'denied' as const, badge: 'denied' }
+		])(
+			'should show $badge in the status badge when a $type request is $outcome',
+			({ type, outcome, badge }) => {
+				mount({
+					detail: detail({ type }),
+					outcome,
+					serviceAccounts: ['svc-deploy'],
+					selectedServiceAccount: 'svc-deploy'
+				});
+				expect(screen.getByText(badge)).toBeInTheDocument();
+			}
+		);
+
+		it('should stop showing pending once a decision is recorded', () => {
+			mount({ outcome: 'approved' });
+			expect(screen.queryByText('pending')).not.toBeInTheDocument();
+		});
 	});
 
 	describe('service account picker', () => {
