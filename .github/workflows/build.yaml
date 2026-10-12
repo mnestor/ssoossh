@@ -72,8 +72,15 @@ jobs:
               - 'packaging/**'
               - '.goreleaser*.yml'
               - 'docs/openapi.yaml'
-              # Inputs and outputs of the Makefile.md and wire contract
-              # gates that the patterns above do not already match.
+              # Generated outputs and non-Go generator inputs that the
+              # patterns above do not already match, so a PR that edits
+              # only one of them still runs check-generated.
+              - 'docs/man/**'
+              - 'server/config/defaults.yaml'
+              - 'user-docs/src/content/docs/reference/cli/**'
+              - 'user-docs/src/content/docs/reference/config/**'
+              - 'user-docs/cli-sidebar.json'
+              - 'user-docs/config-sidebar.json'
               - 'Makefile.md'
               - 'scripts/gen-makefile-docs.sh'
               - 'docs/wire-contract.json'
