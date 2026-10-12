@@ -250,7 +250,7 @@ http:
 
 `string`, default `max-age=31536000; includeSubDomains`
 
-(HTTP Strict-Transport-Security) is sent in the Strict-Transport-Security header on every response, but only when the server terminates TLS itself (i.e. tls.certificate_file and tls.private_key_file are set). Browsers ignore HSTS over plain HTTP. Empty disables the header, useful when a TLS-terminating reverse proxy in front sets its own policy. Typical values include "max-age=31536000; includeSubDomains".
+(HTTP Strict-Transport-Security) is sent in the Strict-Transport-Security header on every response, /healthz and /ping included, whether this process terminates TLS itself or a reverse proxy in front does. Browsers ignore HSTS over a connection they see as plain HTTP, so sending it behind a proxy is harmless. Empty disables the header, useful when a TLS-terminating reverse proxy in front sets its own policy. Typical values include "max-age=31536000; includeSubDomains".
 
 ```yaml
 http:
