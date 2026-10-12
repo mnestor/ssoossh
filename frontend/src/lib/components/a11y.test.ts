@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { CertificateRecord, DeniedRequest, ServiceEnrollment } from '#lib/api/types.js';
 
+import AccessDenied from './AccessDenied.svelte';
 import AccountHoldersPanel from './AccountHoldersPanel.svelte';
 import Alert from './Alert.svelte';
 import AppRail from './AppRail.svelte';
@@ -145,6 +146,11 @@ const parents: Record<string, string> = { DetailRow: 'dl' };
  * accepts all of them.
  */
 const cases: [string, any, Record<string, unknown>][] = [
+	[
+		'AccessDenied',
+		AccessDenied,
+		{ requirement: 'The Directory needs the admin role.', testid: 'directory-access-denied' }
+	],
 	['AccountHoldersPanel', AccountHoldersPanel, { enrollmentId: 'enr-1' }],
 	['Alert (info)', Alert, { children: text('Loading request…') }],
 	['Alert (warning)', Alert, { variant: 'warning', title: 'Certificate verification is off' }],

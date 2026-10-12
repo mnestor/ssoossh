@@ -15,7 +15,7 @@ point of the design.
 ```yaml
 admin:
   # Deployment-wide operations: diagnostics, claims echo, the directory
-  # sync and probe. Plus everything SOC and auditor can do.
+  # status, sync and probe. Plus everything SOC and auditor can do.
   require_group: "ssh-admins"
 
   # Account writes: disabling and re-enabling a user, expiring an
@@ -79,7 +79,7 @@ re-enable of an account an admin disabled deliberately is on the record.
 | Certificate history across all users | yes | yes | yes |
 | Service code directory and detail | yes | yes | yes |
 | Audit feed, and one user's timeline | yes | yes | yes |
-| Directory status and last sync pass | yes | yes | yes |
+| Directory status and last sync pass | yes | no | no |
 | Run the directory sync by hand | yes | no | no |
 | Probe the directory | yes | no | no |
 | Echo your own IdP claims | yes | no | no |
@@ -91,7 +91,11 @@ refreshing access as readily as it removes it, while a SOC disable or
 re-enable acts on one account with a recorded reason. Probing is admin-only
 because it makes the server open an outbound connection and read a directory
 entry in full, which is a capability rather than a view. Reading the sync
-*status* is auditor-safe: it names no credential. The
+*status* is admin-only too: it names no credential, but it does name the
+directory connection, the query the probe is pinned to and the sync
+settings, which is the directory's operating detail rather than anything a
+SOC or audit investigation needs. The whole Directory page is admin-only as
+a result, and the rail does not offer it to SOC or auditors. The
 [deployment diagnostics](/ssoossh/operations/diagnostics/) are admin-only for
 the probe's reason: a run makes the server dial its own public URL.
 

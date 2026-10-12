@@ -907,11 +907,11 @@ func (s *CertRequestService) Approve(ctx context.Context, requestID string, iden
 		return fmt.Errorf("failed to look up certificate request: %w", err)
 	}
 	if req.Status != model.CertificateRequestStatusPending {
-		return fmt.Errorf("certificate request %q is not pending", requestID)
+		return notPendingError(req, s.ttlCutoffFor(req.Type))
 	}
 	if cutoff := s.ttlCutoffFor(req.Type); !cutoff.IsZero() && req.CreatedAt.Before(cutoff) {
 		s.expire(ctx, requestID)
-		return fmt.Errorf("certificate request %q is not pending", requestID)
+		return notPendingError(req, cutoff)
 	}
 
 	var requested RequestedOptions
@@ -995,8 +995,12 @@ func checkApproverAuthorization(certType model.CertificateType, policy *certType
 	// Both rules below come from the policy table rather than a switch here,
 	// so adding a certificate type means filling in newCertTypePolicies
 	// rather than remembering to extend this function.
+	// A ForbiddenError, so the refusal reaches the caller as 403 and is
+	// logged as a refused request. A plain error rendered as 500 and was
+	// logged as an internal failure, which read as the server breaking
+	// rather than policy saying no.
 	if policy.require != nil && !policy.require.evaluate(identity) {
-		return fmt.Errorf("identity is not authorized to approve %s certificates", certType)
+		return &errorresponses.ForbiddenError{Reason: fmt.Sprintf("identity is not authorized to approve %s certificates", certType)}
 	}
 
 	if policy.linkage != nil {
@@ -1041,9 +1045,11 @@ func (s *CertRequestService) checkFIPSApproved(authorizedKey string) error {
 // https://mnestor.github.io/ssoossh/concepts/, "Console login". For the
 // browser flows there is no such code, so this remains out of scope here.
 //
-// Takes the already-resolved users row (see resolveUser): Approve resolves
-// it before the authorization gate, so binding — which claims the request —
-// stays the last step a caller reaches.
+// Called by Detail, Approve and Deny: opening the approval page, approving
+// and denying are all actions that claim. Takes the already-resolved users
+// row (see resolveUser): Approve resolves it before the authorization gate,
+// so binding — which claims the request — stays the last step a caller
+// reaches.
 func (s *CertRequestService) bindRequester(ctx context.Context, req *model.CertificateRequest, user model.User) error {
 	userID := user.ID
 
@@ -1246,7 +1252,7 @@ func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req m
 			return fmt.Errorf("failed to mark certificate request as enrolled: %w", result.Error)
 		}
 		if result.RowsAffected == 0 {
-			return fmt.Errorf("certificate request %q is not pending", req.ID)
+			return s.explainNotPending(tx, req.ID)
 		}
 
 		// Create the enrollment record with both computed lifetimes.
@@ -1368,7 +1374,9 @@ func describeAuthorizedKey(authorizedKey string) (fingerprint, keyType string) {
 // choice of principal.
 func checkServiceAccountLinkage(identity *Identity, serviceAccount string, allowUserAccounts bool) error {
 	if serviceAccount == "" {
-		return fmt.Errorf("approving a service certificate requires choosing a service account")
+		// The approver left out a required field: their input, not a
+		// server fault, so it renders as 400 rather than 500.
+		return &errorresponses.InvalidRequestError{Reason: "approving a service certificate requires choosing a service account"}
 	}
 	if slices.Contains(identity.ServiceAccounts, serviceAccount) {
 		return nil
@@ -1376,7 +1384,9 @@ func checkServiceAccountLinkage(identity *Identity, serviceAccount string, allow
 	if allowUserAccounts && slices.Contains(heldAccounts(identity), serviceAccount) {
 		return nil
 	}
-	return fmt.Errorf("identity is not associated with service account %q", serviceAccount)
+	// A policy refusal, not a server fault: typed so it renders as 403
+	// rather than falling through to the error handler's 500.
+	return &errorresponses.ForbiddenError{Reason: fmt.Sprintf("identity is not associated with service account %q", serviceAccount)}
 }
 
 // ApprovableServiceAccounts is every account identity may name as the
@@ -1660,7 +1670,7 @@ func (s *CertRequestService) approveForSigning(ctx context.Context, req model.Ce
 			return fmt.Errorf("failed to mark certificate request as signing: %w", result.Error)
 		}
 		if result.RowsAffected == 0 {
-			return fmt.Errorf("certificate request %q is not pending", req.ID)
+			return s.explainNotPending(tx, req.ID)
 		}
 		if err := tx.Create(decision).Error; err != nil {
 			return fmt.Errorf("failed to record approval decision: %w", err)
@@ -1735,10 +1745,22 @@ func intersectStrings(requested, permitted []string) []string {
 	return out
 }
 
-// Deny marks requestID denied and notifies anything waiting in Wait. Denying
-// a request that's already past the TTL (but not yet lazily flipped to
-// "expired" by Wait) fails the same as denying any other non-pending
-// request — the row's actual state is Wait's responsibility to reconcile.
+// Deny marks requestID denied and notifies anything waiting in Wait. A
+// request that is no longer pending is refused through notPendingError:
+// 409 when it was already decided, 410 when it expired, including one past
+// the TTL but not yet lazily flipped to "expired" by Wait. Deny does not
+// flip it itself; the row's actual state is Wait's responsibility to
+// reconcile.
+//
+// Denying is an action on the request like approving it, so it goes
+// through bindRequester the same way: an unclaimed request is claimed by
+// the denier, and one claimed by another user is refused with a
+// ForbiddenError before anything changes. Without that, anyone signed in
+// who learned a request ID could cancel another user's login. Unlike
+// Approve there is no require gate or account linkage: refusing a request
+// grants nothing, so the claim is the only authority it needs. The
+// ownership refusal is log-only (the error handler's access log), the same
+// as Approve's, and writes no audit row.
 func (s *CertRequestService) Deny(ctx context.Context, requestID string, identity *Identity, dc DecisionContext) error {
 	now := time.Now()
 
@@ -1760,21 +1782,20 @@ func (s *CertRequestService) Deny(ctx context.Context, requestID string, identit
 		return err
 	}
 
-	// The denier's users-row id is the grouping key that puts this denial
-	// on their own timeline; without it a denial is only findable in the
-	// unfiltered feed. Best effort: a lookup failure costs the grouping
-	// key, not the denial, since the payload still names them.
-	actorUserID := ""
-	if user, err := s.resolveUser(ctx, identity); err == nil {
-		actorUserID = user.ID
-	} else {
-		slog.Warn("could not resolve the denying user's id for the audit event",
-			"request_id", requestID, "error", err)
+	// The users row is required, as on Approve: it is what the claim binds
+	// to, and its id is also the grouping key that puts this denial on the
+	// denier's own timeline.
+	user, err := s.resolveUser(ctx, identity)
+	if err != nil {
+		return err
+	}
+	if err := s.bindRequester(ctx, &req, user); err != nil {
+		return err
 	}
 
 	auditEvent := AuditEvent{
 		Action:     AuditCertDenied,
-		Actor:      AuditSubjectFromIdentity(identity, actorUserID),
+		Actor:      AuditSubjectFromIdentity(identity, user.ID),
 		OccurredAt: now,
 		// See the cert.approved event for the shape: host context, the
 		// requester's source_ip, and the denier's own connection.
@@ -1807,7 +1828,7 @@ func (s *CertRequestService) Deny(ctx context.Context, requestID string, identit
 			return fmt.Errorf("failed to deny certificate request: %w", result.Error)
 		}
 		if result.RowsAffected == 0 {
-			return fmt.Errorf("certificate request %q is not pending", requestID)
+			return s.explainNotPending(tx, requestID)
 		}
 		if err := tx.Create(decision).Error; err != nil {
 			return fmt.Errorf("failed to record denial decision: %w", err)
@@ -1991,6 +2012,60 @@ func (s *CertRequestService) lookupRequest(ctx context.Context, requestID string
 		return model.CertificateRequest{}, fmt.Errorf("failed to look up certificate request: %w", err)
 	}
 	return req, nil
+}
+
+// notPendingError says why req can no longer be approved or denied, from
+// its actual state. cutoff is req's type's TTL cutoff (see ttlCutoffFor);
+// the zero time means no TTL.
+//
+//   - Expired, or still pending but created before cutoff (past its TTL
+//     and not yet flipped to expired by Wait or the sweep): ExpiredError,
+//     410 Gone, the same status an expired console code answers with.
+//   - Denied: ConflictError, 409.
+//   - Approved, signing, enrolled or failed: ConflictError, 409. Each of
+//     these follows an approval.
+//   - Anything else, in practice a pending row that lost a race but has
+//     since been reset: ConflictError, 409.
+//
+// The reasons reach the approval page, so they name the state and never
+// the request ID.
+func notPendingError(req model.CertificateRequest, cutoff time.Time) error {
+	switch req.Status {
+	case model.CertificateRequestStatusExpired:
+		return &errorresponses.ExpiredError{Resource: "certificate request"}
+	case model.CertificateRequestStatusPending:
+		if !cutoff.IsZero() && req.CreatedAt.Before(cutoff) {
+			return &errorresponses.ExpiredError{Resource: "certificate request"}
+		}
+	case model.CertificateRequestStatusDenied:
+		return &errorresponses.ConflictError{Reason: "this certificate request was already denied"}
+	case model.CertificateRequestStatusApproved,
+		model.CertificateRequestStatusSigning,
+		model.CertificateRequestStatusEnrolled,
+		model.CertificateRequestStatusFailed:
+		return &errorresponses.ConflictError{Reason: "this certificate request was already approved"}
+	}
+	return &errorresponses.ConflictError{Reason: "this certificate request is no longer pending"}
+}
+
+// explainNotPending re-reads requestID through tx after a guarded
+// "WHERE status = pending" update matched no row, and returns
+// notPendingError for the state that row is in now. The row the caller
+// read earlier is stale by definition: something changed it in between.
+// A row that has since been deleted (the retention sweep) is NotFoundError,
+// the same as an unknown ID.
+func (s *CertRequestService) explainNotPending(tx *gorm.DB, requestID string) error {
+	var req model.CertificateRequest
+	if err := tx.First(&req, "id = ?", requestID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return &errorresponses.NotFoundError{Resource: fmt.Sprintf("certificate request %q", requestID)}
+		}
+		// not covered: failing this read after the guarded update in the
+		// same transaction succeeded needs per-query DB fault injection,
+		// which this codebase has no helper for.
+		return fmt.Errorf("failed to re-read certificate request: %w", err)
+	}
+	return notPendingError(req, s.ttlCutoffFor(req.Type))
 }
 
 // reconcileStatus handles req's current DB status for Wait's loop:

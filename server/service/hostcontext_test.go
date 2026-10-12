@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	"github.com/mnestor/ssoossh/internal/apitypes"
 	"github.com/mnestor/ssoossh/server/certmsg"
 	"github.com/mnestor/ssoossh/server/model"
+	"github.com/mnestor/ssoossh/server/utils/errorresponses"
 )
 
 // The host context a module reports travels from the request body to the
@@ -350,19 +352,32 @@ func TestAudit_ShouldGroupADenialUnderTheDenier(t *testing.T) {
 	}
 }
 
-func TestAudit_ShouldStillRecordADenialWhenTheDenierHasNoUsersRow(t *testing.T) {
+// TestAudit_ShouldRecordNoDenialWhenTheDenierHasNoUsersRow pins that the
+// denier's users row is a hard requirement, as on Approve: it is what the
+// claim binds to, so a session that outlived its row is refused and the
+// request, its audit trail and its waiter are untouched.
+func TestAudit_ShouldRecordNoDenialWhenTheDenierHasNoUsersRow(t *testing.T) {
 	t.Parallel()
 
 	svc := newTestCertRequestServiceWithOptions(t, pamAuditOptions())
 	withAuditTable(t, svc)
 	requestID := pamRequestWithContext(t, svc)
 
-	if err := svc.Deny(context.Background(), requestID, pamApprover(), DecisionContext{}); err != nil {
-		t.Fatalf("unexpected error denying the request: %v", err)
+	err := svc.Deny(context.Background(), requestID, pamApprover(), DecisionContext{})
+	var forbidden *errorresponses.ForbiddenError
+	if !errors.As(err, &forbidden) {
+		t.Fatalf("Deny() error = %v, want a ForbiddenError for a denier with no users row", err)
 	}
-	row, _ := storedRow(t, svc, AuditCertDenied)
-	if row.ActorUserID != nil {
-		t.Errorf("actor_user_id = %q, want NULL for an unknown denier", *row.ActorUserID)
+
+	var req model.CertificateRequest
+	if err := svc.db.First(&req, "id = ?", requestID).Error; err != nil {
+		t.Fatalf("failed to read the request: %v", err)
+	}
+	if req.Status != model.CertificateRequestStatusPending || req.UserID != nil {
+		t.Errorf("request status %q, user_id %v; want still pending and unclaimed", req.Status, req.UserID)
+	}
+	if got := auditActionCount(t, svc, AuditCertDenied); got != 0 {
+		t.Errorf("got %d %s events, want none for a refused denial", got, AuditCertDenied)
 	}
 }
 

@@ -19,7 +19,7 @@ Both group names are optional; empty disables the corresponding role.
 
 `string`, default `empty`
 
-The OIDC group a caller must belong to in order to access admin-scoped operations (diagnostics, claims echo, directory sync and probe), plus everything the SOC and auditor roles below can do. Empty disables admin operations entirely. Fails closed: no identity, no group, or no configured group all deny.
+The OIDC group a caller must belong to in order to access admin-scoped operations (diagnostics, claims echo, the directory status, sync and probe), plus everything the SOC and auditor roles below can do. Empty disables admin operations entirely. Fails closed: no identity, no group, or no configured group all deny.
 
 ```yaml
 admin:

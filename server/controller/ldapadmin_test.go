@@ -91,7 +91,6 @@ func ldapRouter(t *testing.T, cfg *config.Config, db *gorm.DB, identity *service
 		diagnostics,
 		identityMiddleware(identity),
 		middleware.NewAdminAuthMiddleware(cfg).Add(),
-		middleware.NewAuditorAuthMiddleware(cfg).Add(),
 		func(c *gin.Context) { c.Next() },
 		nil,
 		service.NewAuditService(cfg, db),
@@ -115,9 +114,9 @@ func doLDAPRequest(r *gin.Engine, method, path string, body any) *httptest.Respo
 	return w
 }
 
-// TestLDAPAdminRoutes_ShouldEnforceTheRoleSplit pins who may do what: the
-// status read is auditor-scoped because it names no credential, and the sync
-// and the probe are admin-only.
+// TestLDAPAdminRoutes_ShouldEnforceTheRoleSplit pins who may do what: every
+// directory route, the status read included, is admin-only, so SOC and
+// auditors are refused all three.
 func TestLDAPAdminRoutes_ShouldEnforceTheRoleSplit(t *testing.T) {
 	t.Parallel()
 
@@ -129,56 +128,77 @@ func TestLDAPAdminRoutes_ShouldEnforceTheRoleSplit(t *testing.T) {
 		wantStatus int
 	}{
 		{
-			name:       "an auditor may read the status",
+			name:       "should refuse the status when the caller is an auditor",
 			groups:     []string{"auditors"},
 			method:     http.MethodGet,
 			path:       "/admin/ldap/status",
-			wantStatus: http.StatusOK,
+			wantStatus: http.StatusForbidden,
 		},
 		{
-			name:       "an admin may read the status",
+			name:       "should refuse the status when the caller is a SOC member",
+			groups:     []string{"soc"},
+			method:     http.MethodGet,
+			path:       "/admin/ldap/status",
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name:       "should refuse the status when the caller is SOC and auditor",
+			groups:     []string{"soc", "auditors"},
+			method:     http.MethodGet,
+			path:       "/admin/ldap/status",
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name:       "should allow the status when the caller is an admin",
 			groups:     []string{"ssh-admins"},
 			method:     http.MethodGet,
 			path:       "/admin/ldap/status",
 			wantStatus: http.StatusOK,
 		},
 		{
-			name:       "an ordinary user may not read the status",
+			name:       "should refuse the status when the caller holds no role",
 			groups:     []string{"ssh-users"},
 			method:     http.MethodGet,
 			path:       "/admin/ldap/status",
 			wantStatus: http.StatusForbidden,
 		},
 		{
-			name:       "an auditor may not run the sync",
+			name:       "should refuse the sync when the caller is an auditor",
 			groups:     []string{"auditors"},
 			method:     http.MethodPost,
 			path:       "/admin/ldap/sync",
 			wantStatus: http.StatusForbidden,
 		},
 		{
-			name:       "a SOC member may not run the sync",
+			name:       "should refuse the sync when the caller is a SOC member",
 			groups:     []string{"soc"},
 			method:     http.MethodPost,
 			path:       "/admin/ldap/sync",
 			wantStatus: http.StatusForbidden,
 		},
 		{
-			name:       "an admin may run the sync",
+			name:       "should allow the sync when the caller is an admin",
 			groups:     []string{"ssh-admins"},
 			method:     http.MethodPost,
 			path:       "/admin/ldap/sync",
 			wantStatus: http.StatusOK,
 		},
 		{
-			name:       "an auditor may not probe",
+			name:       "should refuse the probe when the caller is an auditor",
 			groups:     []string{"auditors"},
 			method:     http.MethodPost,
 			path:       "/admin/ldap/probe",
 			wantStatus: http.StatusForbidden,
 		},
 		{
-			name:       "an admin may probe",
+			name:       "should refuse the probe when the caller is a SOC member",
+			groups:     []string{"soc"},
+			method:     http.MethodPost,
+			path:       "/admin/ldap/probe",
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name:       "should allow the probe when the caller is an admin",
 			groups:     []string{"ssh-admins"},
 			method:     http.MethodPost,
 			path:       "/admin/ldap/probe",
@@ -207,7 +227,7 @@ func TestLDAPAdminRoutes_ShouldEnforceTheRoleSplit(t *testing.T) {
 }
 
 // TestLDAPStatusHandler_ShouldDescribeTheProbeTargetWithoutCredentials keeps
-// the auditor-readable status honest: it names the connection so an operator
+// the admin-readable status honest: it names the connection so an operator
 // knows what is being probed, and never the password.
 func TestLDAPStatusHandler_ShouldDescribeTheProbeTargetWithoutCredentials(t *testing.T) {
 	t.Parallel()
@@ -226,7 +246,7 @@ func TestLDAPStatusHandler_ShouldDescribeTheProbeTargetWithoutCredentials(t *tes
 			UsersSeen: 3, Found: 2, Missing: 1,
 		},
 	}
-	identity := &service.Identity{Subject: "sub-alice", Username: "alice", Groups: []string{"auditors"}}
+	identity := &service.Identity{Subject: "sub-alice", Username: "alice", Groups: []string{"ssh-admins"}}
 	r := ldapRouter(t, cfg, db, identity, fake)
 
 	w := doLDAPRequest(r, http.MethodGet, "/admin/ldap/status", nil)
@@ -270,7 +290,7 @@ func TestLDAPStatusHandler_ShouldReportADisabledDirectory(t *testing.T) {
 
 	cfg := ldapAdminTestConfig()
 	cfg.LDAP.Enabled = false
-	identity := &service.Identity{Subject: "sub-alice", Groups: []string{"auditors"}}
+	identity := &service.Identity{Subject: "sub-alice", Groups: []string{"ssh-admins"}}
 	r := ldapRouter(t, cfg, newTestDB(t), identity, nil)
 
 	w := doLDAPRequest(r, http.MethodGet, "/admin/ldap/status", nil)

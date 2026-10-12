@@ -526,7 +526,7 @@ func (a *app) registerRoutes(r *gin.Engine) error {
 		ldapDiagnostics = a.svc.ldap
 	}
 	controller.NewLDAPAdminController(apiGroup, a.config, a.db, ldapDiagnostics,
-		sessionAuth, adminAuth, auditorAuth, csrf, probeRateLimit, a.svc.audit)
+		sessionAuth, adminAuth, csrf, probeRateLimit, a.svc.audit)
 	controller.NewIdentityEchoController(apiGroup, a.svc.auth, sessionAuth, adminAuth, csrf)
 
 	// The diagnostics run makes the server open an outbound connection to

@@ -48,6 +48,24 @@ type ServerOptions struct {
 	// exercising an admin or auditor surface has to name the groups here.
 	AdminRequireGroup string
 	AuditorGroup      string
+	// SOCGroup sets admin.soc_group, the role between admin and auditor
+	// (containment: disabling users, expiring enrollments). Empty leaves
+	// SOC operations to admins only, the product default.
+	SOCGroup string
+
+	// UserRequireGroup sets cert_options.user.require to a group condition
+	// ({group: <name>}), so only members may approve a user certificate.
+	// Unset leaves the block out: any authenticated user may approve, the
+	// product default (see CertOptionsUser.Require).
+	UserRequireGroup string
+
+	// ClientTimeout sets cert_options.client_timeout, the whole budget a
+	// waiting client has before the server answers it. The approval window
+	// is eight tenths of it (config.ApprovalTTLFor). It also sets
+	// cert_options.console.client_timeout, which may not exceed it. Empty
+	// keeps the product defaults (5m, 2m); an expiry test sets a few
+	// seconds.
+	ClientTimeout string
 
 	// AdminDisableGracePeriod sets admin.disable_grace_period (e.g., "30m").
 	// Empty uses the product default.
@@ -168,6 +186,9 @@ func newServerConfig(t *testing.T, idp *IdentityProvider, opts ServerOptions) (c
 		Extensions:              opts.Extensions,
 		AdminRequireGroup:       opts.AdminRequireGroup,
 		AuditorGroup:            opts.AuditorGroup,
+		SOCGroup:                opts.SOCGroup,
+		UserRequireGroup:        opts.UserRequireGroup,
+		ClientTimeout:           opts.ClientTimeout,
 		AdminDisableGracePeriod: opts.AdminDisableGracePeriod,
 		AdminContactEmail:       opts.AdminContactEmail,
 		AdminDisabledMessage:    opts.AdminDisabledMessage,
@@ -220,6 +241,14 @@ func StartServer(t *testing.T, idp *IdentityProvider, opts ServerOptions) *Serve
 	srv.waitHealthy(t)
 
 	return srv
+}
+
+// Logs returns everything ssoosshd has written to stdout and stderr so far.
+// The harness config sends the log to stdout at DEBUG, so this is the
+// process log a test can search for a record it expects, such as the
+// access-log line for a refused request.
+func (s *Server) Logs() string {
+	return s.stdout.String() + s.stderr.String()
 }
 
 // waitHealthy polls /healthz until it answers or a deadline passes. Startup
@@ -387,6 +416,9 @@ type serverConfigData struct {
 	Extensions              []string
 	AdminRequireGroup       string
 	AuditorGroup            string
+	SOCGroup                string
+	UserRequireGroup        string
+	ClientTimeout           string
 	AdminDisableGracePeriod string
 	AdminContactEmail       string
 	AdminDisabledMessage    string
@@ -463,8 +495,20 @@ func renderServerConfig(d serverConfigData) string {
 	}
 
 	fmt.Fprintf(&b, "cert_options:\n")
+	if d.ClientTimeout != "" {
+		fmt.Fprintf(&b, "  client_timeout: %q\n", d.ClientTimeout)
+		// The console type carries its own budget (2m by default), and the
+		// server refuses to start when it exceeds the global one, so a
+		// shortened global shortens it too.
+		fmt.Fprintf(&b, "  console:\n")
+		fmt.Fprintf(&b, "    client_timeout: %q\n", d.ClientTimeout)
+	}
 	fmt.Fprintf(&b, "  user:\n")
 	fmt.Fprintf(&b, "    valid_duration: %s\n", d.ValidDuration)
+	if d.UserRequireGroup != "" {
+		fmt.Fprintf(&b, "    require:\n")
+		fmt.Fprintf(&b, "      group: %q\n", d.UserRequireGroup)
+	}
 	if d.UserKeyIDTemplate != "" {
 		fmt.Fprintf(&b, "    key_id_template: %q\n", d.UserKeyIDTemplate)
 	}
@@ -492,7 +536,7 @@ func renderAdminConfig(b *strings.Builder, d serverConfigData) {
 	// Emitted when a test configures any admin option: leaving the block out
 	// entirely is what the product default looks like, and writing empty
 	// strings would instead assert that "" is a value.
-	if d.AdminRequireGroup == "" && d.AuditorGroup == "" && d.AdminDisableGracePeriod == "" && d.AdminContactEmail == "" && d.AdminDisabledMessage == "" {
+	if d.AdminRequireGroup == "" && d.AuditorGroup == "" && d.SOCGroup == "" && d.AdminDisableGracePeriod == "" && d.AdminContactEmail == "" && d.AdminDisabledMessage == "" {
 		return
 	}
 
@@ -502,6 +546,9 @@ func renderAdminConfig(b *strings.Builder, d serverConfigData) {
 	}
 	if d.AuditorGroup != "" {
 		fmt.Fprintf(b, "  auditor_group: %q\n", d.AuditorGroup)
+	}
+	if d.SOCGroup != "" {
+		fmt.Fprintf(b, "  soc_group: %q\n", d.SOCGroup)
 	}
 	if d.AdminDisableGracePeriod != "" {
 		fmt.Fprintf(b, "  disable_grace_period: %q\n", d.AdminDisableGracePeriod)
