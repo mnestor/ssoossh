@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { listAdminEnrollments } from '#lib/api/endpoints.js';
-	import type { AdminEnrollment, PageMeta } from '#lib/api/types.js';
+	import type { AdminEnrollment } from '#lib/api/types.js';
 	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
 	import Alert from '#lib/components/Alert.svelte';
 	import Button from '#lib/components/Button.svelte';
@@ -10,7 +10,6 @@
 	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import PageShell from '#lib/components/PageShell.svelte';
-	import Pager from '#lib/components/Pager.svelte';
 	import SearchInput from '#lib/components/SearchInput.svelte';
 	import ServiceCodeRow from '#lib/components/ServiceCodeRow.svelte';
 	import { describeList } from '#lib/listStatus.js';
@@ -20,17 +19,28 @@
 	let hasLoaded = $state(false);
 	// Bumped by Try again; the load below reads it, so a bump re-runs it.
 	let attempt = $state(0);
-	let meta = $state<PageMeta | null>(null);
+	// How many codes match the search, across every page; null until the
+	// first answer.
+	let total = $state<number | null>(null);
+	// The cursor for the page after the last code shown, or null once it is
+	// in.
+	let nextCursor = $state<string | null>(null);
+	// A failed "Load more" is its own error: the codes already shown are
+	// still right, so it sits where the button was and retries that page.
+	let moreError = $state<string | null>(null);
+	let loadingMore = $state(false);
+	// Which first-page load a "Load more" belongs to. A search started while
+	// one is out makes its answer stale, and it is dropped rather than
+	// appended to the new list. Not $state: nothing renders from it.
+	let generation = 0;
 	let searchQuery = $state('');
 	// Clearing remounts the search box: it owns what is typed in it, so
 	// resetting the term alone would leave the old text over the full list.
 	let searchKey = $state(0);
 	function clearSearch() {
 		searchQuery = '';
-		currentOffset = 0;
 		searchKey += 1;
 	}
-	let currentOffset = $state(0);
 	const pageSize = 25;
 
 	let now = $state(new Date());
@@ -39,17 +49,21 @@
 		return () => clearInterval(timer);
 	});
 
-	// Load enrollments when search or offset changes
+	// Load the first page whenever the search changes, or on Try again.
 	$effect(() => {
 		void attempt;
 		const controller = new AbortController();
+		generation += 1;
 		hasLoaded = false;
 		loadError = null;
+		moreError = null;
+		loadingMore = false;
 
-		listAdminEnrollments(controller.signal, pageSize, currentOffset, searchQuery || undefined)
+		listAdminEnrollments(controller.signal, pageSize, undefined, searchQuery || undefined)
 			.then((result) => {
 				enrollments = result.enrollments;
-				meta = result.meta;
+				total = result.total;
+				nextCursor = result.next_cursor ?? null;
 				hasLoaded = true;
 			})
 			.catch((cause) => {
@@ -63,30 +77,54 @@
 		return () => controller.abort();
 	});
 
-	// The way out of a failed load: the same page of the same search again.
+	// The way out of a failed load: the first page of the same search again.
 	function retry() {
 		attempt += 1;
 	}
 
-	function onSearch(query: string) {
-		searchQuery = query;
-		currentOffset = 0; // Reset to first page on new search
+	/**
+	 * loadMore appends the page after the last code shown. The server pages
+	 * by cursor, so a code approved since the first page lands above it
+	 * rather than repeating a row here.
+	 */
+	async function loadMore() {
+		if (loadingMore || nextCursor === null) {
+			return;
+		}
+		const mine = generation;
+		loadingMore = true;
+		moreError = null;
+		try {
+			const result = await listAdminEnrollments(
+				undefined,
+				pageSize,
+				nextCursor,
+				searchQuery || undefined
+			);
+			if (mine !== generation) return;
+			enrollments = [...enrollments, ...result.enrollments];
+			total = result.total;
+			nextCursor = result.next_cursor ?? null;
+		} catch (cause) {
+			if (mine !== generation || redirectIfUnauthenticated(cause)) return;
+			moreError = errorMessage(cause);
+		} finally {
+			if (mine === generation) loadingMore = false;
+		}
 	}
 
-	function onPageChange(offset: number) {
-		currentOffset = offset;
+	function onSearch(query: string) {
+		searchQuery = query;
 	}
 
 	// What the list just became, for a reader who cannot see the rows
-	// change under a search or a page turn (WCAG 4.1.3). See #lib/listStatus.
+	// change under a search (WCAG 4.1.3). See #lib/listStatus.
 	const status = $derived(
 		describeList({
 			noun: 'service code',
-			total: meta?.total ?? 0,
-			loading: !hasLoaded,
-			ready: meta !== null,
-			page: meta?.page,
-			pageCount: meta?.page_count,
+			total: total ?? 0,
+			loading: !hasLoaded || loadingMore,
+			ready: total !== null,
 			query: searchQuery
 		})
 	);
@@ -158,8 +196,29 @@
 			{/each}
 		</div>
 
-		{#if meta}
-			<Pager {meta} onpage={onPageChange} testid="enrollments-pager" />
+		{#if moreError}
+			<Alert
+				variant="error"
+				title="Could not load more service codes"
+				onretry={loadMore}
+				testid="enrollments-more-error"
+			>
+				{moreError}
+			</Alert>
+		{:else if nextCursor}
+			<div class="flex flex-col items-center gap-1">
+				<Button
+					variant="ghost"
+					busy={loadingMore}
+					onclick={loadMore}
+					testid="enrollments-load-more"
+				>
+					{loadingMore ? 'Loading…' : 'Load more'}
+				</Button>
+				<span class="text-xs text-ink-muted tabular-nums" data-testid="enrollments-count"
+					>{enrollments.length} of {total} shown</span
+				>
+			</div>
 		{/if}
 	{/if}
 </PageShell>

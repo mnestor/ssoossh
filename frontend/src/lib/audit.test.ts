@@ -8,7 +8,6 @@ import {
 	auditNamespaceLabels,
 	auditFilterSearch,
 	auditPhrasing,
-	dedupeAuditEvents,
 	isIPAddress,
 	describeAuditAction,
 	hiddenAuditActions,
@@ -55,28 +54,6 @@ describe('visibleAuditEvents', () => {
 	// rather than tearing down the page the timeline sits in.
 	it('should return nothing when handed something that is not an array', () => {
 		expect(visibleAuditEvents(null as unknown as AuditEvent[])).toEqual([]);
-	});
-});
-
-describe('dedupeAuditEvents', () => {
-	// The each block is keyed by id, so a repeat throws each_key_duplicate
-	// rather than merely rendering twice.
-	it('should keep only the first row carrying a repeated id', () => {
-		const rows = dedupeAuditEvents([
-			event('a', 'auth.login'),
-			event('b', 'cert.approved'),
-			event('a', 'auth.login')
-		]);
-		expect(rows.map((row) => row.id)).toEqual(['a', 'b']);
-	});
-
-	it('should leave a list with no repeats untouched', () => {
-		const rows = dedupeAuditEvents([event('a', 'auth.login'), event('b', 'cert.approved')]);
-		expect(rows.map((row) => row.id)).toEqual(['a', 'b']);
-	});
-
-	it('should return nothing for an empty list', () => {
-		expect(dedupeAuditEvents([])).toEqual([]);
 	});
 });
 

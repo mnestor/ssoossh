@@ -29,7 +29,7 @@
 	--color-border-subtle: oklch(90% 0.006 75);
 	--color-border: oklch(90% 0.006 75);
 	/* The edge of something a reader operates: a field, a textarea, a ghost
-	   button, a pager control, an unselected chip.
+	   button, a segmented control, an unselected chip.
 
 	   Separate from --color-border-subtle because the two are held to
 	   different standards. A row separator or a card hairline is decoration

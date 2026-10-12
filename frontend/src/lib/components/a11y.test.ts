@@ -3,12 +3,7 @@ import { axe, toHaveNoViolations } from 'jest-axe';
 import { createRawSnippet } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 
-import type {
-	CertificateRecord,
-	DeniedRequest,
-	PageMeta,
-	ServiceEnrollment
-} from '#lib/api/types.js';
+import type { CertificateRecord, DeniedRequest, ServiceEnrollment } from '#lib/api/types.js';
 
 import AccountHoldersPanel from './AccountHoldersPanel.svelte';
 import Alert from './Alert.svelte';
@@ -35,7 +30,6 @@ import OptionDiffList from './OptionDiffList.svelte';
 import PageHeading from './PageHeading.svelte';
 import PageSection from './PageSection.svelte';
 import PageShell from './PageShell.svelte';
-import Pager from './Pager.svelte';
 import RailGroup from './RailGroup.svelte';
 import RailItem from './RailItem.svelte';
 import RailUserMenu from './RailUserMenu.svelte';
@@ -73,10 +67,6 @@ const now = new Date('2026-08-22T12:00:00Z');
 /** text is a `children` snippet holding one string, for the wrappers that take one. */
 function text(content: string) {
 	return createRawSnippet(() => ({ render: () => `<span>${content}</span>` }));
-}
-
-function meta(overrides: Partial<PageMeta> = {}): PageMeta {
-	return { total: 120, limit: 25, offset: 50, page: 3, page_count: 9, ...overrides };
 }
 
 function cert(overrides: Partial<CertificateRecord> = {}): CertificateRecord {
@@ -145,10 +135,8 @@ const parents: Record<string, string> = { DetailRow: 'dl' };
 /**
  * Every component, in the state a reader actually meets.
  *
- * Deliberately the interesting state rather than the empty one: a Pager on
- * page 3 of 9 renders the elision and the `aria-current` that a one-page
- * Pager renders neither of, and a busy button carries a different set of
- * attributes from an idle one. Where a component has two shapes worth
+ * Deliberately the interesting state rather than the empty one: a busy
+ * button carries a different set of attributes from an idle one. Where a component has two shapes worth
  * separating — a rail item collapsed and expanded, an alert that warns and
  * one that errors — both are listed.
  *
@@ -265,8 +253,6 @@ const cases: [string, any, Record<string, unknown>][] = [
 	],
 	['PageSection', PageSection, { title: 'Email notifications', children: text('Seven kinds.') }],
 	['PageShell', PageShell, { children: text('Page body') }],
-	['Pager', Pager, { meta: meta(), onpage: vi.fn() }],
-	['Pager (single page)', Pager, { meta: meta({ page_count: 1 }), onpage: vi.fn() }],
 	[
 		'RailGroup',
 		RailGroup,

@@ -25,23 +25,36 @@ function user(overrides: Partial<AdminUserSummary> = {}): AdminUserSummary {
 	} as AdminUserSummary;
 }
 
-/** mockUsers answers every request with users and a page envelope. */
-function mockUsers(users: AdminUserSummary[], meta: Partial<Record<string, number>> = {}) {
+/**
+ * mockUsers answers every request with users, the total and, when given,
+ * the cursor for a next page.
+ */
+function mockUsers(users: AdminUserSummary[], page: { total?: number; next_cursor?: string } = {}) {
+	mockUserPages({ users, total: page.total ?? users.length, next_cursor: page.next_cursor });
+}
+
+/**
+ * mockUserPages answers the nth request with the nth page, repeating the
+ * last; a string page is a failed request with that message. The first
+ * page is what the page opens on, the rest what Load more appends.
+ */
+function mockUserPages(
+	...pages: ({ users: AdminUserSummary[]; total: number; next_cursor?: string } | string)[]
+) {
+	let call = 0;
 	vi.stubGlobal(
 		'fetch',
 		vi.fn((input: RequestInfo | URL) => {
 			requests.push(String(input));
-			const body = {
-				users,
-				meta: {
-					total: users.length,
-					limit: 25,
-					offset: 0,
-					page: 1,
-					page_count: 1,
-					...meta
-				}
-			};
+			const body = pages[Math.min(call++, pages.length - 1)];
+			if (typeof body === 'string') {
+				return Promise.resolve(
+					new Response(JSON.stringify({ data: null, error: { message: body } }), {
+						status: 500,
+						headers: { 'Content-Type': 'application/json' }
+					})
+				);
+			}
 			return Promise.resolve(
 				new Response(JSON.stringify({ data: body, error: null }), {
 					status: 200,
@@ -50,6 +63,14 @@ function mockUsers(users: AdminUserSummary[], meta: Partial<Record<string, numbe
 			);
 		})
 	);
+}
+
+/** twoPages is a directory of two users, one per page. */
+function twoPages(...later: string[]) {
+	mockUserPages({ users: [user()], total: 2, next_cursor: 'user-1' }, ...later, {
+		users: [user({ id: 'user-2', username: 'bob', email: 'bob@corp.example' })],
+		total: 2
+	});
 }
 
 beforeEach(() => {
@@ -137,39 +158,67 @@ describe('Admin users list', () => {
 	});
 
 	it('should return to the first page when a new search is run', async () => {
-		mockUsers([user()], { total: 60, page_count: 3, offset: 50, page: 3 });
+		twoPages();
 		render(Page);
-		await screen.findByText('alice');
+		await userEvent.click(await screen.findByTestId('users-load-more'));
+		await screen.findByText('bob');
 
 		await userEvent.type(screen.getByRole('searchbox'), 'ali');
 		await waitFor(() => {
 			const searched = requests.filter((url) => url.includes('q=ali'));
 			expect(searched.length).toBeGreaterThan(0);
-			// getAdminUsers omits a zero offset entirely (0 is falsy), so
-			// "back to the first page" shows up as the absence of the
-			// parameter. A search that kept the old offset would ask for page
-			// 3 of a result set that may only have one page, which reads to
-			// the operator as "no matches".
-			expect(searched.every((url) => !url.includes('offset='))).toBe(true);
+			// A search that kept the cursor would resume the new result set
+			// part way down, which reads to the operator as missing matches.
+			expect(searched.every((url) => !url.includes('after='))).toBe(true);
 		});
 	});
 
-	it('should ask for the next window when the pager is used', async () => {
-		mockUsers([user()], { total: 60, page_count: 3 });
+	it('should ask for the page after the cursor when Load more is pressed', async () => {
+		twoPages();
 		render(Page);
-		await screen.findByText('alice');
-
-		await userEvent.click(screen.getByRole('button', { name: /next/i }));
+		await userEvent.click(await screen.findByTestId('users-load-more'));
 		await waitFor(() => {
-			expect(requests.some((url) => url.includes('offset=25'))).toBe(true);
+			expect(requests.some((url) => url.includes('after=user-1'))).toBe(true);
 		});
 	});
 
-	it('should not render a pager when a single page holds every user', async () => {
+	it('should append the next page below the users already shown', async () => {
+		twoPages();
+		render(Page);
+		await userEvent.click(await screen.findByTestId('users-load-more'));
+		await screen.findByText('bob');
+		expect(screen.getByText('alice')).toBeInTheDocument();
+	});
+
+	it('should say how many of the total are shown while more remain', async () => {
+		twoPages();
+		render(Page);
+		expect(await screen.findByTestId('users-count')).toHaveTextContent('1 of 2 shown');
+	});
+
+	it('should remove Load more once the last page is in', async () => {
+		twoPages();
+		render(Page);
+		await userEvent.click(await screen.findByTestId('users-load-more'));
+		await screen.findByText('bob');
+		expect(screen.queryByTestId('users-load-more')).not.toBeInTheDocument();
+	});
+
+	it('should keep the users shown and offer a retry when Load more fails', async () => {
+		twoPages('boom');
+		render(Page);
+		await userEvent.click(await screen.findByTestId('users-load-more'));
+		await screen.findByTestId('users-more-error');
+		expect(screen.getByText('alice')).toBeInTheDocument();
+		await userEvent.click(screen.getByRole('button', { name: /try again/i }));
+		expect(await screen.findByText('bob')).toBeInTheDocument();
+	});
+
+	it('should not offer Load more when a single page holds every user', async () => {
 		mockUsers([user()]);
 		render(Page);
 		await screen.findByText('alice');
-		expect(screen.queryByRole('navigation', { name: /pagination/i })).not.toBeInTheDocument();
+		expect(screen.queryByTestId('users-load-more')).not.toBeInTheDocument();
 	});
 
 	// The name is the leading column, so it has to be searchable: a
@@ -259,26 +308,20 @@ describe('Admin users status filter', () => {
 		});
 	});
 
-	// The filtered set is a different list, so page 3 of the old one means
-	// nothing in it.
+	// The filtered set is a different list, so how far the old one was
+	// loaded means nothing in it.
 	it('should return to the first page when the filter changes', async () => {
-		mockUsers([user()], { total: 60, page_count: 3 });
+		twoPages();
 		render(Page);
-		await screen.findByText('alice');
-
-		await userEvent.click(screen.getByRole('button', { name: /next/i }));
-		await waitFor(() => {
-			expect(requests.some((url) => url.includes('offset=25'))).toBe(true);
-		});
+		await userEvent.click(await screen.findByTestId('users-load-more'));
+		await screen.findByText('bob');
 
 		requests.length = 0;
 		await userEvent.click(screen.getByTestId('status-filter-disabled'));
 		await waitFor(() => {
 			const filtered = requests.filter((url) => url.includes('status=disabled'));
 			expect(filtered.length).toBeGreaterThan(0);
-			// A zero offset is omitted entirely by getAdminUsers, so "back to
-			// the first page" reads as the absence of the parameter.
-			expect(filtered.every((url) => !url.includes('offset='))).toBe(true);
+			expect(filtered.every((url) => !url.includes('after='))).toBe(true);
 		});
 	});
 
@@ -312,7 +355,7 @@ describe('when a slow request finishes after a newer one', () => {
 					JSON.stringify({
 						data: {
 							users: [user({ id: username, username })],
-							meta: { total: 1, limit: 25, offset: 0, page: 1, page_count: 1 }
+							total: 1
 						},
 						error: null
 					}),

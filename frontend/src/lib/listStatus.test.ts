@@ -44,22 +44,6 @@ describe('describeList', () => {
 		expect(describeList(state({ query: '   ' }))).toBe('12 certificates found.');
 	});
 
-	it('should add the page position when the list runs to more than one page', () => {
-		expect(describeList(state({ total: 120, page: 3, pageCount: 5 }))).toBe(
-			'120 certificates found. Page 3 of 5.'
-		);
-	});
-
-	it('should omit the page position when everything fits on one page', () => {
-		expect(describeList(state({ page: 1, pageCount: 1 }))).toBe('12 certificates found.');
-	});
-
-	it('should omit the page position when the list is not paged', () => {
-		expect(describeList(state({ page: undefined, pageCount: undefined }))).toBe(
-			'12 certificates found.'
-		);
-	});
-
 	it('should carry the caller’s noun through to the plural', () => {
 		expect(describeList(state({ noun: 'user', total: 4 }))).toBe('4 users found.');
 	});

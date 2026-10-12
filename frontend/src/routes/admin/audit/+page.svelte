@@ -7,7 +7,6 @@
 	import {
 		auditActionGroups,
 		auditFilterSearch,
-		dedupeAuditEvents,
 		isIPAddress,
 		visibleAuditEvents
 	} from '#lib/audit.js';
@@ -52,13 +51,14 @@
 
 	let events: AuditEvent[] = $state([]);
 	let total = $state(0);
-	let nextOffset = $state(0);
+	// The cursor for the next page, or null when the last one has loaded.
+	let nextCursor: string | null = $state(null);
 	let error: string | null = $state(null);
 	// A failed "Load more" is its own error: the events already shown are
 	// still right, so it sits by the button and retries the page that
 	// failed, rather than replacing the list with the first page again.
 	let moreError: string | null = $state(null);
-	let failedOffset = $state(0);
+	let failedCursor: string | null = $state(null);
 	let busy = $state(true);
 	let hasLoaded = $state(false);
 
@@ -67,46 +67,50 @@
 	// slow unfiltered page can never arrive after, and over, a filtered one.
 	let latestLoad = 0;
 
-	/** load reads one page of the feed under the current filters. */
-	async function load(offset = 0) {
+	/**
+	 * load reads one page of the feed under the current filters: the first
+	 * page when after is null, otherwise the page after that cursor.
+	 */
+	async function load(after: string | null = null) {
 		const ticket = ++latestLoad;
 		const action = selectedAction;
 		const sourceIP = selectedSource;
 		busy = true;
 		moreError = null;
-		if (offset === 0) {
+		if (after === null) {
 			error = null;
 		}
 		try {
-			const result = await getAuditFeed({ limit: pageSize, offset, action, source_ip: sourceIP });
+			const result = await getAuditFeed({
+				limit: pageSize,
+				after: after ?? undefined,
+				action,
+				source_ip: sourceIP
+			});
 			if (ticket !== latestLoad) return;
 			// Append when paging forward, replace on the first load, so
-			// "load more" grows one continuous list.
-			//
-			// Deduplicated by id: offset paging over a live table cannot
-			// promise the window holds still, and a repeat is not cosmetic
-			// here — the timeline keys its {#each} by id, so it throws
-			// each_key_duplicate and takes the page down. See
-			// dedupeAuditEvents.
-			events = offset === 0 ? result.events : dedupeAuditEvents([...events, ...result.events]);
+			// "load more" grows one continuous list. The server pages by
+			// cursor, so an event recorded between two pages lands above
+			// the cursor rather than repeating a row below it.
+			events = after === null ? result.events : [...events, ...result.events];
 			total = result.total;
-			nextOffset = result.next_offset ?? 0;
+			nextCursor = result.next_cursor ?? null;
 		} catch (cause) {
 			if (ticket !== latestLoad) return;
 			// An expired session is a sign-in, not a failed feed.
 			if (redirectIfUnauthenticated(cause)) {
 				return;
 			}
-			if (offset === 0) {
+			if (after === null) {
 				// The rows on screen belonged to the previous filters; leaving
 				// them under an error about these ones would misstate both.
 				events = [];
 				total = 0;
-				nextOffset = 0;
+				nextCursor = null;
 				error = errorMessage(cause);
 			} else {
 				moreError = errorMessage(cause);
-				failedOffset = offset;
+				failedCursor = after;
 			}
 		} finally {
 			if (ticket === latestLoad) {
@@ -201,7 +205,7 @@
 	$effect(() => {
 		void selectedAction;
 		void selectedSource;
-		load(0);
+		load();
 	});
 
 	// A pending settle must not fire into a page that has gone.
@@ -325,7 +329,7 @@
 		<Alert
 			variant="error"
 			title="Could not load the audit log"
-			onretry={() => load(0)}
+			onretry={() => load()}
 			testid="audit-error"
 		>
 			{error}
@@ -371,14 +375,14 @@
 				<Alert
 					variant="error"
 					title="Could not load older events"
-					onretry={() => load(failedOffset)}
+					onretry={() => load(failedCursor)}
 					testid="audit-more-error"
 				>
 					{moreError}
 				</Alert>
-			{:else if nextOffset > 0}
+			{:else if nextCursor !== null}
 				<div>
-					<Button variant="ghost" {busy} onclick={() => load(nextOffset)} testid="audit-load-more">
+					<Button variant="ghost" {busy} onclick={() => load(nextCursor)} testid="audit-load-more">
 						{busy ? 'Loading…' : 'Load more'}
 					</Button>
 				</div>
