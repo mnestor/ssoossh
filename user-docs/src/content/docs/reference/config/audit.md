@@ -23,6 +23,8 @@ The stream has two sinks and they are not equals. The Logging destination below 
 
 How long an event stays in the database table. The scheduled sweep deletes rows older than this. It bounds the UI's history, not the deployment's: the shipped log is the archive, so a short window here loses nothing that matters. Zero disables age-based pruning, leaving `max_rows` as the only bound.
 
+One thing does read the table back: the directory sync decides who to email when it disables an admin from the logins recorded here over the last 60 days. A retention below that, or a `max_rows` that trims those logins, shortens that window, and the sync logs the window it actually had.
+
 ```yaml
 audit:
   retention: 1440h

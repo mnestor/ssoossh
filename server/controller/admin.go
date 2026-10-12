@@ -24,17 +24,17 @@ import (
 	"github.com/mnestor/ssoossh/server/webtypes"
 )
 
-// NewAdminController registers admin-scoped, SOC-scoped, and auditor-scoped
-// routes on group. Admin routes require admin group membership. SOC routes
-// take admin or SOC group membership. Auditor routes require auditor-level
-// access, which admin and SOC membership also satisfy since auditor is a
-// child role of both.
+// NewAdminController registers SOC-scoped and auditor-scoped routes on
+// group. SOC routes take admin or SOC group membership. Auditor routes
+// require auditor-level access, which admin and SOC membership also satisfy
+// since auditor is a child role of both. No route here is admin-only; the
+// admin-only powers (diagnostics, identity echo, directory admin) live in
+// their own controllers.
 func NewAdminController(
 	group *gin.RouterGroup,
 	c *config.Config,
 	db *gorm.DB,
 	sessionAuthMiddleware gin.HandlerFunc,
-	adminAuthMiddleware gin.HandlerFunc,
 	socAuthMiddleware gin.HandlerFunc,
 	auditorAuthMiddleware gin.HandlerFunc,
 	csrfMiddleware gin.HandlerFunc,
@@ -43,17 +43,15 @@ func NewAdminController(
 ) {
 	a := &adminController{config: c, db: db, enrollmentService: enrollmentService, audit: auditService}
 
-	// Admin routes (restorative writes, require admin group)
-	adminGroup := group.Group("/admin", sessionAuthMiddleware, adminAuthMiddleware, csrfMiddleware)
-	adminGroup.PATCH("/users/:id/enable", a.enableUserHandler)
-
-	// SOC routes (containment writes: admin or SOC group). SOC holds the
-	// operations that revoke access — expiring an enrollment, disabling a
-	// user — and never the ones that restore it, so a SOC analyst can
-	// contain an incident but not quietly undo a containment.
+	// SOC routes (account writes: admin or SOC group). SOC
+	// holds expiring an enrollment and both halves of a user disable:
+	// whoever can contain an account can also release it, so a SOC disable
+	// of every admin never needs a database edit to undo. Every re-enable
+	// takes a reason and is audited with its actor (issue #127).
 	socGroup := group.Group("/admin", sessionAuthMiddleware, socAuthMiddleware, csrfMiddleware)
 	socGroup.PATCH("/enrollments/:id/expire", a.expireEnrollmentHandler)
 	socGroup.PATCH("/users/:id/disable", a.disableUserHandler)
+	socGroup.PATCH("/users/:id/enable", a.enableUserHandler)
 
 	// Auditor routes (read-only operations)
 	auditorGroup := group.Group("/admin", sessionAuthMiddleware, auditorAuthMiddleware)
@@ -580,23 +578,25 @@ func (a *adminController) disableUserHandler(g *gin.Context) {
 		return
 	}
 
-	// Look up current user's ID from the subject
+	// Look up the current user's row from the subject. The identifying
+	// columns come along so a refused self-disable can snapshot the account
+	// as its audit target without a second query.
 	var currentUser model.User
 	if err := a.db.WithContext(g.Request.Context()).
-		Select("id").
+		Select("id", "subject", "username", "email").
 		Where("subject = ?", currentIdentity.Subject).
 		First(&currentUser).Error; err != nil {
 		handleError(g, fmt.Errorf("failed to look up current user: %w", err))
 		return
 	}
 
-	// Refused before the body is read and before any write or audit row:
+	// Refused before the body is read and before any write to the user row:
 	// disabling yourself ends your own session, and recovery needs another
-	// admin to re-enable you. Refusals in this package write no audit row
-	// (see certrequest's network refusal and checkUserPrincipalLinkage), so
-	// this one is logged rather than recorded.
+	// admin to re-enable you. The attempt is recorded as its own audit
+	// action so it shows on the account's timeline.
 	if currentUser.ID == id {
 		slog.Warn("refused a self-disable", "user_id", id)
+		a.recordRefusedSelfDisable(g, currentIdentity, &currentUser)
 		handleError(g, &errorresponses.ForbiddenError{Reason: "You can't disable your own account. Ask another admin."})
 		return
 	}
@@ -697,6 +697,26 @@ func (a *adminController) disableUserHandler(g *gin.Context) {
 	respondData(g, webtypes.DisableUserConsequences{ServiceEnrollmentCount: enrollmentCount})
 }
 
+// recordRefusedSelfDisable writes the user.disable_refused audit row for an
+// operator who named their own account, as both actor and target. Record,
+// not RecordTx: there is no state change for the row to commit with. The
+// address is the one gin resolved through http.trusted_proxies, never a
+// forwarding header taken at face value, and no request header is copied
+// in.
+func (a *adminController) recordRefusedSelfDisable(g *gin.Context, identity *service.Identity, self *model.User) {
+	if a.audit == nil {
+		return
+	}
+	a.audit.Record(g.Request.Context(), service.AuditEvent{
+		Action:     service.AuditUserDisableRefused,
+		Actor:      service.AuditSubjectFromIdentity(identity, self.ID),
+		Target:     service.AuditSubjectFromUser(self),
+		Reason:     "an operator cannot disable their own account",
+		Detail:     map[string]any{"source_ip": g.ClientIP()},
+		OccurredAt: time.Now(),
+	})
+}
+
 // disableSource names the role a disable is taken under: admin when the
 // caller holds the admin group, SOC otherwise. The disable route admits
 // only those two, so a caller who is not an admin reached it as SOC.
@@ -709,9 +729,12 @@ func (a *adminController) disableSource(groups []string) model.DisabledSource {
 
 // enableUserHandler handles PATCH /api/admin/users/:id/enable: re-enables a
 // user after disabling. Already-expired enrollments are not un-expired.
+// SOC holds it alongside the disable, so whoever can contain an account
+// can release it, whatever disabled it (admin, SOC or the directory sync).
 //
-// @Summary     Re-enable a user (admin-only)
-// @Description Re-enables a previously disabled user. The operation is idempotent.
+// @Summary     Re-enable a user (admin or SOC)
+// @Description Re-enables a previously disabled user, whichever role or
+// @Description directory sync disabled it. The operation is idempotent.
 // @Description Note: service enrollments that have already expired are not
 // @Description un-expired; the user must request new enrollments.
 // @Tags        admin
@@ -720,7 +743,7 @@ func (a *adminController) disableSource(groups []string) model.DisabledSource {
 // @Param       request body webtypes.ReEnableUserRequestBody true "Re-enable reason (required)"
 // @Success     200 {object} gin.H "User re-enabled"
 // @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
-// @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as admin"
+// @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as admin or SOC"
 // @Failure     404 {object} openapidoc.ErrorEnvelope "User not found"
 // @Security    sessionCookie
 // @Router      /api/admin/users/{id}/enable [patch]
@@ -728,6 +751,15 @@ func (a *adminController) enableUserHandler(g *gin.Context) {
 	id := g.Param("id")
 	if id == "" {
 		handleError(g, fmt.Errorf("user ID is required"))
+		return
+	}
+
+	// The caller is required, as on the disable: a restore with no actor on
+	// its audit row is exactly what the required reason exists to prevent.
+	// The route's middleware already demands a session, so this only fails
+	// closed if that wiring ever changes.
+	if identity, ok := middleware.Identity(g); !ok || identity == nil {
+		handleError(g, &errorresponses.UnauthorizedError{})
 		return
 	}
 
@@ -1529,8 +1561,9 @@ func configuredOIDCFields(fields config.OAuthFields) map[string]bool {
 }
 
 // notificationPreferenceRows renders one user's notification standing: every
-// registered kind, in registry order, with the stored choice applied where
-// there is one and the kind's default where there is not.
+// registered kind a user can choose, in registry order, with the stored
+// choice applied where there is one and the kind's default where there is
+// not.
 //
 // Reporting the whole catalogue rather than the stored rows is what makes
 // the section answer the question it is read for. Stored rows alone meant a
@@ -1550,6 +1583,11 @@ func notificationPreferenceRows(stored []model.NotificationPreference) []webtype
 	definitions := notify.Definitions()
 	out := make([]webtypes.AdminUserNotificationPreference, 0, len(definitions)+len(stored))
 	for _, def := range definitions {
+		if def.AlwaysSent {
+			// Not a preference: nobody can turn it off, so listing it
+			// beside the choices would report a setting that does not exist.
+			continue
+		}
 		pref := webtypes.AdminUserNotificationPreference{
 			Kind:        string(def.Kind),
 			Title:       def.Title,

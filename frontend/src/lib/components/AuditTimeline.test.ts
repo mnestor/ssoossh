@@ -62,6 +62,29 @@ describe('AuditTimeline', () => {
 		expect(screen.getAllByText('future.thing').length).toBeGreaterThan(0);
 	});
 
+	// A refused self-disable names the same account as actor and target,
+	// so the sentence is the actor and the phrase alone.
+	it('should phrase a refused self-disable on the global feed', () => {
+		const self = { user_id: 'u-alice', username: 'alice' };
+		render(AuditTimeline, {
+			props: { events: [event({ action: 'user.disable_refused', actor: self, target: self })] }
+		});
+		expect(screen.getByTestId('audit-event')).toHaveTextContent('alice was refused a self-disable');
+	});
+
+	it('should phrase a refused self-disable on the account timeline', () => {
+		const self = { user_id: 'u-alice', username: 'alice' };
+		render(AuditTimeline, {
+			props: {
+				events: [event({ action: 'user.disable_refused', actor: self, target: self })],
+				subjectUserId: 'u-alice'
+			}
+		});
+		expect(screen.getByTestId('audit-event')).toHaveTextContent(
+			'This account was refused a self-disable'
+		);
+	});
+
 	it('should name the actor when one is recorded', () => {
 		render(AuditTimeline, {
 			props: {

@@ -52,6 +52,28 @@ func TestCspMiddleware_ShouldEmbedNonceInScriptSrcDirective(t *testing.T) {
 	}
 }
 
+// TestCspMiddleware_ShouldSendTheExactPolicy pins the whole policy, as the
+// other security header tests pin theirs. The admin diagnostics grade the
+// public URL against whatever this middleware reports, so a loosened policy
+// would not fail them; this test is what makes a change to the policy a
+// deliberate, reviewed edit.
+func TestCspMiddleware_ShouldSendTheExactPolicy(t *testing.T) {
+	t.Parallel()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+
+	NewCspMiddleware().Add()(c)
+
+	want := "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; " +
+		"form-action 'self'; img-src 'self'; font-src 'self'; style-src 'self' 'unsafe-inline'; " +
+		"script-src 'self' 'nonce-" + GetCSPNonce(c) + "'"
+	if got := w.Header().Get("Content-Security-Policy"); got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
 func TestCspMiddleware_ShouldGenerateDifferentNoncePerRequest(t *testing.T) {
 	t.Parallel()
 

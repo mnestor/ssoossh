@@ -86,13 +86,18 @@ const canaryOrigin = "https://ssoossh-cors-probe.invalid"
 // it (see the check comments).
 type DiagnosticsService struct {
 	cfg    *config.Config
+	app    AppSecurityHeaders
 	client httpDoer
 }
 
-// NewDiagnosticsService builds a DiagnosticsService. A nil client installs a
-// default with a short timeout and no redirect-following, so the checks see
-// the edge's first response rather than wherever it forwards them.
-func NewDiagnosticsService(cfg *config.Config, client httpDoer) *DiagnosticsService {
+// NewDiagnosticsService builds a DiagnosticsService. app is the set of
+// security header values the app's middleware sends (see
+// middleware.AppSecurityHeaders), which the header hygiene check grades the
+// public URL against; when it is incomplete that check reports itself as
+// skipped instead of grading. A nil client installs a default with a short
+// timeout and no redirect-following, so the checks see the edge's first
+// response rather than wherever it forwards them.
+func NewDiagnosticsService(cfg *config.Config, app AppSecurityHeaders, client httpDoer) *DiagnosticsService {
 	if client == nil {
 		client = &http.Client{
 			Timeout: 8 * time.Second,
@@ -101,7 +106,7 @@ func NewDiagnosticsService(cfg *config.Config, client httpDoer) *DiagnosticsServ
 			},
 		}
 	}
-	return &DiagnosticsService{cfg: cfg, client: client}
+	return &DiagnosticsService{cfg: cfg, app: app, client: client}
 }
 
 // Run executes every check and returns the report. It never returns an

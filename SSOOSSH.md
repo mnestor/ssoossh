@@ -36,11 +36,11 @@
   - Database: SQLite or Postgres, with migrations for both.
   - Roles come from OIDC groups named in config: admin implies SOC implies auditor. There is no admin role stored in the database.
   - The audit log is append-only and is swept by retention or row cap. Approval decisions record who, from where, when and what was granted.
-  - Email notifications cover certificates issued (user, PAM, console) and service enrollments (created, redeemed, expiring, expired-code attempt). Users set their own notification preferences.
+  - Email notifications cover certificates issued (user, PAM, console), service enrollments (created, redeemed, expiring, expired-code attempt), and an admin the directory sync disabled (always sent, no opt-out). Users set their own notification preferences.
   - Each user has two detail levels, both stored on the server per user: one for the web UI and a separate one for email.
     - The defaults are set once, at the user's first login: advanced for SOC and admin, simplified for everyone else. A later change of groups never moves them.
     - The email level decides only whether a message adds its "Details" section (key IDs, serials, options). Users without a stored level, and a service code's notification address, get simplified.
-  - Admins can disable and re-enable users, run diagnostics, view the effective config and use identity echo (re-authentication to inspect claims).
+  - SOC (and so admins) can disable and re-enable users; admins can run diagnostics, view the effective config and use identity echo (re-authentication to inspect claims).
   - Also: branding, FIPS 140-3 mode, OpenTelemetry traces and metrics, rate limiting, and how much `/api/version` discloses is configurable.
 
   ### Client (ssoossh)

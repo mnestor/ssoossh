@@ -164,11 +164,11 @@
 
 	// loadUser is the first load and its retry. Until it answers there is
 	// no account, so the page shows the loading shape under the heading.
-	// Disabling is SOC's and re-enabling an admin's (controller/admin.go);
-	// the admin area lets auditors in, so each action is offered only to a
+	// Disabling and re-enabling are both SOC's, and so an admin's
+	// (controller/admin.go): whoever can contain an account can release it.
+	// The admin area lets auditors in, so the action is offered only to a
 	// role the server will let take it.
-	const canDisable = $derived(session.user?.is_soc ?? false);
-	const canEnable = $derived(session.user?.is_admin ?? false);
+	const canChangeState = $derived(session.user?.is_soc ?? false);
 
 	// The caller's own record. The server refuses a self-disable (403), so
 	// the page says why instead of offering the action. Compared by subject,
@@ -329,7 +329,7 @@
      and an element replaced while the dialog was open would leave the
      caret on <body>. -->
 {#snippet userAction()}
-	{#if user?.disabled_at ? canEnable : canDisable}
+	{#if canChangeState}
 		{#if !user?.disabled_at && isOwnRecord}
 			<span class="text-dense text-ink-muted" data-testid="user-action-self">
 				You can't disable your own account. Ask another admin.
@@ -347,7 +347,7 @@
 	{:else}
 		<span class="text-dense text-ink-muted" data-testid="user-action-role">
 			{user?.disabled_at
-				? 'Only an admin can re-enable accounts.'
+				? 'Re-enabling needs the SOC or admin role.'
 				: 'Disabling needs the SOC or admin role.'}
 		</span>
 	{/if}

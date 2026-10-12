@@ -97,11 +97,14 @@ func (a *app) initServices() (*services, error) {
 	// certificate paths publish through this, and publishing is all they
 	// do — rendering and SMTP happen on the broker's own goroutines, so
 	// nothing here puts a mail relay on the request path. See
-	// service.NotificationService.Notify and initNotifications.
+	// service.NotificationService.Notify and initNotifications. The
+	// directory sync publishes through it too, to tell an admin it has
+	// disabled them.
 	svc.notification = service.NewNotificationService(a.db, a.pubSub.Publisher, a.config.Mail.Enabled, a.config.LDAP.Enabled,
 		a.config.CertOptions.Service.AllowUserAccounts)
 	svc.certRequest.SetNotifier(svc.notification)
 	svc.enrollment.SetNotifier(svc.notification)
+	svc.ldap.SetNotifier(svc.notification)
 
 	// The audit recorder is wired the same way and for the same reason: the
 	// services that mutate state append their audit rows in their own

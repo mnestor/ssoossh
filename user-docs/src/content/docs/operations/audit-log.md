@@ -60,6 +60,14 @@ log; setting it splits them into their own rotating file.
 `retention` bounds the UI's history, not the deployment's. A short window here
 loses nothing that matters, because the shipped log is the archive.
 
+One feature does read the table back. When the
+[directory sync](/ssoossh/operations/ldap/#when-the-sync-disables-an-admin)
+disables someone, it decides whether to email them as an admin from their
+latest `auth.login` row in the last 60 days. A `retention` below 60 days, or a
+`max_rows` cap that has trimmed those logins, shortens that window: an admin
+whose last login the table no longer holds is not emailed. The sync logs the
+window it actually had (`effective_window`) whenever it is under 60 days.
+
 ## An audit row references nothing that can change
 
 An entry must read the same in five years as it did the day it was written. A
@@ -110,6 +118,7 @@ client must render an unknown action rather than assume the list is closed.
 | `enrollment.reassigned` | **No longer emitted.** Group ownership removed enrollment transfer; the action stays defined so events recorded before that still read back with a name |
 | `user.disabled`, `user.enabled` | |
 | `user.auto_disabled` | A system action, so it carries no actor. Raised by the [LDAP sync](/ssoossh/operations/ldap/) |
+| `user.disable_refused` | An admin or SOC analyst tried to disable their own account and the server refused. Actor and target are the same account, the reason is the server's own text, and `source_ip` is the address the server observed (through `http.trusted_proxies`), never one the client supplied. The account is left untouched. Only the self-disable refusal is recorded; other refused admin actions are not |
 | `admin.enrollment_viewed` | One event per enrollment code opened. Not shipped-log only, unlike the two below: a code is a bearer credential, and it is one event per credential rather than one per screen |
 | `admin.user_viewed`, `admin.audit_viewed` | **Shipped log only.** An auditor working through the directory generates one per user opened and one per page of the feed, and within a session they outnumber the decisions this log exists to record. They keep their archive line -- "who looked at this account" is a real question -- and lose the table copy the web UI renders. `admin.audit_viewed` also wrote a new row on every read of the feed, which shifted the offset window under the UI's "load more" |
 | `ldap.sync_triggered` | An admin running the [directory sync](/ssoossh/operations/ldap/) by hand, with the counts the pass produced. A dry run records `dry_run: true` and no change to go with it |

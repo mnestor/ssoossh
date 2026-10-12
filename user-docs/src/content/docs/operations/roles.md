@@ -14,11 +14,12 @@ point of the design.
 
 ```yaml
 admin:
-  # Restorative writes: re-enabling a user. Plus everything SOC and
-  # auditor can do.
+  # Deployment-wide operations: diagnostics, claims echo, the directory
+  # sync and probe. Plus everything SOC and auditor can do.
   require_group: "ssh-admins"
 
-  # Containment writes: disabling a user, expiring an enrollment.
+  # Account writes: disabling and re-enabling a user, expiring an
+  # enrollment.
   soc_group: "security-ops"
 
   # Read-only: effective configuration, cross-user certificate history,
@@ -53,23 +54,25 @@ flowchart TD
     accTitle: How the three admin groups nest
     accDescr {
       Three configuration keys, each a superset of the one below it.
-      admin.require_group grants restorative writes, admin.soc_group grants
-      containment writes, and admin.auditor_group grants read-only views.
+      admin.require_group grants deployment-wide operations, admin.soc_group
+      grants account writes, and admin.auditor_group grants read-only views.
     }
-    A["admin.require_group<br/>restorative writes"] --> S["admin.soc_group<br/>containment writes"]
+    A["admin.require_group<br/>deployment-wide operations"] --> S["admin.soc_group<br/>account writes"]
     S --> V["admin.auditor_group<br/>read-only views"]
 ```
 
-The direction that deliberately does not exist is upward: a SOC analyst can
-contain an incident but cannot quietly undo a containment, because re-enabling
-a user is admin-only.
+Containment is symmetric: whoever can disable an account can also re-enable
+it, whichever role or the directory sync disabled it. A SOC disable of every
+admin therefore never needs a database edit to undo. Every re-enable requires
+a reason and is audited with its actor, source address and time, so a SOC
+re-enable of an account an admin disabled deliberately is on the record.
 
 ## What each role may do
 
 | Operation | Admin | SOC | Auditor |
 | --- | --- | --- | --- |
-| Re-enable a user | yes | no | no |
 | Disable a user | yes | yes | no |
+| Re-enable a user | yes | yes | no |
 | Expire any account's enrollment early | yes | yes | no |
 | Effective configuration | yes | yes | yes |
 | User directory and per-user detail | yes | yes | yes |
@@ -83,8 +86,9 @@ a user is admin-only.
 | Run the deployment diagnostics | yes | no | no |
 
 Running the sync is admin-only rather than SOC, even though a pass can
-disable an account: it restores and refreshes access as readily as it removes
-it, and re-enabling is admin-only everywhere else. Probing is admin-only
+disable an account: a pass acts on every account at once, restoring and
+refreshing access as readily as it removes it, while a SOC disable or
+re-enable acts on one account with a recorded reason. Probing is admin-only
 because it makes the server open an outbound connection and read a directory
 entry in full, which is a capability rather than a view. Reading the sync
 *status* is auditor-safe: it names no credential. The
@@ -197,6 +201,12 @@ belong to their **service accounts**, not to them, so unattended jobs keep
 running and the account's other holders keep control. If the intent is to stop
 a credential too, expire the enrollment as a separate, recorded action.
 
+Nobody can disable their own account. Doing so would end the operator's own
+session, and only another admin could undo it, so the server refuses with 403
+before it reads the request. The attempt is still recorded, as
+`user.disable_refused`, on that account's audit timeline, with the address the
+server observed. The account itself is not touched.
+
 The current state lives in denormalized columns on the user row --
 `disabled_at`, `disabled_by_user_id`, `disabled_reason`, `disabled_source` --
 which render the directory and the re-enable flow without touching the audit
@@ -207,10 +217,13 @@ columns are the present.
 with a human one. The sync clears only disables whose source is exactly
 `ldap_sync`, so an admin or SOC disable is never undone automatically.
 Disabling an account the sync already disabled replaces its source with the
-operator's, so from then on only an admin can restore it, and a re-enable
-clears the source along with the rest. An auto-disable is audited like any
+operator's, so from then on only an operator (SOC or admin) can restore it,
+and a re-enable clears the source along with the rest. An auto-disable is audited like any
 other containment action, as `user.auto_disabled`, with a generated reason
-and no actor. See [LDAP enrichment](/ssoossh/operations/ldap/).
+and no actor. Admins are not exempt: the sync disables them like anyone else,
+and emails an admin it disables (see
+[When the sync disables an admin](/ssoossh/operations/ldap/#when-the-sync-disables-an-admin)).
+See [LDAP enrichment](/ssoossh/operations/ldap/).
 
 ## Enrollments cannot be reassigned
 

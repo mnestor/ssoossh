@@ -378,21 +378,22 @@ type LDAPConfig struct {
 // admin group in the identity provider takes effect at their next login.
 type AdminConfig struct {
 	// RequireGroup is the OIDC group a caller must belong to in order to
-	// access admin-scoped operations (re-enabling users), plus everything the
-	// SOC and auditor roles below can do. Empty disables admin operations
-	// entirely. Fails closed: no identity, no group, or no configured group
-	// all deny.
+	// access admin-scoped operations (diagnostics, claims echo, directory
+	// sync and probe), plus everything the SOC and auditor roles below can
+	// do. Empty disables admin operations entirely. Fails closed: no
+	// identity, no group, or no configured group all deny.
 	RequireGroup string `mapstructure:"require_group" default:""`
 
 	// SOCGroup is the OIDC group a caller must belong to in order to access
-	// SOC-scoped containment operations: disabling users and expiring
-	// enrollments. SOC is a child role of admin, so RequireGroup members hold
-	// SOC access regardless of this setting; empty therefore narrows SOC
-	// operations to admins rather than disabling them. SOC members also hold
-	// auditor access (they need the directory and enrollment lists to find
-	// what to contain), but deliberately not the restorative operations —
-	// re-enabling a user stays admin-only. Fails closed: no identity, or
-	// membership in neither group, denies.
+	// SOC-scoped account operations: disabling and re-enabling users and
+	// expiring enrollments. Whoever can contain an account can also release
+	// it, so a SOC disable of an admin never needs an admin to undo it. SOC
+	// is a child role of admin, so RequireGroup members hold SOC access
+	// regardless of this setting; empty therefore narrows SOC operations to
+	// admins rather than disabling them. SOC members also hold auditor
+	// access (they need the directory and enrollment lists to find what to
+	// contain). Fails closed: no identity, or membership in neither group,
+	// denies.
 	SOCGroup string `mapstructure:"soc_group" default:""`
 
 	// AuditorGroup is the OIDC group a caller must belong to in order to
@@ -522,6 +523,12 @@ type AuditConfig struct {
 	// history, not the deployment's: the shipped log is the archive, so a
 	// short window here loses nothing that matters. Zero disables
 	// age-based pruning, leaving MaxRows as the only bound.
+	//
+	// One thing does read the table back: the directory sync decides who
+	// to email when it disables an admin from the logins recorded here
+	// over the last 60 days. A retention below that, or a MaxRows that
+	// trims those logins, shortens that window, and the sync logs the
+	// window it actually had.
 	Retention time.Duration `mapstructure:"retention,string" default:"1440h"`
 
 	// MaxRows caps the table as a safety valve behind Retention, so a burst

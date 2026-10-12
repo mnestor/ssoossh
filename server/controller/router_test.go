@@ -69,7 +69,6 @@ func TestRouterConstruction_AdminRoutesRegister(t *testing.T) {
 		cfg,
 		mockDB(),
 		func(c *gin.Context) { c.Next() }, // sessionAuth
-		func(c *gin.Context) { c.Next() }, // adminAuth
 		func(c *gin.Context) { c.Next() }, // socAuth
 		func(c *gin.Context) { c.Next() }, // auditorAuth
 		func(c *gin.Context) { c.Next() }, // csrf

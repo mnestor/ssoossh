@@ -297,11 +297,11 @@ database flag, and they fail closed: an unset group authorizes nobody.
 | Role | Can do |
 | --- | --- |
 | **Auditor** | View the effective server configuration (a fixed, chosen set of fields, never secrets) and certificate history across all users |
-| **SOC** | Everything an auditor can do, plus disable a user and expire any service enrollment early (a holder can already expire the codes of an account they hold, with no role at all) |
-| **Admin** | Everything above, plus re-enable a disabled user |
+| **SOC** | Everything an auditor can do, plus disable and re-enable a user and expire any service enrollment early (a holder can already expire the codes of an account they hold, with no role at all) |
+| **Admin** | Everything above, plus the deployment-wide operations: diagnostics, claims echo, and the directory sync and probe |
 
-Admins inherit SOC and auditor access; SOC inherits auditor access but
-deliberately not the restorative operations, so re-enabling stays admin-only.
+Admins inherit SOC and auditor access, and SOC inherits auditor access.
+Whoever can disable an account can also re-enable it.
 
 **Disabling** takes effect immediately and is fail-closed at login: a transient
 database error denies rather than admits. A session that is already open ends on

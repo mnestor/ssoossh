@@ -95,6 +95,13 @@ const (
 	AuditUserEnabled  AuditAction = "user.enabled"
 	// AuditUserAutoDisabled is a system action, so it carries no actor.
 	AuditUserAutoDisabled AuditAction = "user.auto_disabled"
+	// AuditUserDisableRefused records a disable the server refused because
+	// the caller named their own account. Actor and target are the same
+	// person; the reason is the server's, not one the caller typed, and the
+	// detail carries the source address the server observed. It exists so
+	// the attempt shows on that account's timeline: a slog line alone is
+	// invisible to the reviewer reading it.
+	AuditUserDisableRefused AuditAction = "user.disable_refused"
 
 	// Privileged detail views. List views are deliberately not audited:
 	// a row per page of the user directory says nothing. If a list query

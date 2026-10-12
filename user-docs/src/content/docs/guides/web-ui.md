@@ -79,7 +79,7 @@ reaching it means signing in, so it keeps the rail.
 | **Console login** | `/console` | Where you type the code a console showed you | everyone |
 | **Account** | `/account` | Your identity, the principals you can mint, your service accounts, and your groups | everyone, from the identity drop-up |
 | **Preferences** | `/preferences` | Which notification emails you receive, and how much detail the approval and detail pages show | everyone, from the identity drop-up |
-| **Users** | `/admin/users` | The user directory, with disable and re-enable | auditor and up |
+| **Users** | `/admin/users` | The user directory, with disable and re-enable | auditor to view; SOC and up to disable or re-enable |
 | **Certificates** | `/admin/certificates` | Certificate history across every user | auditor and up |
 | **Service codes** | `/admin/service-codes` | Every approved enrollment code, searchable by id, account, key ID, request id or approver | auditor and up |
 | **Config** | `/admin/config` | The effective server configuration, secrets redacted | auditor and up |

@@ -62,6 +62,15 @@ const (
 	// machine and approved by a typed code, which makes "was this you?"
 	// the question that matters most for this type.
 	KindConsoleCertificateIssued Kind = "console_certificate_issued"
+
+	// KindAdminAutoDisabled fires when the directory sync disables a user
+	// who counts as an admin: their most recent login inside the sync's
+	// look-back window carried a group the current config maps to admin.
+	// It goes to that admin, and it is always sent. An admin whose account
+	// the sync shut off has no session left to discover it in, so this is
+	// the one message a preference must not be able to silence. Never sent
+	// for a disable an operator made by hand.
+	KindAdminAutoDisabled Kind = "admin_auto_disabled"
 )
 
 // Field documents one variable a template for this kind may reference.
@@ -135,6 +144,13 @@ type Definition struct {
 	// so it decides whether an existing deployment starts sending
 	// something nobody asked for.
 	DefaultEnabled bool
+
+	// AlwaysSent marks a kind that is not a preference at all: it is sent
+	// whatever the recipient has chosen for every other kind, the
+	// preferences page never offers it, and a stored choice for it is
+	// refused. Such a kind has no Group, since no page lists it, and its
+	// DefaultEnabled is true, since that is what it does.
+	AlwaysSent bool
 
 	// Fields documents the template variables. Kept honest by
 	// TestDefinitions_shouldDocumentOnlyRealPayloadFields, which fails when
@@ -277,6 +293,27 @@ var definitions = []Definition{
 		NewPayload:     func() any { return &CertificateIssued{} },
 		Fields:         certificateIssuedFields,
 	},
+	{
+		Kind:           KindAdminAutoDisabled,
+		Title:          "Admin account disabled by the directory sync",
+		Description:    "Sent to an admin when the scheduled directory sync disables their account because its directory entry has been missing for longer than ldap.sync.disable_after. Always sent: it cannot be turned off, and it is not sent for a disable a SOC user or an admin made by hand.",
+		DefaultEnabled: true,
+		AlwaysSent:     true,
+		NewPayload:     func() any { return &AdminAutoDisabled{} },
+		Fields: []Field{
+			{"Username", "string", "The username of the account that was disabled."},
+			{"DisabledAt", "time.Time", "When the sync disabled the account."},
+			{"MissingSince", "time.Time", "When the sync first searched successfully and found no directory entry for the account."},
+			{"MissingFor", "time.Duration", "How long the entry had been missing when the account was disabled."},
+			{"DisableAfter", "time.Duration", "The configured ldap.sync.disable_after: how long an entry may stay missing before the sync disables the account."},
+			{"DirectoryDN", "string", "The last DN the account's entry was found at, or empty if none was recorded."},
+			{"BaseDN", "string", "The configured ldap.base_dn the sync searches under."},
+			{"Reenable", "bool", "Whether ldap.sync.reenable is on, in which case the sync clears this disable by itself once the entry is found again."},
+			{"SupportEmail", "string", "Who to ask about this deployment (branding.support_email), or empty if none is configured."},
+			{"ServerURL", "string", "The server's public origin, naming the deployment the account belongs to."},
+			readerField,
+		},
+	},
 }
 
 // certificateIssuedFields documents CertificateIssued, shared by the three
@@ -352,4 +389,11 @@ func Lookup(k Kind) (Definition, bool) {
 func DefaultEnabled(k Kind) bool {
 	def, ok := Lookup(k)
 	return ok && def.DefaultEnabled
+}
+
+// AlwaysSent reports whether k is sent whatever its recipient has chosen.
+// An unregistered kind is never sent, so it answers false.
+func AlwaysSent(k Kind) bool {
+	def, ok := Lookup(k)
+	return ok && def.AlwaysSent
 }
