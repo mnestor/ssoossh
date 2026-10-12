@@ -81,3 +81,28 @@ jobs:
       # alone check the access list it writes.
       - name: Run client and agent tests
         run: go test -count=1 ./client/... ./internal/crypto/ssh/agent/... ./internal/fileperm/...
+
+  # The one check name a ruleset can require for this workflow. A matrix job
+  # reports "Test on macos-latest" and "Test on windows-latest" when it runs,
+  # but the literal "Test on ${{ matrix.os }}" when it is skipped, so no
+  # single matrix name is reported on every PR. This job always reports:
+  # success when every OS passed or the path gate skipped the matrix, and
+  # failure otherwise, including when the gate itself failed.
+  result:
+    name: client-matrix result
+    needs: [changes, test-matrix]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every OS to pass, or the matrix to be skipped by the gate
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          MATRIX: ${{ needs.test-matrix.result }}
+        run: |
+          echo "changes=$CHANGES test-matrix=$MATRIX"
+          [ "$CHANGES" = success ] || { echo "the path gate did not succeed"; exit 1; }
+          case "$MATRIX" in
+            success|skipped) ;;
+            *) echo "the OS matrix did not pass"; exit 1 ;;
+          esac
