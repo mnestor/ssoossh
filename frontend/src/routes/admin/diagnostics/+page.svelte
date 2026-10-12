@@ -9,9 +9,9 @@
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import PageShell from '#lib/components/PageShell.svelte';
 	import SectionLabel from '#lib/components/SectionLabel.svelte';
-	import { session } from '#lib/session.svelte.js';
 
-	const isAdmin = $derived(session.user?.is_admin ?? false);
+	// Admin-only: diagnostics/+layout.svelte turns SOC and auditors away
+	// before this page renders, so it has no non-admin branch.
 
 	let running = $state(false);
 	let report = $state<DiagnosticsResponse | null>(null);
@@ -92,90 +92,78 @@
 <PageShell width="wide">
 	<PageHeading title="Diagnostics">
 		{#snippet action()}
-			{#if isAdmin}
-				<Button onclick={run} busy={running} testid="run-diagnostics">
-					{running ? 'Running…' : 'Run checks'}
-				</Button>
-			{/if}
+			<Button onclick={run} busy={running} testid="run-diagnostics">
+				{running ? 'Running…' : 'Run checks'}
+			</Button>
 		{/snippet}
 	</PageHeading>
 
-	{#if !isAdmin}
-		<Alert variant="warning" title="Admin only">
-			These deployment self-checks are available to administrators only.
-		</Alert>
-	{:else}
-		<p class="max-w-2xl text-sm text-ink-muted">
-			Runs a set of read-only checks against this deployment: whether the server can reach its own
-			public URL, how the client IP is resolved through
-			<MonoChip>http.trusted_proxies</MonoChip>, whether the edge in front of the app weakens the
-			security headers it sets, and whether the edge adds dangerous CORS headers. The edge checks
-			call
-			<MonoChip>http.public_url</MonoChip> and nothing else; nothing is written.
-		</p>
+	<p class="max-w-2xl text-sm text-ink-muted">
+		Runs a set of read-only checks against this deployment: whether the server can reach its own
+		public URL, how the client IP is resolved through
+		<MonoChip>http.trusted_proxies</MonoChip>, whether the edge in front of the app weakens the
+		security headers it sets, and whether the edge adds dangerous CORS headers. The edge checks call
+		<MonoChip>http.public_url</MonoChip> and nothing else; nothing is written.
+	</p>
 
-		{#if error}
-			<Alert
-				variant="error"
-				title="The checks could not run"
-				onretry={run}
-				testid="diagnostics-error">{error}</Alert
-			>
-		{/if}
+	{#if error}
+		<Alert variant="error" title="The checks could not run" onretry={run} testid="diagnostics-error"
+			>{error}</Alert
+		>
+	{/if}
 
-		<ListStatus message={summary} />
+	<ListStatus message={summary} />
 
-		{#if report}
-			<p class="text-sm font-medium text-ink" data-testid="diagnostics-summary">{summary}</p>
-			{#if report.public_origin}
-				<p class="text-sm text-ink-muted">
-					Probed <MonoChip>{report.public_origin}</MonoChip>.
-				</p>
-			{/if}
-
-			<!-- One column of checks separated by a rule, rather than boxes
-			     two abreast. A run is a report read in the order the server
-			     ran it: a masonry grid reordered it by height, and a reader
-			     comparing this run to the last one had to find each check
-			     again rather than read down the same list. -->
-			<div data-testid="diagnostics-results" class="flex flex-col gap-8">
-				{#each orderedChecks as check (check.id)}
-					<section class="rounded-lg bg-surface p-5">
-						<div class="flex items-start justify-between gap-4">
-							<div>
-								<h2 class="text-base font-semibold text-ink">{check.title}</h2>
-								<p class="mt-1 text-sm text-ink-muted">{check.summary}</p>
-							</div>
-							<span
-								class="rounded px-2.5 py-1 text-xs font-semibold whitespace-nowrap {badge(
-									check.status
-								).class}"
-							>
-								{badge(check.status).label}
-							</span>
-						</div>
-
-						{#if check.findings.length > 0}
-							<ul class="mt-3 flex list-disc flex-col gap-1.5 pl-5 text-sm text-ink">
-								{#each check.findings as finding (finding)}
-									<li>{finding}</li>
-								{/each}
-							</ul>
-						{/if}
-
-						{#if check.remediation && needsAttention(check)}
-							<div class="mt-3">
-								<SectionLabel>How to fix</SectionLabel>
-								<p class="text-sm text-ink">{check.remediation}</p>
-							</div>
-						{/if}
-					</section>
-				{/each}
-			</div>
-		{:else if !error}
+	{#if report}
+		<p class="text-sm font-medium text-ink" data-testid="diagnostics-summary">{summary}</p>
+		{#if report.public_origin}
 			<p class="text-sm text-ink-muted">
-				Press <strong>Run checks</strong> to test this deployment.
+				Probed <MonoChip>{report.public_origin}</MonoChip>.
 			</p>
 		{/if}
+
+		<!-- One column of checks separated by a rule, rather than boxes
+		     two abreast. A run is a report read in the order the server
+		     ran it: a masonry grid reordered it by height, and a reader
+		     comparing this run to the last one had to find each check
+		     again rather than read down the same list. -->
+		<div data-testid="diagnostics-results" class="flex flex-col gap-8">
+			{#each orderedChecks as check (check.id)}
+				<section class="rounded-lg bg-surface p-5">
+					<div class="flex items-start justify-between gap-4">
+						<div>
+							<h2 class="text-base font-semibold text-ink">{check.title}</h2>
+							<p class="mt-1 text-sm text-ink-muted">{check.summary}</p>
+						</div>
+						<span
+							class="rounded px-2.5 py-1 text-xs font-semibold whitespace-nowrap {badge(
+								check.status
+							).class}"
+						>
+							{badge(check.status).label}
+						</span>
+					</div>
+
+					{#if check.findings.length > 0}
+						<ul class="mt-3 flex list-disc flex-col gap-1.5 pl-5 text-sm text-ink">
+							{#each check.findings as finding (finding)}
+								<li>{finding}</li>
+							{/each}
+						</ul>
+					{/if}
+
+					{#if check.remediation && needsAttention(check)}
+						<div class="mt-3">
+							<SectionLabel>How to fix</SectionLabel>
+							<p class="text-sm text-ink">{check.remediation}</p>
+						</div>
+					{/if}
+				</section>
+			{/each}
+		</div>
+	{:else if !error}
+		<p class="text-sm text-ink-muted">
+			Press <strong>Run checks</strong> to test this deployment.
+		</p>
 	{/if}
 </PageShell>

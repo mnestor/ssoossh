@@ -506,7 +506,7 @@ func (a *app) registerRoutes(r *gin.Engine) error {
 		)
 	}
 	controller.NewEnrollmentController(apiGroup, a.svc.enrollment, a.config.Mail.ExpiringSoonWindow(), enrollmentRateLimit, sessionAuth)
-	controller.NewAdminController(apiGroup, a.config, a.db, sessionAuth, socAuth, auditorAuth, csrf, a.svc.enrollment, a.svc.audit)
+	controller.NewAdminController(apiGroup, a.config, a.db, sessionAuth, adminAuth, socAuth, auditorAuth, csrf, a.svc.enrollment, a.svc.audit)
 
 	// The directory probe makes the server open an outbound connection and
 	// read an entry in full. Admins are trusted and every probe is audited,
@@ -526,7 +526,7 @@ func (a *app) registerRoutes(r *gin.Engine) error {
 		ldapDiagnostics = a.svc.ldap
 	}
 	controller.NewLDAPAdminController(apiGroup, a.config, a.db, ldapDiagnostics,
-		sessionAuth, adminAuth, auditorAuth, csrf, probeRateLimit, a.svc.audit)
+		sessionAuth, adminAuth, csrf, probeRateLimit, a.svc.audit)
 	controller.NewIdentityEchoController(apiGroup, a.svc.auth, sessionAuth, adminAuth, csrf)
 
 	// The diagnostics run makes the server open an outbound connection to

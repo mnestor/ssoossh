@@ -44,7 +44,11 @@ The rail has a few behaviours worth knowing:
 - **Admin is a group inside the same rail**, shown only to auditors, SOC
   members and admins. It can be folded shut, and that is remembered too --
   except that landing on any admin page opens it, because arriving in the
-  admin area with its section list hidden is never what you meant.
+  admin area with its section list hidden is never what you meant. SOC
+  members and auditors see only the sections their role can use: the
+  Directory, Claims echo and Diagnostics are admin-only, so the group leaves
+  them out, and opening one by its address shows a "You do not have access
+  to this page" card.
 - **Your identity is a menu.** The row at the bottom opens a drop-up holding
   the account page, preferences, the theme switch, and sign-out.
   These are deliberately not in the destination list: they act on the
@@ -82,8 +86,8 @@ reaching it means signing in, so it keeps the rail.
 | **Users** | `/admin/users` | The user directory, with disable and re-enable | auditor to view; SOC and up to disable or re-enable |
 | **Certificates** | `/admin/certificates` | Certificate history across every user | auditor and up |
 | **Service codes** | `/admin/service-codes` | Every approved enrollment code, searchable by id, account, key ID, request id or approver | auditor and up |
-| **Config** | `/admin/config` | The effective server configuration, secrets redacted | auditor and up |
-| **Directory** | `/admin/directory` | The LDAP sync's last pass, a sync (a dry run by default; a live pass asks for confirmation), and a read-only probe | auditor to view; admin to run |
+| **Config** | `/admin/config` | The effective server configuration, secrets redacted | admin |
+| **Directory** | `/admin/directory` | The LDAP sync's last pass, a sync (a dry run by default; a live pass asks for confirmation), and a read-only probe | admin |
 | **Claims echo** | `/admin/identity/echo` | Your own decoded ID token, annotated by the field that consumes each claim | admin |
 | **Audit log** | `/admin/audit` | Recent administrative activity, filterable by action and source address | auditor and up |
 | **Diagnostics** | `/admin/diagnostics` | Read-only checks of the deployment's public URL, proxy trust and edge headers | admin |

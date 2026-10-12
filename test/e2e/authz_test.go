@@ -116,9 +116,12 @@ func TestApprove_AdminCanAccessAdminRoutes(t *testing.T) {
 	// requires one; without it a caller past the gate would get 400 and
 	// the row would no longer show which side of the gate it landed on.
 	type route struct{ method, path, body string }
-	auditorRoute := route{http.MethodGet, "/api/admin/config", ""}
+	auditorRoute := route{http.MethodGet, "/api/admin/users", ""}
 	socRoute := route{http.MethodPatch, "/api/admin/enrollments/" + unknownEnrollmentID + "/expire", `{"reason":"e2e authorization probe"}`}
 	adminRoute := route{http.MethodPost, "/api/admin/identity/echo/start", ""}
+	// The effective config is the admin tier's read: admin-only, unlike the
+	// other admin-area reads that auditors share.
+	configRoute := route{http.MethodGet, "/api/admin/config", ""}
 
 	tests := []struct {
 		name  string
@@ -126,25 +129,30 @@ func TestApprove_AdminCanAccessAdminRoutes(t *testing.T) {
 		route route
 		want  int
 	}{
-		{name: "should let an admin read the effective config", role: "admin", route: auditorRoute, want: http.StatusOK},
+		{name: "should let an admin list users", role: "admin", route: auditorRoute, want: http.StatusOK},
 		{name: "should let an admin past the SOC gate", role: "admin", route: socRoute, want: http.StatusNotFound},
 		{name: "should let an admin start identity echo", role: "admin", route: adminRoute, want: http.StatusOK},
+		{name: "should let an admin read the effective config", role: "admin", route: configRoute, want: http.StatusOK},
 
-		{name: "should let SOC read the effective config", role: "soc", route: auditorRoute, want: http.StatusOK},
+		{name: "should let SOC list users", role: "soc", route: auditorRoute, want: http.StatusOK},
 		{name: "should let SOC past the SOC gate", role: "soc", route: socRoute, want: http.StatusNotFound},
 		{name: "should refuse SOC identity echo", role: "soc", route: adminRoute, want: http.StatusForbidden},
+		{name: "should refuse SOC the effective config", role: "soc", route: configRoute, want: http.StatusForbidden},
 
-		{name: "should let an auditor read the effective config", role: "auditor", route: auditorRoute, want: http.StatusOK},
+		{name: "should let an auditor list users", role: "auditor", route: auditorRoute, want: http.StatusOK},
 		{name: "should refuse an auditor at the SOC gate", role: "auditor", route: socRoute, want: http.StatusForbidden},
 		{name: "should refuse an auditor identity echo", role: "auditor", route: adminRoute, want: http.StatusForbidden},
+		{name: "should refuse an auditor the effective config", role: "auditor", route: configRoute, want: http.StatusForbidden},
 
-		{name: "should refuse a plain user the effective config", role: "user", route: auditorRoute, want: http.StatusForbidden},
+		{name: "should refuse a plain user the user list", role: "user", route: auditorRoute, want: http.StatusForbidden},
 		{name: "should refuse a plain user at the SOC gate", role: "user", route: socRoute, want: http.StatusForbidden},
 		{name: "should refuse a plain user identity echo", role: "user", route: adminRoute, want: http.StatusForbidden},
+		{name: "should refuse a plain user the effective config", role: "user", route: configRoute, want: http.StatusForbidden},
 
-		{name: "should ask a caller with no session to sign in for the config", role: "anonymous", route: auditorRoute, want: http.StatusUnauthorized},
+		{name: "should ask a caller with no session to sign in for the user list", role: "anonymous", route: auditorRoute, want: http.StatusUnauthorized},
 		{name: "should ask a caller with no session to sign in at the SOC gate", role: "anonymous", route: socRoute, want: http.StatusUnauthorized},
 		{name: "should ask a caller with no session to sign in for identity echo", role: "anonymous", route: adminRoute, want: http.StatusUnauthorized},
+		{name: "should ask a caller with no session to sign in for the config", role: "anonymous", route: configRoute, want: http.StatusUnauthorized},
 	}
 
 	for _, tt := range tests {

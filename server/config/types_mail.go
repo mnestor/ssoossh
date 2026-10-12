@@ -202,7 +202,7 @@ type SMTPConfig struct {
 
 	// resolvedPassword is the password after PasswordFile has been read,
 	// populated by Validate. Unexported so it cannot arrive from YAML and
-	// cannot be serialized into the auditor-visible effective config.
+	// cannot be serialized into the admin-visible effective config.
 	resolvedPassword string
 }
 

@@ -3,7 +3,6 @@
 	import type { IdentityEchoPayload } from '#lib/api/types.js';
 	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
 	import { formatDateTime } from '#lib/format.js';
-	import { session } from '#lib/session.svelte.js';
 	import { describeSignInFailure, type SignInFailure } from '#lib/signin.js';
 	import {
 		COLLAPSE_AFTER,
@@ -27,10 +26,9 @@
 	// browser back here with ?error= instead of a result.
 	let echoFailure = $state<SignInFailure | null>(null);
 
-	// Starting an echo is admin-only on the server (controller/identityecho.go);
-	// the admin area lets auditors and SOC in, so say so instead of offering
-	// a button that would fail.
-	const canEcho = $derived(session.user?.is_admin ?? false);
+	// Starting an echo is admin-only on the server (controller/identityecho.go),
+	// and identity/echo/+layout.svelte turns SOC and auditors away before
+	// this page renders, so it has no non-admin branch.
 
 	// The result arrives in the URL fragment, which is never sent to a
 	// server. Read it once, then drop it from the address bar and from
@@ -209,17 +207,11 @@
 				missing a group" — the user detail page and the directory probe are for that.
 			</p>
 
-			{#if canEcho}
-				<div>
-					<Button testid="echo-start" busy={starting} onclick={handleStart}>
-						{starting ? 'Redirecting…' : 'Show me what my IdP sends'}
-					</Button>
-				</div>
-			{:else}
-				<p class="text-ink-muted" data-testid="echo-admin-only">
-					Running an echo needs the admin role.
-				</p>
-			{/if}
+			<div>
+				<Button testid="echo-start" busy={starting} onclick={handleStart}>
+					{starting ? 'Redirecting…' : 'Show me what my IdP sends'}
+				</Button>
+			</div>
 
 			{#if startError}
 				<Alert variant="error" title="Could not start the echo" testid="echo-start-error">
