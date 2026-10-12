@@ -98,11 +98,13 @@ func writeFields(b *strings.Builder, fields []*Field, refs map[string]string, sc
 }
 
 // mark is the prefix a commented-out key carries. It sits at the key's own
-// indentation, so deleting the "# " leaves the key correctly indented
-// whether or not the block above it is commented out too.
+// indentation with no space after it, so deleting the single "#" leaves the
+// key correctly indented whether or not the block above it is commented out
+// too, and the missing space is what sets a setting apart from the prose
+// around it: `grep -nE '^\s*#[a-z_]+:'` lists every option in the file.
 func mark(commented bool) string {
 	if commented {
-		return "# "
+		return "#"
 	}
 	return ""
 }
@@ -120,7 +122,7 @@ func writeYAMLField(b *strings.Builder, f *Field, refs map[string]string, scope 
 	// that appeared nowhere in the file it was describing.
 	if f.Embedded {
 		for _, k := range f.Keys {
-			fmt.Fprintf(b, "%s# %s: %s\n", indent, k.Key, zeroValue(k.Type))
+			fmt.Fprintf(b, "%s%s%s: %s\n", indent, mark(true), k.Key, zeroValue(k.Type))
 		}
 		return
 	}
@@ -146,9 +148,9 @@ func writeYAMLField(b *strings.Builder, f *Field, refs map[string]string, scope 
 		case len(f.Elem) > 0:
 			writeYAMLElem(b, f, depth)
 		case f.Example != "":
-			fmt.Fprintf(b, "%s# %s: %s\n", indent, f.Key, f.Example)
+			fmt.Fprintf(b, "%s%s%s: %s\n", indent, mark(true), f.Key, f.Example)
 		case !docShowsKey(f.Doc, f.Key):
-			fmt.Fprintf(b, "%s# %s: %s\n", indent, f.Key, zeroValue(f.Type))
+			fmt.Fprintf(b, "%s%s%s: %s\n", indent, mark(true), f.Key, zeroValue(f.Type))
 		}
 		return
 	}
@@ -219,13 +221,17 @@ func anyLive(fields []*Field) bool {
 // it. The prose for each key stays in ssoosshd.yaml(5), which the file
 // header already points at; what an operator cannot get from prose alone is
 // the nesting, and that is what the block shows.
+//
+// The block is settings, not prose: each line carries the bare mark at the
+// container key's indentation with the entry's own nesting after it, so
+// deleting the single "#" from every line leaves the key where it belongs.
 func writeYAMLElem(b *strings.Builder, f *Field, depth int) {
 	indent := strings.Repeat("  ", depth)
 	b.WriteString(indent + "#\n")
 	b.WriteString(indent + "# One entry, and the keys it can hold:\n")
 	b.WriteString(indent + "#\n")
 	for _, line := range yamlEntry(f, "", "") {
-		b.WriteString(indent + "#   " + line + "\n")
+		b.WriteString(indent + mark(true) + line + "\n")
 	}
 }
 

@@ -15,3 +15,13 @@ func TestEmbeddedDefaults_ShouldMatchGolden(t *testing.T) {
 
 	configgolden.Assert(t, "./server/config/", "defaults.golden", configgolden.Flatten(t, defaultconfig))
 }
+
+// should write every commented-out key in defaults.yaml as "#key:", so it
+// stands apart from the prose and turns on by deleting one character into
+// YAML that loads the key where its indentation says. The file is generated
+// by `make confdocs`; this is what keeps the generator honest about it.
+func TestEmbeddedDefaults_ShouldUncommentEverySettingIntoValidYAML(t *testing.T) {
+	t.Parallel()
+
+	configgolden.AssertCommentedSettings(t, defaultconfig, Config{})
+}

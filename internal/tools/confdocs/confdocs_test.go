@@ -187,7 +187,7 @@ func TestWriteYAMLField_ShouldWriteTheDefaultTheExampleOrNothing(t *testing.T) {
 		{
 			name:    "should comment out a default that is the zero value for its type",
 			field:   &Field{Path: "logging.enable_stdout", Key: "enable_stdout", Type: "bool", Doc: []string{"Also writes to stdout."}, Default: "false", HasDefault: true},
-			want:    "# enable_stdout: false\n",
+			want:    "#enable_stdout: false\n",
 			notWant: "\nenable_stdout:",
 		},
 		{
@@ -199,23 +199,23 @@ func TestWriteYAMLField_ShouldWriteTheDefaultTheExampleOrNothing(t *testing.T) {
 			name:    "should leave a default that differs from the zero value uncommented",
 			field:   &Field{Path: "logging.include_app_name", Key: "include_app_name", Type: "bool", Doc: []string{"Adds an app attribute."}, Default: "true", HasDefault: true},
 			want:    "include_app_name: true\n",
-			notWant: "# include_app_name:",
+			notWant: "#include_app_name:",
 		},
 		{
 			name:    "should prefer the default over the example when both are set",
 			field:   &Field{Path: "logging.enable_stdout", Key: "enable_stdout", Type: "bool", Doc: []string{"Also writes to stdout."}, Default: "true", HasDefault: true, Example: "false"},
 			want:    "enable_stdout: true\n",
-			notWant: "# enable_stdout:",
+			notWant: "#enable_stdout:",
 		},
 		{
 			name:  "should comment the example in when there is no default",
 			field: &Field{Path: "logging.enable_stdout", Key: "enable_stdout", Type: "bool", Doc: []string{"Also writes to stdout."}, Example: "false"},
-			want:  "# enable_stdout: false\n",
+			want:  "#enable_stdout: false\n",
 		},
 		{
 			name:  "should name the key at its empty value when there is neither",
 			field: &Field{Path: "logging.include_app_name", Key: "include_app_name", Type: "bool", Doc: []string{"Adds an app attribute."}},
-			want:  "# Adds an app attribute.\n# include_app_name: false\n",
+			want:  "# Adds an app attribute.\n#include_app_name: false\n",
 		},
 		{
 			name: "should not repeat a key the doc comment already writes out",
@@ -224,12 +224,12 @@ func TestWriteYAMLField_ShouldWriteTheDefaultTheExampleOrNothing(t *testing.T) {
 				Doc: []string{"Steers the server toward FIPS 140-3.", "", "\tfips: true"},
 			},
 			want:    "#   fips: true\n",
-			notWant: "# fips: false",
+			notWant: "#fips: false",
 		},
 		{
 			name:  "should comment out an empty-string default rather than show a blank to fill in",
 			field: &Field{Path: "http.server_name", Key: "server_name", Type: "string", Doc: []string{"The public host name."}, Default: "", HasDefault: true},
-			want:  "# server_name: \"\"\n",
+			want:  "#server_name: \"\"\n",
 		},
 		{
 			name: "should list the keys of an embedded group under its prose",
@@ -238,7 +238,7 @@ func TestWriteYAMLField_ShouldWriteTheDefaultTheExampleOrNothing(t *testing.T) {
 				Doc:  []string{"Log-file rotation, via the embedded timberjack logger."},
 				Keys: []EmbeddedKey{{Key: "filename", Type: "string"}, {Key: "maxsize", Type: "int"}, {Key: "rotationinterval", Type: "duration"}},
 			},
-			want: "# filename: \"\"\n# maxsize: 0\n# rotationinterval: 0s\n",
+			want: "#filename: \"\"\n#maxsize: 0\n#rotationinterval: 0s\n",
 		},
 	}
 
@@ -283,9 +283,9 @@ func TestWriteSection_ShouldCommentOutASectionThatShipsNothing(t *testing.T) {
 	got := b.String()
 	for _, want := range []string{
 		"# Optionally sources the CA key",
-		"# hsm:\n",
-		`  # module: "/usr/lib/libsofthsm2.so"`,
-		`  # pin: "1234"`,
+		"#hsm:\n",
+		`  #module: "/usr/lib/libsofthsm2.so"`,
+		`  #pin: "1234"`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("got:\n%s\nwant it to contain:\n%s", got, want)
@@ -336,7 +336,7 @@ func TestWriteSection_ShouldCommentTheHeaderWhenEveryKeyIsTheZeroValue(t *testin
 	writeSection(&b, section, nil)
 
 	got := b.String()
-	for _, want := range []string{"# authentication:\n", "  # client_id: \"\"\n", "  # client_secret: \"\"\n"} {
+	for _, want := range []string{"#authentication:\n", "  #client_id: \"\"\n", "  #client_secret: \"\"\n"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("got:\n%s\nwant it to contain:\n%s", got, want)
 		}
@@ -367,7 +367,7 @@ func TestWriteSection_ShouldKeepTheHeaderLiveWhenOneKeyShipsAValue(t *testing.T)
 	if !strings.Contains(got, `  scopes: "profile email"`) {
 		t.Errorf("expected the shipped value uncommented, got:\n%s", got)
 	}
-	if !strings.Contains(got, `  # client_id: ""`) {
+	if !strings.Contains(got, `  #client_id: ""`) {
 		t.Errorf("expected the zero-valued key commented out, got:\n%s", got)
 	}
 }
@@ -391,10 +391,10 @@ func TestWriteSection_ShouldSeparateKeysWithABlankLine(t *testing.T) {
 	var b strings.Builder
 	writeSection(&b, section, nil)
 
-	want := "  # certificate_file: \"/etc/ssoossh/tls/server.crt\"\n" +
+	want := "  #certificate_file: \"/etc/ssoossh/tls/server.crt\"\n" +
 		"\n" +
 		"  # The PEM private key.\n" +
-		"  # private_key_file: \"/etc/ssoossh/tls/server.key\"\n" +
+		"  #private_key_file: \"/etc/ssoossh/tls/server.key\"\n" +
 		"\n" +
 		"  # The minimum version.\n" +
 		"  min_version: \"TLS1.3\"\n"
@@ -767,12 +767,12 @@ func TestWriteYAMLField_ShouldShowTheShapeOfOneContainerEntry(t *testing.T) {
 				},
 			},
 			want: []string{
-				"  #   fields:",
-				"  #     <name>:",
-				"  #       attribute: memberOf",
-				"  #       searches:",
-				"  #         - name: linked-accounts",
-				`  #           value: ""`,
+				"  #fields:",
+				"  #  <name>:",
+				"  #    attribute: memberOf",
+				"  #    searches:",
+				"  #      - name: linked-accounts",
+				`  #        value: ""`,
 			},
 		},
 		{
@@ -793,11 +793,11 @@ func TestWriteYAMLField_ShouldShowTheShapeOfOneContainerEntry(t *testing.T) {
 				},
 			},
 			want: []string{
-				"  #   tiers:",
-				`  #     - name: ""`,
-				"  #       when:",
-				`  #         group: ""`,
-				"  #       max_duration: 0s",
+				"  #tiers:",
+				`  #  - name: ""`,
+				"  #    when:",
+				`  #      group: ""`,
+				"  #    max_duration: 0s",
 			},
 		},
 	}
