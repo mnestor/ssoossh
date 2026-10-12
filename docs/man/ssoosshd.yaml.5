@@ -722,12 +722,12 @@ Default:
 Both group names are optional; empty disables the corresponding role.
 .TP
 .BI admin.require_group: " string"
-The OIDC group a caller must belong to in order to access admin\-scoped operations (re\-enabling users), plus everything the SOC and auditor roles below can do. Empty disables admin operations entirely. Fails closed: no identity, no group, or no configured group all deny.
+The OIDC group a caller must belong to in order to access admin\-scoped operations (diagnostics, claims echo, directory sync and probe), plus everything the SOC and auditor roles below can do. Empty disables admin operations entirely. Fails closed: no identity, no group, or no configured group all deny.
 Default:
 .BR empty .
 .TP
 .BI admin.soc_group: " string"
-The OIDC group a caller must belong to in order to access SOC\-scoped containment operations: disabling users and expiring enrollments. SOC is a child role of admin, so require_group members hold SOC access regardless of this setting; empty therefore narrows SOC operations to admins rather than disabling them. SOC members also hold auditor access (they need the directory and enrollment lists to find what to contain), but deliberately not the restorative operations \(em re\-enabling a user stays admin\-only. Fails closed: no identity, or membership in neither group, denies.
+The OIDC group a caller must belong to in order to access SOC\-scoped account operations: disabling and re\-enabling users and expiring enrollments. Whoever can contain an account can also release it, so a SOC disable of an admin never needs an admin to undo it. SOC is a child role of admin, so require_group members hold SOC access regardless of this setting; empty therefore narrows SOC operations to admins rather than disabling them. SOC members also hold auditor access (they need the directory and enrollment lists to find what to contain). Fails closed: no identity, or membership in neither group, denies.
 Default:
 .BR empty .
 .TP

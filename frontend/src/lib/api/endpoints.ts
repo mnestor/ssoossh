@@ -411,7 +411,7 @@ export function disableUser(
 }
 
 /**
- * PATCH /api/admin/users/:id/enable — re-enable a user (admin-only).
+ * PATCH /api/admin/users/:id/enable — re-enable a user (admin or SOC).
  * The reason is required, on the same terms as the disable reason.
  */
 export function enableUser(

@@ -89,7 +89,6 @@ func routerWithEnrollmentService(t *testing.T, cfg *config.Config, db *gorm.DB, 
 		cfg,
 		db,
 		identityMiddleware(identity), // sessionAuthMiddleware
-		middleware.NewAdminAuthMiddleware(cfg).Add(),   // adminAuthMiddleware (real)
 		middleware.NewSOCAuthMiddleware(cfg).Add(),     // socAuthMiddleware (real)
 		middleware.NewAuditorAuthMiddleware(cfg).Add(), // auditorAuthMiddleware (real)
 		func(c *gin.Context) { c.Next() },              // csrfMiddleware (passthrough for tests)
@@ -432,43 +431,6 @@ func TestAdminDisableUserHandler_SOCAllowed(t *testing.T) {
 	}
 }
 
-// TestAdminEnableUserHandler_SOCDenied tests PATCH /api/admin/users/:id/enable
-// denies a SOC group member: re-enabling is restorative, not containment, so
-// a SOC analyst must not be able to undo a disable.
-func TestAdminEnableUserHandler_SOCDenied(t *testing.T) {
-	t.Parallel()
-
-	cfg := newTestConfig(t)
-	db := newTestDB(t)
-	now := time.Now()
-	disabledUser := model.User{
-		ID:         "user-1",
-		Subject:    "sub-alice",
-		Username:   "alice",
-		Email:      "alice@example.com",
-		CreatedAt:  now,
-		UpdatedAt:  now,
-		DisabledAt: &now,
-	}
-	if err := db.Create(&disabledUser).Error; err != nil {
-		t.Fatalf("failed to create disabled test user: %v", err)
-	}
-
-	identity := &service.Identity{
-		Subject:  "sub-soc",
-		Username: "soc",
-		Groups:   []string{"ssh-soc"}, // SOC group, NOT admin
-	}
-	r := routerWithAuth(t, cfg, db, identity)
-
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, jsonPatch(t, "/admin/users/user-1/enable", `{"reason":"test reason"}`))
-
-	if w.Code != http.StatusForbidden {
-		t.Errorf("PATCH /admin/users/:id/enable as SOC: got %d, want %d (re-enabling stays admin-only)", w.Code, http.StatusForbidden)
-	}
-}
-
 // TestAdminExpireEnrollmentHandler_SOCAllowed tests PATCH
 // /api/admin/enrollments/:id/expire allows a SOC group member who is not an
 // admin: expiring a credential is the other containment operation SOC holds.
@@ -554,128 +516,6 @@ func TestAdminUsersListHandler_SOCAllowed(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Errorf("GET /admin/users as SOC: got %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
-	}
-}
-
-// TestAdminEnableUserHandler_AnonymousUserDenied tests PATCH /api/admin/users/:id/enable
-// denies anonymous.
-func TestAdminEnableUserHandler_AnonymousUserDenied(t *testing.T) {
-	t.Parallel()
-
-	cfg := newTestConfig(t)
-	db := newTestDB(t)
-	r := routerWithAuth(t, cfg, db, nil)
-
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, jsonPatch(t, "/admin/users/user-1/enable", `{"reason":"test reason"}`))
-
-	if w.Code != http.StatusForbidden {
-		t.Errorf("PATCH /admin/users/:id/enable with no identity: got %d, want %d", w.Code, http.StatusForbidden)
-	}
-}
-
-// TestAdminEnableUserHandler_PlainUserDenied tests PATCH /api/admin/users/:id/enable
-// denies a plain user.
-func TestAdminEnableUserHandler_PlainUserDenied(t *testing.T) {
-	t.Parallel()
-
-	cfg := newTestConfig(t)
-	db := newTestDB(t)
-	identity := &service.Identity{
-		Subject:  "sub-alice",
-		Username: "alice",
-		Groups:   []string{"ssh-users"},
-	}
-	r := routerWithAuth(t, cfg, db, identity)
-
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, jsonPatch(t, "/admin/users/user-1/enable", `{"reason":"test reason"}`))
-
-	if w.Code != http.StatusForbidden {
-		t.Errorf("PATCH /admin/users/:id/enable as plain user: got %d, want %d", w.Code, http.StatusForbidden)
-	}
-}
-
-// TestAdminEnableUserHandler_AuditorDenied tests PATCH /api/admin/users/:id/enable
-// denies an auditor (they are read-only).
-func TestAdminEnableUserHandler_AuditorDenied(t *testing.T) {
-	t.Parallel()
-
-	cfg := newTestConfig(t)
-	db := newTestDB(t)
-	testUser := model.User{
-		ID:         "user-1",
-		Subject:    "sub-alice",
-		Username:   "alice",
-		Email:      "alice@example.com",
-		CreatedAt:  time.Now(),
-		UpdatedAt:  time.Now(),
-		DisabledAt: &time.Time{},
-	}
-	if err := db.Create(&testUser).Error; err != nil {
-		t.Fatalf("failed to create test user: %v", err)
-	}
-
-	identity := &service.Identity{
-		Subject:  "sub-auditor",
-		Username: "auditor",
-		Groups:   []string{"ssh-auditors"},
-	}
-	r := routerWithAuth(t, cfg, db, identity)
-
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, jsonPatch(t, "/admin/users/user-1/enable", `{"reason":"test reason"}`))
-
-	if w.Code != http.StatusForbidden {
-		t.Errorf("PATCH /admin/users/:id/enable as auditor: got %d, want %d (auditors should be read-only)", w.Code, http.StatusForbidden)
-	}
-}
-
-// TestAdminEnableUserHandler_AdminAllowed tests PATCH /api/admin/users/:id/enable
-// allows an admin.
-func TestAdminEnableUserHandler_AdminAllowed(t *testing.T) {
-	t.Parallel()
-
-	cfg := newTestConfig(t)
-	db := newTestDB(t)
-	disabledTime := time.Now().Add(-time.Hour)
-	testUser := model.User{
-		ID:         "user-1",
-		Subject:    "sub-alice",
-		Username:   "alice",
-		Email:      "alice@example.com",
-		CreatedAt:  time.Now(),
-		UpdatedAt:  time.Now(),
-		DisabledAt: &disabledTime,
-	}
-	if err := db.Create(&testUser).Error; err != nil {
-		t.Fatalf("failed to create test user: %v", err)
-	}
-
-	adminUser := model.User{
-		ID:        "user-admin",
-		Subject:   "sub-admin",
-		Username:  "admin",
-		Email:     "admin@example.com",
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	}
-	if err := db.Create(&adminUser).Error; err != nil {
-		t.Fatalf("failed to create admin user: %v", err)
-	}
-
-	identity := &service.Identity{
-		Subject:  "sub-admin",
-		Username: "admin",
-		Groups:   []string{"ssh-admins"},
-	}
-	r := routerWithAuth(t, cfg, db, identity)
-
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, jsonPatch(t, "/admin/users/user-1/enable", `{"reason":"test reason"}`))
-
-	if w.Code != http.StatusOK {
-		t.Errorf("PATCH /admin/users/:id/enable as admin: got %d, want %d", w.Code, http.StatusOK)
 	}
 }
 
@@ -1399,7 +1239,6 @@ func TestEffectiveConfigHandler_ShouldReturnConfigData(t *testing.T) {
 		cfg,
 		mockDB(),
 		mockSessionAuthMiddleware(true, "user-123"),
-		mockAdminAuthMiddleware(true),
 		mockSOCAuthMiddleware(true),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
@@ -1469,7 +1308,6 @@ func TestEffectiveConfigHandler_ShouldRedactSecretsButNotWhetherTheyAreSet(t *te
 		cfg,
 		mockDB(),
 		mockSessionAuthMiddleware(true, "user-123"),
-		mockAdminAuthMiddleware(true),
 		mockSOCAuthMiddleware(true),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
@@ -1525,7 +1363,6 @@ func TestEffectiveConfigHandler_RequiresAuditorAuth(t *testing.T) {
 		cfg,
 		mockDB(),
 		mockSessionAuthMiddleware(true, "user-123"),
-		mockAdminAuthMiddleware(false),
 		mockSOCAuthMiddleware(false),
 		mockAuditorAuthMiddleware(false),
 		mockCSRFMiddleware(),
@@ -1558,7 +1395,6 @@ func TestExpireEnrollmentHandler_ShouldRejectMissingID(t *testing.T) {
 		cfg,
 		mockDB(),
 		mockSessionAuthMiddleware(true, "user-123"),
-		mockAdminAuthMiddleware(true),
 		mockSOCAuthMiddleware(true),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
@@ -1592,7 +1428,6 @@ func TestExpireEnrollmentHandler_RequiresAdminAuth(t *testing.T) {
 		cfg,
 		mockDB(),
 		mockSessionAuthMiddleware(true, "user-123"),
-		mockAdminAuthMiddleware(false),
 		mockSOCAuthMiddleware(false),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
@@ -1636,7 +1471,6 @@ func TestExpireEnrollmentHandler_ShouldReturn404ForUnknownID(t *testing.T) {
 		cfg,
 		db,
 		mockSessionAuthMiddleware(true, "user-123"),
-		mockAdminAuthMiddleware(true),
 		mockSOCAuthMiddleware(true),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
@@ -1669,7 +1503,6 @@ func TestDisableUserHandler_RequiresAdminAuth(t *testing.T) {
 		cfg,
 		mockDB(),
 		mockSessionAuthMiddleware(true, "user-123"),
-		mockAdminAuthMiddleware(false),
 		mockSOCAuthMiddleware(false),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
@@ -1709,7 +1542,6 @@ func TestCertificateHistoryHandler_ShouldReturnEmptyList(t *testing.T) {
 		cfg,
 		db,
 		mockSessionAuthMiddleware(true, "user-123"),
-		mockAdminAuthMiddleware(true),
 		mockSOCAuthMiddleware(true),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
@@ -1760,7 +1592,6 @@ func TestCertificateHistoryHandler_RequiresAuditorAuth(t *testing.T) {
 		cfg,
 		mockDB(),
 		mockSessionAuthMiddleware(true, "user-123"),
-		mockAdminAuthMiddleware(false),
 		mockSOCAuthMiddleware(false),
 		mockAuditorAuthMiddleware(false),
 		mockCSRFMiddleware(),
@@ -1802,7 +1633,6 @@ func TestNewAdminController_RoutesAreRegistered(t *testing.T) {
 		cfg,
 		mockDB(),
 		mockSessionAuthMiddleware(true, "user-123"),
-		mockAdminAuthMiddleware(true),
 		mockSOCAuthMiddleware(true),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
@@ -1891,7 +1721,6 @@ func TestCertificateHistoryHandler_SearchesCertificates(t *testing.T) {
 		cfg,
 		db,
 		mockSessionAuthMiddleware(true, "user-123"),
-		mockAdminAuthMiddleware(false),
 		mockSOCAuthMiddleware(false),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
@@ -1988,7 +1817,6 @@ func TestCertificateHistoryHandler_FiltersByType(t *testing.T) {
 		cfg,
 		db,
 		mockSessionAuthMiddleware(true, "user-123"),
-		mockAdminAuthMiddleware(false),
 		mockSOCAuthMiddleware(false),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
@@ -2077,7 +1905,6 @@ func TestCertificateHistoryHandler_FiltersByStatus(t *testing.T) {
 		cfg,
 		db,
 		mockSessionAuthMiddleware(true, "user-123"),
-		mockAdminAuthMiddleware(false),
 		mockSOCAuthMiddleware(false),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
@@ -2152,7 +1979,6 @@ func TestCertificateHistoryHandler_Pagination(t *testing.T) {
 		cfg,
 		db,
 		mockSessionAuthMiddleware(true, "user-123"),
-		mockAdminAuthMiddleware(false),
 		mockSOCAuthMiddleware(false),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),

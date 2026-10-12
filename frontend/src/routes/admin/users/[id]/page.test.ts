@@ -214,7 +214,7 @@ describe('Admin user detail', () => {
 		expect(await screen.findByTestId('user-state')).toHaveTextContent('Disabled since');
 	});
 
-	// Disabling needs SOC and re-enabling admin; an auditor used to be
+	// Disabling and re-enabling both need SOC; an auditor used to be
 	// offered the button, write a reason, and get a raw 403.
 	it('should not offer an auditor the Disable action', async () => {
 		session.user = {
@@ -313,18 +313,55 @@ describe('Admin user detail', () => {
 		expect(await screen.findByText(/You can't disable your own account/)).toBeInTheDocument();
 	});
 
-	it('should tell SOC that re-enabling is an admin action', async () => {
-		session.user = {
-			username: 'sam',
-			is_admin: false,
-			is_soc: true,
-			is_auditor: true
-		} as CurrentUser;
-		mockDetail({ disabled_at: '2026-08-20T09:00:00Z', disabled_by_username: 'root-admin' });
-		render(Page);
-		expect(await screen.findByTestId('user-action-role')).toHaveTextContent(
-			'Only an admin can re-enable accounts.'
-		);
+	// Whoever can contain an account can release it (issue #127): SOC is
+	// offered Re-enable on a disabled record, an admin's disable included,
+	// and an auditor is told which role it needs instead.
+	describe('Re-enable on a disabled record', () => {
+		const viewers: { name: string; user: Partial<CurrentUser>; offered: boolean }[] = [
+			{
+				name: 'an admin',
+				user: { username: 'root-admin', is_admin: true, is_soc: true, is_auditor: true },
+				offered: true
+			},
+			{
+				name: 'a SOC member who is not an admin',
+				user: { username: 'sam', is_admin: false, is_soc: true, is_auditor: true },
+				offered: true
+			},
+			{
+				name: 'an auditor',
+				user: { username: 'ann', is_admin: false, is_soc: false, is_auditor: true },
+				offered: false
+			}
+		];
+
+		for (const viewer of viewers) {
+			it(`should ${viewer.offered ? 'offer' : 'not offer'} Re-enable when the viewer is ${viewer.name}`, async () => {
+				session.user = viewer.user as CurrentUser;
+				mockDetail({
+					disabled_at: '2026-08-20T09:00:00Z',
+					disabled_by_username: 'root-admin',
+					disabled_source: 'admin'
+				});
+				render(Page);
+				await screen.findByTestId('user-username');
+				expect(screen.queryByRole('button', { name: /^Re-enable$/ }) !== null).toBe(viewer.offered);
+			});
+		}
+
+		it('should tell an auditor which role re-enabling needs', async () => {
+			session.user = {
+				username: 'ann',
+				is_admin: false,
+				is_soc: false,
+				is_auditor: true
+			} as CurrentUser;
+			mockDetail({ disabled_at: '2026-08-20T09:00:00Z', disabled_by_username: 'root-admin' });
+			render(Page);
+			expect(await screen.findByTestId('user-action-role')).toHaveTextContent(
+				'Re-enabling needs the SOC or admin role.'
+			);
+		});
 	});
 
 	it('should name the user in the tab', async () => {

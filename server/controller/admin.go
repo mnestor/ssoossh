@@ -24,17 +24,17 @@ import (
 	"github.com/mnestor/ssoossh/server/webtypes"
 )
 
-// NewAdminController registers admin-scoped, SOC-scoped, and auditor-scoped
-// routes on group. Admin routes require admin group membership. SOC routes
-// take admin or SOC group membership. Auditor routes require auditor-level
-// access, which admin and SOC membership also satisfy since auditor is a
-// child role of both.
+// NewAdminController registers SOC-scoped and auditor-scoped routes on
+// group. SOC routes take admin or SOC group membership. Auditor routes
+// require auditor-level access, which admin and SOC membership also satisfy
+// since auditor is a child role of both. No route here is admin-only; the
+// admin-only powers (diagnostics, identity echo, directory admin) live in
+// their own controllers.
 func NewAdminController(
 	group *gin.RouterGroup,
 	c *config.Config,
 	db *gorm.DB,
 	sessionAuthMiddleware gin.HandlerFunc,
-	adminAuthMiddleware gin.HandlerFunc,
 	socAuthMiddleware gin.HandlerFunc,
 	auditorAuthMiddleware gin.HandlerFunc,
 	csrfMiddleware gin.HandlerFunc,
@@ -43,17 +43,15 @@ func NewAdminController(
 ) {
 	a := &adminController{config: c, db: db, enrollmentService: enrollmentService, audit: auditService}
 
-	// Admin routes (restorative writes, require admin group)
-	adminGroup := group.Group("/admin", sessionAuthMiddleware, adminAuthMiddleware, csrfMiddleware)
-	adminGroup.PATCH("/users/:id/enable", a.enableUserHandler)
-
-	// SOC routes (containment writes: admin or SOC group). SOC holds the
-	// operations that revoke access — expiring an enrollment, disabling a
-	// user — and never the ones that restore it, so a SOC analyst can
-	// contain an incident but not quietly undo a containment.
+	// SOC routes (account writes: admin or SOC group). SOC
+	// holds expiring an enrollment and both halves of a user disable:
+	// whoever can contain an account can also release it, so a SOC disable
+	// of every admin never needs a database edit to undo. Every re-enable
+	// takes a reason and is audited with its actor (issue #127).
 	socGroup := group.Group("/admin", sessionAuthMiddleware, socAuthMiddleware, csrfMiddleware)
 	socGroup.PATCH("/enrollments/:id/expire", a.expireEnrollmentHandler)
 	socGroup.PATCH("/users/:id/disable", a.disableUserHandler)
+	socGroup.PATCH("/users/:id/enable", a.enableUserHandler)
 
 	// Auditor routes (read-only operations)
 	auditorGroup := group.Group("/admin", sessionAuthMiddleware, auditorAuthMiddleware)
@@ -709,9 +707,12 @@ func (a *adminController) disableSource(groups []string) model.DisabledSource {
 
 // enableUserHandler handles PATCH /api/admin/users/:id/enable: re-enables a
 // user after disabling. Already-expired enrollments are not un-expired.
+// SOC holds it alongside the disable, so whoever can contain an account
+// can release it, whatever disabled it (admin, SOC or the directory sync).
 //
-// @Summary     Re-enable a user (admin-only)
-// @Description Re-enables a previously disabled user. The operation is idempotent.
+// @Summary     Re-enable a user (admin or SOC)
+// @Description Re-enables a previously disabled user, whichever role or
+// @Description directory sync disabled it. The operation is idempotent.
 // @Description Note: service enrollments that have already expired are not
 // @Description un-expired; the user must request new enrollments.
 // @Tags        admin
@@ -720,7 +721,7 @@ func (a *adminController) disableSource(groups []string) model.DisabledSource {
 // @Param       request body webtypes.ReEnableUserRequestBody true "Re-enable reason (required)"
 // @Success     200 {object} gin.H "User re-enabled"
 // @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
-// @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as admin"
+// @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as admin or SOC"
 // @Failure     404 {object} openapidoc.ErrorEnvelope "User not found"
 // @Security    sessionCookie
 // @Router      /api/admin/users/{id}/enable [patch]
@@ -728,6 +729,15 @@ func (a *adminController) enableUserHandler(g *gin.Context) {
 	id := g.Param("id")
 	if id == "" {
 		handleError(g, fmt.Errorf("user ID is required"))
+		return
+	}
+
+	// The caller is required, as on the disable: a restore with no actor on
+	// its audit row is exactly what the required reason exists to prevent.
+	// The route's middleware already demands a session, so this only fails
+	// closed if that wiring ever changes.
+	if identity, ok := middleware.Identity(g); !ok || identity == nil {
+		handleError(g, &errorresponses.UnauthorizedError{})
 		return
 	}
 
