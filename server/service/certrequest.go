@@ -1159,7 +1159,12 @@ func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req m
 	// it (max_enrollment_duration) under the enrollment_duration ceiling.
 	// effectiveDuration still bounds each certificate, applied at
 	// redemption rather than here.
-	expiresAt := now.Add(outcome.enrollmentDuration)
+	//
+	// Truncated to the microsecond Postgres stores (SQLite keeps the
+	// nanoseconds), so the expiry announced in the approval response and
+	// the "created" notification is the one every later read returns, on
+	// either backend.
+	expiresAt := now.Add(outcome.enrollmentDuration).Truncate(time.Microsecond)
 
 	decision, err := newDecision(req, model.CertificateRequestDecisionApproved, identity, dc, now, &outcome.explanation)
 	if err != nil {
