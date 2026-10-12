@@ -17,8 +17,8 @@ import (
 )
 
 // AuditAction is a namespaced action name in the audit taxonomy. They are
-// strings inside the payload rather than a database enum, so the set grows
-// without a migration.
+// plain strings, in the payload and in its indexed copy in the action
+// column, rather than a database enum, so the set grows without a migration.
 type AuditAction string
 
 // The taxonomy. Namespaced by subject area: authentication, certificates,
@@ -352,7 +352,10 @@ func (s *AuditService) prepare(event AuditEvent) (*model.AuditEvent, AuditEvent,
 		CreatedAt:    event.OccurredAt,
 		ActorUserID:  subjectUserID(event.Actor),
 		TargetUserID: subjectUserID(event.Target),
-		Payload:      string(payload),
+		// Action is encoded into payload just above from this same event,
+		// which is what keeps the indexed copy equal to the record.
+		Action:  string(event.Action),
+		Payload: string(payload),
 	}
 	return row, event, nil
 }
