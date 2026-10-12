@@ -203,22 +203,15 @@ func TestDisableUserHandler_ShouldRefuseSelfDisableWithNoAuditService(t *testing
 	cfg := newTestConfig(t)
 	identity := selfOperatorIdentity(cfg)
 
+	// The controller is built as a struct literal with no recorder and the
+	// one route mounted by hand, rather than through NewAdminController,
+	// so the test does not depend on that constructor's parameter list.
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.Use(middleware.NewErrorHandlerMiddleware().Add())
 	r.Use(identityMiddleware(identity))
-	NewAdminController(
-		&r.RouterGroup,
-		cfg,
-		db,
-		identityMiddleware(identity),
-		middleware.NewAdminAuthMiddleware(cfg).Add(),
-		middleware.NewSOCAuthMiddleware(cfg).Add(),
-		middleware.NewAuditorAuthMiddleware(cfg).Add(),
-		func(c *gin.Context) { c.Next() },
-		&stubEnrollmentProvider{},
-		nil,
-	)
+	a := &adminController{config: cfg, db: db}
+	r.PATCH("/admin/users/:id/disable", a.disableUserHandler)
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, jsonPatch(t, "/admin/users/u-self/disable", `{"reason":"offboarded"}`))
