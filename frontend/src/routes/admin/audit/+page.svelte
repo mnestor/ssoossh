@@ -12,6 +12,7 @@
 	} from '#lib/audit.js';
 	import AuditTimeline from '#lib/components/AuditTimeline.svelte';
 	import Alert from '#lib/components/Alert.svelte';
+	import LoadMoreFooter from '#lib/components/LoadMoreFooter.svelte';
 	import EmptyState from '#lib/components/EmptyState.svelte';
 	import ListStatus from '#lib/components/ListStatus.svelte';
 	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
@@ -367,26 +368,15 @@
 			<AuditTimeline {events} {sourceHref} onsource={filterToSource} />
 		</div>
 
-		<div class="flex flex-col gap-3">
-			<p class="text-xs text-ink-muted tabular-nums" data-testid="audit-count">
-				{describeLoaded(shownCount, notLoaded, 'older')}
-			</p>
-			{#if moreError}
-				<Alert
-					variant="error"
-					title="Could not load older events"
-					onretry={() => load(failedCursor)}
-					testid="audit-more-error"
-				>
-					{moreError}
-				</Alert>
-			{:else if nextCursor !== null}
-				<div>
-					<Button variant="ghost" {busy} onclick={() => load(nextCursor)} testid="audit-load-more">
-						{busy ? 'Loading…' : 'Load more'}
-					</Button>
-				</div>
-			{/if}
-		</div>
+		<LoadMoreFooter
+			summary={describeLoaded(shownCount, notLoaded, 'older')}
+			hasMore={nextCursor !== null}
+			{busy}
+			error={moreError}
+			errorTitle="Could not load older events"
+			onmore={() => load(nextCursor)}
+			onretry={() => load(failedCursor)}
+			testid="audit"
+		/>
 	{/if}
 </PageShell>

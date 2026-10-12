@@ -319,6 +319,48 @@ describe('Admin certificates page', () => {
 			await user.click(screen.getByRole('button', { name: /try again/i }));
 			expect(await screen.findByText(/page-two/)).toBeInTheDocument();
 		});
+
+		// Where keyboard focus lands once the pressed control is gone: the
+		// count line after the last page, Try again after a failure. See
+		// LoadMoreFooter, which owns the rule for every Load more list.
+		const focusCases: {
+			name: string;
+			bodies: (CertificateListAdminResponse | string)[];
+			retry: boolean;
+			lands: string;
+		}[] = [
+			{
+				name: 'should move focus to the count line when the last page loads',
+				bodies: [first, second],
+				retry: false,
+				lands: 'certificates-count'
+			},
+			{
+				name: 'should move focus to Try again when Load more fails',
+				bodies: [first, 'boom'],
+				retry: false,
+				lands: 'certificates-more-error-retry'
+			},
+			{
+				name: 'should move focus to the count line when a retry loads the last page',
+				bodies: [first, 'boom', second],
+				retry: true,
+				lands: 'certificates-count'
+			}
+		];
+
+		for (const { name, bodies, retry, lands } of focusCases) {
+			it(name, async () => {
+				const user = userEvent.setup();
+				pages(...bodies);
+				render(Page);
+				await user.click(await screen.findByTestId('certificates-load-more'));
+				if (retry) {
+					await user.click(await screen.findByTestId('certificates-more-error-retry'));
+				}
+				await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId(lands)));
+			});
+		}
 	});
 
 	describe('when filtering by type', () => {

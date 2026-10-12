@@ -200,4 +200,65 @@ describe('admin audit page', () => {
 		await screen.findByTestId('audit-more-error');
 		expect(screen.getAllByTestId('audit-event')).toHaveLength(1);
 	});
+
+	// Where keyboard focus lands once the pressed control is gone: the count
+	// line after the last page, Try again after a failure. See
+	// LoadMoreFooter, which owns the rule for every Load more list.
+	describe('keyboard focus after Load more', () => {
+		const first = feedPage([auditEvent('e1', 'user.disabled')], 2, 'e1');
+		const last = feedPage([auditEvent('e2', 'user.enabled')], 2);
+
+		/** stubPages answers each fetch in turn; 'offline' is a failed request. */
+		function stubPages(...pages: (object | 'offline')[]) {
+			let call = 0;
+			vi.stubGlobal(
+				'fetch',
+				vi.fn(() => {
+					const page = pages[Math.min(call++, pages.length - 1)];
+					if (page === 'offline') return Promise.reject(new Error('offline'));
+					return Promise.resolve(
+						new Response(JSON.stringify({ data: page, error: null }), {
+							status: 200,
+							headers: { 'Content-Type': 'application/json' }
+						})
+					);
+				})
+			);
+		}
+
+		const cases: { name: string; pages: (object | 'offline')[]; retry: boolean; lands: string }[] =
+			[
+				{
+					name: 'should move focus to the count line when the last page loads',
+					pages: [first, last],
+					retry: false,
+					lands: 'audit-count'
+				},
+				{
+					name: 'should move focus to Try again when Load more fails',
+					pages: [first, 'offline'],
+					retry: false,
+					lands: 'audit-more-error-retry'
+				},
+				{
+					name: 'should move focus to the count line when a retry loads the last page',
+					pages: [first, 'offline', last],
+					retry: true,
+					lands: 'audit-count'
+				}
+			];
+
+		for (const { name, pages, retry, lands } of cases) {
+			it(name, async () => {
+				stubPages(...pages);
+				render(Page);
+				const user = userEvent.setup();
+				await user.click(await screen.findByTestId('audit-load-more'));
+				if (retry) {
+					await user.click(await screen.findByTestId('audit-more-error-retry'));
+				}
+				await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId(lands)));
+			});
+		}
+	});
 });

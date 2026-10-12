@@ -1144,4 +1144,41 @@ describe('when the audit timeline runs past one page', () => {
 		await userEvent.click(screen.getByTestId('user-audit-more-error-retry'));
 		expect(await screen.findByText(/second page reason/)).toBeInTheDocument();
 	});
+
+	// Where keyboard focus lands once the pressed control is gone: the count
+	// line after the last page, Try again after a failure. See
+	// LoadMoreFooter, which owns the rule for every Load more list.
+	const focusCases: { name: string; pages: (object | string)[]; retry: boolean; lands: string }[] =
+		[
+			{
+				name: 'should move focus to the count line when the oldest event loads',
+				pages: [first, last],
+				retry: false,
+				lands: 'user-audit-count'
+			},
+			{
+				name: 'should move focus to Try again when Load more fails',
+				pages: [first, 'network down'],
+				retry: false,
+				lands: 'user-audit-more-error-retry'
+			},
+			{
+				name: 'should move focus to the count line when a retry loads the oldest event',
+				pages: [first, 'network down', last],
+				retry: true,
+				lands: 'user-audit-count'
+			}
+		];
+
+	for (const { name, pages, retry, lands } of focusCases) {
+		it(name, async () => {
+			mockTimeline(...pages);
+			render(Page);
+			await userEvent.click(await screen.findByTestId('user-audit-load-more'));
+			if (retry) {
+				await userEvent.click(await screen.findByTestId('user-audit-more-error-retry'));
+			}
+			await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId(lands)));
+		});
+	}
 });

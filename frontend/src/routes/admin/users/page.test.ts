@@ -230,6 +230,42 @@ describe('Admin users list', () => {
 		expect(await screen.findByText('bob')).toBeInTheDocument();
 	});
 
+	// Where keyboard focus lands once the pressed control is gone: the count
+	// line after the last page, Try again after a failure. See
+	// LoadMoreFooter, which owns the rule for every Load more list.
+	const focusCases: { name: string; failures: string[]; retry: boolean; lands: string }[] = [
+		{
+			name: 'should move focus to the count line when the last page loads',
+			failures: [],
+			retry: false,
+			lands: 'users-count'
+		},
+		{
+			name: 'should move focus to Try again when Load more fails',
+			failures: ['boom'],
+			retry: false,
+			lands: 'users-more-error-retry'
+		},
+		{
+			name: 'should move focus to the count line when a retry loads the last page',
+			failures: ['boom'],
+			retry: true,
+			lands: 'users-count'
+		}
+	];
+
+	for (const { name, failures, retry, lands } of focusCases) {
+		it(name, async () => {
+			twoPages(...failures);
+			render(Page);
+			await userEvent.click(await screen.findByTestId('users-load-more'));
+			if (retry) {
+				await userEvent.click(await screen.findByTestId('users-more-error-retry'));
+			}
+			await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId(lands)));
+		});
+	}
+
 	it('should not offer Load more when a single page holds every user', async () => {
 		mockUsers([user()]);
 		render(Page);
