@@ -182,12 +182,25 @@
      brings the whole control back the moment it takes focus, because a
      bypass a sighted keyboard user cannot see is one they cannot trust.
 
-     Outside the branch below so there is exactly one of these, whichever
+     Outside the branches below so there is exactly one of these, whichever
      shell renders. -->
 <a href="#main-content" class="skip-link sr-only">Skip to main content</a>
 
-{#if showRail}
-	<div class="flex min-h-screen">
+<!-- One shell for both cases, with the rail and the headers as the only
+     branches in it.
+
+     The page itself must sit outside any branch on the session. On a fresh
+     load the session is unknown until /api/users/me answers, so the screen
+     starts without the rail and gains it a moment later. When each shell
+     carried its own copy of the page, that switch destroyed the page and
+     built it again: its data request went out twice, the first one aborted,
+     and the reader saw it load twice (issue #173). Here the switch adds the
+     rail beside a page that stays put.
+
+     Without the rail the column below is the row's only child and fills
+     it, which lays out the same as the column the plain shell used to be. -->
+<div class="flex min-h-screen">
+	{#if showRail}
 		<!-- The rail proper, above `lg`. Sticky rather than scrolling with
 		     the page: it is the app's chrome now, and chrome that scrolls
 		     away leaves a long admin table with no way out of it. -->
@@ -247,8 +260,10 @@
 				</button>
 			</div>
 		{/if}
+	{/if}
 
-		<div class="flex min-w-0 flex-1 flex-col">
+	<div class="flex min-w-0 flex-1 flex-col">
+		{#if showRail}
 			<!-- Below `lg` there is no room for a 244px column beside the
 			     page, so the chrome shrinks to the one control that brings
 			     it back. Everything else — theme, identity, sign out — is
@@ -288,60 +303,54 @@
 					{/if}
 				</a>
 			</header>
+		{:else}
+			<!-- No rail: a signed-out visitor, or one of the single-task screens.
+			     The header carries only what such a screen can act on. -->
+			<header class="bg-surface">
+				<div class="flex items-center gap-3 px-4 py-4 sm:gap-4 sm:px-8">
+					<a href={resolve('/')} class="flex min-w-0 items-center gap-2 font-semibold">
+						<BrandMark size={22} />
+						<span>ssoossh</span>
+						{#if branding.org_name}
+							<span
+								class="ml-0.5 max-w-32 truncate border-l border-border-subtle pl-2 text-xs font-normal text-ink-muted"
+							>
+								{branding.org_name}
+							</span>
+						{/if}
+					</a>
 
-			<main id="main-content" class="flex flex-1 flex-col items-center px-4 py-8 sm:px-8 sm:py-10">
-				{#if signOutError}
-					<div class="mb-6 w-full max-w-[1120px]">
-						<Alert
-							variant="error"
-							title="Sign-out did not complete"
-							onretry={signOut}
-							testid="signout-error"
-						>
-							You are still signed in. {signOutError}
-						</Alert>
+					<div class="ml-auto flex shrink-0 items-center gap-3 text-sm">
+						<ThemeToggle />
+						{#if session.resolved && !session.signedIn && !onLoginPage}
+							<Button variant="ghost" onclick={() => goToLogin(page.url.pathname)}>Sign in</Button>
+						{/if}
 					</div>
-				{/if}
-				{@render children()}
-			</main>
-
-			<Footer {version} {branding} />
-		</div>
-	</div>
-{:else}
-	<!-- No rail: a signed-out visitor, or one of the single-task screens.
-	     The header carries only what such a screen can act on. -->
-	<div class="flex min-h-screen flex-col">
-		<header class="bg-surface">
-			<div class="flex items-center gap-3 px-4 py-4 sm:gap-4 sm:px-8">
-				<a href={resolve('/')} class="flex min-w-0 items-center gap-2 font-semibold">
-					<BrandMark size={22} />
-					<span>ssoossh</span>
-					{#if branding.org_name}
-						<span
-							class="ml-0.5 max-w-32 truncate border-l border-border-subtle pl-2 text-xs font-normal text-ink-muted"
-						>
-							{branding.org_name}
-						</span>
-					{/if}
-				</a>
-
-				<div class="ml-auto flex shrink-0 items-center gap-3 text-sm">
-					<ThemeToggle />
-					{#if session.resolved && !session.signedIn && !onLoginPage}
-						<Button variant="ghost" onclick={() => goToLogin(page.url.pathname)}>Sign in</Button>
-					{/if}
 				</div>
-			</div>
-		</header>
+			</header>
+		{/if}
 
 		<main
 			id="main-content"
 			class="flex w-full flex-1 flex-col items-center px-4 py-8 sm:px-8 sm:py-10"
 		>
+			<!-- Only the rail offers sign-out, so only the rail shell has a failed
+			     one to report. -->
+			{#if showRail && signOutError}
+				<div class="mb-6 w-full max-w-[1120px]">
+					<Alert
+						variant="error"
+						title="Sign-out did not complete"
+						onretry={signOut}
+						testid="signout-error"
+					>
+						You are still signed in. {signOutError}
+					</Alert>
+				</div>
+			{/if}
 			{@render children()}
 		</main>
 
 		<Footer {version} {branding} />
 	</div>
-{/if}
+</div>
