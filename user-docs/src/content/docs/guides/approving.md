@@ -60,7 +60,7 @@ signed asynchronously and delivered to the waiting client over its own stream.
 Loading the page is itself the claim on the request. A second person opening
 the same link is refused before any button exists to click.
 
-![The approval page for a user certificate: a Pending chip, the principals to include as toggle chips, the account, command, host, platform, client and process ids the client reported, the lifetime, the requesting and registered addresses, the deadline, the public key, the extensions with two struck through as not permitted, a "Less than was requested" notice, and Deny and Approve buttons](../../../assets/screens/approve-user.png)
+![The approval page for a user certificate in the Advanced view: a Pending chip and the request ID, the principals to include as toggle chips, the account, command, host, terminal, remote host, platform, client and process ids the client reported, the lifetime, the requesting and registered addresses, the deadline, the public key, the extensions with three struck through as not permitted, a "Less than was requested" notice, a warning to approve only a request you started yourself, and Deny and Approve buttons](../../../assets/screens/approve-user.png)
 
 <p class="screen-caption">A user certificate request. Everything under "reported by the client" is what the requesting machine said about itself. The struck-through entries are what this server's policy removed, and the notice at the bottom says so before you decide.</p>
 
@@ -169,7 +169,7 @@ person typing the same code is refused.
 Only ever enter a code from a screen you are standing at. A code someone reads
 or sends to you is a login on their machine, carrying your accounts.
 
-![The Console login page: a single code field showing the K7M4-QP2X placeholder, a note that case does not matter and the letters I, L and O are never used, and a Continue button](../../../assets/screens/console.png)
+![The Console login page: a single code field showing the K7M4-QP2X placeholder, a note that case does not matter and that I, L and O count as 1 and 0, and a Continue button](../../../assets/screens/console.png)
 
 <p class="screen-caption">Console login. The code is eight characters in two groups; the alphabet leaves out the letters that look like digits.</p>
 
@@ -193,7 +193,7 @@ the rail, with preferences and sign-out.
 | **Service codes** | The service accounts you hold, then the codes approved for each |
 | **Account** (identity drop-up) | Your identity, the accounts you can mint certificates for, your service accounts, and your groups |
 
-![The History page: type filter chips for All, User, PAM, Console and Service, then a list of certificate rows each leading with user@host or an address, followed by what was requested and its lifetime, the principals, and an Approved badge](../../../assets/screens/history.png)
+![The History page: a search box, type filter chips for All, User, Service, PAM and Console, status chips for Any, Valid and Expired, outcome chips for Approved, Denied and Both, then a list of certificate rows each leading with user@host or an address, followed by what was issued and its lifetime, the principals, and an approved mark](../../../assets/screens/history.png)
 
 <p class="screen-caption">History. Every row leads with where the certificate came from, then what was requested and for how long, the principals it carries, and the decision.</p>
 
@@ -241,7 +241,7 @@ Email is optional and off unless the deployment turned it on. When it is on,
 this is where you choose which kinds you receive, one switch per kind, in two
 groups: **Service codes** and **Certificates issued to you**.
 
-![The Preferences page: an Email notifications card showing the address they are sent to and seven toggles, one per notification kind, each with a sentence saying when it is sent](../../../assets/screens/preferences.png)
+![The Preferences page: an Email notifications card showing the address they are sent to, a Simplified or Advanced email detail switch, and seven toggles grouped under Service codes and Certificates issued to you, each with a sentence saying when it is sent; below it a Display card with the Simplified or Advanced switch for the web pages](../../../assets/screens/preferences.png)
 
 <p class="screen-caption">Notification preferences. The page names the address the deployment will use, and says under each kind what would trigger it.</p>
 
