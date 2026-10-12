@@ -5,10 +5,9 @@ import { describe, expect, it, vi } from 'vitest';
 import FilterChip from './FilterChip.svelte';
 
 // Test methodology: render one chip and press it. What matters is the
-// pressed state a screen reader reads, and that the narrow-screen form
-// hides the label visually without dropping it from the accessible name --
-// a chip that announced as a bare icon would be the regression this
-// component exists to prevent.
+// pressed state a screen reader reads, and that the label is on screen and
+// in the accessible name -- a chip that showed or announced as a bare icon
+// would be the regression this component exists to prevent.
 
 describe('FilterChip', () => {
 	it('should report itself pressed when it is the selection', () => {
@@ -30,21 +29,20 @@ describe('FilterChip', () => {
 		expect(onclick).toHaveBeenCalledOnce();
 	});
 
-	// Named on a desktop, an icon on a phone: eight chips with their words
-	// wrap a filter row onto three lines on a narrow screen.
-	it('should name itself from sm up and hide the label below it', () => {
+	// A chip is never its glyph alone: the label is visible text, not a
+	// hidden name. Below `sm` FilterGroup shows a select instead of chips.
+	it('should show its label visibly when rendered', () => {
 		render(FilterChip, {
 			label: 'Approved',
 			icon: 'circle-check',
 			selected: false,
 			onclick: vi.fn()
 		});
-		expect(screen.getByText('Approved')).toHaveClass('sr-only', 'sm:not-sr-only');
+		expect(screen.getByText('Approved')).not.toHaveClass('sr-only');
 	});
 
-	// The whole point of hiding the label rather than omitting it: a chip
-	// must never announce as a bare icon.
-	it('should keep its accessible name at every width', () => {
+	// A chip must never announce as a bare icon.
+	it('should carry its label as its accessible name', () => {
 		render(FilterChip, {
 			label: 'Approved',
 			icon: 'circle-check',
