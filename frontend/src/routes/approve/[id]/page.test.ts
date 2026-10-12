@@ -718,10 +718,15 @@ describe('when a decision does not go through', () => {
 
 	/**
 	 * stubDecision answers the first detail read with a pending request, the
-	 * approve call with a server error, and every later detail read with
-	 * `after`, so the page's re-check sees what changed.
+	 * approve call with `status` and `message` (by default the 409 the
+	 * server gives a request decided in the meantime), and every later
+	 * detail read with `after`, so the page's re-check sees what changed.
 	 */
-	function stubDecision(after: object) {
+	function stubDecision(
+		after: object,
+		status = 409,
+		message = 'this certificate request was already approved'
+	) {
 		let reads = 0;
 		vi.stubGlobal(
 			'fetch',
@@ -729,15 +734,12 @@ describe('when a decision does not go through', () => {
 				const url = String(input);
 				const reply = (status: number, data: unknown) =>
 					Promise.resolve(
-						new Response(
-							JSON.stringify({ data, error: status === 200 ? null : 'internal server error' }),
-							{
-								status,
-								headers: { 'Content-Type': 'application/json' }
-							}
-						)
+						new Response(JSON.stringify({ data, error: status === 200 ? null : message }), {
+							status,
+							headers: { 'Content-Type': 'application/json' }
+						})
 					);
-				if (url.includes('/approve')) return reply(500, null);
+				if (url.includes('/approve')) return reply(status, null);
 				reads += 1;
 				return reply(200, reads === 1 ? pending() : after);
 			})
@@ -753,7 +755,7 @@ describe('when a decision does not go through', () => {
 		session.user = null;
 	});
 
-	// The server answers approving a closed request only as a failure, so
+	// The server answers approving a closed request with 409 or 410, so
 	// the page reads the request back and says what really happened.
 	it('should show the request closed in the meantime instead of the error', async () => {
 		stubDecision(pending({ status: 'approved', already_closed: true }));
@@ -767,8 +769,56 @@ describe('when a decision does not go through', () => {
 		expect(screen.getByTestId('blocked-already-resolved')).toHaveTextContent('nothing left to do');
 	});
 
+	it('should show the denial when the request was denied in the meantime', async () => {
+		stubDecision(
+			pending({ status: 'denied', already_closed: true }),
+			409,
+			'this certificate request was already denied'
+		);
+		render(Page);
+		await settle();
+
+		await userEvent.click(screen.getByTestId('approve-button'));
+		await settle();
+		await settle();
+
+		expect(screen.getByTestId('blocked-already-resolved')).toHaveTextContent('denied');
+	});
+
+	it('should show the expiry when the request expired in the meantime', async () => {
+		stubDecision(
+			pending({ status: 'expired', already_closed: true }),
+			410,
+			'this certificate request has expired'
+		);
+		render(Page);
+		await settle();
+
+		await userEvent.click(screen.getByTestId('approve-button'));
+		await settle();
+		await settle();
+
+		expect(screen.getByTestId('expired-notice')).toBeInTheDocument();
+	});
+
+	// A request past its deadline that nothing has marked expired yet still
+	// reads back as pending; the server's own reason is then the answer.
+	it('should show the server reason when the request reads back unchanged', async () => {
+		stubDecision(pending(), 410, 'this certificate request has expired');
+		render(Page);
+		await settle();
+
+		await userEvent.click(screen.getByTestId('approve-button'));
+		await settle();
+		await settle();
+
+		expect(screen.getByTestId('action-error')).toHaveTextContent(
+			'this certificate request has expired'
+		);
+	});
+
 	it('should keep the error when the request has not changed', async () => {
-		stubDecision(pending());
+		stubDecision(pending(), 500, 'internal server error');
 		render(Page);
 		await settle();
 

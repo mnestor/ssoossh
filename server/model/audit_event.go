@@ -23,9 +23,9 @@ import "time"
 // log emit is unconditional for every event while the table copy is
 // skipped for some.
 type AuditEvent struct {
-	ID string `gorm:"column:id;primaryKey"`
+	ID string `gorm:"column:id;primaryKey;index:idx_audit_events_action,priority:3;index:idx_audit_events_source_ip,priority:3;index:idx_audit_events_action_source_ip,priority:4"`
 
-	CreatedAt time.Time `gorm:"column:created_at;index:idx_audit_events_created_at"`
+	CreatedAt time.Time `gorm:"column:created_at;index:idx_audit_events_created_at;index:idx_audit_events_action,priority:2;index:idx_audit_events_action_actor,priority:3;index:idx_audit_events_source_ip,priority:2;index:idx_audit_events_action_source_ip,priority:3"`
 
 	// ActorUserID and TargetUserID exist solely so the UI can ask
 	// "everything this account did" and "everything done to this account"
@@ -36,8 +36,36 @@ type AuditEvent struct {
 	//
 	// ActorUserID is NULL for system and anonymous actions; TargetUserID is
 	// NULL when an action is not about a particular user.
-	ActorUserID  *string `gorm:"column:actor_user_id;index:idx_audit_events_actor,priority:1"`
+	ActorUserID  *string `gorm:"column:actor_user_id;index:idx_audit_events_actor,priority:1;index:idx_audit_events_action_actor,priority:2"`
 	TargetUserID *string `gorm:"column:target_user_id;index:idx_audit_events_target,priority:1"`
+
+	// Action copies the payload's action so a filter on one action reads an
+	// index rather than matching JSON. The same rule as the two user
+	// columns applies: a grouping key, never authoritative. The recorder
+	// sets it from the same event it encodes into Payload (see
+	// service.AuditService.prepare), so the two cannot disagree. A row
+	// whose payload could not be read when the column was backfilled holds
+	// "", which matches no action filter.
+	//
+	// Two indexes serve the two query shapes: (action, created_at, id) for
+	// "the rows with action X, oldest or newest first", and
+	// (action, actor_user_id, created_at) for "each user's latest row with
+	// action X".
+	Action string `gorm:"column:action;not null;default:'';index:idx_audit_events_action,priority:1;index:idx_audit_events_action_actor,priority:1;index:idx_audit_events_action_source_ip,priority:1"`
+
+	// SourceIP copies the payload's detail.source_ip, in canonical form, so
+	// the admin feed can filter to one address from an index. Same rule
+	// again: a grouping key, never authoritative, set by the recorder from
+	// the event it encodes (service.AuditService.prepare). It is the address
+	// the server observed for the client the event is about, never one the
+	// client supplied; see service.auditSourceIP for which address that is
+	// per action. "" when the event has no observed source, or its
+	// source_ip is not an address.
+	//
+	// Two indexes: (source_ip, created_at, id) for "the rows from address
+	// X, newest first", and (action, source_ip, created_at, id) for both
+	// filters at once.
+	SourceIP string `gorm:"column:source_ip;not null;default:'';index:idx_audit_events_source_ip,priority:1;index:idx_audit_events_action_source_ip,priority:2"`
 
 	// Payload is the actual record: a JSON document carrying the payload
 	// schema version, the action, the actor and target snapshots, the

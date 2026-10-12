@@ -422,7 +422,7 @@ func TestLDAPSyncHandler_ShouldAuditTheTrigger(t *testing.T) {
 		t.Fatalf("got status %d, want 200: %s", w.Code, w.Body.String())
 	}
 
-	events := auditEventsMentioning(t, db, string(service.AuditLDAPSyncTriggered))
+	events := auditEventsWithAction(t, db, string(service.AuditLDAPSyncTriggered))
 	if len(events) != 1 {
 		t.Fatalf("recorded %d sync events, want 1", len(events))
 	}
@@ -668,7 +668,7 @@ func TestLDAPProbeHandler_ShouldAuditEveryProbe(t *testing.T) {
 		t.Fatalf("got status %d, want 200: %s", w.Code, w.Body.String())
 	}
 
-	events := auditEventsMentioning(t, db, string(service.AuditLDAPProbed))
+	events := auditEventsWithAction(t, db, string(service.AuditLDAPProbed))
 	if len(events) != 1 {
 		t.Fatalf("recorded %d probe events, want 1", len(events))
 	}
@@ -699,21 +699,14 @@ func TestLDAPAdminHandlers_ShouldRefuseWithoutADirectory(t *testing.T) {
 	}
 }
 
-// auditEventsMentioning returns the recorded events whose payload names the
-// given action. The action lives inside the JSON payload rather than in a
-// column of its own, so this is a substring match on it.
-func auditEventsMentioning(t *testing.T, db *gorm.DB, action string) []model.AuditEvent {
+// auditEventsWithAction returns the recorded events with the given action,
+// read through the indexed action column the recorder writes.
+func auditEventsWithAction(t *testing.T, db *gorm.DB, action string) []model.AuditEvent {
 	t.Helper()
 
-	var all []model.AuditEvent
-	if err := db.Find(&all).Error; err != nil {
-		t.Fatalf("load audit events: %v", err)
-	}
 	var out []model.AuditEvent
-	for _, event := range all {
-		if bytes.Contains([]byte(event.Payload), []byte(`"action":"`+action+`"`)) {
-			out = append(out, event)
-		}
+	if err := db.Where("action = ?", action).Find(&out).Error; err != nil {
+		t.Fatalf("load audit events: %v", err)
 	}
 	return out
 }
