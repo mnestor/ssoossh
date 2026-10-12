@@ -206,26 +206,6 @@ jobs:
           SSOOSSH_TEST_POSTGRES_DSN: postgres://postgres:test@postgres:5432/postgres?sslmode=disable
         run: CGO_ENABLED=1 go test -buildvcs=false -count=1 -timeout=15m ./...
 
-  # The branch ruleset requires a check named "Migration Parity", the job
-  # the Postgres leg above replaced. This reports that leg's outcome under
-  # the old name so the requirement keeps meaning something. Delete it once
-  # the ruleset requires "Postgres Tests" instead.
-  migration-parity:
-    name: Migration Parity
-    needs: [changes, postgres]
-    if: always()
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Report the Postgres leg's result
-        env:
-          CHANGES: ${{ needs.changes.result }}
-          POSTGRES: ${{ needs.postgres.result }}
-        run: |
-          echo "changes: $CHANGES, Postgres Tests: $POSTGRES"
-          [ "$CHANGES" = success ] || exit 1
-          case "$POSTGRES" in success|skipped) ;; *) exit 1 ;; esac
-
   frontend:
     name: Frontend Tests
     needs: changes
