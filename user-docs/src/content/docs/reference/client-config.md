@@ -410,5 +410,5 @@ requests are unauthenticated, so the client has no session against which to
 validate one. Setting it changes nothing.
 
 ```yaml
-# username: has no effect
+#username:  # has no effect
 ```
