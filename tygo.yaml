@@ -32,6 +32,18 @@ packages:
     # comparison to go through the enum object.
     enum_style: "union"
 
+  # The audit taxonomy. Not a wire type (AuditEventResponse.Action is a
+  # plain string, since a client must render actions it does not know), but
+  # generated so the web UI's audit timeline can test that every action the
+  # server records has a sentence. audit_actions.go holds the taxonomy and
+  # nothing else, so nothing else from server/service is emitted. Const
+  # style, not a union: the test walks the constants at runtime, and a
+  # union type does not exist at runtime.
+  - path: "github.com/mnestor/ssoossh/server/service"
+    output_path: "frontend/src/lib/api/generated/auditactions.ts"
+    include_files: ["audit_actions.go"]
+    indent: "\t"
+
   # The types the Go client and the server already share. The web UI needs
   # the envelope every response is wrapped in, and the approve/deny result
   # bodies; generating them means the browser, the CLI, and the server all
