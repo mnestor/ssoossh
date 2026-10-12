@@ -1012,9 +1012,11 @@ func (s *CertRequestService) checkFIPSApproved(authorizedKey string) error {
 // https://mnestor.github.io/ssoossh/concepts/, "Console login". For the
 // browser flows there is no such code, so this remains out of scope here.
 //
-// Takes the already-resolved users row (see resolveUser): Approve resolves
-// it before the authorization gate, so binding — which claims the request —
-// stays the last step a caller reaches.
+// Called by Detail, Approve and Deny: opening the approval page, approving
+// and denying are all actions that claim. Takes the already-resolved users
+// row (see resolveUser): Approve resolves it before the authorization gate,
+// so binding — which claims the request — stays the last step a caller
+// reaches.
 func (s *CertRequestService) bindRequester(ctx context.Context, req *model.CertificateRequest, user model.User) error {
 	userID := user.ID
 
@@ -1710,6 +1712,16 @@ func intersectStrings(requested, permitted []string) []string {
 // a request that's already past the TTL (but not yet lazily flipped to
 // "expired" by Wait) fails the same as denying any other non-pending
 // request — the row's actual state is Wait's responsibility to reconcile.
+//
+// Denying is an action on the request like approving it, so it goes
+// through bindRequester the same way: an unclaimed request is claimed by
+// the denier, and one claimed by another user is refused with a
+// ForbiddenError before anything changes. Without that, anyone signed in
+// who learned a request ID could cancel another user's login. Unlike
+// Approve there is no require gate or account linkage: refusing a request
+// grants nothing, so the claim is the only authority it needs. The
+// ownership refusal is log-only (the error handler's access log), the same
+// as Approve's, and writes no audit row.
 func (s *CertRequestService) Deny(ctx context.Context, requestID string, identity *Identity, dc DecisionContext) error {
 	now := time.Now()
 
@@ -1731,21 +1743,20 @@ func (s *CertRequestService) Deny(ctx context.Context, requestID string, identit
 		return err
 	}
 
-	// The denier's users-row id is the grouping key that puts this denial
-	// on their own timeline; without it a denial is only findable in the
-	// unfiltered feed. Best effort: a lookup failure costs the grouping
-	// key, not the denial, since the payload still names them.
-	actorUserID := ""
-	if user, err := s.resolveUser(ctx, identity); err == nil {
-		actorUserID = user.ID
-	} else {
-		slog.Warn("could not resolve the denying user's id for the audit event",
-			"request_id", requestID, "error", err)
+	// The users row is required, as on Approve: it is what the claim binds
+	// to, and its id is also the grouping key that puts this denial on the
+	// denier's own timeline.
+	user, err := s.resolveUser(ctx, identity)
+	if err != nil {
+		return err
+	}
+	if err := s.bindRequester(ctx, &req, user); err != nil {
+		return err
 	}
 
 	auditEvent := AuditEvent{
 		Action:     AuditCertDenied,
-		Actor:      AuditSubjectFromIdentity(identity, actorUserID),
+		Actor:      AuditSubjectFromIdentity(identity, user.ID),
 		OccurredAt: now,
 		// See the cert.approved event for the shape: host context, the
 		// requester's source_ip, and the denier's own connection.

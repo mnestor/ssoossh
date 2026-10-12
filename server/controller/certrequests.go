@@ -606,6 +606,10 @@ func (cr *certRequestController) approveHandler(g *gin.Context) {
 // @Summary     Deny a request
 // @Description Session-authed and CSRF-guarded. The waiting client is told over its own
 // @Description SSE stream.
+// @Description
+// @Description Like approve, this honours the request's claim: an unclaimed request is
+// @Description claimed by the caller and then denied, and one claimed by another user
+// @Description gets 403 and stays pending.
 // @Tags        web
 // @Produce     json
 // @Param       id path string true "The certificate request's UUID"
