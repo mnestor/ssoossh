@@ -1820,6 +1820,18 @@ func TestCertRequestService_Approve_ShouldEnforceRequireOnUserCertificates(t *te
 			groups:  []string{"other"},
 			wantErr: true,
 		},
+		{
+			name:    "should reject an identity with no groups",
+			require: &config.PolicyCondition{Group: "ssh-users"},
+			groups:  nil,
+			wantErr: true,
+		},
+		{
+			name:    "should reject an identity whose only group is the empty string",
+			require: &config.PolicyCondition{Group: "ssh-users"},
+			groups:  []string{""},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -1839,6 +1851,12 @@ func TestCertRequestService_Approve_ShouldEnforceRequireOnUserCertificates(t *te
 			err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}, ApprovalSelection{})
 			if tt.wantErr && err == nil {
 				t.Error("expected approve to be rejected by the require condition")
+			}
+			// A refusal is an authorization answer (403), not an internal
+			// failure: anything but a ForbiddenError renders as 500.
+			var forbidden *errorresponses.ForbiddenError
+			if tt.wantErr && err != nil && !errors.As(err, &forbidden) {
+				t.Errorf("got error %v, want a ForbiddenError", err)
 			}
 			if !tt.wantErr && err != nil {
 				t.Errorf("unexpected error: %v", err)

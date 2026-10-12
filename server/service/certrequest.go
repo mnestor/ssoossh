@@ -966,8 +966,12 @@ func checkApproverAuthorization(certType model.CertificateType, policy *certType
 	// Both rules below come from the policy table rather than a switch here,
 	// so adding a certificate type means filling in newCertTypePolicies
 	// rather than remembering to extend this function.
+	// A ForbiddenError, so the refusal reaches the caller as 403 and is
+	// logged as a refused request. A plain error rendered as 500 and was
+	// logged as an internal failure, which read as the server breaking
+	// rather than policy saying no.
 	if policy.require != nil && !policy.require.evaluate(identity) {
-		return fmt.Errorf("identity is not authorized to approve %s certificates", certType)
+		return &errorresponses.ForbiddenError{Reason: fmt.Sprintf("identity is not authorized to approve %s certificates", certType)}
 	}
 
 	if policy.linkage != nil {

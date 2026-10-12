@@ -4030,7 +4030,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
-          description: Bound to another user, or a cross-origin call
+          description: Bound to another user, refused by the type's require condition,
+            or a cross-origin call
         "404":
           content:
             application/json:
