@@ -138,11 +138,20 @@ jobs:
         with:
           name: e2e-binaries
 
+      # Artifacts do not keep file modes: every file comes back 0644.
+      - name: Make the prebuilt binaries executable
+        run: chmod +x bin/ssoosshd bin/ssoossh
+
       # -skip carves out exactly what the other tiers own (anchored, so
       # TestApprove_* stays here while TestApproval_* goes to tier 2).
       - name: Run tier 1 tests
         env:
           SSOOSSH_E2E_POSTGRES_DSN: ${{ matrix.backend == 'postgres' && 'postgres://postgres:e2e@postgres:5432/e2e?sslmode=disable' || '' }}
+          # The prepare job's binaries. Without this the harness builds its
+          # own inside the first test, which took 5s to over a minute
+          # depending on what the restored build cache held
+          # (test/e2e/harness/binaries.go).
+          SSOOSSH_E2E_BIN_DIR: bin
         # gotestsum runs go test itself so a test failure fails the step.
         # The previous `go test -json | gotestsum --raw-command -- cat` pipe
         # exited with cat's status: always 0, green CI over failing tests
