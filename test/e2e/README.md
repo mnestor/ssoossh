@@ -28,7 +28,13 @@ go test -tags=e2e -run TestApproval ./test/e2e/... # tier 2, browser
 
 Requires a built web UI (`make frontend`) — the harness builds the
 `ssoosshd`/`ssoossh` binaries itself on first use, so no separate build step
-is needed locally.
+is needed locally. To use binaries you already built instead, point
+`SSOOSSH_E2E_BIN_DIR` at their directory (relative paths are read from the
+module root): `go build -o bin/ ./cmd/... && SSOOSSH_E2E_BIN_DIR=bin go test
+...`. CI's tier 1 does this with the binaries its prepare job built. The
+harness checks both files are there and executable, and fails rather than
+building if not; it never checks that they match the source, so rebuild
+them after a change.
 
 ## Running two of these at once
 

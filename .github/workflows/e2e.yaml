@@ -101,8 +101,8 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/mnestor/ssoossh-build:latest
-    # The 8m test timeout below plus about 2m of setup, with headroom.
-    timeout-minutes: 13
+    # The 4m test timeout below plus about 2m of setup, with headroom.
+    timeout-minutes: 9
     services:
       postgres:
         image: postgres:17-alpine
@@ -138,23 +138,34 @@ jobs:
         with:
           name: e2e-binaries
 
+      # Artifacts do not keep file modes: every file comes back 0644.
+      - name: Make the prebuilt binaries executable
+        run: chmod +x bin/ssoosshd bin/ssoossh
+
       # -skip carves out exactly what the other tiers own (anchored, so
       # TestApprove_* stays here while TestApproval_* goes to tier 2).
       - name: Run tier 1 tests
         env:
           SSOOSSH_E2E_POSTGRES_DSN: ${{ matrix.backend == 'postgres' && 'postgres://postgres:e2e@postgres:5432/e2e?sslmode=disable' || '' }}
+          # The prepare job's binaries. Without this the harness builds its
+          # own inside the first test, which took 5s to over a minute
+          # depending on what the restored build cache held
+          # (test/e2e/harness/binaries.go).
+          SSOOSSH_E2E_BIN_DIR: bin
         # gotestsum runs go test itself so a test failure fails the step.
         # The previous `go test -json | gotestsum --raw-command -- cat` pipe
         # exited with cat's status: always 0, green CI over failing tests
         # (the default Actions shell has no pipefail).
         #
-        # -timeout=8m: the suite takes 220-300s on the same commit, so the old
-        # 5m sat inside its normal spread and killed runs in which no test
-        # had failed. 8m is roughly double the typical run, still short
-        # enough to catch a hang or a suite that doubles.
+        # -timeout=4m: the suite took 220-300s while a quarter to a third of
+        # its tests paid a 5s teardown stall and the first one built both
+        # binaries (#116). Without those it ran in about 35s on sqlite and
+        # 100s on postgres in the CI image locally. 4m is over double the
+        # slower backend, still short enough to catch a hang or a suite
+        # that doubles.
         run: |
           gotestsum --junitfile=test-results-tier1-${{ matrix.backend }}.xml -- \
-            -buildvcs=false -tags=e2e -count=1 -timeout=8m -skip '^(TestApproval_|TestSSH_|TestMultiSigner_|TestMultiInstance_)' ./test/e2e/...
+            -buildvcs=false -tags=e2e -count=1 -timeout=4m -skip '^(TestApproval_|TestSSH_|TestMultiSigner_|TestMultiInstance_)' ./test/e2e/...
 
       - name: Upload diagnostics
         if: failure()

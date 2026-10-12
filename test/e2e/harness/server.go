@@ -271,6 +271,21 @@ func (s *Server) shutdown(t *testing.T) {
 		return
 	}
 
+	// Drop this process's idle keep-alive connections before stopping the
+	// server. Every harness HTTP client shares http.DefaultTransport, and
+	// often (a quarter of the teardowns in one local tier 1 run) its pool
+	// holds a connection to this server that never carried a request: the
+	// transport dials when a request finds no idle connection, and if one
+	// frees up before the dial finishes, the request takes that one and the
+	// new connection is parked unused. ssoosshd never read a byte on it, so
+	// net/http's Shutdown counts it as busy until it is five seconds old
+	// (golang/go#22682) -- as long as ssoosshd's own shutdown bound and the
+	// Kill fallback below. That wait was the bimodal 0.1s/5.1s test time in
+	// #116. Closed here, the server reads EOF on it and stops at once.
+	// DefaultClient has no Transport of its own, so this closes
+	// DefaultTransport's pool.
+	http.DefaultClient.CloseIdleConnections()
+
 	done := make(chan error, 1)
 	go func() { done <- s.cmd.Wait() }()
 
