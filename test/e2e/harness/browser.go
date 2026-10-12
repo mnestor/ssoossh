@@ -220,6 +220,24 @@ func (b *Browser) WaitURL(t *testing.T, want string) {
 	}
 }
 
+// WaitValue blocks until the form control matching selector holds want as
+// its value. A <select> or a text box keeps its value in no attribute a
+// selector could wait for; this is how a test sees one change or reset.
+func (b *Browser) WaitValue(t *testing.T, selector, want string) {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(b.ctx, browserWaitFor)
+	defer cancel()
+	if err := chromedp.Do(ctx, chromedp.Poll[chromedp.Void](
+		fmt.Sprintf("document.querySelector(%q)?.value === %q", selector, want),
+		chromedp.WithPollingInterval(urlPollInterval),
+		chromedp.WithPollingTimeout(browserWaitFor),
+	)); err != nil {
+		b.screenshotOnFailure(t)
+		t.Fatalf("harness: waiting for %s to hold %q failed: %v", selector, want, err)
+	}
+}
+
 // SelectValue picks value in the native <select> matching selector and
 // fires the change event a framework binding listens for. Setting .value
 // alone changes what the control shows but tells no listener.

@@ -12,9 +12,12 @@ vi.mock('$app/state', async () => {
 	const { fakePage } = await import('#lib/testing/page.svelte.js');
 	return { page: fakePage };
 });
-vi.mock('$app/navigation', () => ({ goto }));
+vi.mock('$app/navigation', async () => {
+	const { fakeAfterNavigate } = await import('#lib/testing/page.svelte.js');
+	return { goto, afterNavigate: fakeAfterNavigate };
+});
 
-import { fakeGoto, resetFakePage } from '#lib/testing/page.svelte.js';
+import { fakeGoto, fakeNavigate, resetFakePage } from '#lib/testing/page.svelte.js';
 import Page from './+page.svelte';
 
 /** shallowReplace is how a filter reaches the address: in place, without a
@@ -161,5 +164,47 @@ describe('a row opened from a filtered history', () => {
 			'href',
 			'/certs/cert-1?from=history&back=%3Ftype%3Duser'
 		);
+	});
+});
+
+// Issue #182: a nav click to the history while it is on screen keeps the
+// page mounted. The address drops its query string, and the filters must
+// follow it back to their defaults rather than stay set under it.
+describe('a nav click to the history while it is open', () => {
+	/** openThenRailClick opens the history at href, then clicks the rail's History link. */
+	async function openThenRailClick(href: string) {
+		resetFakePage(`http://localhost${href}`);
+		window.history.replaceState(null, '', href);
+		render(Page);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		window.history.pushState(null, '', '/logs/me');
+		fakeNavigate('/logs/me');
+	}
+
+	it.each([
+		{ opened: '?status=live', testid: 'status-filter-any' },
+		{ opened: '?type=pam', testid: 'type-filter-any' },
+		{ opened: '?outcome=denied', testid: 'outcome-filter-approved' }
+	])('should select $testid when the history was open at $opened', async ({ opened, testid }) => {
+		await openThenRailClick(`/logs/me${opened}`);
+		await vi.waitFor(() =>
+			expect(screen.getByTestId(testid)).toHaveAttribute('aria-pressed', 'true')
+		);
+	});
+
+	it('should empty the search box', async () => {
+		await openThenRailClick('/logs/me?q=build');
+		await vi.waitFor(() => expect(screen.getByTestId('search-input')).toHaveValue(''));
+	});
+
+	it('should read the history again without the filters', async () => {
+		await openThenRailClick('/logs/me?type=pam');
+		await vi.waitFor(() => expect(requested.at(-1)).not.toContain('type='));
+	});
+
+	it('should not write the address', async () => {
+		await openThenRailClick('/logs/me?status=live&type=pam');
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		expect(goto).not.toHaveBeenCalled();
 	});
 });

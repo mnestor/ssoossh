@@ -13,9 +13,12 @@ vi.mock('$app/state', async () => {
 	const { fakePage } = await import('#lib/testing/page.svelte.js');
 	return { page: fakePage };
 });
-vi.mock('$app/navigation', () => ({ goto }));
+vi.mock('$app/navigation', async () => {
+	const { fakeAfterNavigate } = await import('#lib/testing/page.svelte.js');
+	return { goto, afterNavigate: fakeAfterNavigate };
+});
 
-import { fakeGoto, resetFakePage } from '#lib/testing/page.svelte.js';
+import { fakeGoto, fakeNavigate, resetFakePage } from '#lib/testing/page.svelte.js';
 import Page from './+page.svelte';
 
 /** shallowReplace is how a filter reaches the address: in place, without a
@@ -324,4 +327,60 @@ describe('the action filter options', () => {
 			expect(within(select).queryByRole('option', { name: action })).not.toBeInTheDocument();
 		}
 	);
+});
+
+// Issue #182: a nav click to the audit log while it is on screen keeps the
+// page mounted. The address drops its query string, and the filters must
+// follow it back to their defaults rather than stay set under it.
+describe('a nav click to the audit log while it is open', () => {
+	/** openThenRailClick opens the feed at href, then clicks the rail's Audit log link. */
+	async function openThenRailClick(href: string) {
+		resetFakePage(`http://localhost${href}`);
+		window.history.replaceState(null, '', href);
+		stubFeed();
+		render(Page);
+		await settle();
+		window.history.pushState(null, '', '/admin/audit');
+		fakeNavigate('/admin/audit');
+	}
+
+	it.each([
+		{ opened: '?action=auth.login', testid: 'audit-action-filter' },
+		{ opened: '?source_ip=192.0.2.7', testid: 'audit-source-filter' },
+		{ opened: '?source_ip=not-an-ip', testid: 'audit-source-filter' }
+	])('should empty $testid when the feed was open at $opened', async ({ opened, testid }) => {
+		await openThenRailClick(`/admin/audit${opened}`);
+		await vi.waitFor(() => expect(screen.getByTestId(testid)).toHaveValue(''));
+	});
+
+	it('should clear the mark on an address that did not parse', async () => {
+		await openThenRailClick('/admin/audit?source_ip=not-an-ip');
+		await vi.waitFor(() =>
+			expect(screen.getByTestId('audit-source-filter')).toHaveAttribute('aria-invalid', 'false')
+		);
+	});
+
+	it('should read the whole feed again', async () => {
+		await openThenRailClick('/admin/audit?action=auth.login');
+		await vi.waitFor(() => expect(lastRequest().searchParams.has('action')).toBe(false));
+	});
+
+	it('should drop an address still waiting to settle', async () => {
+		resetFakePage('http://localhost/admin/audit');
+		window.history.replaceState(null, '', '/admin/audit');
+		stubFeed();
+		render(Page);
+		await settle();
+		await userEvent.type(screen.getByTestId('audit-source-filter'), '192.0.2.9');
+		window.history.pushState(null, '', '/admin/audit');
+		fakeNavigate('/admin/audit');
+		await new Promise((resolve) => setTimeout(resolve, 600));
+		expect(requested.some((url) => url.searchParams.has('source_ip'))).toBe(false);
+	});
+
+	it('should not write the address', async () => {
+		await openThenRailClick('/admin/audit?action=auth.login&source_ip=192.0.2.7');
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		expect(goto).not.toHaveBeenCalled();
+	});
 });

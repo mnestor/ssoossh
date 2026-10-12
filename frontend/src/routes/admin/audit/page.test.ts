@@ -9,7 +9,7 @@ vi.mock('$app/state', async () => {
 	const { fakePage } = await import('#lib/testing/page.svelte.js');
 	return { page: fakePage };
 });
-vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
+vi.mock('$app/navigation', () => ({ goto: vi.fn(), afterNavigate: vi.fn() }));
 
 import { resetFakePage } from '#lib/testing/page.svelte.js';
 import Page from './+page.svelte';

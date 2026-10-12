@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { page } from '$app/state';
+	import { page, type ReadonlyURLSearchParams } from '$app/state';
 	import { syncAddressSearch } from '#lib/addressSearch.svelte.js';
 	import { getAuditFeed } from '#lib/api/endpoints.js';
 	import * as taxonomy from '#lib/api/generated/auditactions.js';
@@ -41,14 +41,27 @@
 	// sent to someone. An action the taxonomy does not know is dropped rather
 	// than sent: the server would refuse it. An address that does not parse
 	// stays in the field, marked, and filters nothing until it is fixed.
-	const opened = page.url.searchParams;
-	const openedAction = opened.get('action') ?? '';
-	const openedSource = (opened.get('source_ip') ?? '').trim();
-	let selectedAction = $state(knownActions.includes(openedAction) ? openedAction : '');
-	let selectedSource = $state(isIPAddress(openedSource) ? openedSource : '');
-	let sourceDraft = $state(openedSource);
-	let sourceInvalid = $state(openedSource !== '' && !isIPAddress(openedSource));
+	let selectedAction = $state('');
+	let selectedSource = $state('');
+	let sourceDraft = $state('');
+	let sourceInvalid = $state(false);
 	let settleTimer: ReturnType<typeof setTimeout> | undefined;
+
+	/**
+	 * readFilters sets every filter from a query string, dropping any
+	 * address still waiting to settle. A key it does not carry puts that
+	 * filter back at its default, so an empty one clears.
+	 */
+	function readFilters(params: ReadonlyURLSearchParams) {
+		clearTimeout(settleTimer);
+		const action = params.get('action') ?? '';
+		const source = (params.get('source_ip') ?? '').trim();
+		selectedAction = knownActions.includes(action) ? action : '';
+		selectedSource = isIPAddress(source) ? source : '';
+		sourceDraft = source;
+		sourceInvalid = source !== '' && !isIPAddress(source);
+	}
+	readFilters(page.url.searchParams);
 
 	let events: AuditEvent[] = $state([]);
 	let total = $state(0);
@@ -169,13 +182,9 @@
 		selectedSource = ip;
 	}
 
-	/** clearFilters returns to the whole feed. */
+	/** clearFilters returns to the whole feed, as the bare address does. */
 	function clearFilters() {
-		clearTimeout(settleTimer);
-		selectedAction = '';
-		selectedSource = '';
-		sourceDraft = '';
-		sourceInvalid = false;
+		readFilters(new URLSearchParams());
 	}
 
 	/**
@@ -187,9 +196,10 @@
 		return `${page.url.pathname}${auditFilterSearch(selectedAction, ip)}`;
 	}
 
-	// Write the filters back to the address bar whenever they change. See
-	// #lib/addressSearch for why a hand-written effect here hung the page (#178).
-	syncAddressSearch(() => auditFilterSearch(selectedAction, selectedSource));
+	// Keep the address bar and the filters in step, both ways: a nav click
+	// to this page starts over (#182). See #lib/addressSearch for why a
+	// hand-written effect here hung the page (#178).
+	syncAddressSearch(() => auditFilterSearch(selectedAction, selectedSource), readFilters);
 
 	// Reads the filters, and only the filters: a change reloads from the
 	// first page. Everything load() writes is settled inside it.

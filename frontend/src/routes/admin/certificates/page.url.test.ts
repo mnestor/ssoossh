@@ -11,9 +11,12 @@ vi.mock('$app/state', async () => {
 	const { fakePage } = await import('#lib/testing/page.svelte.js');
 	return { page: fakePage };
 });
-vi.mock('$app/navigation', () => ({ goto }));
+vi.mock('$app/navigation', async () => {
+	const { fakeAfterNavigate } = await import('#lib/testing/page.svelte.js');
+	return { goto, afterNavigate: fakeAfterNavigate };
+});
 
-import { fakeGoto, resetFakePage } from '#lib/testing/page.svelte.js';
+import { fakeGoto, fakeNavigate, resetFakePage } from '#lib/testing/page.svelte.js';
 import Page from './+page.svelte';
 
 /** shallowReplace is how a filter reaches the address: in place, without a
@@ -123,5 +126,42 @@ describe('admin certificate list', () => {
 			'href',
 			'/certs/cert-1?from=admin&back=%3Ftype%3Duser'
 		);
+	});
+});
+
+// Issue #182: a nav click to the list while it is on screen keeps the page
+// mounted. The address drops its query string, and the filters must
+// follow it back to their defaults rather than stay set under it.
+describe('a nav click to the certificate list while it is open', () => {
+	/** openThenRailClick opens the list at href, then clicks the rail's Certificates link. */
+	async function openThenRailClick(href: string) {
+		resetFakePage(`http://localhost${href}`);
+		window.history.replaceState(null, '', href);
+		stubList([]);
+		render(Page);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		window.history.pushState(null, '', '/admin/certificates');
+		fakeNavigate('/admin/certificates');
+	}
+
+	it.each([
+		{ opened: '?status=expired', testid: 'status-filter-any' },
+		{ opened: '?type=pam', testid: 'type-filter-any' }
+	])('should select $testid when the list was open at $opened', async ({ opened, testid }) => {
+		await openThenRailClick(`/admin/certificates${opened}`);
+		await vi.waitFor(() =>
+			expect(screen.getByTestId(testid)).toHaveAttribute('aria-pressed', 'true')
+		);
+	});
+
+	it('should empty the search box', async () => {
+		await openThenRailClick('/admin/certificates?q=build');
+		await vi.waitFor(() => expect(screen.getByTestId('search-input')).toHaveValue(''));
+	});
+
+	it('should not write the address', async () => {
+		await openThenRailClick('/admin/certificates?status=expired&q=build');
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		expect(goto).not.toHaveBeenCalled();
 	});
 });

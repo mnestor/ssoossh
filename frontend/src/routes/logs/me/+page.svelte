@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import { page } from '$app/state';
+	import { page, type ReadonlyURLSearchParams } from '$app/state';
 	import { syncAddressSearch } from '#lib/addressSearch.svelte.js';
 	import { listCertificates, listDeniedRequests } from '#lib/api/endpoints.js';
 	import type { CertificateRecord, DeniedRequest } from '#lib/api/types.js';
@@ -50,11 +50,22 @@
 	// Approved by default, not both. This page has always been the list of
 	// certificates somebody holds, and that is what most visits are for. A
 	// refusal is one click away instead.
-	const opened = page.url.searchParams;
-	let selectedOutcome = $state(opened.get('outcome') ?? 'approved');
-	let selectedType = $state(opened.get('type') ?? '');
-	let selectedStatus = $state(opened.get('status') ?? '');
-	let searchQuery = $state(opened.get('q') ?? '');
+	let selectedOutcome = $state('approved');
+	let selectedType = $state('');
+	let selectedStatus = $state('');
+	let searchQuery = $state('');
+
+	/**
+	 * readFilters sets every filter from a query string. A key it does not
+	 * carry puts that filter back at its default, so an empty one clears.
+	 */
+	function readFilters(params: ReadonlyURLSearchParams) {
+		selectedOutcome = params.get('outcome') ?? 'approved';
+		selectedType = params.get('type') ?? '';
+		selectedStatus = params.get('status') ?? '';
+		searchQuery = params.get('q') ?? '';
+	}
+	readFilters(page.url.searchParams);
 
 	// Below `sm` a certificate row has no room for its outcome mark. The
 	// list still mixes the two kinds when asked to: a refusal is a DeniedRow,
@@ -131,12 +142,18 @@
 	// the old text on screen over an unfiltered list.
 	let searchKey = $state(0);
 
-	function clearFilters() {
-		searchQuery = '';
-		selectedType = '';
-		selectedStatus = '';
-		selectedOutcome = 'approved';
+	/**
+	 * followAddress sets the filters from an address this page was sent to
+	 * while already on screen, the search box included.
+	 */
+	function followAddress(params: ReadonlyURLSearchParams) {
+		readFilters(params);
 		searchKey += 1;
+	}
+
+	/** clearFilters returns to the defaults, as the bare address does. */
+	function clearFilters() {
+		followAddress(new URLSearchParams());
 	}
 
 	// The filters as a query string: what the address bar carries and what
@@ -152,9 +169,10 @@
 		return parts.length ? `?${parts.join('&')}` : '';
 	});
 
-	// Keep the address bar in step with the filters. See #lib/addressSearch
-	// for why a hand-written effect here hung the page (#178).
-	syncAddressSearch(() => filterSearch);
+	// Keep the address bar and the filters in step, both ways: a nav click
+	// to this page starts over (#182). See #lib/addressSearch for why a
+	// hand-written effect here hung the page (#178).
+	syncAddressSearch(() => filterSearch, followAddress);
 
 	// What the list holds, for the announcement and the empty states: a
 	// certificate, a refusal, or either.
