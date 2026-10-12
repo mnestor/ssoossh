@@ -123,9 +123,13 @@ func (s *DiagnosticsService) checkProxyTrust(req DiagnosticsRequest) DiagnosticC
 // strips, weakens, or overrides the headers the app itself sets. Values are
 // graded against what the app emits (see hygieneFindings), not only checked
 // for presence. The legacy X-XSS-Protection header is one the app does not set
-// at all, so any value seen there came from the edge.
+// at all, so any value seen there came from the edge. Without a complete set
+// of the app's values there is nothing to grade against, so the check skips.
 func (s *DiagnosticsService) checkHeaderHygiene(p edgeProbe) DiagnosticCheck {
 	c := DiagnosticCheck{ID: "header_hygiene", Title: "Security header hygiene"}
+	if !s.app.complete() {
+		return skipped(c, "the server did not supply the security header values its middleware sends, so there is nothing to grade the public URL against")
+	}
 	if !p.reached {
 		return skipped(c, "the public URL could not be reached")
 	}
@@ -133,7 +137,7 @@ func (s *DiagnosticsService) checkHeaderHygiene(p edgeProbe) DiagnosticCheck {
 		return skipped(c, "/healthz on the public URL was not answered by ssoosshd, so there is no app response to read")
 	}
 
-	c.Findings = hygieneFindings(p.headers, s.cfg.HTTP.Hsts)
+	c.Findings = s.app.hygieneFindings(p.headers, s.cfg.HTTP.Hsts)
 	if len(c.Findings) == 0 {
 		c.Status = DiagnosticOK
 		c.Summary = "The public URL returns the expected security headers."

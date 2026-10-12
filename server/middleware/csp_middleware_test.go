@@ -12,8 +12,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"github.com/mnestor/ssoossh/server/secheaders"
 )
 
 func TestCspMiddleware_ShouldSetContentSecurityPolicyHeader(t *testing.T) {
@@ -51,6 +49,28 @@ func TestCspMiddleware_ShouldEmbedNonceInScriptSrcDirective(t *testing.T) {
 	csp := w.Header().Get("Content-Security-Policy")
 	if !strings.Contains(csp, "'nonce-"+nonce+"'") {
 		t.Errorf("expected CSP to embed nonce %q, got: %s", nonce, csp)
+	}
+}
+
+// TestCspMiddleware_ShouldSendTheExactPolicy pins the whole policy, as the
+// other security header tests pin theirs. The admin diagnostics grade the
+// public URL against whatever this middleware reports, so a loosened policy
+// would not fail them; this test is what makes a change to the policy a
+// deliberate, reviewed edit.
+func TestCspMiddleware_ShouldSendTheExactPolicy(t *testing.T) {
+	t.Parallel()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+
+	NewCspMiddleware().Add()(c)
+
+	want := "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; " +
+		"form-action 'self'; img-src 'self'; font-src 'self'; style-src 'self' 'unsafe-inline'; " +
+		"script-src 'self' 'nonce-" + GetCSPNonce(c) + "'"
+	if got := w.Header().Get("Content-Security-Policy"); got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 }
 
@@ -94,23 +114,5 @@ func TestGetCSPNonce_ShouldReturnEmptyStringWhenValueWrongType(t *testing.T) {
 
 	if got := GetCSPNonce(c); got != "" {
 		t.Errorf("got %q, want empty string when stored value isn't a string", got)
-	}
-}
-
-// TestCspMiddleware_ShouldSendTheSecheadersPolicyForItsNonce verifies the
-// header is exactly the policy secheaders builds for the request's nonce, so
-// the diagnostics grade the same string the middleware sends.
-func TestCspMiddleware_ShouldSendTheSecheadersPolicyForItsNonce(t *testing.T) {
-	t.Parallel()
-
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
-
-	NewCspMiddleware().Add()(c)
-
-	want := secheaders.ContentSecurityPolicy(GetCSPNonce(c))
-	if got := w.Header().Get("Content-Security-Policy"); got != want {
-		t.Errorf("got %q, want %q", got, want)
 	}
 }

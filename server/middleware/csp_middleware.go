@@ -5,8 +5,6 @@ import (
 	"encoding/base64"
 
 	"github.com/gin-gonic/gin"
-
-	"github.com/mnestor/ssoossh/server/secheaders"
 )
 
 // CspMiddleware sets a Content Security Policy header and, when possible,
@@ -35,11 +33,26 @@ func (m *CspMiddleware) Add() gin.HandlerFunc {
 		nonce := generateNonce()
 		c.Set("csp_nonce", nonce)
 
-		csp := secheaders.ContentSecurityPolicy(nonce)
-
-		c.Writer.Header().Set("Content-Security-Policy", csp)
+		c.Writer.Header().Set("Content-Security-Policy", contentSecurityPolicy(nonce))
 		c.Next()
 	}
+}
+
+// contentSecurityPolicy returns the Content-Security-Policy sent on every
+// response, with script-src allowing only the given per-request nonce. It is
+// also reported to the admin diagnostics through AppSecurityHeaders.
+// scripts/check-csp-assets.sh reads the directives from this file, one
+// string literal per line, so keep that layout.
+func contentSecurityPolicy(nonce string) string {
+	return "default-src 'self'; " +
+		"base-uri 'self'; " +
+		"object-src 'none'; " +
+		"frame-ancestors 'none'; " +
+		"form-action 'self'; " +
+		"img-src 'self'; " +
+		"font-src 'self'; " +
+		"style-src 'self' 'unsafe-inline'; " +
+		"script-src 'self' 'nonce-" + nonce + "'"
 }
 
 // generateNonce returns a random base64url-encoded 16-byte nonce.

@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/mnestor/ssoossh/server/config"
-	"github.com/mnestor/ssoossh/server/secheaders"
 )
 
 // Test methodology: the edge checks are driven by a fake httpDoer that
@@ -135,7 +134,7 @@ func TestDiagnostics_ProxyTrust(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			s := NewDiagnosticsService(cfgWith("https://x.example", tt.trusted), &fakeDoer{})
+			s := NewDiagnosticsService(cfgWith("https://x.example", tt.trusted), testAppHeaders(), &fakeDoer{})
 			got := s.Run(context.Background(), DiagnosticsRequest{
 				RemoteAddr: tt.remoteAddr, ClientIP: tt.clientIP, ForwardedFor: tt.forwardedFor,
 			})
@@ -189,7 +188,7 @@ func TestDiagnostics_CORS(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			s := NewDiagnosticsService(cfgWith(origin, nil), corsCase(tt.hdr))
+			s := NewDiagnosticsService(cfgWith(origin, nil), testAppHeaders(), corsCase(tt.hdr))
 			got := s.Run(context.Background(), DiagnosticsRequest{})
 			if c := findCheck(got, "cors"); c.Status != tt.want {
 				t.Errorf("got %q, want %q (summary: %s)", c.Status, tt.want, c.Summary)
@@ -209,7 +208,7 @@ func TestDiagnostics_HeaderHygiene(t *testing.T) {
 		"X-Content-Type-Options":    {"nosniff"},
 		"X-Frame-Options":           {"DENY"},
 		"Referrer-Policy":           {"strict-origin-when-cross-origin"},
-		"Content-Security-Policy":   {secheaders.ContentSecurityPolicy("abc")},
+		"Content-Security-Policy":   {testAppCSP("abc")},
 	}
 
 	tests := []struct {
@@ -242,7 +241,7 @@ func TestDiagnostics_HeaderHygiene(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			s := NewDiagnosticsService(cfgWith(origin, nil), &fakeDoer{byURL: map[string]fakeResp{
+			s := NewDiagnosticsService(cfgWith(origin, nil), testAppHeaders(), &fakeDoer{byURL: map[string]fakeResp{
 				healthURL: {status: 200, headers: tt.hdr, body: appHealthz},
 			}})
 			got := s.Run(context.Background(), DiagnosticsRequest{})
@@ -256,7 +255,7 @@ func TestDiagnostics_HeaderHygiene(t *testing.T) {
 func TestDiagnostics_ReachabilityWarnsWhenPublicURLUnset(t *testing.T) {
 	t.Parallel()
 
-	s := NewDiagnosticsService(cfgWith("", nil), &fakeDoer{})
+	s := NewDiagnosticsService(cfgWith("", nil), testAppHeaders(), &fakeDoer{})
 	got := s.Run(context.Background(), DiagnosticsRequest{})
 
 	if c := findCheck(got, "reachability"); c.Status != DiagnosticWarn {
@@ -276,7 +275,7 @@ func TestDiagnostics_ReachabilitySkipsWhenUnreachable(t *testing.T) {
 	t.Parallel()
 
 	// No URL registered in the fake, so the probe fails.
-	s := NewDiagnosticsService(cfgWith("https://unreachable.example", nil), &fakeDoer{})
+	s := NewDiagnosticsService(cfgWith("https://unreachable.example", nil), testAppHeaders(), &fakeDoer{})
 	got := s.Run(context.Background(), DiagnosticsRequest{})
 
 	if c := findCheck(got, "reachability"); c.Status != DiagnosticSkipped {
@@ -293,7 +292,7 @@ func TestDiagnostics_ReachabilityWhoAnswered(t *testing.T) {
 	edgeHeaders := http.Header{
 		"Strict-Transport-Security": {"max-age=31536000; includeSubDomains"}, "X-Content-Type-Options": {"nosniff"},
 		"X-Frame-Options": {"DENY"}, "Referrer-Policy": {"strict-origin-when-cross-origin"},
-		"Content-Security-Policy": {secheaders.ContentSecurityPolicy("abc")},
+		"Content-Security-Policy": {testAppCSP("abc")},
 	}
 
 	// The second and third cases are the edge answering /healthz itself: a
@@ -334,7 +333,7 @@ func TestDiagnostics_ReachabilityWhoAnswered(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			s := NewDiagnosticsService(cfgWith(origin, nil), &fakeDoer{byURL: map[string]fakeResp{
+			s := NewDiagnosticsService(cfgWith(origin, nil), testAppHeaders(), &fakeDoer{byURL: map[string]fakeResp{
 				healthURL: tt.health,
 				corsURL:   {status: 200, headers: http.Header{"Access-Control-Allow-Origin": {"*"}}},
 			}})
@@ -355,7 +354,7 @@ func TestDiagnostics_CORSRunsWhenTheEdgeAnswersHealthz(t *testing.T) {
 	// The CORS probe goes to /.well-known, which even a dev server routes to
 	// the app, so an edge-answered /healthz must not take it down too.
 	const origin = "https://x.example"
-	s := NewDiagnosticsService(cfgWith(origin, nil), &fakeDoer{byURL: map[string]fakeResp{
+	s := NewDiagnosticsService(cfgWith(origin, nil), testAppHeaders(), &fakeDoer{byURL: map[string]fakeResp{
 		origin + "/healthz": {status: 404, body: "<!doctype html>"},
 		origin + "/.well-known/openid-configuration": {
 			status:  200,

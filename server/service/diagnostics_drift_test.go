@@ -17,9 +17,11 @@ import (
 
 // Test methodology: drift guard. The real response-header middleware is run
 // through gin, and the headers it emits are fed to the header hygiene check
-// as the edge's response. An app response must always grade OK, so if the
-// middleware and the check ever disagree, this fails. It lives in the external
-// test package because the middleware package imports service.
+// as the edge's response, graded against the values the middleware reports
+// through middleware.AppSecurityHeaders, exactly as the router wires it. An
+// app response must always grade OK, so if what the middleware sends and what
+// the check expects ever disagree, this fails. It lives in the external test
+// package because the middleware package imports service.
 
 // appRecordedDoer answers the probe with one recorded app response per URL.
 type appRecordedDoer struct {
@@ -65,7 +67,7 @@ func TestDiagnostics_HeaderHygieneOKForRealAppResponse(t *testing.T) {
 	cfg.HTTP.Hsts = hsts
 	doer := appRecordedDoer{url: origin + "/healthz", status: rec.Code, header: rec.Header(), body: rec.Body.String()}
 
-	got := service.NewDiagnosticsService(cfg, doer).Run(context.Background(), service.DiagnosticsRequest{})
+	got := service.NewDiagnosticsService(cfg, middleware.AppSecurityHeaders(), doer).Run(context.Background(), service.DiagnosticsRequest{})
 
 	var status service.DiagnosticStatus
 	for _, c := range got.Checks {

@@ -11,10 +11,29 @@ import (
 // Test methodology: header grading is driven straight into checkHeaderHygiene
 // with an edgeProbe that already says the app answered, so no fake network is
 // needed. goodHeaders is what the app emits; each row changes one thing. The
-// end-to-end drift guard, which runs the real middleware, lives in
-// diagnostics_drift_test.go.
+// end-to-end drift guard, which runs the real middleware and grades against
+// the values it reports, lives in diagnostics_drift_test.go.
 
 const testHSTS = "max-age=31536000; includeSubDomains"
+
+// testAppCSP is the app's Content-Security-Policy written out as a literal
+// for the unit tests. The drift test reads the real one from the middleware.
+func testAppCSP(nonce string) string {
+	return "default-src 'self'; base-uri 'self'; object-src 'none'; " +
+		"frame-ancestors 'none'; form-action 'self'; img-src 'self'; font-src 'self'; " +
+		"style-src 'self' 'unsafe-inline'; script-src 'self' 'nonce-" + nonce + "'"
+}
+
+// testAppHeaders is the set of values the app's middleware sends, written out
+// as literals so the grading tests do not depend on the middleware package.
+func testAppHeaders() AppSecurityHeaders {
+	return AppSecurityHeaders{
+		FrameOptions:          "DENY",
+		ReferrerPolicy:        "strict-origin-when-cross-origin",
+		ContentTypeOptions:    "nosniff",
+		ContentSecurityPolicy: testAppCSP,
+	}
+}
 
 // goodHeaders returns the header set the app emits with the default HSTS
 // value. Rows copy it and change one header.
@@ -24,27 +43,23 @@ func goodHeaders() http.Header {
 		"X-Content-Type-Options":    {"nosniff"},
 		"X-Frame-Options":           {"DENY"},
 		"Referrer-Policy":           {"strict-origin-when-cross-origin"},
-		"Content-Security-Policy": {"default-src 'self'; base-uri 'self'; object-src 'none'; " +
-			"frame-ancestors 'none'; form-action 'self'; img-src 'self'; font-src 'self'; " +
-			"style-src 'self' 'unsafe-inline'; script-src 'self' 'nonce-abc'"},
+		"Content-Security-Policy":   {testAppCSP("abc")},
 	}
 }
 
-// hygieneCheck grades h against the configured HSTS value.
+// hygieneCheck grades h against the app's values and the configured HSTS value.
 func hygieneCheck(t *testing.T, hsts string, h http.Header) DiagnosticCheck {
 	t.Helper()
 	cfg := &config.Config{}
 	cfg.HTTP.Hsts = hsts
-	s := NewDiagnosticsService(cfg, nil)
+	s := NewDiagnosticsService(cfg, testAppHeaders(), nil)
 	return s.checkHeaderHygiene(edgeProbe{reached: true, fromApp: true, headers: h})
 }
 
 func TestCheckHeaderHygiene_Status(t *testing.T) {
 	t.Parallel()
 
-	const csp = "default-src 'self'; base-uri 'self'; object-src 'none'; " +
-		"frame-ancestors 'none'; form-action 'self'; img-src 'self'; font-src 'self'; " +
-		"style-src 'self' 'unsafe-inline'; script-src 'self' 'nonce-abc'"
+	csp := testAppCSP("abc")
 
 	tests := []struct {
 		name   string
@@ -151,6 +166,14 @@ func TestCheckHeaderHygiene_FindingNamesHeaderAppAndObserved(t *testing.T) {
 			want:   []string{"Strict-Transport-Security", `"max-age=31536000; includeSubDomains"`, `"max-age=1"`},
 		},
 		{
+			name: "should name the app's framing values when neither framing control is present",
+			mutate: func(h http.Header) {
+				h.Del("X-Frame-Options")
+				h.Set("Content-Security-Policy", strings.Replace(testAppCSP("abc"), "frame-ancestors 'none'; ", "", 1))
+			},
+			want: []string{"The app sets X-Frame-Options: DENY, and frame-ancestors 'none' in its CSP."},
+		},
+		{
 			name:   "should say missing when the edge returned no Referrer-Policy",
 			mutate: func(h http.Header) { h.Del("Referrer-Policy") },
 			want:   []string{"Referrer-Policy", "missing", `"strict-origin-when-cross-origin"`},
@@ -193,6 +216,37 @@ func TestCheckHeaderHygiene_HSTSDisabled(t *testing.T) {
 			}
 			if c := hygieneCheck(t, "", h); c.Status != tt.want {
 				t.Errorf("got %q, want %q (findings: %v)", c.Status, tt.want, c.Findings)
+			}
+		})
+	}
+}
+
+func TestCheckHeaderHygiene_IncompleteAppValues(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		mutate func(*AppSecurityHeaders)
+	}{
+		{name: "should skip when no app values are supplied", mutate: func(a *AppSecurityHeaders) { *a = AppSecurityHeaders{} }},
+		{name: "should skip when the app's X-Frame-Options value is empty", mutate: func(a *AppSecurityHeaders) { a.FrameOptions = "" }},
+		{name: "should skip when the app's Referrer-Policy value is empty", mutate: func(a *AppSecurityHeaders) { a.ReferrerPolicy = "" }},
+		{name: "should skip when the app's X-Content-Type-Options value is empty", mutate: func(a *AppSecurityHeaders) { a.ContentTypeOptions = "" }},
+		{name: "should skip when the app's CSP builder is nil", mutate: func(a *AppSecurityHeaders) { a.ContentSecurityPolicy = nil }},
+		{name: "should skip when the app's CSP builder returns an empty policy", mutate: func(a *AppSecurityHeaders) {
+			a.ContentSecurityPolicy = func(string) string { return " " }
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			app := testAppHeaders()
+			tt.mutate(&app)
+			cfg := &config.Config{}
+			cfg.HTTP.Hsts = testHSTS
+			c := NewDiagnosticsService(cfg, app, nil).checkHeaderHygiene(edgeProbe{reached: true, fromApp: true, headers: goodHeaders()})
+			if c.Status != DiagnosticSkipped {
+				t.Errorf("got %q, want %q (summary: %s)", c.Status, DiagnosticSkipped, c.Summary)
 			}
 		})
 	}

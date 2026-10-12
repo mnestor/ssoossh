@@ -5,28 +5,53 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-
-	"github.com/mnestor/ssoossh/server/secheaders"
 )
+
+// AppSecurityHeaders is the set of security response header values the app's
+// own middleware sends. The header hygiene check grades the public URL's
+// headers against it. server/middleware owns the values and builds this with
+// middleware.AppSecurityHeaders; it is injected rather than imported because
+// middleware imports this package. HSTS is not here: its value is http.hsts,
+// which the service reads from config.
+type AppSecurityHeaders struct {
+	// FrameOptions is the X-Frame-Options value.
+	FrameOptions string
+	// ReferrerPolicy is the Referrer-Policy value.
+	ReferrerPolicy string
+	// ContentTypeOptions is the X-Content-Type-Options value.
+	ContentTypeOptions string
+	// ContentSecurityPolicy returns the Content-Security-Policy sent with the
+	// given per-request script nonce.
+	ContentSecurityPolicy func(nonce string) string
+}
+
+// complete reports whether every expected value is set. The header hygiene
+// check skips when it is not, rather than grading against values it was never
+// given.
+func (a AppSecurityHeaders) complete() bool {
+	return a.FrameOptions != "" && a.ReferrerPolicy != "" && a.ContentTypeOptions != "" &&
+		a.ContentSecurityPolicy != nil && strings.TrimSpace(a.ContentSecurityPolicy(expectedNonce)) != ""
+}
 
 // expectedNonce stands in for the per-request nonce when the app's CSP is
 // parsed. Nonce sources are matched by prefix, so its value is irrelevant.
 const expectedNonce = "probe"
 
 // hygieneFindings grades the security headers on the public URL against the
-// values ssoosshd emits. The expected values come from the same secheaders
-// package the middleware uses, and from http.hsts, so they cannot drift. Each
-// finding names the header, the app's value and the value the edge returned.
-func hygieneFindings(h http.Header, hsts string) []string {
+// values the app emits, a, and against http.hsts. a comes from the middleware
+// that sets the headers, so the grading cannot drift from it. Each finding
+// names the header, the app's value and the value the edge returned. a must
+// be complete.
+func (a AppSecurityHeaders) hygieneFindings(h http.Header, hsts string) []string {
 	csp := h.Get("Content-Security-Policy")
 	var f []string
 	f = append(f, hstsFindings(h.Get("Strict-Transport-Security"), hsts)...)
-	if v := h.Get("X-Content-Type-Options"); !strings.EqualFold(strings.TrimSpace(v), secheaders.ContentTypeOptions) {
-		f = append(f, weakerFinding("X-Content-Type-Options", secheaders.ContentTypeOptions, v))
+	if v := h.Get("X-Content-Type-Options"); !strings.EqualFold(strings.TrimSpace(v), a.ContentTypeOptions) {
+		f = append(f, weakerFinding("X-Content-Type-Options", a.ContentTypeOptions, v))
 	}
-	f = append(f, framingFindings(h, csp)...)
-	f = append(f, cspFindings(csp)...)
-	f = append(f, referrerFindings(h)...)
+	f = append(f, a.framingFindings(h, csp)...)
+	f = append(f, a.cspFindings(csp)...)
+	f = append(f, a.referrerFindings(h)...)
 	// The app never sets X-XSS-Protection. Any value here is the edge's, and
 	// the legacy filter is best disabled (0) rather than enabled, per current
 	// guidance, since the CSP is the real control.
@@ -50,13 +75,13 @@ func missingFinding(header, app string) string {
 // referrerFindings grades Referrer-Policy. Repeated header lines are joined
 // with commas, the way browsers combine them, and the last recognised token
 // is the one that applies.
-func referrerFindings(h http.Header) []string {
+func (a AppSecurityHeaders) referrerFindings(h http.Header) []string {
 	v := strings.Join(h.Values("Referrer-Policy"), ",")
 	switch {
 	case strings.TrimSpace(v) == "":
-		return []string{missingFinding("Referrer-Policy", secheaders.ReferrerPolicy)}
-	case !referrerPolicyAccepted(v):
-		return []string{weakerFinding("Referrer-Policy", secheaders.ReferrerPolicy, v)}
+		return []string{missingFinding("Referrer-Policy", a.ReferrerPolicy)}
+	case !a.referrerPolicyAccepted(v):
+		return []string{weakerFinding("Referrer-Policy", a.ReferrerPolicy, v)}
 	}
 	return nil
 }
@@ -64,11 +89,12 @@ func referrerFindings(h http.Header) []string {
 // referrerPolicyAccepted reports whether a Referrer-Policy value is the app's
 // policy or stricter. The last recognised token of a comma list applies; a
 // value with no recognised token is not accepted.
-func referrerPolicyAccepted(value string) bool {
+func (a AppSecurityHeaders) referrerPolicyAccepted(value string) bool {
+	app := strings.ToLower(strings.TrimSpace(a.ReferrerPolicy))
 	tokens := strings.Split(value, ",")
 	for i := len(tokens) - 1; i >= 0; i-- {
 		switch strings.ToLower(strings.TrimSpace(tokens[i])) {
-		case secheaders.ReferrerPolicy, "strict-origin", "same-origin", "no-referrer":
+		case app, "strict-origin", "same-origin", "no-referrer":
 			return true
 		case "origin-when-cross-origin", "origin", "no-referrer-when-downgrade", "unsafe-url":
 			return false
@@ -80,21 +106,22 @@ func referrerPolicyAccepted(value string) bool {
 // framingFindings grades the framing controls. X-Frame-Options, when set,
 // must be the app's value. When it is absent, CSP frame-ancestors must carry
 // the app's restriction, since browsers ignore X-Frame-Options alongside it.
-func framingFindings(h http.Header, csp string) []string {
+func (a AppSecurityHeaders) framingFindings(h http.Header, csp string) []string {
 	var f []string
 	xfo := h.Get("X-Frame-Options")
-	if xfo != "" && !strings.EqualFold(strings.TrimSpace(xfo), secheaders.FrameOptions) {
-		f = append(f, weakerFinding("X-Frame-Options", secheaders.FrameOptions, xfo))
+	if xfo != "" && !strings.EqualFold(strings.TrimSpace(xfo), a.FrameOptions) {
+		f = append(f, weakerFinding("X-Frame-Options", a.FrameOptions, xfo))
 	}
 
-	appFA := appCSP()["frame-ancestors"]
+	appFA := a.policy()["frame-ancestors"]
 	fa, hasFA := parseCSP(csp)["frame-ancestors"]
 	switch {
 	case hasFA && !sourcesWithin(fa, appFA):
 		f = append(f, weakerFinding("Content-Security-Policy frame-ancestors",
 			"frame-ancestors "+strings.Join(appFA, " "), "frame-ancestors "+strings.Join(fa, " ")))
 	case xfo == "" && !hasFA:
-		f = append(f, "Neither X-Frame-Options nor a CSP frame-ancestors directive is present. The app sets X-Frame-Options: DENY, and frame-ancestors 'none' in its CSP.")
+		f = append(f, fmt.Sprintf("Neither X-Frame-Options nor a CSP frame-ancestors directive is present. The app sets X-Frame-Options: %s, and frame-ancestors %s in its CSP.",
+			a.FrameOptions, strings.Join(appFA, " ")))
 	}
 	return f
 }
@@ -102,11 +129,11 @@ func framingFindings(h http.Header, csp string) []string {
 // cspFindings grades the Content-Security-Policy. object-src and script-src
 // are checked against the app's policy; each falls back to default-src when
 // absent, as browsers apply it. A missing header is a finding in its own right.
-func cspFindings(csp string) []string {
+func (a AppSecurityHeaders) cspFindings(csp string) []string {
 	if strings.TrimSpace(csp) == "" {
-		return []string{missingFinding("Content-Security-Policy", secheaders.ContentSecurityPolicy(expectedNonce))}
+		return []string{missingFinding("Content-Security-Policy", a.ContentSecurityPolicy(expectedNonce))}
 	}
-	app := appCSP()
+	app := a.policy()
 	obs := parseCSP(csp)
 	var f []string
 	for _, name := range []string{"object-src", "script-src"} {
@@ -124,9 +151,9 @@ func cspFindings(csp string) []string {
 	return f
 }
 
-// appCSP parses the policy the app's CSP middleware sets.
-func appCSP() map[string][]string {
-	return parseCSP(secheaders.ContentSecurityPolicy(expectedNonce))
+// policy parses the policy the app's CSP middleware sets.
+func (a AppSecurityHeaders) policy() map[string][]string {
+	return parseCSP(a.ContentSecurityPolicy(expectedNonce))
 }
 
 // parseCSP splits a policy into directive name to source list. Names and
@@ -170,7 +197,7 @@ func sourcesWithin(observed, allowed []string) bool {
 	for _, o := range observed {
 		found := false
 		for _, a := range allowed {
-			if a == o || (secheaders.IsNonceSource(o) && secheaders.IsNonceSource(a)) {
+			if a == o || (isNonceSource(o) && isNonceSource(a)) {
 				found = true
 				break
 			}
@@ -180,6 +207,13 @@ func sourcesWithin(observed, allowed []string) bool {
 		}
 	}
 	return true
+}
+
+// isNonceSource reports whether a CSP source expression is a nonce source such
+// as 'nonce-abc'. The nonce differs per request, so sources are matched by
+// this prefix rather than by value.
+func isNonceSource(source string) bool {
+	return strings.HasPrefix(source, "'nonce-")
 }
 
 // hstsFindings grades Strict-Transport-Security against http.hsts, the value
