@@ -173,12 +173,13 @@ closed.
 
 ```yaml
 admin:
-  # Full administrative access: re-enabling users, plus everything SOC and
-  # auditor can do.
+  # Full administrative access: diagnostics, claims echo, the directory
+  # sync and probe, plus everything SOC and auditor can do.
   require_group: "ssh-admins"
 
-  # Containment only: disabling users and expiring enrollments. Admins hold
-  # this regardless, so leaving it empty narrows SOC actions to admins.
+  # Account writes: disabling and re-enabling users, expiring enrollments.
+  # Admins hold this regardless, so leaving it empty narrows SOC actions to
+  # admins.
   soc_group: "security-ops"
 
   # Read-only: effective configuration, cross-user certificate history.

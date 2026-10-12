@@ -40,7 +40,7 @@
   - Each user has two detail levels, both stored on the server per user: one for the web UI and a separate one for email.
     - The defaults are set once, at the user's first login: advanced for SOC and admin, simplified for everyone else. A later change of groups never moves them.
     - The email level decides only whether a message adds its "Details" section (key IDs, serials, options). Users without a stored level, and a service code's notification address, get simplified.
-  - Admins can disable and re-enable users, run diagnostics, view the effective config and use identity echo (re-authentication to inspect claims).
+  - SOC (and so admins) can disable and re-enable users; admins can run diagnostics, view the effective config and use identity echo (re-authentication to inspect claims).
   - Also: branding, FIPS 140-3 mode, OpenTelemetry traces and metrics, rate limiting, and how much `/api/version` discloses is configurable.
 
   ### Client (ssoossh)
