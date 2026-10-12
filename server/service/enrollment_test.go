@@ -1332,9 +1332,6 @@ func newCursorEnrollmentFixture(t *testing.T) (*EnrollmentService, *CertRequestS
 	t.Helper()
 	svc := newTestCertRequestServiceWithConfig(t, &config.Config{Admin: config.AdminConfig{AuditorGroup: "auditors"}})
 	enrollment := newTestEnrollmentService(t, svc)
-	if err := svc.db.AutoMigrate(&model.User{}, &model.UserLDAP{}); err != nil {
-		t.Fatalf("failed to migrate users: %v", err)
-	}
 	for _, name := range []string{"alice", "bob"} {
 		user := model.User{ID: "u-" + name, Subject: "sub-" + name, Username: name, Email: name + "@example.com", CreatedAt: time.Now(), UpdatedAt: time.Now()}
 		if err := svc.db.Create(&user).Error; err != nil {

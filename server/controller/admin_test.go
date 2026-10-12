@@ -1363,7 +1363,7 @@ func TestEffectiveConfigHandler_ShouldServeAdminsOnly(t *testing.T) {
 			t.Parallel()
 
 			identity := &service.Identity{Subject: "sub-caller", Username: "caller", Groups: tt.groups}
-			r := routerWithAuth(t, newTestConfig(t), newTestDB(t), identity)
+			r := routerWithAuth(t, newTestConfig(t), testdb.New(t), identity)
 
 			w := httptest.NewRecorder()
 			r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/config", nil))

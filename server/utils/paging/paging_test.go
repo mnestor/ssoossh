@@ -325,10 +325,7 @@ func TestSeekBefore(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-			if err != nil {
-				t.Fatalf("open sqlite: %v", err)
-			}
+			db := testdb.Empty(t)
 			if err := db.AutoMigrate(&seekRow{}); err != nil {
 				t.Fatalf("migrate: %v", err)
 			}

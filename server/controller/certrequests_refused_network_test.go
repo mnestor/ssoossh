@@ -23,6 +23,7 @@ import (
 	"github.com/mnestor/ssoossh/server/middleware"
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/service"
+	"github.com/mnestor/ssoossh/test/testdb"
 )
 
 // refusedNetworkRouter builds the console create route over a real service
@@ -30,10 +31,7 @@ import (
 func refusedNetworkRouter(t *testing.T, trustedProxies []string) (*gin.Engine, *gorm.DB) {
 	t.Helper()
 
-	db := newTestDB(t)
-	if err := db.AutoMigrate(&model.CertificateRequest{}, &model.CertificateRequestDecision{}); err != nil {
-		t.Fatalf("migrate certificate request tables: %v", err)
-	}
+	db := testdb.New(t)
 	cfg := &config.Config{CertOptions: config.CertificateOptions{
 		ClientTimeout: 5 * time.Minute,
 		Console: config.CertOptionsConsole{
