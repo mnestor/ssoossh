@@ -78,6 +78,20 @@ export const AuditCertExpired: AuditAction = "cert.expired";
  */
 export const AuditCertSignFailed: AuditAction = "cert.sign_failed";
 /**
+ * AuditCertRequestRefusedNetwork records a certificate request the
+ * server refused because its source address is outside the type's
+ * allowed_networks. System event: the caller has not signed in, so
+ * there is no actor, and the username it sent is kept only as a claim.
+ * The source is the address the server observed (through
+ * http.trusted_proxies), never one the client supplied. One row per
+ * refusal, so a run of attempts shows each time and source. Anyone on a
+ * refused network can raise it without signing in; the row-cap sweep
+ * still takes these rows oldest first like any other (see
+ * SweepAuditEvents), leaving a burst to the firewall, the rate limits
+ * and the shipped log.
+ */
+export const AuditCertRequestRefusedNetwork: AuditAction = "cert.request_refused_network";
+/**
  * The taxonomy. Namespaced by subject area: authentication, certificates,
  * enrollments, user containment, and privileged views.
  */

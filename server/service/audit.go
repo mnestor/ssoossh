@@ -372,9 +372,23 @@ func (s *AuditService) page(ctx context.Context, q *gorm.DB, limit, offset int) 
 	return page, nil
 }
 
+// auditSweepBatch is how many rows one delete in the row-cap sweep names.
+// The ids travel as bind parameters, and both backends cap those (sqlite at
+// 32766, postgres at 65535), so a large excess, such as a burst of network
+// refusals, is deleted in batches rather than as one statement that fails.
+const auditSweepBatch = 1000
+
 // SweepAuditEvents prunes the database copy: rows older than the retention
-// window, then anything past the row cap, oldest first. The shipped log is
-// the archive, so this loses nothing a deployment should be relying on.
+// window, then the oldest rows past the row cap. The shipped log is the
+// archive, so this loses nothing a deployment should be relying on.
+//
+// Past the cap it is oldest first whatever the action, network refusals
+// included, so the table always holds one unbroken window of time rather
+// than a history with one kind of event cut out early. Anyone on a refused
+// network can raise cert.request_refused_network without signing in, so a
+// burst of them can push older events out of the UI's history. That is left
+// to the deployment: a firewall keeps those networks out, the rate limits
+// slow what gets through, and the shipped log keeps every line regardless.
 //
 // A package-level function rather than a method, so the scheduler can
 // register it without reaching through a service.
@@ -402,25 +416,39 @@ func SweepAuditEvents(ctx context.Context, db *gorm.DB, retention time.Duration,
 	if total <= maxRows {
 		return nil
 	}
-
-	// Delete by id from a bounded subquery rather than with a LIMIT on the
-	// delete itself, which sqlite and postgres do not share syntax for.
 	excess := int(total - maxRows)
-	var ids []string
-	if err := db.WithContext(ctx).Model(&model.AuditEvent{}).
-		Order("created_at ASC, id ASC").
-		Limit(excess).
-		Pluck("id", &ids).Error; err != nil {
-		return fmt.Errorf("failed to select the oldest audit events past the cap: %w", err)
-	}
-	if len(ids) == 0 {
-		// not covered: total > maxRows >= 0 means at least one row exists
-		// to select, so this cannot be reached from the count above.
-		return nil
-	}
-	if err := db.WithContext(ctx).Where("id IN ?", ids).Delete(&model.AuditEvent{}).Error; err != nil {
+
+	deleted, err := deleteOldestAuditEvents(ctx, db, excess)
+	if err != nil {
 		return fmt.Errorf("failed to prune audit events past the row cap: %w", err)
 	}
-	slog.Info("pruned audit events past the row cap", "deleted", len(ids), "max_rows", maxRows)
+	slog.Info("pruned audit events past the row cap", "deleted", deleted, "max_rows", maxRows)
 	return nil
+}
+
+// deleteOldestAuditEvents deletes up to limit of the oldest rows, in batches
+// of auditSweepBatch, and returns how many it deleted. It stops early when
+// the table runs out of rows.
+//
+// Each batch selects ids and deletes by id rather than putting a LIMIT on
+// the delete itself, which sqlite and postgres do not share syntax for.
+func deleteOldestAuditEvents(ctx context.Context, db *gorm.DB, limit int) (int, error) {
+	deleted := 0
+	for deleted < limit {
+		var ids []string
+		if err := db.WithContext(ctx).Model(&model.AuditEvent{}).
+			Order("created_at ASC, id ASC").
+			Limit(min(limit-deleted, auditSweepBatch)).
+			Pluck("id", &ids).Error; err != nil {
+			return deleted, fmt.Errorf("failed to select the oldest audit events: %w", err)
+		}
+		if len(ids) == 0 {
+			return deleted, nil
+		}
+		if err := db.WithContext(ctx).Where("id IN ?", ids).Delete(&model.AuditEvent{}).Error; err != nil {
+			return deleted, fmt.Errorf("failed to delete audit events: %w", err)
+		}
+		deleted += len(ids)
+	}
+	return deleted, nil
 }

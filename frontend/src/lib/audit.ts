@@ -17,6 +17,7 @@ import {
 	AuditCertDenied,
 	AuditCertExpired,
 	AuditCertIssued,
+	AuditCertRequestRefusedNetwork,
 	AuditCertRequested,
 	AuditCertSignFailed,
 	AuditEnrollmentCodeCreated,
@@ -111,6 +112,11 @@ export const auditPhrasing: Record<string, string> = {
 	// System events: the row reads "The server ...".
 	[AuditCertExpired]: 'expired an unanswered certificate request',
 	[AuditCertSignFailed]: 'could not sign an approved certificate',
+	// Recorded before anyone signs in, so like cert.expired it reads "The
+	// server ...". The address it came from is in source_ip, and the
+	// account it named in claimed_username: a claim, not a subject.
+	[AuditCertRequestRefusedNetwork]:
+		'refused a certificate request from outside the allowed networks',
 	// Shipped log only, never in the table the UI reads (see
 	// service.tableSkipped), but phrased so the taxonomy has no gaps and an
 	// older row, if one ever appears, still reads as a sentence.

@@ -416,6 +416,11 @@ func (s *CertRequestService) CreateRequest(ctx context.Context, p NewCertRequest
 			slog.String("cert_type", string(p.Type)),
 			slog.String("source_ip", p.SourceIP),
 		)
+		// Recorded before the refusal returns, so a SOC reviewer sees every
+		// attempt. Detached from the request's cancellation: a caller that
+		// hangs up straight after sending must not keep its row out of the
+		// table.
+		s.auditRecord(context.WithoutCancel(ctx), refusedNetworkEvent(p))
 		return CreatedRequest{}, &errorresponses.ForbiddenError{
 			Reason: fmt.Sprintf("%s certificate requests are not accepted from this network", p.Type),
 		}
@@ -519,6 +524,30 @@ func (s *CertRequestService) CreateRequest(ctx context.Context, p NewCertRequest
 // caller writing arbitrary volume into the table. Same reasoning as
 // claimUserAgentMaxLen.
 const maxContextFieldLen = 256
+
+// refusedNetworkEvent builds the audit event for a request the type's
+// network gate refused.
+//
+// A system event with no actor: nobody has signed in at this point. The
+// username and hostname are what an unauthenticated caller sent, so they are
+// recorded under claimed_* keys, never as a subject, and bounded the same way
+// the stored context fields are. source_ip is p.SourceIP, which the
+// controller takes from gin's ClientIP: the peer address, or a forwarded
+// address only through http.trusted_proxies. No request header is copied
+// here, so Cookie and Authorization cannot reach the record.
+func refusedNetworkEvent(p NewCertRequestParams) AuditEvent {
+	return AuditEvent{
+		Action: AuditCertRequestRefusedNetwork,
+		System: true,
+		Reason: fmt.Sprintf("the source address is outside cert_options.%s.allowed_networks", p.Type),
+		Detail: map[string]any{
+			"cert_type":        string(p.Type),
+			"source_ip":        p.SourceIP,
+			"claimed_username": truncateContextField(p.Username),
+			"claimed_hostname": truncateContextField(p.Hostname),
+		},
+	}
+}
 
 // truncateContextField bounds one self-reported string. Truncated rather
 // than rejected: a request that fails because a machine has a long hostname
