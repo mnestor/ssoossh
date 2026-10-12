@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
+import * as taxonomy from './api/generated/auditactions';
 import type { AuditEvent } from './api/types';
-import { dedupeAuditEvents, hiddenAuditActions, visibleAuditEvents } from './audit';
+import {
+	auditPhrasing,
+	dedupeAuditEvents,
+	describeAuditAction,
+	hiddenAuditActions,
+	visibleAuditEvents
+} from './audit';
 
 /** event builds a minimal audit row for these tests. */
 function event(id: string, action: string): AuditEvent {
@@ -65,5 +72,43 @@ describe('dedupeAuditEvents', () => {
 
 	it('should return nothing for an empty list', () => {
 		expect(dedupeAuditEvents([])).toEqual([]);
+	});
+});
+
+// Every action the server can record, from the tygo output of
+// server/service/audit_actions.go. A new action there without an entry in
+// auditPhrasing fails here by name, so it cannot ship rendering as its raw
+// action string. Run `make types` after adding one on the Go side.
+const serverActions = Object.values(taxonomy) as string[];
+
+describe('auditPhrasing', () => {
+	it('should see the server taxonomy when the generated list is loaded', () => {
+		// Guards the walk below: an empty or renamed module would otherwise
+		// pass every case by having none.
+		expect(serverActions).toContain('auth.login');
+	});
+
+	it.each(serverActions)('should phrase %s when the server records it', (action) => {
+		expect(
+			Object.hasOwn(auditPhrasing, action),
+			`audit action "${action}" has no phrasing: add it to auditPhrasing in frontend/src/lib/audit.ts`
+		).toBe(true);
+	});
+});
+
+describe('describeAuditAction', () => {
+	it.each([
+		['cert.claimed', 'opened a certificate approval link'],
+		['cert.expired', 'expired an unanswered certificate request'],
+		['cert.sign_failed', 'could not sign an approved certificate'],
+		['admin.diagnostics_run', 'ran the deployment diagnostics'],
+		// The taxonomy grows without a wire change: an action this build
+		// does not know shows its raw name rather than vanishing.
+		['future.thing', 'future.thing'],
+		['', ''],
+		// An inherited property name is not a phrase.
+		['constructor', 'constructor']
+	])('should describe %s as %s', (action, want) => {
+		expect(describeAuditAction(action)).toBe(want);
 	});
 });

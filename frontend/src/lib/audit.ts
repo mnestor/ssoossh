@@ -56,3 +56,67 @@ export function dedupeAuditEvents(events: AuditEvent[]): AuditEvent[] {
 	}
 	return out;
 }
+
+/**
+ * Human phrasing per action: the verb phrase that sits between the actor and
+ * the target, so a row reads "alice disabled an account bob" as a sentence.
+ *
+ * Every action in the server's taxonomy has an entry. audit.test.ts walks the
+ * generated list (generated/auditactions.ts, from
+ * server/service/audit_actions.go) and fails, naming the action, for any that
+ * is missing here, so a new action cannot ship rendering as its raw name.
+ */
+export const auditPhrasing: Record<string, string> = {
+	'auth.login': 'signed in',
+	'auth.login_denied': 'was refused sign-in',
+	'cert.requested': 'requested a certificate',
+	'cert.approved': 'approved a certificate',
+	'cert.denied': 'denied a certificate request',
+	'cert.code_resolved': 'opened a console login by its code',
+	// Recorded before anyone signs in, so it has no actor and reads
+	// "Someone opened ...": the user agent in the detail is what tells a
+	// person from a mail scanner.
+	'cert.claimed': 'opened a certificate approval link',
+	// System events: the row reads "The server ...".
+	'cert.expired': 'expired an unanswered certificate request',
+	'cert.sign_failed': 'could not sign an approved certificate',
+	// Shipped log only, never in the table the UI reads (see
+	// service.tableSkipped), but phrased so the taxonomy has no gaps and an
+	// older row, if one ever appears, still reads as a sentence.
+	'cert.issued': 'issued a certificate to',
+	'enrollment.code_created': 'created a service enrollment',
+	'enrollment.redeemed': 'redeemed a service enrollment',
+	'enrollment.expired': 'expired a service enrollment',
+	'enrollment.notification_email_set': "changed a service enrollment's notification address",
+	'enrollment.reassigned': 'reassigned a service enrollment',
+	'user.disabled': 'disabled an account',
+	'user.enabled': 're-enabled an account',
+	'user.auto_disabled': 'was disabled automatically',
+	// Actor and target are the same account, so onWhom adds nothing and
+	// the phrase has to carry "self" on its own. Worded to match
+	// auth.login_denied, the other refusal on a timeline.
+	'user.disable_refused': 'was refused a self-disable',
+	'ldap.sync_triggered': 'ran the directory sync',
+	'ldap.probed': 'probed the directory',
+	// Worded like ldap.sync_triggered, its neighbour on the admin pages.
+	'admin.diagnostics_run': 'ran the deployment diagnostics',
+	'admin.enrollment_viewed': 'viewed an enrollment',
+	// No longer emitted, kept so events recorded before that still read
+	// as a sentence rather than as a raw action name.
+	'admin.config_viewed': 'viewed the effective configuration',
+	// Not rendered at all any more (see hiddenAuditActions), but kept
+	// phrased: the filter is a display rule and this is what the row
+	// would read as if it were ever lifted.
+	'admin.user_viewed': 'viewed a user record',
+	'admin.audit_viewed': 'viewed the audit log'
+};
+
+/**
+ * describeAuditAction returns the phrase for an action. An unknown action
+ * falls back to its raw namespaced name rather than being hidden: the
+ * taxonomy grows without a wire change, so a client that only rendered known
+ * actions would silently drop new ones.
+ */
+export function describeAuditAction(action: string): string {
+	return Object.hasOwn(auditPhrasing, action) ? auditPhrasing[action] : action;
+}
