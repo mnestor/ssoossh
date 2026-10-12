@@ -595,23 +595,10 @@ func (a *adminController) disableUserHandler(g *gin.Context) {
 	// Refused before the body is read and before any write to the user row:
 	// disabling yourself ends your own session, and recovery needs another
 	// admin to re-enable you. The attempt is recorded as its own audit
-	// action so it shows on the account's timeline. Record, not RecordTx:
-	// there is no state change for the row to commit with. The address is
-	// the one gin resolved through http.trusted_proxies, never a forwarding
-	// header taken at face value, and no request header is copied in.
+	// action so it shows on the account's timeline.
 	if currentUser.ID == id {
-		const refusalReason = "an operator cannot disable their own account"
 		slog.Warn("refused a self-disable", "user_id", id)
-		if a.audit != nil {
-			a.audit.Record(g.Request.Context(), service.AuditEvent{
-				Action:     service.AuditUserDisableRefused,
-				Actor:      service.AuditSubjectFromIdentity(currentIdentity, currentUser.ID),
-				Target:     service.AuditSubjectFromUser(&currentUser),
-				Reason:     refusalReason,
-				Detail:     map[string]any{"source_ip": g.ClientIP()},
-				OccurredAt: time.Now(),
-			})
-		}
+		a.recordRefusedSelfDisable(g, currentIdentity, &currentUser)
 		handleError(g, &errorresponses.ForbiddenError{Reason: "You can't disable your own account. Ask another admin."})
 		return
 	}
@@ -710,6 +697,26 @@ func (a *adminController) disableUserHandler(g *gin.Context) {
 	}
 
 	respondData(g, webtypes.DisableUserConsequences{ServiceEnrollmentCount: enrollmentCount})
+}
+
+// recordRefusedSelfDisable writes the user.disable_refused audit row for an
+// operator who named their own account, as both actor and target. Record,
+// not RecordTx: there is no state change for the row to commit with. The
+// address is the one gin resolved through http.trusted_proxies, never a
+// forwarding header taken at face value, and no request header is copied
+// in.
+func (a *adminController) recordRefusedSelfDisable(g *gin.Context, identity *service.Identity, self *model.User) {
+	if a.audit == nil {
+		return
+	}
+	a.audit.Record(g.Request.Context(), service.AuditEvent{
+		Action:     service.AuditUserDisableRefused,
+		Actor:      service.AuditSubjectFromIdentity(identity, self.ID),
+		Target:     service.AuditSubjectFromUser(self),
+		Reason:     "an operator cannot disable their own account",
+		Detail:     map[string]any{"source_ip": g.ClientIP()},
+		OccurredAt: time.Now(),
+	})
 }
 
 // disableSource names the role a disable is taken under: admin when the
