@@ -353,3 +353,17 @@ func TestSessionWriteError_ShouldNotDiscloseTheUnderlyingCause(t *testing.T) {
 		}
 	}
 }
+
+// TestShuttingDownError_ShouldTellTheCallerToReconnect: the message reaches
+// the client in the 503 envelope, and the one thing a caller can do about a
+// shutdown is come back, so the message has to say that and not read as a
+// failed request.
+func TestShuttingDownError_ShouldTellTheCallerToReconnect(t *testing.T) {
+	t.Parallel()
+
+	err := &ShuttingDownError{}
+
+	if got := err.Error(); !strings.Contains(got, "reconnect") {
+		t.Errorf("Error() = %q, want it to tell the caller to reconnect", got)
+	}
+}
