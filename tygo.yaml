@@ -44,6 +44,13 @@ packages:
     include_files: ["audit_actions.go"]
     indent: "\t"
 
+  # The taxonomy's namespaces, which the audit page's action filter groups
+  # by. Their own package, so they land in their own file and the walk over
+  # auditactions.ts above sees actions only.
+  - path: "github.com/mnestor/ssoossh/server/service/auditns"
+    output_path: "frontend/src/lib/api/generated/auditnamespaces.ts"
+    indent: "\t"
+
   # The types the Go client and the server already share. The web UI needs
   # the envelope every response is wrapped in, and the approve/deny result
   # bodies; generating them means the browser, the CLI, and the server all

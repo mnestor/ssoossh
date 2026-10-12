@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
 import * as taxonomy from './api/generated/auditactions';
+import * as namespaces from './api/generated/auditnamespaces';
 import type { AuditEvent } from './api/types';
 import {
+	auditActionGroups,
+	auditNamespaceLabels,
+	auditFilterSearch,
 	auditPhrasing,
 	dedupeAuditEvents,
+	isIPAddress,
 	describeAuditAction,
 	hiddenAuditActions,
 	visibleAuditEvents
@@ -111,4 +116,83 @@ describe('describeAuditAction', () => {
 	])('should describe %s as %s', (action, want) => {
 		expect(describeAuditAction(action)).toBe(want);
 	});
+});
+
+describe('isIPAddress', () => {
+	it.each([
+		['192.0.2.7', true],
+		['0.0.0.0', true],
+		['255.255.255.255', true],
+		[' 192.0.2.7 ', true],
+		['2001:db8::1', true],
+		['::1', true],
+		['::ffff:192.0.2.7', true],
+		['', false],
+		['   ', false],
+		['192.0.2', false],
+		['10.1', false],
+		['192.0.2.256', false],
+		['192.0.2.07', false],
+		['192.0.2.7:22', false],
+		['192.0.2.0/24', false],
+		['2001:db8::/32', false],
+		['[2001:db8::1]', false],
+		['2001:db8:::1', false],
+		['example.com', false]
+	])('should judge %j an address: %s', (value, want) => {
+		expect(isIPAddress(value)).toBe(want);
+	});
+});
+
+describe('auditFilterSearch', () => {
+	it.each([
+		['', '', ''],
+		['auth.login', '', '?action=auth.login'],
+		['', '192.0.2.7', '?source_ip=192.0.2.7'],
+		['cert.requested', '2001:db8::1', '?action=cert.requested&source_ip=2001%3Adb8%3A%3A1']
+	])('should write action %j and source %j as %j', (action, source, want) => {
+		expect(auditFilterSearch(action, source)).toBe(want);
+	});
+});
+
+describe('auditActionGroups', () => {
+	const all = Object.values(taxonomy).filter((v): v is string => typeof v === 'string');
+	const offered = auditActionGroups(all).flatMap((group) => group.actions);
+
+	it('should offer every action the feed can return', () => {
+		const expected = all.filter(
+			(action) => !hiddenAuditActions.includes(action) && action !== taxonomy.AuditCertIssued
+		);
+		expect([...offered].sort()).toEqual([...expected].sort());
+	});
+
+	it('should not offer an action the feed never returns', () => {
+		expect(offered).not.toContain(taxonomy.AuditCertIssued);
+	});
+
+	it('should put certificates first', () => {
+		expect(auditActionGroups(all)[0].label).toBe('Certificates');
+	});
+
+	it('should group an unknown namespace under its own name', () => {
+		expect(auditActionGroups(['zeta.thing', 'auth.login']).map((g) => g.label)).toEqual([
+			'Sign-in',
+			'zeta'
+		]);
+	});
+
+	it('should give no groups for an empty taxonomy', () => {
+		expect(auditActionGroups([])).toEqual([]);
+	});
+
+	// Every namespace the server declares gets words of its own, so no group
+	// in the filter is titled with a raw namespace name.
+	const labelled = auditNamespaceLabels.map(([namespace]) => namespace);
+	for (const namespace of Object.values(namespaces).filter(
+		(v): v is string => typeof v === 'string'
+	)) {
+		it(`should label the ${namespace} namespace`, () => {
+			expect(labelled).toContain(namespace);
+		});
+	}
 });

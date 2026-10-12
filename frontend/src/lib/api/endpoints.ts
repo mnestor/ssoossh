@@ -442,15 +442,19 @@ export function getUserAudit(
 /**
  * GET /api/admin/audit — the recent-activity feed (auditor-scoped).
  *
- * Deliberately unsearchable: the database copy is a bounded cache of recent
- * events, and searching happens in the shipped audit log.
+ * Filters by action and by observed source address, both exact matches, and
+ * nothing else: the database copy is a bounded cache of recent events, and
+ * any other search happens in the shipped audit log. An empty filter is left
+ * off the request.
  */
 export function getAuditFeed(
-	params: { limit?: number; offset?: number } = {}
+	params: { limit?: number; offset?: number; action?: string; source_ip?: string } = {}
 ): Promise<AuditEventsResponse> {
 	const query = new URLSearchParams();
 	if (params.limit !== undefined) query.set('limit', String(params.limit));
 	if (params.offset !== undefined) query.set('offset', String(params.offset));
+	if (params.action) query.set('action', params.action);
+	if (params.source_ip) query.set('source_ip', params.source_ip);
 	const suffix = query.toString() ? `?${query}` : '';
 	return request<AuditEventsResponse>(`/admin/audit${suffix}`);
 }

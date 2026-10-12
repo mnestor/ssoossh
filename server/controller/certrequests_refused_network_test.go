@@ -184,6 +184,11 @@ func TestCreateConsoleRequestHandler_ShouldAuditTheObservedSourceAddress(t *test
 			if got := decodeAuditPayload(t, rows[0]).Detail["source_ip"]; got != tt.wantIP {
 				t.Errorf("source_ip = %v, want %s", got, tt.wantIP)
 			}
+			// The indexed copy the admin feed filters on holds the same
+			// observed address, never the untrusted forwarded one.
+			if rows[0].SourceIP != tt.wantIP {
+				t.Errorf("source_ip column = %q, want %s", rows[0].SourceIP, tt.wantIP)
+			}
 		})
 	}
 }

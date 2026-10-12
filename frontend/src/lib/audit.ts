@@ -32,6 +32,7 @@ import {
 	AuditUserDisabled,
 	AuditUserEnabled
 } from '#lib/api/generated/auditactions.js';
+import * as auditNamespace from '#lib/api/generated/auditnamespaces.js';
 import type { AuditEvent } from '#lib/api/types.js';
 
 /**
@@ -156,4 +157,100 @@ export const auditPhrasing: Record<string, string> = {
  */
 export function describeAuditAction(action: string): string {
 	return Object.hasOwn(auditPhrasing, action) ? auditPhrasing[action] : action;
+}
+
+/**
+ * Actions the server writes to the shipped log only (see
+ * service.tableSkipped). The feed can never return one, so the action filter
+ * does not offer them: choosing one could only ever show an empty list.
+ */
+const logOnlyAuditActions = [AuditCertIssued];
+
+/** One labelled group of the action filter's options. */
+export interface AuditActionGroup {
+	label: string;
+	actions: string[];
+}
+
+/**
+ * Words for each namespace of the taxonomy, in the order the action filter
+ * lists them: the events a reviewer reaches for most first. A namespace
+ * missing here still gets a group, under its raw name, so a new one is never
+ * dropped from the filter.
+ */
+export const auditNamespaceLabels: [string, string][] = [
+	[auditNamespace.Cert, 'Certificates'],
+	[auditNamespace.Auth, 'Sign-in'],
+	[auditNamespace.User, 'Accounts'],
+	[auditNamespace.Enrollment, 'Service codes'],
+	[auditNamespace.LDAP, 'Directory'],
+	[auditNamespace.Admin, 'Admin views']
+];
+
+/**
+ * auditActionGroups builds the action filter's options from the taxonomy:
+ * every action the feed can return, grouped by namespace, alphabetical inside
+ * a group. Taken from the generated list (generated/auditactions.ts) rather
+ * than written out, so a new action is filterable the day it ships.
+ */
+export function auditActionGroups(taxonomy: string[]): AuditActionGroup[] {
+	const filterable = taxonomy.filter(
+		(action) => !hiddenAuditActions.includes(action) && !logOnlyAuditActions.includes(action)
+	);
+	const byNamespace: Record<string, string[]> = {};
+	for (const action of filterable) {
+		const namespace = action.split('.')[0];
+		(byNamespace[namespace] ??= []).push(action);
+	}
+	const known = auditNamespaceLabels.map(([namespace]) => namespace);
+	const order = [
+		...known.filter((namespace) => byNamespace[namespace]),
+		...Object.keys(byNamespace)
+			.filter((namespace) => !known.includes(namespace))
+			.sort()
+	];
+	return order.map((namespace) => ({
+		label: auditNamespaceLabels.find(([n]) => n === namespace)?.[1] ?? namespace,
+		actions: [...byNamespace[namespace]].sort()
+	}));
+}
+
+/**
+ * isIPAddress reports whether value is one IPv4 or IPv6 address, the only
+ * thing the feed's source filter accepts (the server answers anything else
+ * with a 400). Not a network, not a host name, not an address with a port.
+ *
+ * IPv4 by pattern, since the URL parser also accepts shorthand such as
+ * "10.1" and would rewrite it. IPv6 through the URL parser, which validates
+ * the full grammar, compressed and IPv4-mapped forms included.
+ */
+export function isIPAddress(value: string): boolean {
+	const candidate = value.trim();
+	if (candidate === '') return false;
+	if (!candidate.includes(':')) {
+		const octet = '(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)';
+		return new RegExp(`^${octet}(\\.${octet}){3}$`).test(candidate);
+	}
+	if (candidate.includes('[') || candidate.includes(']') || candidate.includes('/')) {
+		return false;
+	}
+	try {
+		new URL(`http://[${candidate}]/`);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * auditFilterSearch is the feed's filters as a query string: what the address
+ * bar carries, so a filtered view survives a reload and can be shared.
+ * Defaults are left out, so the unfiltered feed has a clean address.
+ */
+export function auditFilterSearch(action: string, sourceIP: string): string {
+	const query = new URLSearchParams();
+	if (action) query.set('action', action);
+	if (sourceIP) query.set('source_ip', sourceIP);
+	const search = query.toString();
+	return search ? `?${search}` : '';
 }
