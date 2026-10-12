@@ -86,10 +86,11 @@ describe('AuditTimeline', () => {
 	});
 
 	// Each row is shaped as the server records it: cert.claimed has no actor
-	// (nobody has signed in yet), cert.expired and cert.sign_failed are system
-	// events, and admin.diagnostics_run names the admin who ran it. None of
-	// the first three has an actor or a target, so they appear only on the
-	// global feed; the per-user rows are what an account's own timeline shows.
+	// (nobody has signed in yet), cert.expired, cert.sign_failed and
+	// cert.request_refused_network are system events, and
+	// admin.diagnostics_run names the admin who ran it. None of the first four
+	// has an actor or a target, so they appear only on the global feed; the
+	// per-user rows are what an account's own timeline shows.
 	const admin = { user_id: 'u-alice', username: 'alice' };
 	it.each([
 		{
@@ -112,6 +113,12 @@ describe('AuditTimeline', () => {
 		},
 		{
 			view: 'the global feed',
+			row: event({ action: 'cert.request_refused_network', system: true }),
+			subjectUserId: '',
+			want: 'The server refused a certificate request from outside the allowed networks'
+		},
+		{
+			view: 'the global feed',
 			row: event({ action: 'admin.diagnostics_run', actor: admin }),
 			subjectUserId: '',
 			want: 'alice ran the deployment diagnostics'
@@ -131,6 +138,29 @@ describe('AuditTimeline', () => {
 	])('should phrase $row.action on $view', ({ row, subjectUserId, want }) => {
 		render(AuditTimeline, { props: { events: [row], subjectUserId } });
 		expect(screen.getByTestId('audit-event').querySelector('p')).toHaveTextContent(want);
+	});
+
+	// A network refusal has no actor: the account it names is only what the
+	// caller claimed, and has to read as a field, not as who did it.
+	it.each([
+		{ key: 'source_ip', value: '203.0.113.9' },
+		{ key: 'claimed_username', value: 'root' },
+		{ key: 'cert_type', value: 'console' }
+	])('should show $key on a network refusal', ({ key, value }) => {
+		render(AuditTimeline, {
+			props: {
+				events: [
+					event({
+						action: 'cert.request_refused_network',
+						system: true,
+						reason: 'the source address is outside cert_options.console.allowed_networks',
+						detail: { cert_type: 'console', source_ip: '203.0.113.9', claimed_username: 'root' }
+					})
+				]
+			}
+		});
+		const term = screen.getByText(key);
+		expect(term.nextElementSibling).toHaveTextContent(value);
 	});
 
 	it('should name the actor when one is recorded', () => {

@@ -58,6 +58,16 @@ const (
 	// row stuck in signing. Without it an approval that never became a
 	// certificate reads exactly like one that did.
 	AuditCertSignFailed AuditAction = "cert.sign_failed"
+	// AuditCertRequestRefusedNetwork records a certificate request the
+	// server refused because its source address is outside the type's
+	// allowed_networks. System event: the caller has not signed in, so
+	// there is no actor, and the username it sent is kept only as a claim.
+	// The source is the address the server observed (through
+	// http.trusted_proxies), never one the client supplied. One row per
+	// refusal, so a run of attempts shows each time and source. Anyone on a
+	// refused network can raise it without signing in, so the row-cap
+	// sweep deletes these rows before any other (see SweepAuditEvents).
+	AuditCertRequestRefusedNetwork AuditAction = "cert.request_refused_network"
 
 	AuditEnrollmentCodeCreated AuditAction = "enrollment.code_created"
 	AuditEnrollmentRedeemed    AuditAction = "enrollment.redeemed"

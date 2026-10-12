@@ -372,9 +372,21 @@ func (s *AuditService) page(ctx context.Context, q *gorm.DB, limit, offset int) 
 	return page, nil
 }
 
+// auditSweepBatch is how many rows one delete in the row-cap sweep names.
+// The ids travel as bind parameters, and both backends cap those (sqlite at
+// 32766, postgres at 65535), so a large excess, such as a burst of network
+// refusals, is deleted in batches rather than as one statement that fails.
+const auditSweepBatch = 1000
+
 // SweepAuditEvents prunes the database copy: rows older than the retention
-// window, then anything past the row cap, oldest first. The shipped log is
-// the archive, so this loses nothing a deployment should be relying on.
+// window, then anything past the row cap. The shipped log is the archive, so
+// this loses nothing a deployment should be relying on.
+//
+// Past the cap, cert.request_refused_network rows go first, oldest first,
+// and only then the oldest rows of any action. Anyone on a refused network
+// can raise that event without signing in, so a burst of them would
+// otherwise push approvals, disables and logins out of the UI's history.
+// Their shipped-log lines are kept regardless.
 //
 // A package-level function rather than a method, so the scheduler can
 // register it without reaching through a service.
@@ -402,25 +414,55 @@ func SweepAuditEvents(ctx context.Context, db *gorm.DB, retention time.Duration,
 	if total <= maxRows {
 		return nil
 	}
-
-	// Delete by id from a bounded subquery rather than with a LIMIT on the
-	// delete itself, which sqlite and postgres do not share syntax for.
 	excess := int(total - maxRows)
-	var ids []string
-	if err := db.WithContext(ctx).Model(&model.AuditEvent{}).
-		Order("created_at ASC, id ASC").
-		Limit(excess).
-		Pluck("id", &ids).Error; err != nil {
-		return fmt.Errorf("failed to select the oldest audit events past the cap: %w", err)
+
+	// An equality filter on action, ordered exactly as the index is, so the
+	// select reads idx_audit_events_action (action, created_at, id) alone.
+	// "action <> X" for the second pass would not seek that index, which
+	// is why the second pass is unfiltered: the refusal rows it could see
+	// are the ones the first pass already deleted.
+	refusals, err := deleteOldestAuditEvents(ctx, db, excess, func(q *gorm.DB) *gorm.DB {
+		return q.Where("action = ?", string(AuditCertRequestRefusedNetwork))
+	})
+	if err != nil {
+		return fmt.Errorf("failed to prune %s audit events past the row cap: %w", AuditCertRequestRefusedNetwork, err)
 	}
-	if len(ids) == 0 {
-		// not covered: total > maxRows >= 0 means at least one row exists
-		// to select, so this cannot be reached from the count above.
-		return nil
+	others := 0
+	if excess > refusals {
+		others, err = deleteOldestAuditEvents(ctx, db, excess-refusals, func(q *gorm.DB) *gorm.DB { return q })
+		if err != nil {
+			return fmt.Errorf("failed to prune audit events past the row cap: %w", err)
+		}
 	}
-	if err := db.WithContext(ctx).Where("id IN ?", ids).Delete(&model.AuditEvent{}).Error; err != nil {
-		return fmt.Errorf("failed to prune audit events past the row cap: %w", err)
-	}
-	slog.Info("pruned audit events past the row cap", "deleted", len(ids), "max_rows", maxRows)
+	slog.Info("pruned audit events past the row cap",
+		"deleted", refusals+others, "network_refusals", refusals, "max_rows", maxRows)
 	return nil
+}
+
+// deleteOldestAuditEvents deletes up to limit of the oldest rows that scope
+// selects, in batches of auditSweepBatch, and returns how many it deleted.
+// It stops early when scope runs out of rows.
+//
+// Each batch selects ids and deletes by id rather than putting a LIMIT on
+// the delete itself, which sqlite and postgres do not share syntax for.
+func deleteOldestAuditEvents(ctx context.Context, db *gorm.DB, limit int, scope func(*gorm.DB) *gorm.DB) (int, error) {
+	deleted := 0
+	for deleted < limit {
+		var ids []string
+		if err := db.WithContext(ctx).Model(&model.AuditEvent{}).
+			Scopes(scope).
+			Order("created_at ASC, id ASC").
+			Limit(min(limit-deleted, auditSweepBatch)).
+			Pluck("id", &ids).Error; err != nil {
+			return deleted, fmt.Errorf("failed to select the oldest audit events: %w", err)
+		}
+		if len(ids) == 0 {
+			return deleted, nil
+		}
+		if err := db.WithContext(ctx).Where("id IN ?", ids).Delete(&model.AuditEvent{}).Error; err != nil {
+			return deleted, fmt.Errorf("failed to delete audit events: %w", err)
+		}
+		deleted += len(ids)
+	}
+	return deleted, nil
 }
