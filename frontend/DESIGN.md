@@ -932,8 +932,11 @@ nothing else. The gate is display-only (the server re-checks every read),
 and a signed-in identity without auditor access is told so rather than sent
 to a login it already passed. That refusal is the `AccessDenied` card, the
 same one the error page gives a 403; a section narrower than the area (the
-Directory) gates in its own `+layout.svelte` with the same card, and is
-marked `adminOnly` in `nav.ts` so the rail does not offer it. Each admin page sets its own width through
+Directory, Claims echo and Diagnostics, all admin only) gates in its own
+`+layout.svelte` with the same card, naming the page in the requirement
+("Diagnostics needs the admin role."), and is marked `adminOnly` in
+`nav.ts` so `adminNavFor` leaves it out of the rail. Behind that gate the
+page has no non-admin branch. Each admin page sets its own width through
 `PageShell`; the rail marks the section for its own path and everything
 beneath it.
 
@@ -966,7 +969,8 @@ beneath it.
   the `AccessDenied` card on a direct visit. The probe's three views (entry as returned, field
   mapping, merge and allowlist) are a segmented toggle group, not tabs; a
   mapped attribute carries a "mapped" label, not a colour.
-- **Claims echo** (`/admin/identity/echo`, admin only): re-authenticates
+- **Claims echo** (`/admin/identity/echo`, admin only, gated like the
+  Directory): re-authenticates
   with `prompt=login` and renders the decoded ID token, each claim annotated
   by the field that reads it, plus the `fields.extra` block that would
   capture the unread ones. Nothing is stored; the token arrives in the URL
@@ -993,7 +997,8 @@ beneath it.
 - **Audit log** (`/admin/audit`, `full`): the bounded table copy of the
   audit stream, with Load more. `AuditTimeline` sits in a surface panel and
   needs no frame of its own.
-- **Diagnostics** (`/admin/diagnostics`, admin only): four read-only
+- **Diagnostics** (`/admin/diagnostics`, admin only, gated like the
+  Directory): four read-only
   deployment checks run on demand (public URL reachability, proxy trust and
   client IP, security headers, CORS and edge header attribution), one panel
   per check in a single column, in the order they ran, each with an OK,

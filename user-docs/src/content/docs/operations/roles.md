@@ -95,9 +95,19 @@ entry in full, which is a capability rather than a view. Reading the sync
 directory connection, the query the probe is pinned to and the sync
 settings, which is the directory's operating detail rather than anything a
 SOC or audit investigation needs. The whole Directory page is admin-only as
-a result, and the rail does not offer it to SOC or auditors. The
+a result. The
 [deployment diagnostics](/ssoossh/operations/diagnostics/) are admin-only for
-the probe's reason: a run makes the server dial its own public URL.
+the probe's reason: a run makes the server dial its own public URL. The
+[claims echo](/ssoossh/operations/identity-provider/#seeing-what-your-provider-actually-sends)
+is admin-only because it drives a fresh sign-in against the identity
+provider, and what it shows is a configuration tool rather than an
+investigation one.
+
+The web UI follows the same split. The Directory, Claims echo and
+Diagnostics pages are admin-only as whole pages: the rail does not offer
+them to SOC or auditors, and opening one by its address shows a "You do
+not have access to this page" card rather than a page whose only action the
+server would refuse.
 
 One containment action needs no role at all. A holder of a service account
 can expire that account's own codes from the code's page; the row in the

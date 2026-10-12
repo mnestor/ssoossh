@@ -44,7 +44,11 @@ The rail has a few behaviours worth knowing:
 - **Admin is a group inside the same rail**, shown only to auditors, SOC
   members and admins. It can be folded shut, and that is remembered too --
   except that landing on any admin page opens it, because arriving in the
-  admin area with its section list hidden is never what you meant.
+  admin area with its section list hidden is never what you meant. SOC
+  members and auditors see only the sections their role can use: the
+  Directory, Claims echo and Diagnostics are admin-only, so the group leaves
+  them out, and opening one by its address shows a "You do not have access
+  to this page" card.
 - **Your identity is a menu.** The row at the bottom opens a drop-up holding
   the account page, preferences, the theme switch, and sign-out.
   These are deliberately not in the destination list: they act on the
