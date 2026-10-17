@@ -937,3 +937,105 @@ func TestRender_shouldSayWhetherTheSyncClearsAnAdminAutoDisable(t *testing.T) {
 		})
 	}
 }
+
+// The fleet key mail names the key by name and id in the subject and the text
+// body at both detail levels. The operator who reads it has no other way to
+// tell which key it concerns, so the id is never reserved for the advanced
+// level. The values are the ones samplePayload fills in.
+func TestRender_shouldNameTheFleetKeyAtEachLevel(t *testing.T) {
+	r, err := NewRenderer("", "")
+	if err != nil {
+		t.Fatalf("NewRenderer: %v", err)
+	}
+
+	for _, kind := range nssKeyKinds {
+		for _, advanced := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/advanced=%v", kind, advanced), func(t *testing.T) {
+				out, err := r.Render(kind, samplePayload(t, kind), advanced)
+				if err != nil {
+					t.Fatalf("Render: %v", err)
+				}
+				for _, want := range []string{"deploy-fleet", "nss_ABCD2345"} {
+					if !strings.Contains(out.Subject, want) {
+						t.Errorf("subject %q does not name the key with %q", out.Subject, want)
+					}
+					if !strings.Contains(out.Text, want) {
+						t.Errorf("text body does not name the key with %q", want)
+					}
+				}
+			})
+		}
+	}
+}
+
+// The rotated mail says whether the previous secret still works and until
+// when, because that deadline is what the operator is working toward. With no
+// grace period it must say the old secret is already refused.
+func TestRender_shouldSayWhetherThePreviousSecretSurvivesARotation(t *testing.T) {
+	r, err := NewRenderer("", "")
+	if err != nil {
+		t.Fatalf("NewRenderer: %v", err)
+	}
+
+	tests := []struct {
+		name  string
+		grace bool
+		want  string
+	}{
+		{name: "should say the previous secret keeps working until the grace ends when there is grace", grace: true, want: "keeps working until"},
+		{name: "should say the previous secret stopped at once when there is no grace", grace: false, want: "stopped working at the same moment"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			payload := samplePayload(t, notify.KindNSSKeyRotated).(*notify.NSSKeyRotated)
+			if !tc.grace {
+				payload.PreviousExpiresAt = payload.RotatedAt
+			}
+
+			out, err := r.Render(notify.KindNSSKeyRotated, payload, false)
+			if err != nil {
+				t.Fatalf("Render: %v", err)
+			}
+			if !strings.Contains(out.Text, tc.want) || !strings.Contains(out.HTML, tc.want) {
+				t.Errorf("message does not say %q", tc.want)
+			}
+		})
+	}
+}
+
+// The cleanup digest lists the hosts still on the previous secret, and says how
+// many more there are when the list is cut short, so a reader knows it is not
+// the whole set.
+func TestRender_shouldCountTheAddressesThatAreNotListed(t *testing.T) {
+	r, err := NewRenderer("", "")
+	if err != nil {
+		t.Fatalf("NewRenderer: %v", err)
+	}
+
+	tests := []struct {
+		name        string
+		more        int
+		wantPresent string
+		wantAbsent  string
+	}{
+		{name: "should say how many more addresses there are when the list is cut short", more: 4, wantPresent: "and 4 more", wantAbsent: ""},
+		{name: "should leave the more line out when the list is complete", more: 0, wantPresent: "", wantAbsent: "more. The full list"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			payload := samplePayload(t, notify.KindNSSKeyRotationCleanup).(*notify.NSSKeyRotationCleanup)
+			payload.MoreNotSwitched = tc.more
+
+			out, err := r.Render(notify.KindNSSKeyRotationCleanup, payload, false)
+			if err != nil {
+				t.Fatalf("Render: %v", err)
+			}
+			if tc.wantPresent != "" && !strings.Contains(out.Text, tc.wantPresent) {
+				t.Errorf("text body does not carry %q", tc.wantPresent)
+			}
+			if tc.wantAbsent != "" && strings.Contains(out.Text, tc.wantAbsent) {
+				t.Errorf("text body carries %q, want it left out", tc.wantAbsent)
+			}
+		})
+	}
+}

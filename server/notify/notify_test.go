@@ -336,3 +336,45 @@ func TestDefaultEnabled_shouldAnswerFromTheRegistry(t *testing.T) {
 		t.Error("DefaultEnabled reported an unregistered kind as enabled")
 	}
 }
+
+// nssKeyKinds lists the six fleet key kinds, which every registry check below
+// runs over.
+var nssKeyKinds = []Kind{
+	KindNSSKeyExpiring,
+	KindNSSKeyRotationCleanup,
+	KindNSSKeyExpiredAttempt,
+	KindNSSKeyRevokedAttempt,
+	KindNSSKeyRotated,
+	KindNSSKeyRevoked,
+}
+
+// The fleet key mail goes to the key's own address, so each kind must be
+// registered as always sent, with no preference group to hide it behind.
+func TestLookup_shouldRegisterEveryNSSKeyKindAsAlwaysSent(t *testing.T) {
+	for _, kind := range nssKeyKinds {
+		t.Run(string(kind), func(t *testing.T) {
+			def, ok := Lookup(kind)
+			if !ok {
+				t.Fatalf("Lookup(%q) reported the kind as unregistered", kind)
+			}
+			if !def.AlwaysSent || !def.DefaultEnabled {
+				t.Errorf("AlwaysSent = %v, DefaultEnabled = %v, want both true", def.AlwaysSent, def.DefaultEnabled)
+			}
+			if def.Group != "" {
+				t.Errorf("Group = %q, want none", def.Group)
+			}
+		})
+	}
+}
+
+// AlwaysSent is what delivery reads to skip the preference for a fleet key
+// kind, so it must answer true for each of them.
+func TestAlwaysSent_shouldReportEveryNSSKeyKindAsAlwaysSent(t *testing.T) {
+	for _, kind := range nssKeyKinds {
+		t.Run(string(kind), func(t *testing.T) {
+			if !AlwaysSent(kind) {
+				t.Errorf("AlwaysSent(%q) = false, want true", kind)
+			}
+		})
+	}
+}
