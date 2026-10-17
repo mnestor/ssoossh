@@ -57,6 +57,14 @@ var (
 	callerPPID   = int64(4200)
 )
 
+// The NSS user fixture's nullable fields, declared as variables so the
+// fixture can point at them.
+var (
+	nssHome      = "/home/mike"
+	nssShell     = "/bin/bash"
+	nssShellPref = "zsh"
+)
+
 // requestedOptions is populated for every request body that carries one, so
 // the nested shape is pinned inside each parent rather than only standalone.
 var requestedOptions = apitypes.RequestedOptions{
@@ -173,6 +181,34 @@ func fullFixtures() map[string]any {
 		"retrieve_response": apitypes.RetrieveResponse{Certificate: "ssh-ed25519-cert-v01@openssh.com AAAAIExampleServiceCert"},
 
 		"ca_response": apitypes.CAResponse{CA: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleCAKey ssoossh-ca"},
+
+		// The NSS lookups. The consumer is ssoosshd-nss, which ships from
+		// this repository but not always in step with the server, so the
+		// goldens pin the shape a mixed-version fleet has to agree on. The
+		// three nullable fields are set here and null in the zero golden,
+		// which is the pair a decoder has to handle.
+		"nss_membership": apitypes.NSSMembership{GID: 27, Name: "sudo"},
+		"nss_user_response": apitypes.NSSUserResponse{
+			Name: "mike",
+			UID:  1234,
+			GID:  1234,
+			Groups: []apitypes.NSSMembership{
+				{GID: 1234, Name: "mike"},
+				{GID: 27, Name: "sudo"},
+			},
+			Home:      &nssHome,
+			Shell:     &nssShell,
+			ShellPref: &nssShellPref,
+			Gecos:     "Mike Nestor",
+			Status:    apitypes.NSSStatusActive,
+			KeyID:     "nss_k7m4qp2x",
+		},
+		"nss_group_response": apitypes.NSSGroupResponse{
+			Name:             "sudo",
+			GID:              27,
+			Members:          []string{"mike", "alice"},
+			MembersTruncated: true,
+		},
 	}
 }
 
@@ -190,6 +226,9 @@ func zeroFixtures() map[string]any {
 		"console_request":         apitypes.ConsoleRequestBody{},
 		"create_request_response": apitypes.CreateRequestResponse{},
 		"ca_response":             apitypes.CAResponse{},
+		"nss_membership":          apitypes.NSSMembership{},
+		"nss_user_response":       apitypes.NSSUserResponse{},
+		"nss_group_response":      apitypes.NSSGroupResponse{},
 	}
 }
 

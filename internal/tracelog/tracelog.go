@@ -57,12 +57,15 @@ const Redacted = "[redacted]"
 
 // sensitiveHeaders are never printed. Matched case-insensitively, since
 // header canonicalization is not guaranteed by the time these are read.
+// x-ssoossh-key-secret is apitypes.HeaderNSSKeySecret, the fleet key's
+// secret; its id (x-ssoossh-key-id) is meant to be logged and is not here.
 var sensitiveHeaders = map[string]bool{
-	"authorization":       true,
-	"cookie":              true,
-	"set-cookie":          true,
-	"x-api-key":           true,
-	"proxy-authorization": true,
+	"authorization":        true,
+	"cookie":               true,
+	"set-cookie":           true,
+	"x-api-key":            true,
+	"proxy-authorization":  true,
+	"x-ssoossh-key-secret": true,
 }
 
 // Header returns a header value safe to print.

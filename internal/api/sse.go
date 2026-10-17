@@ -3,7 +3,6 @@ package api
 import (
 	"bufio"
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -68,10 +67,13 @@ var errStreamEnded = errors.New("certificate request events stream ended without
 // nothing on the terminal to say why it is waiting, and "connection
 // refused" now is worth more to whoever is standing there than the same
 // answer a minute from now.
-func waitForOutcome(ctx context.Context, tlsConfig *tls.Config, eventsURL string) (*CertificateResult, error) {
+//
+// transport is the caller's, built by newTransport so the stream gets the
+// same TLS and proxy settings as every other call.
+func waitForOutcome(ctx context.Context, transport *http.Transport, eventsURL string) (*CertificateResult, error) {
 	// One client across reconnects, so a dropped stream can reuse the
 	// transport's connection pool rather than redialing and re-handshaking.
-	client := &http.Client{Transport: newTransport(tlsConfig)}
+	client := &http.Client{Transport: transport}
 
 	// How the last established connection ended, kept so the drop can be
 	// reported when ctx runs out during the reconnect rather than between
