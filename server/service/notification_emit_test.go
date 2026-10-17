@@ -23,12 +23,13 @@ type capturingNotifier struct {
 
 type capturedNotification struct {
 	Kind notify.Kind
-	// UserID or ServiceAccount is set, matching the way the notification
-	// was addressed. EnrollmentID accompanies ServiceAccount when the
-	// caller addressed a specific enrollment.
+	// UserID, ServiceAccount or NSSKeyID is set, matching the way the
+	// notification was addressed. EnrollmentID accompanies ServiceAccount
+	// when the caller addressed a specific enrollment.
 	UserID         string
 	ServiceAccount string
 	EnrollmentID   string
+	NSSKeyID       string
 	Payload        any
 }
 
@@ -53,6 +54,12 @@ func (n *capturingNotifier) NotifyEnrollment(_ context.Context, kind notify.Kind
 		EnrollmentID:   enrollmentID,
 		Payload:        payload,
 	})
+}
+
+func (n *capturingNotifier) NotifyNSSKey(_ context.Context, kind notify.Kind, keyID string, payload any) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.events = append(n.events, capturedNotification{Kind: kind, NSSKeyID: keyID, Payload: payload})
 }
 
 func (n *capturingNotifier) captured() []capturedNotification {

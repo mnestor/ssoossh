@@ -9,6 +9,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -377,5 +378,100 @@ func TestEnabledFor_ShouldReportADatabaseFailure(t *testing.T) {
 
 	if _, err := svc.enabledFor(context.Background(), "user-1", notify.KindServiceEnrollmentCreated); err == nil {
 		t.Error("enabledFor on a closed database returned no error")
+	}
+}
+
+// nssKeyEvent is a fleet key event naming keyID, with nothing else addressing
+// it, which is the shape recipients must resolve through the key's address.
+func nssKeyEvent(keyID string) notify.Event {
+	return notify.Event{Kind: notify.KindNSSKeyRotated, NSSKeyID: keyID}
+}
+
+// A fleet key event goes to the key's own notification address as one bare
+// delivery: no owning user, so ungated and simplified.
+func TestNotificationNSSKeyRecipients_shouldResolveTheKeysAddress(t *testing.T) {
+	t.Parallel()
+
+	db := recipientsDB(t)
+	seedNSSKey(t, db, "nss_ABCD2345", "fleet@example.com")
+	h := NewNotificationHandler(db, mustRenderer(t), &recordingSender{})
+
+	got, err := h.recipients(t.Context(), nssKeyEvent("nss_ABCD2345"))
+	if err != nil {
+		t.Fatalf("recipients: %v", err)
+	}
+	if len(got) != 1 || got[0].Address != "fleet@example.com" || got[0].UserID != "" || got[0].Advanced {
+		t.Errorf("recipients = %+v, want one bare simplified delivery to the key's address", got)
+	}
+}
+
+// A key that no longer exists has nobody to tell, which is a quiet outcome
+// rather than a failed delivery.
+func TestNotificationNSSKeyRecipients_shouldReturnNobodyWhenTheKeyIsMissing(t *testing.T) {
+	t.Parallel()
+
+	h := NewNotificationHandler(recipientsDB(t), mustRenderer(t), &recordingSender{})
+
+	got, err := h.recipients(t.Context(), nssKeyEvent("nss_GONE0000"))
+	if err != nil {
+		t.Fatalf("recipients: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("recipients = %+v, want nobody for a missing key", got)
+	}
+}
+
+// A key with no notification address has nowhere to send, so it resolves to
+// nobody rather than to an empty address.
+func TestNotificationNSSKeyRecipients_shouldReturnNobodyWhenTheAddressIsEmpty(t *testing.T) {
+	t.Parallel()
+
+	db := recipientsDB(t)
+	seedNSSKey(t, db, "nss_ABCD2345", "")
+	h := NewNotificationHandler(db, mustRenderer(t), &recordingSender{})
+
+	got, err := h.recipients(t.Context(), nssKeyEvent("nss_ABCD2345"))
+	if err != nil {
+		t.Fatalf("recipients: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("recipients = %+v, want nobody for a key with no address", got)
+	}
+}
+
+// A database failure is returned rather than swallowed, so the message is
+// redelivered instead of being dropped as if the key had no address.
+func TestNotificationNSSKeyRecipients_shouldReturnAnErrorOnADatabaseFailure(t *testing.T) {
+	t.Parallel()
+
+	db := recipientsDB(t)
+	h := NewNotificationHandler(db, mustRenderer(t), &recordingSender{})
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("unwrapping the sql.DB: %v", err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatalf("closing the database: %v", err)
+	}
+
+	if _, err := h.recipients(t.Context(), nssKeyEvent("nss_ABCD2345")); err == nil {
+		t.Error("recipients on a closed database returned no error")
+	}
+}
+
+// The log names a missing key by id, so an operator can find the event that
+// was dropped. It is not parallel: captureDefaultLogger replaces the process
+// default logger.
+func TestNotificationNSSKeyRecipients_shouldLogTheKeyIDWhenTheKeyIsMissing(t *testing.T) {
+	db := recipientsDB(t)
+	buf := captureDefaultLogger(t)
+	h := NewNotificationHandler(db, mustRenderer(t), &recordingSender{})
+
+	if _, err := h.recipients(t.Context(), nssKeyEvent("nss_GONE0000")); err != nil {
+		t.Fatalf("recipients: %v", err)
+	}
+	if !strings.Contains(buf.String(), `"key_id":"nss_GONE0000"`) {
+		t.Errorf("the log does not name the missing key by id: %s", buf.String())
 	}
 }

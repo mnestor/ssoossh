@@ -1035,3 +1035,149 @@ func TestNotificationHandler_shouldTagItsRecordsForTheMailLog(t *testing.T) {
 		t.Errorf("expected the record to carry type=mail, got: %s", buf.String())
 	}
 }
+
+// recordingPublisher keeps every message published to it, so a test can see
+// what the publishing half queued without a broker or a router in the way.
+type recordingPublisher struct {
+	mu   sync.Mutex
+	msgs []*message.Message
+}
+
+// Publish records msgs.
+func (p *recordingPublisher) Publish(_ string, msgs ...*message.Message) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.msgs = append(p.msgs, msgs...)
+	return nil
+}
+
+// Close does nothing: there is no broker to disconnect from.
+func (p *recordingPublisher) Close() error { return nil }
+
+// published returns a copy of every message recorded so far.
+func (p *recordingPublisher) published() []*message.Message {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	out := make([]*message.Message, len(p.msgs))
+	copy(out, p.msgs)
+	return out
+}
+
+// seedNSSKey adds a fleet key row carrying address, which is what delivery
+// reads to decide where a fleet key event goes. The row needs a creator, so
+// one is seeded alongside it.
+func seedNSSKey(t *testing.T, db *gorm.DB, id, address string) {
+	t.Helper()
+
+	key := model.NSSKey{
+		ID:                id,
+		CurrentGeneration: 1,
+		SecretHash:        "hash-" + id,
+		Name:              "deploy-fleet",
+		CreatedBy:         seedUser(t, db, "creator-"+id),
+		ExpiresAt:         time.Now().Add(24 * time.Hour),
+		NotificationEmail: address,
+		CreatedAt:         time.Now(),
+		UpdatedAt:         time.Now(),
+	}
+	if err := db.Create(&key).Error; err != nil {
+		t.Fatalf("failed to create the NSS key %q: %v", id, err)
+	}
+}
+
+// A fleet key notification is queued carrying the key's id, which is how
+// delivery finds the address to send to.
+func TestNotifyNSSKey_shouldQueueAnEventCarryingTheKeyID(t *testing.T) {
+	pub := &recordingPublisher{}
+	svc := NewNotificationService(nil, pub, true, false, false)
+
+	svc.NotifyNSSKey(context.Background(), notify.KindNSSKeyRotated, "nss_ABCD2345",
+		&notify.NSSKeyRotated{KeyID: "nss_ABCD2345", KeyName: "deploy-fleet"})
+
+	msgs := pub.published()
+	if len(msgs) != 1 {
+		t.Fatalf("queued %d messages, want 1", len(msgs))
+	}
+	var event notify.Event
+	if err := json.Unmarshal(msgs[0].Payload, &event); err != nil {
+		t.Fatalf("unmarshal the queued event: %v", err)
+	}
+	if event.NSSKeyID != "nss_ABCD2345" || event.Kind != notify.KindNSSKeyRotated {
+		t.Errorf("queued event is kind %q for key %q, want %q for nss_ABCD2345",
+			event.Kind, event.NSSKeyID, notify.KindNSSKeyRotated)
+	}
+}
+
+// With mail disabled a fleet key notification is a no-op, as every kind is.
+func TestNotifyNSSKey_shouldQueueNothingWhenMailIsDisabled(t *testing.T) {
+	pub := &recordingPublisher{}
+	svc := NewNotificationService(nil, pub, false, false, false)
+
+	svc.NotifyNSSKey(context.Background(), notify.KindNSSKeyRotated, "nss_ABCD2345", &notify.NSSKeyRotated{})
+
+	if got := len(pub.published()); got != 0 {
+		t.Errorf("queued %d messages with mail disabled, want 0", got)
+	}
+}
+
+// An empty key id names no address to read, so it is skipped rather than
+// queued for delivery to nobody.
+func TestNotifyNSSKey_shouldQueueNothingForAnEmptyKeyID(t *testing.T) {
+	pub := &recordingPublisher{}
+	svc := NewNotificationService(nil, pub, true, false, false)
+
+	svc.NotifyNSSKey(context.Background(), notify.KindNSSKeyRotated, "", &notify.NSSKeyRotated{})
+
+	if got := len(pub.published()); got != 0 {
+		t.Errorf("queued %d messages for an empty key id, want 0", got)
+	}
+}
+
+// The end-to-end path: a queued fleet key event is delivered to the key's
+// notification address, not to any user.
+func TestNotifyNSSKey_shouldDeliverToTheKeysAddress(t *testing.T) {
+	f := newNotificationFixture(t)
+	seedNSSKey(t, f.db, "nss_ABCD2345", "fleet@example.com")
+
+	f.svc.NotifyNSSKey(context.Background(), notify.KindNSSKeyRotated, "nss_ABCD2345",
+		&notify.NSSKeyRotated{KeyID: "nss_ABCD2345", KeyName: "deploy-fleet"})
+
+	got := f.recipients(t, 1)
+	if !slices.Equal(got, []string{"fleet@example.com"}) {
+		t.Errorf("delivered to %v, want only the key's address", got)
+	}
+}
+
+// The handler sends a fleet key event to the key's address and logs the key
+// by id, never the address, and never as an enrollment.
+func TestNotificationNSSKeyHandle_shouldLogTheKeyIDAndNotTheAddress(t *testing.T) {
+	f := newNotificationFixture(t)
+	seedNSSKey(t, f.db, "nss_ABCD2345", "fleet@example.com")
+	buf := captureDefaultLogger(t)
+
+	event, err := notify.NewNSSKeyEvent(notify.KindNSSKeyRotated, "nss_ABCD2345",
+		&notify.NSSKeyRotated{KeyID: "nss_ABCD2345", KeyName: "deploy-fleet"})
+	if err != nil {
+		t.Fatalf("NewNSSKeyEvent: %v", err)
+	}
+	payload, err := json.Marshal(event)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	handler := NewNotificationHandler(f.db, mustRenderer(t), f.sender)
+	if err := handler.handle(message.NewMessage(watermill.NewUUID(), payload)); err != nil {
+		t.Fatalf("handle: %v", err)
+	}
+
+	logged := buf.String()
+	if !strings.Contains(logged, `"key_id":"nss_ABCD2345"`) {
+		t.Errorf("the send log does not carry the key id: %s", logged)
+	}
+	if strings.Contains(logged, "enrollment_id") {
+		t.Errorf("the send log names an enrollment for a fleet key: %s", logged)
+	}
+	if strings.Contains(logged, "fleet@example.com") {
+		t.Errorf("the send log carries the key's address: %s", logged)
+	}
+}
