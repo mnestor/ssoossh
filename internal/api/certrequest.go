@@ -86,7 +86,7 @@ func (c *HTTPClient) AwaitCertificate(ctx context.Context, req *PendingRequest) 
 		return nil, errors.New("cannot wait on a certificate request that this client did not create")
 	}
 
-	return waitForOutcome(ctx, c.tlsConfig, req.eventsURL)
+	return waitForOutcome(ctx, newTransport(c.tlsConfig, c.direct), req.eventsURL)
 }
 
 // create POSTs body to path to create a pending certificate request and
