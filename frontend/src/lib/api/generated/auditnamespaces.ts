@@ -54,3 +54,9 @@ export const LDAP: Namespace = "ldap";
  * for a namespace without a label in the action filter.
  */
 export const Admin: Namespace = "admin";
+/**
+ * Every action's name starts with one of these and a dot. A test in
+ * server/service fails for an action that does not, and a web UI test fails
+ * for a namespace without a label in the action filter.
+ */
+export const NSS: Namespace = "nss";
