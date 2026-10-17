@@ -927,6 +927,8 @@ Default:
 .TP
 .BI cert_options.user.extensions: " list"
 The SSH certificate extensions a user certificate may carry, e.g. permit\-pty and permit\-user\-rc. A request is narrowed to the intersection of what it asked for and this list.
+.IP
+Every extensions list in cert_options takes only the permit\-* extensions or a vendor extension named name@domain. A critical option (source\-address, force\-command, verify\-required) or no\-touch\-required is a startup error.
 Default:
 .BR permit\-pty, permit\-user\-rc .
 .TP
@@ -1143,6 +1145,8 @@ Two things follow that are worth knowing before setting it.
 Setting it alone grants nothing. It makes toggles available on the approval page; an approval nobody touches still produces exactly what the enrollment asked for, which for every enrollment made before `service enroll \-\-extensions` existed is nothing at all.
 .IP
 It is the only bound on a service certificate's extensions. The client\-side forbidden_certificate_extensions policy (https://mnestor.github.io/ssoossh/hosts/client\-enforcement/) has never applied to service certificates and still does not \(em it is subtracted only on the interactive login path \(em so an extension ticked here reaches a service certificate even on a machine whose administrative policy forbids that extension for its interactive users. Closing that is tracked in docs/proposals/client\-policy\-assertions.md.
+.IP
+source\-address is a critical option, not an extension, and listing it here is a startup error. Pin a service certificate to a network with lifetime_policy.source_policy[].pin_source_address.
 Default:
 .BR empty .
 .TP

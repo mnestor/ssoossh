@@ -215,6 +215,129 @@ func TestCertificateOptions_Validate_RejectsAnUnparseableAllowedNetwork(t *testi
 	}
 }
 
+// The extensions ceilings are what the approval page offers as toggles, so
+// a critical option listed there would be offered as an extension (#193).
+// Only SSH certificate extensions and name@domain vendor extensions load.
+func TestCertificateOptions_Validate_ShouldAcceptOnlyExtensionNames(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		ext     string
+		wantErr string
+	}{
+		{name: "should accept permit-pty", ext: "permit-pty"},
+		{name: "should accept permit-user-rc", ext: "permit-user-rc"},
+		{name: "should accept permit-X11-forwarding", ext: "permit-X11-forwarding"},
+		{name: "should accept permit-agent-forwarding", ext: "permit-agent-forwarding"},
+		{name: "should accept permit-port-forwarding", ext: "permit-port-forwarding"},
+		{name: "should accept a vendor extension", ext: "login@example.com"},
+		{name: "should reject source-address and point at pin_source_address", ext: "source-address", wantErr: "pin_source_address"},
+		{name: "should reject force-command as a critical option", ext: "force-command", wantErr: "critical option"},
+		{name: "should reject verify-required as a critical option", ext: "verify-required", wantErr: "critical option"},
+		{name: "should reject no-touch-required", ext: "no-touch-required", wantErr: "cannot be configured"},
+		{name: "should reject a miscased extension", ext: "permit-x11-forwarding", wantErr: "not an SSH certificate extension"},
+		{name: "should reject an unknown bare name", ext: "permit-everything", wantErr: "not an SSH certificate extension"},
+		{name: "should reject an empty name", ext: "", wantErr: "not an SSH certificate extension"},
+		{name: "should reject an @ with no domain", ext: "login@", wantErr: "not an SSH certificate extension"},
+		{name: "should reject an @ with no name", ext: "@example.com", wantErr: "not an SSH certificate extension"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			opts := validCertificateOptions()
+			opts.Service.Extensions = []string{tt.ext}
+
+			err := opts.Validate()
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("Validate() error = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("Validate() error = %v, want one containing %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// Every list that names extensions is checked, under its own config path:
+// a misspelt removal silently removes nothing, and a grant outside the
+// defined names would otherwise only surface as an unrelated ceiling error.
+func TestCertificateOptions_Validate_ShouldNameTheListHoldingABadExtension(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		set      func(*CertificateOptions)
+		wantPath string
+	}{
+		{
+			name:     "should name a user ceiling",
+			set:      func(o *CertificateOptions) { o.User.Extensions = []string{"source-address"} },
+			wantPath: "cert_options.user.extensions",
+		},
+		{
+			name:     "should name a service ceiling",
+			set:      func(o *CertificateOptions) { o.Service.Extensions = []string{"permit-pty", "source-address"} },
+			wantPath: "cert_options.service.extensions",
+		},
+		{
+			name:     "should name a PAM ceiling",
+			set:      func(o *CertificateOptions) { o.PAM.Extensions = []string{"force-command"} },
+			wantPath: "cert_options.pam.extensions",
+		},
+		{
+			name:     "should name a console ceiling",
+			set:      func(o *CertificateOptions) { o.Console.Extensions = []string{"no-touch-required"} },
+			wantPath: "cert_options.console.extensions",
+		},
+		{
+			name: "should name default_extensions",
+			set: func(o *CertificateOptions) {
+				o.User.LifetimePolicy.DefaultExtensions = []string{"source-address"}
+			},
+			wantPath: "cert_options.user.lifetime_policy.default_extensions",
+		},
+		{
+			name: "should name a tier's grant_extensions",
+			set: func(o *CertificateOptions) {
+				o.Service.LifetimePolicy.Tiers = []LifetimePolicyTier{
+					{Name: "ok", GrantExtensions: []string{"permit-pty"}},
+					{Name: "bad", GrantExtensions: []string{"source-address"}},
+				}
+			},
+			wantPath: "cert_options.service.lifetime_policy.tiers[1].grant_extensions",
+		},
+		{
+			name: "should name a source rule's removed_extensions",
+			set: func(o *CertificateOptions) {
+				o.User.LifetimePolicy.SourcePolicy = []SourcePolicyEntry{
+					{CIDR: "10.0.0.0/8", RemovedExtensions: []string{"permit-x11-forwarding"}},
+				}
+			},
+			wantPath: "cert_options.user.lifetime_policy.source_policy[0].removed_extensions",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			opts := validCertificateOptions()
+			tt.set(&opts)
+
+			err := opts.Validate()
+			if err == nil || !strings.Contains(err.Error(), tt.wantPath+":") {
+				t.Fatalf("Validate() error = %v, want one naming %s", err, tt.wantPath)
+			}
+		})
+	}
+}
+
 // ApprovalTTLFor and SigningGraceFor are what a per-type budget is split
 // by, so they have to split it the same way the methods split the global
 // one — otherwise a type's deadline and the bounds derived from the global

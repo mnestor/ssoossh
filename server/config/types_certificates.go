@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"net/netip"
+	"strings"
 	"time"
 )
 
@@ -160,7 +161,75 @@ func (c *CertificateOptions) Validate() error {
 			}
 		}
 	}
+	return c.validateExtensionNames()
+}
+
+// validateExtensionNames rejects any name in an extensions list that is not
+// an SSH certificate extension. The type ceilings are what the approval page
+// offers as toggles and what a request is narrowed to, so a critical option
+// listed there would be offered as an extension and signed into the
+// extensions map, where sshd ignores it. The grant and removal lists are
+// checked too: a misspelt removal silently removes nothing.
+func (c *CertificateOptions) validateExtensionNames() error {
+	type namedList struct {
+		path  string
+		names []string
+	}
+	for _, t := range []struct {
+		path       string
+		extensions []string
+		policy     LifetimePolicy
+	}{
+		{"cert_options.user", c.User.Extensions, c.User.LifetimePolicy},
+		{"cert_options.service", c.Service.Extensions, c.Service.LifetimePolicy},
+		{"cert_options.pam", c.PAM.Extensions, c.PAM.LifetimePolicy},
+		{"cert_options.console", c.Console.Extensions, c.Console.LifetimePolicy},
+	} {
+		lists := []namedList{
+			{t.path + ".extensions", t.extensions},
+			{t.path + ".lifetime_policy.default_extensions", t.policy.DefaultExtensions},
+		}
+		for i, tier := range t.policy.Tiers {
+			lists = append(lists, namedList{fmt.Sprintf("%s.lifetime_policy.tiers[%d].grant_extensions", t.path, i), tier.GrantExtensions})
+		}
+		for i, rule := range t.policy.SourcePolicy {
+			lists = append(lists, namedList{fmt.Sprintf("%s.lifetime_policy.source_policy[%d].removed_extensions", t.path, i), rule.RemovedExtensions})
+		}
+		for _, l := range lists {
+			for _, name := range l.names {
+				if err := validateExtensionName(name); err != nil {
+					return fmt.Errorf("%s: %w", l.path, err)
+				}
+			}
+		}
+	}
 	return nil
+}
+
+// validateExtensionName reports why name cannot be configured as an SSH
+// certificate extension, or nil when it can. The defined extensions and
+// critical options are those of draft-miller-ssh-cert (sections 2.3 and
+// 2.4); anything else must be a domain-qualified vendor extension
+// (name@domain, RFC 4251 section 4.2).
+func validateExtensionName(name string) error {
+	switch name {
+	case "permit-X11-forwarding", "permit-agent-forwarding", "permit-port-forwarding", "permit-pty", "permit-user-rc":
+		return nil
+	case "source-address":
+		return fmt.Errorf("%q is an SSH critical option, not an extension: pin service certificates to a network with lifetime_policy.source_policy[].pin_source_address", name)
+	case "force-command":
+		return fmt.Errorf("%q is an SSH critical option, not an extension", name)
+	case "verify-required":
+		return fmt.Errorf("%q is an SSH critical option, not an extension, and ssoossh never sets it", name)
+	case "no-touch-required":
+		// Granted only on the service path, when the enrollment asked for
+		// it. A ceiling entry would let any type's request carry it.
+		return fmt.Errorf("%q cannot be configured: the server adds it only to service certificates whose enrollment asked for it", name)
+	}
+	if local, domain, ok := strings.Cut(name, "@"); ok && local != "" && domain != "" {
+		return nil
+	}
+	return fmt.Errorf("%q is not an SSH certificate extension: use permit-X11-forwarding, permit-agent-forwarding, permit-port-forwarding, permit-pty, permit-user-rc, or a vendor extension named name@domain", name)
 }
 
 // CertOptionsUser configures issuance of user certificates: who may approve
@@ -189,6 +258,11 @@ type CertOptionsUser struct {
 	// Extensions are the SSH certificate extensions a user certificate may
 	// carry, e.g. permit-pty and permit-user-rc. A request is narrowed to
 	// the intersection of what it asked for and this list.
+	//
+	// Every extensions list in cert_options takes only the permit-*
+	// extensions or a vendor extension named name@domain. A critical option
+	// (source-address, force-command, verify-required) or no-touch-required
+	// is a startup error.
 	Extensions []string `mapstructure:"extensions" default:"[permit-pty, permit-user-rc]"`
 
 	// KeyIDTemplate is the fallback for the service and PAM templates when
@@ -273,6 +347,10 @@ type CertOptionsService struct {
 	// administrative policy forbids that extension for its interactive
 	// users. Closing that is tracked in
 	// docs/proposals/client-policy-assertions.md.
+	//
+	// source-address is a critical option, not an extension, and listing it
+	// here is a startup error. Pin a service certificate to a network with
+	// lifetime_policy.source_policy[].pin_source_address.
 	Extensions []string `mapstructure:"extensions" default:"[]"`
 
 	// EnrollmentDuration is how long the enrollment code minted at approval
