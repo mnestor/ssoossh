@@ -805,12 +805,12 @@ Default:
 .BR hybrid .
 .TP
 .BI nss.tombstone_after: " duration"
-How long an entry may stay missing from the directory before its account becomes deleted. Measured from the first successful sync that could not find it by id, DN or filter; a directory outage is never a miss. Zero tombstones an entry at the first sync that misses it.
+How long an entry may stay missing from the directory before its account or group becomes deleted. Measured from the first successful sync that could not find it by id, DN or filter; a directory outage is never a miss. A deleted group still resolves by name and gid, so ls \-l keeps showing a name, but is served with no members, so it grants nothing. Zero tombstones an entry at the first sync that misses it.
 Default:
 .BR 168h .
 .TP
 .BI nss.tombstone_retention: " duration"
-How long a deleted account stays resolvable, served as disabled, before it is purged and answers not found. A tombstone holds its uid and name the whole time, so neither can be handed to a new entry, and the files the account owned on hosts cannot pass to someone else. Zero purges a tombstone at the next sweep and frees its uid and name at once.
+How long a deleted account or group stays resolvable (an account served as disabled, a group with no members) before it is purged and answers not found. A tombstone holds its number and name the whole time, so neither can be handed to a new entry, and the files it owned on hosts cannot pass to someone else. Zero purges a tombstone at the next sweep and frees its number and name at once.
 Default:
 .BR 2160h .
 .TP

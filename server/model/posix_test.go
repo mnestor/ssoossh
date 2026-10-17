@@ -216,8 +216,9 @@ func TestPosixGroup_ShouldRoundTripEveryColumnWhenStoredAndReadBack(t *testing.T
 			row: PosixGroup{
 				ID: "pg-1", GID: 20000, PendingGID: ptr(uint32(20001)), PendingSince: at(time.Hour),
 				Name: "engineering", DirectoryID: "a1b2-entry", DN: "cn=engineering,ou=groups,dc=example",
-				Synthetic: true, WithheldAt: at(2 * time.Hour), WithheldReason: "gid 20000 is also carried by cn=eng,dc=example",
-				CreatedAt: nssTestTime(), UpdatedAt: nssTestTime().Add(time.Minute),
+				Synthetic: true, MissingSince: at(3 * time.Hour), DeletedAt: at(4 * time.Hour),
+				WithheldAt: at(2 * time.Hour), WithheldReason: "gid 20000 is also carried by cn=eng,dc=example",
+				CreatedAt: nssTestTime(), UpdatedAt: nssTestTime().Add(time.Minute), LastSyncedAt: at(5 * time.Hour),
 			},
 		},
 		{

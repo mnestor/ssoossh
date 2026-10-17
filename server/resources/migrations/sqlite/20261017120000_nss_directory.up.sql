@@ -104,6 +104,12 @@ CREATE INDEX idx_posix_users_directory_id ON posix_users (directory_id) WHERE di
 
 -- One row per directory group with the mapped gid attribute, plus the
 -- synthetic private groups auto_private_groups creates.
+--
+-- Groups go missing and are tombstoned the way accounts are: a group missing
+-- from the directory for nss.tombstone_after is tombstoned (deleted_at), and
+-- purged with the accounts after nss.tombstone_retention. A tombstoned group
+-- still resolves by name and gid, so ls -l keeps showing a name for the
+-- files it owned, but it is served with no members, so it grants nothing.
 CREATE TABLE posix_groups (
     id              TEXT PRIMARY KEY NOT NULL,
     -- Frozen after the first write, as posix_users.uid.
@@ -118,11 +124,21 @@ CREATE TABLE posix_groups (
     -- Empty string for a synthetic group, which has no entry.
     dn              TEXT NOT NULL DEFAULT '',
     synthetic       INTEGER NOT NULL DEFAULT 0,
+    -- As posix_users: the first sync that could not find the entry, NULL
+    -- while it resolves; and the tombstone, set once missing_since is older
+    -- than nss.tombstone_after and cleared if the entry reappears. Always
+    -- NULL on a synthetic group, which goes with its account.
+    missing_since   DATETIME NULL,
+    deleted_at      DATETIME NULL,
     -- As posix_users: set while the row is part of a gid or name collision.
     withheld_at     DATETIME NULL,
     withheld_reason TEXT NOT NULL DEFAULT '',
     created_at      DATETIME NOT NULL,
-    updated_at      DATETIME NOT NULL
+    updated_at      DATETIME NOT NULL,
+    -- The last sync or on-demand read that reached the directory for this
+    -- entry. Nullable, unlike posix_users', because a synthetic group is
+    -- never read from the directory.
+    last_synced_at  DATETIME NULL
 );
 
 -- getgrgid and getgrnam, and one record per number and per name.

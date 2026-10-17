@@ -129,18 +129,21 @@ type NSSConfig struct {
 	AutoPrivateGroups AutoPrivateGroupsMode `mapstructure:"auto_private_groups" default:"hybrid"`
 
 	// TombstoneAfter is how long an entry may stay missing from the
-	// directory before its account becomes deleted. Measured from the
-	// first successful sync that could not find it by id, DN or filter; a
-	// directory outage is never a miss. Zero tombstones an entry at the
-	// first sync that misses it.
+	// directory before its account or group becomes deleted. Measured from
+	// the first successful sync that could not find it by id, DN or
+	// filter; a directory outage is never a miss. A deleted group still
+	// resolves by name and gid, so ls -l keeps showing a name, but is
+	// served with no members, so it grants nothing. Zero tombstones an
+	// entry at the first sync that misses it.
 	TombstoneAfter time.Duration `mapstructure:"tombstone_after,string" default:"168h"`
 
-	// TombstoneRetention is how long a deleted account stays resolvable,
-	// served as disabled, before it is purged and answers not found. A
-	// tombstone holds its uid and name the whole time, so neither can be
-	// handed to a new entry, and the files the account owned on hosts
-	// cannot pass to someone else. Zero purges a tombstone at the next
-	// sweep and frees its uid and name at once.
+	// TombstoneRetention is how long a deleted account or group stays
+	// resolvable (an account served as disabled, a group with no members)
+	// before it is purged and answers not found. A tombstone holds its
+	// number and name the whole time, so neither can be handed to a new
+	// entry, and the files it owned on hosts cannot pass to someone else.
+	// Zero purges a tombstone at the next sweep and frees its number and
+	// name at once.
 	TombstoneRetention time.Duration `mapstructure:"tombstone_retention,string" default:"2160h"`
 
 	// DefaultHome is the home directory served for an account whose entry

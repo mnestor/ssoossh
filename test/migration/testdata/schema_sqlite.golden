@@ -244,10 +244,13 @@ table posix_group_members
   index sqlite_autoindex_posix_group_members_1 unique=true columns=gid,uid
 table posix_groups
   column created_at type=DATETIME nullable=false pk=false default=<none>
+  column deleted_at type=DATETIME nullable=true pk=false default=<none>
   column directory_id type=TEXT nullable=false pk=false default=''
   column dn type=TEXT nullable=false pk=false default=''
   column gid type=INTEGER nullable=false pk=false default=<none>
   column id type=TEXT nullable=false pk=true default=<none>
+  column last_synced_at type=DATETIME nullable=true pk=false default=<none>
+  column missing_since type=DATETIME nullable=true pk=false default=<none>
   column name type=TEXT nullable=false pk=false default=<none>
   column pending_gid type=INTEGER nullable=true pk=false default=<none>
   column pending_since type=DATETIME nullable=true pk=false default=<none>

@@ -244,10 +244,13 @@ table posix_group_members
   index posix_group_members_pkey CREATE UNIQUE INDEX posix_group_members_pkey ON public.posix_group_members USING btree (gid, uid)
 table posix_groups
   column created_at type=timestamp with time zone nullable=false default=<none>
+  column deleted_at type=timestamp with time zone nullable=true default=<none>
   column directory_id type=text nullable=false default=''::text
   column dn type=text nullable=false default=''::text
   column gid type=bigint nullable=false default=<none>
   column id type=text nullable=false default=<none>
+  column last_synced_at type=timestamp with time zone nullable=true default=<none>
+  column missing_since type=timestamp with time zone nullable=true default=<none>
   column name type=text nullable=false default=<none>
   column pending_gid type=bigint nullable=true default=<none>
   column pending_since type=timestamp with time zone nullable=true default=<none>

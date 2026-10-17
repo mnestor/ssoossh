@@ -102,6 +102,12 @@ func (PosixUser) TableName() string { return "posix_users" }
 // PosixGroup is one POSIX group the NSS directory serves: a directory group
 // with the mapped gid attribute, or a synthetic private group created by
 // nss.auto_private_groups.
+//
+// Groups are tombstoned the way accounts are. A group missing from the
+// directory for nss.tombstone_after gets DeletedAt; it still resolves by
+// name and gid, so ls -l keeps showing a name, but is served with no
+// members, so it grants nothing; it is purged after nss.tombstone_retention
+// with the accounts.
 type PosixGroup struct {
 	ID string `gorm:"column:id;primaryKey"`
 
@@ -125,6 +131,14 @@ type PosixGroup struct {
 	// Synthetic is true for a private group auto_private_groups created.
 	Synthetic bool `gorm:"column:synthetic"`
 
+	// MissingSince is the first sync that could not find the entry, nil
+	// while it resolves. DeletedAt is the tombstone, set once MissingSince
+	// is older than nss.tombstone_after and cleared if the entry reappears;
+	// a *time.Time rather than gorm.DeletedAt for the reason PosixUser's
+	// is. Both stay nil on a synthetic group.
+	MissingSince *time.Time `gorm:"column:missing_since"`
+	DeletedAt    *time.Time `gorm:"column:deleted_at"`
+
 	// WithheldAt and WithheldReason mark a gid or name collision, as on
 	// PosixUser.
 	WithheldAt     *time.Time `gorm:"column:withheld_at"`
@@ -132,6 +146,11 @@ type PosixGroup struct {
 
 	CreatedAt time.Time `gorm:"column:created_at"`
 	UpdatedAt time.Time `gorm:"column:updated_at"`
+
+	// LastSyncedAt is the last sync or on-demand read that reached the
+	// directory for this entry. Nil on a synthetic group, which is never
+	// read from the directory.
+	LastSyncedAt *time.Time `gorm:"column:last_synced_at"`
 }
 
 // TableName overrides GORM's default pluralization to match the migration.
