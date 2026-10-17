@@ -407,7 +407,7 @@ lint-tagged: ## golangci-lint over the build-tagged suites lint(1) cannot see
 #
 # One GOARCH per GOOS is enough. The shipped amd64 and arm64 targets are
 # both 64-bit, so they differ in nothing golangci-lint can see.
-LINT_CROSS_PACKAGES ?= ./client/... ./internal/crypto/ssh/agent/... ./internal/fileperm/... ./internal/varlink/...
+LINT_CROSS_PACKAGES ?= ./client/... ./internal/crypto/ssh/agent/... ./internal/fileperm/... ./internal/posixname/... ./internal/varlink/...
 LINT_CROSS_GOOS ?= windows darwin
 
 .PHONY: lint-cross
