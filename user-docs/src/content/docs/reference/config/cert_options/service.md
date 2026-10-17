@@ -191,6 +191,8 @@ Setting it alone grants nothing. It makes toggles available on the approval page
 
 It is the only bound on a service certificate's extensions. The client-side forbidden_certificate_extensions policy (https://mnestor.github.io/ssoossh/hosts/client-enforcement/) has never applied to service certificates and still does not — it is subtracted only on the interactive login path — so an extension ticked here reaches a service certificate even on a machine whose administrative policy forbids that extension for its interactive users. Closing that is tracked in docs/proposals/client-policy-assertions.md.
 
+source-address is a critical option, not an extension, and listing it here is a startup error. Pin a service certificate to a network with lifetime_policy.source_policy[].pin_source_address.
+
 ```yaml
 cert_options:
   service:

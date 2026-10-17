@@ -165,6 +165,8 @@ cert_options:
 
 The SSH certificate extensions a user certificate may carry, e.g. permit-pty and permit-user-rc. A request is narrowed to the intersection of what it asked for and this list.
 
+Every extensions list in cert_options takes only the permit-* extensions or a vendor extension named name@domain. A critical option (source-address, force-command, verify-required) or no-touch-required is a startup error.
+
 ```yaml
 cert_options:
   user:
