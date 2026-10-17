@@ -134,7 +134,7 @@ one. The roles nest, so an admin's account page reads `Admin` `SOC` `Auditor`
 and a SOC member's reads `SOC` `Auditor`. Someone who holds no privileged
 role sees no access row at all.
 
-![The account page: an Identity card with name, username, email, account identifier and an Access row of Admin, SOC and Auditor badges; a card listing the principals for user certificates and the service accounts; and a Groups card of group chips](../../../assets/screens/account.png)
+![The account page: an Identity card with name, username, email, account identifier and an Access row of Admin, SOC and Auditor badges; a card of the principals you can approve with; a Service accounts card; and a Groups card of group chips](../../../assets/screens/account.png)
 
 <p class="screen-caption">An admin's account page. The Access row names every role the session holds; the cards below it are what the server will put in, and consult for, this person's certificates.</p>
 
@@ -171,7 +171,7 @@ it written by a login or a sync rather than captured for the page:
   `ldap_sync`. That last one is the only source the sync will clear
   automatically.
 
-![A user's detail page: the OIDC record card with account identifier, username, name, created and last-updated times, and the other-accounts and service-accounts lists badged LDAP; a Group membership table with one OIDC row; and the top of the Directory record card](../../../assets/screens/admin-user.png)
+![A user's detail page: the OIDC record card with account identifier, username, name, created and last-updated times, and the other-accounts and service-accounts lists badged LDAP; a Group membership table with one OIDC row; and the Directory record card with the entry's identifier, distinguished name, when it was last seen and the stored field values](../../../assets/screens/admin-user.png)
 
 <p class="screen-caption">A user's page. The service accounts carry an LDAP badge because the configuration takes them from the directory; the OIDC value, had there been one, would be shown struck through beside it.</p>
 
@@ -190,7 +190,7 @@ connection string, the LDAP bind password, the SMTP password, and the HSM PIN.
 A redacted value still tells an admin whether the setting is configured,
 which keeps "is the client secret set?" answerable without disclosing it.
 
-![The Server configuration page: a filter box, a "Show unset keys" toggle, a count of keys set, and cards per section listing each key and value, with ldap.bind_password and ssh_key shown as [redacted] with a SECRET tag](../../../assets/screens/admin-config.png)
+![The Server configuration page: a filter box, a "Show unset keys" toggle, a count of keys set, and cards per section listing each key and value, with ssh_key and db.connection_string shown as [redacted] with a SECRET tag](../../../assets/screens/admin-config.png)
 
 <p class="screen-caption">The effective configuration, grouped by section. A secret shows as redacted with a tag, so its presence is visible and its value is not.</p>
 
@@ -201,7 +201,7 @@ not config text at all.
 
 ## Disabling a user
 
-![The Users page: a search box for name, username, email or subject, All/Active/Disabled filters, and a table of users with username, email, an Active badge and the created date](../../../assets/screens/admin-users.png)
+![The Users page: a search box for name, username, email or subject, All/Active/Disabled filters, and a table of users with name, username, email, an Active status badge and the first sign-in time](../../../assets/screens/admin-users.png)
 
 <p class="screen-caption">Admin → Users. A row opens the user's page, where the Disable control lives.</p>
 
