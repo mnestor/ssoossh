@@ -379,6 +379,24 @@ cannot be designed around reopens the U1 decision.
    PAM session stack already creates home directories, and whether nscd or
    unscd is installed and caching passwd or group.
 
+## Open check results (2026-10-17)
+
+Checks 4, 5 and 7 ran in docker on Debian 12 and 13, Ubuntu 20.04, 22.04
+and 24.04, Rocky 9 and 10, Fedora 44, Arch and openSUSE Leap 15.6; checks
+1, 2, 6 and the first half of 3 ran on AlmaLinux 9.8 (systemd 252) and
+10.2 (systemd 257) with SELinux enforcing, against a stand-in userdb
+service. Evidence is kept with the implementation work.
+
+| # | Result |
+| --- | --- |
+| 1 | Passes where `shadow:` lists `systemd`: `getent shadow` gives `*` and empty change fields, `locked` gives `sp_expire = 1`, certificate logins succeed and locked records are refused under both `UsePAM` settings. Without it (Alma 9 as shipped) `UsePAM yes` refuses every directory user and `UsePAM no` admits a locked one, so `systemd` on `shadow:` joins the platform floor |
+| 2 | Passes: no lookup failed across restarts (longest wait 21 ms). Past the start limit the socket unit fails too and lookups are a quick not-found until `reset-failed` |
+| 3 | First half: the socket file is `systemd_userdbd_runtime_t`; the socket takes the domain of the service process, so the policy needs `allow nsswitch_domain ssoosshd_nss_t:unix_stream_socket connectto;`. Every caller seen (`sshd_t`, `sshd_session_t`, `systemd_logind_t`, `systemd_userdbd_t`) was denied only that. When `systemd-userwork` cannot connect (EL10), a directory user's supplementary groups drop out silently. The policy itself is untested |
+| 4 | `sshd-session` lives at three distro paths and `/usr/sbin/sshd-session` exists nowhere; moot, because the exe check cannot work with an empty bounding set (R5 now uses the cgroup) |
+| 5 | rpm dependency `libnss_systemd.so.2()(64bit)` on every family (`systemd-libs` on EL and Fedora, `systemd` on Leap); file-path dependencies fail on EL10. deb `libnss-systemd`, `systemd (>= 245)`; the oldest target is Ubuntu 20.04's 245.4 |
+| 6 | Passes on 245 (direct connection), 252 and 257: lookups come from the calling process; `ServiceNotAvailable` is a not-found in 2 to 5 ms; a service that never answers holds callers the full 45 s; local group memberships survive (U12) |
+| 7 | No distro puts `pam_mkhomedir` or `oddjob-mkhomedir` in sshd's session stack. nscd is absent from EL10, Fedora and Arch, and enabled by default on Leap, caching passwd and group |
+
 ## SSOOSSH.md changes (need the owner's say-so)
 
 `SSOOSSH.md` changes only with explicit approval. The first server PR

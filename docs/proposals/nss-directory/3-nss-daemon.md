@@ -24,12 +24,17 @@ is the glibc side (README U1). Shared context in [README.md](README.md).
 
 ## Platform floor
 
-systemd 245 or later, glibc, and `systemd` on the `passwd:` and `group:`
-lines of `/etc/nsswitch.conf` (default on authselect profiles, Debian 12+
-with `libnss-systemd`, Arch, Ubuntu, openSUSE; README). The daemon reads
-`nsswitch.conf` at start and logs an error, and reports in `status`, when
-either line lacks `systemd`, so a missing entry is not mistaken for missing
-users.
+systemd 245 or later, glibc, and `systemd` on the `passwd:`, `group:`
+**and `shadow:`** lines of `/etc/nsswitch.conf`. Measured on 2026-10-17
+(README "Open check results"): `passwd:` and `group:` carry it by default
+on EL9, EL10, Fedora and Arch, and on Debian and Ubuntu once
+`libnss-systemd` is installed; `shadow:` carries it only on EL10, Fedora
+and Arch; openSUSE Leap 15.6 ships `compat` on all three and needs an
+edit. Without `systemd` on `shadow:`, sshd with `UsePAM yes` refuses
+every directory user and `UsePAM no` admits a locked one (Alma 9). The
+daemon reads `nsswitch.conf` at start and logs an error, and reports in
+`status`, when any of the three lines lacks the `systemd` token, so a
+missing entry is not mistaken for missing users.
 
 ## Layout
 
@@ -197,7 +202,7 @@ cache_expire_offline: 0           # 0 = never
 
 login_soft_ttl: 60s
 login_refresh_timeout: 1s
-sshd_paths: [/usr/sbin/sshd, /usr/sbin/sshd-session]  # README check 4
+sshd_units: [sshd.service, ssh.service, sshd@.service, ssh@.service]  # "@.service" matches any instance
 
 min_id: 1000
 max_id: 0                         # 0 = no max
@@ -246,13 +251,18 @@ require_groups: []
    host overrides apply on read so editing overrides needs no cache flush.
 8. Map to a record (above), reply, and wait for the next call or close.
 
-**Peer is sshd** (README R5): peer uid is 0 **and**
-`readlink(/proc/<pid>/exe)` is in `sshd_paths`. `comm` alone is not
-trusted. This works because `nss-systemd` connects directly from the
-calling process for user and membership lookups (README U1). A caller
-started with `SYSTEMD_NSS_SERVER_SIDE_NSS=1` reaches the daemon through
-`systemd-userwork` instead and simply does not get the refresh (README
-U13).
+**Peer is sshd** (README R5): peer uid is 0 **and** the last component of
+its systemd cgroup (`/proc/<pid>/cgroup`, the v2 line or, on hybrid hosts,
+`name=systemd`) is in `sshd_units`. `comm` alone is not trusted. Not the
+executable path: with an empty capability bounding set,
+`readlink(/proc/<pid>/exe)` of sshd fails with `EACCES` on every call,
+because the kernel allows it only to a reader holding every capability
+the target holds, or `CAP_SYS_PTRACE` (measured on EL9 and EL10). The
+cgroup file needs no capability, and only root can move a process into
+`sshd.service`. A failed read is "not sshd", quietly. This works because
+`nss-systemd` connects directly from the calling process for user and
+membership lookups (README U1). `SYSTEMD_NSS_SERVER_SIDE_NSS=1` has no
+effect on systemd 252 or 257 (U13).
 
 **`RefreshUser`**: replies at once (or not at all when `oneway`) and
 refreshes in the background. Debounce per name: at most one refresh per
@@ -384,10 +394,9 @@ instead of failing (README check 2), and the daemon needs no write access
 under `/run/systemd`. `RuntimeDirectory` now holds only the admin socket.
 `StateDirectory` is required for the persistent cache (README R7).
 `SYSTEMD_BYPASS_USERDB` keeps the daemon from ever querying itself (README
-U9); with `CGO_ENABLED=0` it never calls NSS anyway. Reading
-`/proc/<pid>/exe` of root-owned sshd as root needs no capability with an
-empty bounding set only if `ptrace` access checks pass; verify on a host
-and add `CAP_SYS_PTRACE` to the bounding set only if `readlink` fails.
+U9); with `CGO_ENABLED=0` it never calls NSS anyway. The bounding set stays
+empty: the sshd check reads `/proc/<pid>/cgroup`, which needs no
+capability (see "Peer is sshd").
 
 ## Packaging
 
