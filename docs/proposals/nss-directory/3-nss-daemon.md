@@ -124,9 +124,14 @@ use it.
 | `locked` | `true` for `disabled`/`deleted`, otherwise omitted |
 | `service` | `com.github.mnestor.ssoossh` |
 
-No `memberOf` (the API makes `GetMemberships` authoritative) and no
-`privileged` section, so `incomplete` is `false`; check 1 in the README may
-add `privileged.hashedPassword: ["*"]` (U7).
+No `memberOf` (the API makes `GetMemberships` authoritative). The
+`privileged` section is `{"hashedPassword": ["*"]}` and is sent only when
+the peer uid from `SO_PEERCRED` is 0, as the userdb API requires for
+privileged data; every other peer gets the record without it and with
+`incomplete: true` (README R27, U7). `realName` is passed through as the
+server rendered it; the daemon re-runs the same sanitiser (no `:`, no
+control characters, 256-byte cap) as defence in depth, since `nss-systemd`
+would otherwise mangle the field.
 
 **Group record:** `groupName`, `gid`, `disposition: regular`, `service`.
 No `members`; `nss-systemd` fetches them through `GetMemberships`.
@@ -135,12 +140,18 @@ No `members`; `nss-systemd` fetches them through `GetMemberships`.
 `nss-systemd.c` on systemd `main`:
 
 - `pw_passwd` is always `x`; `pw_gecos` is `realName`.
-- Where `shadow:` lists `systemd`: `sp_pwdp` is `!*` (no hashed password)
-  and `sp_expire` is 1 when `locked` (U6, U7).
+- Where `shadow:` lists `systemd`: `sp_pwdp` is the first
+  `privileged.hashedPassword` entry, so `*` for a uid 0 caller and `!*`
+  when the section is absent; `sp_expire` is 1 when `locked`; `sp_lstchg`
+  is -1 because the record carries no password-change time, so `pam_unix`
+  never demands a change (`userdb-glue.c:160-178`; U6, U7, R27).
 - `initgroups` calls `GetMemberships(userName)` on every service, then
   `GetGroupRecord(groupName)` per group, skipping the primary gid. One
   login is 1 + N calls, all served from cache. Those group lookups may
-  arrive through `systemd-userdbd` rather than from the caller.
+  arrive through `systemd-userdbd` rather than from the caller, and they
+  run with the NSS exclusion cleared (`nss-systemd.c:1025`), so a
+  membership in a local group such as `sudo` resolves through `files` even
+  though this daemon answers `NoRecordFound` for it (README U12).
 - `nss-systemd` never resolves `root` or `nobody` through userdb.
 
 ## `internal/api` additions
@@ -199,7 +210,6 @@ allowed_shells: []                # empty -> /etc/shells
 vetoed_shells: []
 shell_map: {}                     # zsh: /opt/homebrew/bin/zsh
 disabled_shell: /usr/sbin/nologin
-case_sensitive: true
 ignore_group_members: false
 filter_users: [root]
 filter_groups: [root]
@@ -213,9 +223,11 @@ require_groups: []
 1. Accept on the activation socket; read `SO_PEERCRED`.
 2. Read and decode one call; wrong `service` is `BadService`, malformed
    input closes the connection.
-3. Lower-case if `case_sensitive: false`; names failing
-   `^[a-z_][a-z0-9_-]{0,31}$` are `NoRecordFound` without going upstream
-   (R17).
+3. Names are matched byte for byte (README R23). `nss-systemd` has
+   already applied `valid_user_group_name(VALID_USER_RELAX)` before
+   calling; the daemon re-applies the same rules plus the 32-byte cap and
+   answers `NoRecordFound` for a failure without going upstream, so a
+   direct `varlinkctl` caller cannot push an invalid name to the server.
 4. **Local short-circuit** (README U8): `filter_users`/`filter_groups`,
    names present in `/etc/passwd`/`/etc/group` (re-read on mtime change),
    their uids and gids, and ids outside `min_id..max_id` are
@@ -237,7 +249,10 @@ require_groups: []
 **Peer is sshd** (README R5): peer uid is 0 **and**
 `readlink(/proc/<pid>/exe)` is in `sshd_paths`. `comm` alone is not
 trusted. This works because `nss-systemd` connects directly from the
-calling process for user and membership lookups (README U1).
+calling process for user and membership lookups (README U1). A caller
+started with `SYSTEMD_NSS_SERVER_SIDE_NSS=1` reaches the daemon through
+`systemd-userwork` instead and simply does not get the refresh (README
+U13).
 
 **`RefreshUser`**: replies at once (or not at all when `oneway`) and
 refreshes in the background. Debounce per name: at most one refresh per
@@ -289,6 +304,11 @@ flag. Trust model is sssd's: entries are trusted on load; file permissions
 are the boundary. A host rebooted while the server is down resolves known
 users from disk.
 
+A refresh that changes the uid or gid of a cached name is applied, since
+the server only does that after an admin accepted it (README R38), but is
+logged at warning with the name and both numbers so the change is visible
+in the journal of every host it reached.
+
 Background sweep at `refresh_expired_interval`, jittered, bounded by
 `refresh_rate`. Singleflight per `(method, key)`; use `golang.org/x/sync`
 only if already a dependency, else a small local implementation.
@@ -304,7 +324,7 @@ concurrently and works in memory mode.
 | `ssoosshd-nss run` | default; the daemon |
 | `ssoosshd-nss cache -E \| -u NAME \| -g NAME \| -U \| -G` | `sss_cache` equivalent: mark stale, never delete |
 | `ssoosshd-nss override list \| set USER --uid --gid --home --shell \| unset USER` | edits `nss-overrides.yaml` atomically, signals reload |
-| `ssoosshd-nss status` | online/offline/unauthorized, server, key id, cache counts, last error, `nsswitch.conf` check |
+| `ssoosshd-nss status` | online/offline/unauthorized, server, key id, cache counts, last error, `nsswitch.conf` check, and a warning when nscd or unscd is running (README R26) |
 | `ssoosshd-nss lookup user NAME \| group NAME \| memberships NAME` | calls the userdb socket exactly as `nss-systemd` does; for debugging |
 
 `userdbctl user NAME` and `getent passwd NAME` exercise the full path
@@ -316,8 +336,7 @@ Before printing principals, send `RefreshUser` for the user as a one-way
 varlink call via `internal/varlink` to
 `/run/systemd/userdb/com.github.mnestor.ssoossh`, with a 50 ms deadline;
 ignore every error, including a missing socket and non-Linux platforms. It
-still never touches the network. Fix the stale "synced from the server"
-text at `client/cmd/host.go:12` in the same PR.
+still never touches the network.
 
 ## systemd units
 
@@ -418,7 +437,9 @@ httptest-style fake server with a test CA. Assert `getent passwd`,
 `sp_expire`, and quick not-found with the daemon stopped. A second job with
 systemd as PID 1 covers socket activation across a restart.
 
-- Release builds `linux/amd64`, `linux/arm64`; `CGO_ENABLED=0`.
+- Release builds `linux/amd64`, `linux/arm64`; `CGO_ENABLED=0`; the same
+  `GOFIPS140` setting as the server build in `.goreleaser.yml` (README
+  R32).
 - No change to the `ssoossh` client package beyond the `RefreshUser` call.
 
 ## Tests
@@ -432,7 +453,9 @@ systemd as PID 1 covers socket activation across a restart.
 - `nssd/userdb`: every method with each primary-key combination,
   `BadService`, `ConflictingRecordFound`, `NonMatchingRecordFound`,
   `InvalidParameter` for `fuzzyNames`/`uuid`, `EnumerationNotSupported`,
-  record mapping for active, disabled and deleted users.
+  record mapping for active, disabled and deleted users; `privileged`
+  present for a uid 0 peer only and `incomplete: true` otherwise;
+  `realName` sanitising.
 - `nssd/policy`: table tests for each sanity rule, shell precedence, home
   expansion, disabled exemption, local short-circuit, overrides cannot go
   below `min_id`.
@@ -454,7 +477,7 @@ the proposal is the only description.
 | Page (`user-docs/src/content/docs/`) | Content |
 | --- | --- |
 | `project/roadmap.md` (line 69 today) | Still says "four parts ... an NSS daemon and an NSS module". Change to three parts and the userdb design when the first daemon PR lands; remove the entry when NSS ships |
-| `hosts/nss.md` (new) | Platform floor (systemd 245+, glibc, `systemd` on `passwd:`/`group:`; RHEL 8 and musl unsupported), install, enabling `ssoosshd-nss.socket`, `nss.yaml` reference, fleet key file, SELinux package |
+| `hosts/nss.md` (new) | Platform floor (systemd 245+, glibc, `systemd` on `passwd:`/`group:`; RHEL 8 and musl unsupported), install, enabling `ssoosshd-nss.socket`, `nss.yaml` reference, fleet key file, SELinux package; `pam_mkhomedir` or `oddjob-mkhomedir` in sshd's PAM session stack (pam_ssoossh is `auth` only and an ephemeral host has no home directories); nscd or unscd must not cache passwd or group, or they cache a U5 miss (README R26) |
 | `hosts/nss.md`, behaviour | A directory outage shows as "user not found" (README U3); a first login while the server is slow can fail once (U5); disabled users are `locked` with `nologin` (U6); the `UsePAM no` outcome of open check 1 (U7); group changes reach a host on the next sshd login or at cache expiry |
 | `hosts/nss.md`, troubleshooting | `ssoosshd-nss status`, `ssoosshd-nss lookup`, `userdbctl user NAME`, `getent passwd NAME` |
 | `concepts/security-model.md` | Fleet key exposure model; never write deny rules (sudoers `!%group`) against directory groups (README threat model item 6, U9) |
