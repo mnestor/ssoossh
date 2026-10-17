@@ -265,6 +265,16 @@ Taken 2026-10-17:
   the usage flush is an additive upsert (R28).
 - Cold-miss floods from local users are accepted as with sssd (R33).
 
+Taken 2026-10-18:
+
+- Directory reads: full sync of the `nss.user_filter` and
+  `nss.group_filter` scope, as proposed. Considered and declined:
+  on-demand reads only (a group's member list would hold only the members
+  the server happened to know), and on-demand reads that fetch a found
+  group's full member list one level deep (complete lists, but a second
+  kind of row whose own groups are unread). With full sync the filter is
+  the control over what the server stores.
+
 ## Review changes (2026-10-10)
 
 Problems found in the single-document draft and how the parts resolve them.

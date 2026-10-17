@@ -214,8 +214,9 @@ attribute.
   resolvable. Entries without the uid attribute, or whose name fails the
   validator, are skipped with a warning and are 404.
 - **Duplicate uid** (README R29). Two entries carrying the same uid
-  attribute: neither is served while the collision lasts (tracked in the
-  sync run, not stored as a row state), and the audit alert
+  attribute: neither is served while the collision lasts (stored on the
+  holding row as `withheld_at` and `withheld_reason`, so every instance
+  agrees), and the audit alert
   `nss_uid_collision` fires at most daily per uid. Fail closed, because
   serving either one makes `ls -l` lie. A tombstoned row (`deleted_at`
   set) still holds its uid, so a new entry presenting that uid is a
@@ -433,6 +434,8 @@ nss:
     gecos_attributes: [displayName, cn]
   gecos_template: "{{.DisplayName}}"
   auto_private_groups: hybrid
+  sync_interval: 15m           # incremental (modifyTimestamp) sync; zero disables
+  full_sync_interval: 24h      # full sync, the only run that finds deletions
   tombstone_after: 168h        # missing from the directory this long: deleted
   tombstone_retention: 2160h
   default_home: /home/%u
