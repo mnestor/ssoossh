@@ -17,15 +17,20 @@ import (
 // server/service/notification.go.
 const Topic = "notification.send"
 
-// Event is one thing worth telling people about, addressed one of two
+// Event is one thing worth telling people about, addressed one of three
 // ways.
 //
 // UserID names a single recipient by users.id. ServiceAccount names an
 // audience instead — everyone holding that account — because a service
 // enrollment has no single owning user to address (see
 // https://mnestor.github.io/ssoossh/concepts/service-certificates/).
-// Exactly one of the two is set: a user-scoped kind has no account to fan
-// out over, and an enrollment-scoped one has nobody in particular to name.
+// NSSKeyID names a fleet key, whose notification address is the recipient.
+// It is set alone: a key has no account to fan out over, and no user whose
+// preference could gate it.
+//
+// Exactly one of the three forms is set: a user-scoped kind has no account to
+// fan out over, an enrollment-scoped one has nobody in particular to name, and
+// a fleet key event is about the key itself.
 //
 // Neither form carries an address. Delivery resolves the current
 // recipients, their current addresses, and their current preferences at
@@ -47,6 +52,12 @@ type Event struct {
 	// that waited through a retry backoff honors the address the enrollment
 	// has now rather than the one it had when the event was published.
 	EnrollmentID string `json:"enrollment_id,omitempty"`
+
+	// NSSKeyID names the NSS fleet key an event is about. Delivery reads the
+	// key's notification_email when it sends, the same way it reads an
+	// enrollment's address. It is an id, never an address, so an event that
+	// waited through a retry backoff honors the address the key has now.
+	NSSKeyID string `json:"nss_key_id,omitempty"`
 
 	OccurredAt time.Time       `json:"occurred_at"`
 	Payload    json.RawMessage `json:"payload"`
@@ -71,7 +82,13 @@ func NewEnrollmentEvent(kind Kind, enrollmentID, serviceAccount string, payload 
 	return newEvent(kind, Event{ServiceAccount: serviceAccount, EnrollmentID: enrollmentID}, payload)
 }
 
-// newEvent fills in the parts both addressing forms share. It rejects
+// NewNSSKeyEvent encodes payload into an Event about one NSS fleet key:
+// delivered to the key's notification address, read at delivery time.
+func NewNSSKeyEvent(kind Kind, keyID string, payload any) (Event, error) {
+	return newEvent(kind, Event{NSSKeyID: keyID}, payload)
+}
+
+// newEvent fills in the parts every addressing form shares. It rejects
 // unregistered kinds here, at the publishing call site, rather than letting
 // the delivery handler discover the problem after the originating request
 // is long gone.
