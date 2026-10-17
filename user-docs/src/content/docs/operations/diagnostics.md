@@ -12,7 +12,7 @@ them look like success. **Admin → Diagnostics** runs four read-only checks
 against the deployment as it is actually reached, and says which of these
 has happened.
 
-![The Diagnostics page after a run: "Probed https://ssh-dev.example.com" and four cards -- Public URL reachability, Proxy trust and client IP, Security header hygiene, CORS / edge header attribution -- each with an OK badge and its findings](../../../assets/screens/admin-diagnostics.png)
+![The Diagnostics page after a run: a summary of four checks with one warning, "Probed https://ssh-dev.example.com", then four cards: Public URL reachability with a Warning badge and how to fix it, Proxy trust and client IP and CORS / edge header attribution each with an OK badge, and Security header hygiene marked Skipped](../../../assets/screens/admin-diagnostics.png)
 
 <p class="screen-caption">A clean run. Each card carries its findings, and a check that is not clean also carries what to change.</p>
 
