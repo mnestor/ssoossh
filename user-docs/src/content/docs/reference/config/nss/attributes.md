@@ -107,7 +107,7 @@ nss:
 
 `string`, default `memberUid`
 
-Lists a group's members: memberUid holds account names (RFC 2307); set member for groups whose members are DNs (RFC 2307bis), which are resolved against the accounts' DNs.
+Lists a group's members. Whether its values are names or DNs is decided by the attribute's name, case-insensitively: member and uniqueMember (RFC 2307bis, groupOfNames, groupOfUniqueNames) hold DNs, matched against the accounts' DNs as DNs, so case and the spacing around separators do not matter (a uniqueMember's optional #'...'B suffix is dropped); any other attribute, memberUid (RFC 2307) included, holds account names, matched byte for byte. A member that resolves to no account the sync has stored is left out.
 
 ```yaml
 nss:

@@ -13,9 +13,11 @@ import (
 // attribute the failure to it.
 func validNSS() (NSSConfig, *LDAPConfig) {
 	nss := NSSConfig{
-		Enabled:     true,
-		UserFilter:  "(objectClass=posixAccount)",
-		GroupFilter: "(objectClass=posixGroup)",
+		Enabled:          true,
+		UserFilter:       "(objectClass=posixAccount)",
+		GroupFilter:      "(objectClass=posixGroup)",
+		SyncInterval:     15 * time.Minute,
+		FullSyncInterval: 24 * time.Hour,
 		Attributes: NSSAttributes{
 			Name: "uid", UID: "uidNumber", GID: "gidNumber", Home: "homeDirectory", Shell: "loginShell",
 			GroupName: "cn", GroupGID: "gidNumber", GroupMember: "memberUid",
@@ -77,6 +79,8 @@ func TestNSSConfig_ShouldAcceptTheConfigurationWhenEveryRuleHolds(t *testing.T) 
 		{name: "should accept the list when allowed_shells is empty", mutate: func(c *NSSConfig) { c.AllowedShells = nil }},
 		{name: "should accept the list when source_allow_list holds IPv4 and IPv6 networks", mutate: func(c *NSSConfig) { c.SourceAllowList = []string{"10.20.0.0/16", "2001:db8::/32"} }},
 		{name: "should accept the list when privileged_name_alert is empty", mutate: func(c *NSSConfig) { c.PrivilegedNameAlert = nil }},
+		{name: "should accept the interval when sync_interval is zero", mutate: func(c *NSSConfig) { c.SyncInterval = 0 }},
+		{name: "should accept the interval when full_sync_interval is zero", mutate: func(c *NSSConfig) { c.FullSyncInterval = 0 }},
 		{
 			name: "should accept zero when every duration and alert that allows it is zero",
 			mutate: func(c *NSSConfig) {
@@ -145,6 +149,8 @@ func TestNSSConfig_ShouldRejectTheConfigurationWhenARuleIsBroken(t *testing.T) {
 		{name: "should reject the duration when tombstone_retention is negative", mutate: func(c *NSSConfig, _ *LDAPConfig) { c.TombstoneRetention = -time.Hour }, wantErr: "nss.tombstone_retention"},
 		{name: "should reject the duration when usage_retention is negative", mutate: func(c *NSSConfig, _ *LDAPConfig) { c.UsageRetention = -time.Hour }, wantErr: "nss.usage_retention"},
 		{name: "should reject the duration when key_rotation_grace is negative", mutate: func(c *NSSConfig, _ *LDAPConfig) { c.KeyRotationGrace = -time.Hour }, wantErr: "nss.key_rotation_grace"},
+		{name: "should reject the duration when sync_interval is negative", mutate: func(c *NSSConfig, _ *LDAPConfig) { c.SyncInterval = -time.Minute }, wantErr: "nss.sync_interval"},
+		{name: "should reject the duration when full_sync_interval is negative", mutate: func(c *NSSConfig, _ *LDAPConfig) { c.FullSyncInterval = -time.Hour }, wantErr: "nss.full_sync_interval"},
 		{name: "should reject the duration when key_default_lifetime is zero", mutate: func(c *NSSConfig, _ *LDAPConfig) { c.KeyDefaultLifetime = 0 }, wantErr: "nss.key_default_lifetime"},
 		{name: "should reject the duration when key_default_lifetime is negative", mutate: func(c *NSSConfig, _ *LDAPConfig) { c.KeyDefaultLifetime = -time.Hour }, wantErr: "nss.key_default_lifetime"},
 		{name: "should reject the rate when miss_alert_rate is negative", mutate: func(c *NSSConfig, _ *LDAPConfig) { c.MissAlertRate = -1 }, wantErr: "nss.miss_alert_rate"},
