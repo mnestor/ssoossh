@@ -28,6 +28,7 @@ internal/crypto/ssh/keypair     92.0
 internal/errs                  100.0
 internal/fileperm              100.0
 internal/fipsmode              100.0
+internal/varlink               98.0
 internal/principalsmap         100.0
 internal/serial                 79.0
 internal/tools/confdocs         83.0
