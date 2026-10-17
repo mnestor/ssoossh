@@ -232,7 +232,7 @@ current state.
 
 ## Reading it
 
-![The Audit log page: recent events newest first, each with an actor, a plain-language action, the action name and time, and the event's fields listed underneath](../../../assets/screens/admin-audit.png)
+![The Audit log page: Action and Source address filters, then recent events newest first, each with an actor, a plain-language action, the action name and time, and the event's fields listed underneath](../../../assets/screens/admin-audit.png)
 
 <p class="screen-caption">The audit view. Each event names its actor, says what happened in words, and lists the payload underneath; the action string on the right is what the shipped log carries.</p>
 
