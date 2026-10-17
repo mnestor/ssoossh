@@ -79,6 +79,7 @@ func NewConfig(cmd *cobra.Command) (*Config, error) {
 		mapstructure.StringToTimeDurationHookFunc(),
 		mapstructure.StringToSliceHookFunc(","),
 		ldapFieldShorthandHook,
+		autoPrivateGroupsHook,
 	))); err != nil {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
@@ -117,6 +118,13 @@ func NewConfig(cmd *cobra.Command) (*Config, error) {
 	// fall back to OIDC-only enrichment (LDAP fails open by design, which
 	// is exactly what would hide a typo).
 	if err := c.LDAP.Validate(); err != nil {
+		return nil, err
+	}
+
+	// And the NSS directory, which reads every account from LDAP: a gecos
+	// template typo or an unparseable source allow list would otherwise
+	// surface only at the first host lookup, far from the config.
+	if err := c.NSS.Validate(&c.LDAP); err != nil {
 		return nil, err
 	}
 

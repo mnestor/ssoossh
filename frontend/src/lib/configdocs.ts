@@ -37,6 +37,8 @@ export const configReferencePages: readonly string[] = [
 	'mail',
 	'mail.logging',
 	'mail.smtp',
+	'nss',
+	'nss.attributes',
 	'pubsub',
 	'queue',
 	'ssh_key_agent',
