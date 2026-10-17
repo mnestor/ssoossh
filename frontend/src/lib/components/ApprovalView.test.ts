@@ -539,6 +539,68 @@ describe('ApprovalView', () => {
 			expect(screen.queryByTestId('own-account-notice')).not.toBeInTheDocument();
 		});
 
+		// #192: the Principals row showed detail.principals, the requester's
+		// own name, while the certificate is issued to the account picked
+		// here. The row has to show what will be signed.
+		describe('the Principals row', () => {
+			/** principalsRow is the value cell beside the Principals label. */
+			function principalsRow(): HTMLElement {
+				return screen.getByText('Principals', { selector: 'dt' }).nextElementSibling as HTMLElement;
+			}
+
+			it('should point at the account select before one is chosen', () => {
+				mount({ detail: serviceDetail, serviceAccounts: ['svc-a'] });
+				expect(principalsRow()).toHaveTextContent('the account you select below');
+			});
+
+			it('should not show the requester as the principal', () => {
+				mount({ detail: serviceDetail, serviceAccounts: ['svc-a'] });
+				expect(principalsRow()).not.toHaveTextContent('alice');
+			});
+
+			it('should show the chosen service account', async () => {
+				mount({ detail: serviceDetail, serviceAccounts: ['svc-a', 'svc-b'] });
+				await userEvent.selectOptions(screen.getByRole('combobox'), 'svc-b');
+				expect(principalsRow()).toHaveTextContent(/^svc-b$/);
+			});
+
+			it('should keep showing the chosen account after approval', () => {
+				mount({
+					detail: serviceDetail,
+					serviceAccounts: ['svc-a'],
+					selectedServiceAccount: 'svc-a',
+					outcome: 'approved'
+				});
+				expect(principalsRow()).toHaveTextContent(/^svc-a$/);
+			});
+
+			it('should read the account back from the decision on a decided request', () => {
+				mount({
+					detail: detail({
+						type: 'service',
+						status: 'enrolled',
+						already_closed: true,
+						decided_at: '2026-08-14T09:01:00Z',
+						decided_principals: ['svc-deploy']
+					})
+				});
+				expect(principalsRow()).toHaveTextContent(/^svc-deploy$/);
+			});
+
+			it.each([{ status: 'denied' as const }, { status: 'expired' as const }])(
+				'should say none on a $status request',
+				({ status }) => {
+					mount({ detail: detail({ type: 'service', status, already_closed: true }) });
+					expect(principalsRow()).toHaveTextContent(/^none$/);
+				}
+			);
+
+			it('should say none when the approver has no account to pick', () => {
+				mount({ detail: serviceDetail, serviceAccounts: [] });
+				expect(principalsRow()).toHaveTextContent(/^none$/);
+			});
+		});
+
 		it('should still allow approving an own account', async () => {
 			const { onapprove } = mount({
 				detail: serviceDetail,

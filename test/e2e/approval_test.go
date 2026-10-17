@@ -3,6 +3,7 @@
 package e2e
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -145,5 +146,41 @@ func TestApproval_StatusBadgeFollowsTheDecision(t *testing.T) {
 	// The badge is CSS-capitalised, and Text reads the rendered text.
 	if got := browser.Text(t, `[data-testid="request-status"]`); !strings.EqualFold(got, "approved") {
 		t.Errorf("status badge after Approve = %q, want approved", got)
+	}
+}
+
+// #192: on a service request the Principals row named the requester, while
+// the certificate goes to the service account chosen on the page. In a
+// real browser against the real server, the row has to follow the select
+// and keep the chosen account once the approval is recorded.
+func TestApproval_ServiceRequestNamesTheChosenAccountAsPrincipal(t *testing.T) {
+	f := newServiceFixture(t)
+	browser := harness.StartBrowser(t)
+
+	keyPath := filepath.Join(t.TempDir(), "svckey")
+	proc := harness.StartClient(t, f.Bin, harness.ClientOptions{
+		Args: []string{"service", "enroll", "--key", keyPath, "--server", f.Server.BaseURL},
+	})
+
+	browser.Navigate(t, proc.ApprovalURL(t, waitFor), `[data-testid="sign-in-button"]`)
+	browser.Click(t, `[data-testid="sign-in-button"]`)
+	browser.CompleteIdPLoginWithExtraClaims(t, "alice",
+		map[string]any{serviceAccountClaim: []string{f.Account}})
+
+	browser.WaitVisible(t, `[data-testid="service-principal-pending"]`)
+
+	browser.SelectValue(t, `[data-testid="service-account-select"]`, f.Account)
+	if got := browser.Text(t, `[data-testid="service-principal"]`); got != f.Account {
+		t.Errorf("Principals row after selecting = %q, want %q", got, f.Account)
+	}
+
+	browser.Click(t, `[data-testid="approve-button"]`)
+	browser.WaitVisible(t, `[data-testid="outcome-approved"]`)
+	if got := browser.Text(t, `[data-testid="service-principal"]`); got != f.Account {
+		t.Errorf("Principals row after approval = %q, want %q", got, f.Account)
+	}
+
+	if err := proc.Wait(t, waitFor); err != nil {
+		t.Fatalf("service enroll failed: %v\nstderr:\n%s", err, proc.Stderr())
 	}
 }
