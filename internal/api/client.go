@@ -104,6 +104,12 @@ type Config struct {
 	// pinned mode (see TLSCAFile).
 	TLSSPKIPins []string
 
+	// KeyID and KeySecret are a fleet key, sent as the X-Ssoossh-Key-Id and
+	// X-Ssoossh-Key-Secret headers on the NSS lookups and on no other call.
+	// The secret is redacted from tracing like an Authorization header.
+	KeyID     string
+	KeySecret string
+
 	// RequestTimeout bounds each ordinary (non-streaming) call, from
 	// connect to the last byte of the response. Zero means
 	// DefaultRequestTimeout. The events stream is not affected: ssoosshd
@@ -159,6 +165,11 @@ type HTTPClient struct {
 	// direct is set in pinned mode: every transport this client builds
 	// ignores the proxy environment.
 	direct bool
+
+	// keyID and keySecret are Config.KeyID and Config.KeySecret, sent only
+	// by the NSS lookups.
+	keyID     string
+	keySecret string
 }
 
 var _ Client = (*HTTPClient)(nil)
@@ -200,6 +211,8 @@ func NewClient(cfg Config) (*HTTPClient, error) {
 		userAgent: fmt.Sprintf("%s/%s (%s)", version.Name, version.Version, version.Github),
 		log:       cfg.Logger,
 		direct:    cfg.pinned(),
+		keyID:     cfg.KeyID,
+		keySecret: cfg.KeySecret,
 	}, nil
 }
 
@@ -253,9 +266,40 @@ func (c *HTTPClient) doJSON(ctx context.Context, method, path string, body, out 
 		}
 	}
 
-	req, err := c.newRequest(ctx, method, c.apiURL(path), payload)
+	resp, err := c.send(ctx, method, path, payload, nil)
 	if err != nil {
 		return err
+	}
+	if resp.status >= 300 {
+		return decodeResponseError(resp.status, resp.body)
+	}
+	if err := json.Unmarshal(resp.body, out); err != nil {
+		return &undecodableError{contentType: resp.header.Get("Content-Type"), err: err}
+	}
+	return nil
+}
+
+// response is one ordinary call's answer with its body read in full. The
+// body is already closed, which is why this is not an *http.Response.
+type response struct {
+	status int
+	header http.Header
+	body   []byte
+}
+
+// send makes one ordinary call and reads the whole response, whatever its
+// status. header carries request headers beyond the standard ones (the NSS
+// lookups' fleet key); nil means none. They are traced like the rest,
+// through tracelog's redaction.
+func (c *HTTPClient) send(ctx context.Context, method, path string, payload []byte, header http.Header) (*response, error) {
+	req, err := c.newRequest(ctx, method, c.apiURL(path), payload)
+	if err != nil {
+		return nil, err
+	}
+	for name, values := range header {
+		for _, v := range values {
+			req.Header.Add(name, v)
+		}
 	}
 
 	c.traceRequest(ctx, req, payload)
@@ -263,26 +307,20 @@ func (c *HTTPClient) doJSON(ctx context.Context, method, path string, body, out 
 	start := time.Now()
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return c.describeTransportError(err)
+		return nil, c.describeTransportError(err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	// Read in full before deciding anything: the same bytes are both what
 	// gets traced and what gets decoded, as either a result or an error
 	// body.
-	respBody, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("read response body: %w", c.describeTransportError(err))
+		return nil, fmt.Errorf("read response body: %w", c.describeTransportError(err))
 	}
-	c.traceResponse(ctx, resp, respBody, time.Since(start))
+	c.traceResponse(ctx, resp, body, time.Since(start))
 
-	if resp.StatusCode >= 300 {
-		return decodeResponseError(resp.StatusCode, respBody)
-	}
-	if err := json.Unmarshal(respBody, out); err != nil {
-		return &undecodableError{contentType: resp.Header.Get("Content-Type"), err: err}
-	}
-	return nil
+	return &response{status: resp.StatusCode, header: resp.Header, body: body}, nil
 }
 
 // newRequest builds a request carrying this client's standard headers.
