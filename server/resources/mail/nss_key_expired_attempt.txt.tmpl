@@ -1,0 +1,21 @@
+An expired secret for NSS key {{ .KeyName }} ({{ .KeyID }}) was presented from
+{{ .SourceIP }}. It was refused, and no account was looked up with it.
+
+Either a host still holds the old secret and needs a new key, or the key has
+leaked and is still being used. If you do not recognise that address, treat
+the key as leaked and replace it with a new key.
+
+  Attempted at      {{ datetime .AttemptedAt }}
+  Key expired       {{ datetime .ExpiredAt }}
+{{ if .Advanced }}
+DETAILS
+
+  Key ID            {{ .KeyID }}
+  Source address    {{ .SourceIP }}
+{{ end }}
+You will not hear about this key again for a while, however often the attempt
+repeats.
+
+Sent to the notification address of NSS key {{ .KeyName }}, which defaults to
+its creator. This message is always sent: it is not a notification preference
+and cannot be turned off.

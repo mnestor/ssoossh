@@ -1,0 +1,15 @@
+{{ if .RevokedByName }}{{ .RevokedByName }} ({{ .RevokedByUsername }}){{ else }}{{ .RevokedByUsername }}{{ end }} revoked NSS key {{ .KeyName }} ({{ .KeyID }}) at {{ datetime .RevokedAt }}.
+
+From then on, every host that presents this key's secret is refused, and a host
+that still uses it stops resolving accounts. Give those hosts a new key. If the
+revocation was not intended, create a new key and deploy it in place of this one.
+
+  Revoked at        {{ datetime .RevokedAt }}
+{{ if .Advanced }}
+DETAILS
+
+  Key ID            {{ .KeyID }}
+{{ end }}
+Sent to the notification address of NSS key {{ .KeyName }}, which defaults to
+its creator. This message is always sent: it is not a notification preference
+and cannot be turned off.

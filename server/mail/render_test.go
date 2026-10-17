@@ -12,6 +12,18 @@ import (
 	"github.com/mnestor/ssoossh/server/notify"
 )
 
+// nssKeyKinds are the fleet key kinds. Their mail names the key by name and
+// id at both detail levels, unlike the credential kinds, because an operator
+// who receives one has no other way to tell which key it concerns.
+var nssKeyKinds = []notify.Kind{
+	notify.KindNSSKeyExpiring,
+	notify.KindNSSKeyRotationCleanup,
+	notify.KindNSSKeyExpiredAttempt,
+	notify.KindNSSKeyRevokedAttempt,
+	notify.KindNSSKeyRotated,
+	notify.KindNSSKeyRevoked,
+}
+
 // A sample payload per kind, filled in enough that a template referencing
 // any documented field produces something visible.
 func samplePayload(t *testing.T, kind notify.Kind) any {
@@ -122,6 +134,67 @@ func samplePayload(t *testing.T, kind notify.Kind) any {
 			Reenable:     true,
 			SupportEmail: "it-help@example.com",
 			ServerURL:    "https://ssoossh.example.com",
+		}
+	case notify.KindNSSKeyExpiring:
+		return &notify.NSSKeyExpiring{
+			KeyID:       "nss_ABCD2345",
+			KeyName:     "deploy-fleet",
+			Description: "Build hosts",
+			GroupName:   "nss-keys",
+			ExpiresAt:   time.Now().Add(7 * 24 * time.Hour),
+			Daily:       true,
+			ServerURL:   "https://ssoossh.example.com",
+		}
+	case notify.KindNSSKeyRotationCleanup:
+		return &notify.NSSKeyRotationCleanup{
+			KeyID:                "nss_ABCD2345",
+			KeyName:              "deploy-fleet",
+			Generation:           2,
+			RotatedAt:            time.Now().Add(-3 * 24 * time.Hour),
+			PreviousExpiresAt:    time.Now().Add(4 * 24 * time.Hour),
+			Switched:             40,
+			NotSwitched:          3,
+			Gone:                 1,
+			NotSwitchedAddresses: []string{"10.0.0.5", "10.0.0.6"},
+			MoreNotSwitched:      1,
+			ServerURL:            "https://ssoossh.example.com",
+		}
+	case notify.KindNSSKeyExpiredAttempt:
+		return &notify.NSSKeyExpiredAttempt{
+			KeyID:       "nss_ABCD2345",
+			KeyName:     "deploy-fleet",
+			SourceIP:    "198.51.100.7",
+			AttemptedAt: time.Now(),
+			ExpiredAt:   time.Now().Add(-24 * time.Hour),
+			ServerURL:   "https://ssoossh.example.com",
+		}
+	case notify.KindNSSKeyRevokedAttempt:
+		return &notify.NSSKeyRevokedAttempt{
+			KeyID:       "nss_ABCD2345",
+			KeyName:     "deploy-fleet",
+			SourceIP:    "198.51.100.7",
+			AttemptedAt: time.Now(),
+			RevokedAt:   time.Now().Add(-48 * time.Hour),
+			ServerURL:   "https://ssoossh.example.com",
+		}
+	case notify.KindNSSKeyRotated:
+		return &notify.NSSKeyRotated{
+			KeyID:             "nss_ABCD2345",
+			KeyName:           "deploy-fleet",
+			Generation:        2,
+			RotatedAt:         time.Now(),
+			RotatedByUsername: "alice",
+			RotatedByName:     "Alice Admin",
+			PreviousExpiresAt: time.Now().Add(30 * 24 * time.Hour),
+			ServerURL:         "https://ssoossh.example.com",
+		}
+	case notify.KindNSSKeyRevoked:
+		return &notify.NSSKeyRevoked{
+			KeyID:             "nss_ABCD2345",
+			KeyName:           "deploy-fleet",
+			RevokedAt:         time.Now(),
+			RevokedByUsername: "alice",
+			ServerURL:         "https://ssoossh.example.com",
 		}
 	default:
 		t.Fatalf("no sample payload for kind %q", kind)
@@ -670,6 +743,8 @@ func TestRender_shouldLeaveTheSetupRecipeToTheTerminal(t *testing.T) {
 // The simplified message keeps what the reader needs to recognise the event;
 // the key ID is one of the ids only the advanced one carries, in every kind
 // that has one. A kind about an account rather than a credential has none.
+// The fleet key kinds are the exception and are checked by
+// TestRender_shouldNameTheFleetKeyAtEachLevel.
 func TestRender_shouldCarryTheKeyIDOnlyAtTheAdvancedLevel(t *testing.T) {
 	r, err := NewRenderer("", "")
 	if err != nil {
@@ -678,6 +753,9 @@ func TestRender_shouldCarryTheKeyIDOnlyAtTheAdvancedLevel(t *testing.T) {
 
 	for _, def := range notify.Definitions() {
 		if !slices.ContainsFunc(def.Fields, func(f notify.Field) bool { return f.Name == "KeyID" }) {
+			continue
+		}
+		if slices.Contains(nssKeyKinds, def.Kind) {
 			continue
 		}
 		for _, tc := range []struct {
