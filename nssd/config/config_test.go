@@ -68,7 +68,7 @@ refresh_rate: 0.5
 cache_expire_offline: 24h
 login_soft_ttl: 10s
 login_refresh_timeout: 500ms
-sshd_paths: [/usr/sbin/sshd]
+sshd_units: [sshd.service]
 min_id: 2000
 max_id: 60000
 override_gid: 100
@@ -109,6 +109,7 @@ require_groups: [staff]
 		{"user ttl", c.TTLUser() == 5*time.Minute},
 		{"group ttl", c.TTLGroup() == 1500*time.Millisecond},
 		{"explicit sweep", c.SweepInterval() == time.Minute},
+		{"sshd units", slices.Equal(c.SSHDUnits, []string{"sshd.service"})},
 	}
 	for _, check := range checks {
 		if !check.ok {
@@ -189,28 +190,6 @@ func TestLoadShouldUseTheHostDomainWhenNoneIsConfigured(t *testing.T) {
 	}
 }
 
-func TestLoadShouldResolveSSHDSymlinksWhenAPathIsALink(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	real := writeFile(t, dir, "sshd-real", "", 0o755)
-	link := filepath.Join(dir, "sshd")
-	if err := os.Symlink(real, link); err != nil {
-		t.Fatal(err)
-	}
-	missing := filepath.Join(dir, "absent")
-	yaml := minimalYAML + "sshd_paths: [" + link + ", " + missing + ", " + link + "]\n"
-	path := writeFile(t, dir, "nss.yaml", yaml, 0o600)
-
-	c, err := load(path, os.Geteuid(), noDomain)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []string{link, real, missing}
-	if !slices.Equal(c.SSHDExecutables, want) {
-		t.Fatalf("got %v, want %v", c.SSHDExecutables, want)
-	}
-}
-
 func TestValidate(t *testing.T) {
 	t.Parallel()
 
@@ -249,6 +228,11 @@ func TestValidate(t *testing.T) {
 		{name: "should refuse a relative disabled shell when it must be absolute", mutate: func(c *Config) { c.DisabledShell = "nologin" }, wantErr: "disabled_shell"},
 		{name: "should refuse a relative allowed shell when it must be absolute", mutate: func(c *Config) { c.AllowedShells = []string{"bash"} }, wantErr: "allowed_shells"},
 		{name: "should refuse a relative shell map path when it must be absolute", mutate: func(c *Config) { c.ShellMap = map[string]string{"zsh": "zsh"} }, wantErr: "shell_map"},
+		{name: "should accept a template unit when it ends in @.service", mutate: func(c *Config) { c.SSHDUnits = []string{"sshd@.service"} }},
+		{name: "should refuse a unit that is not a service when it ends otherwise", mutate: func(c *Config) { c.SSHDUnits = []string{"sshd.socket"} }, wantErr: "sshd_units"},
+		{name: "should refuse a bare template when it has no name", mutate: func(c *Config) { c.SSHDUnits = []string{"@.service"} }, wantErr: "sshd_units"},
+		{name: "should refuse a unit with a slash when it is a path", mutate: func(c *Config) { c.SSHDUnits = []string{"system.slice/sshd.service"} }, wantErr: "sshd_units"},
+		{name: "should refuse a unit with a space when it cannot be a unit name", mutate: func(c *Config) { c.SSHDUnits = []string{"ss hd.service"} }, wantErr: "sshd_units"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -344,11 +328,11 @@ func TestValidPath(t *testing.T) {
 	}
 }
 
-func TestDefaultSSHDPathsShouldReturnAFreshSliceWhenCalledTwice(t *testing.T) {
+func TestDefaultSSHDUnitsShouldReturnAFreshSliceWhenCalledTwice(t *testing.T) {
 	t.Parallel()
-	a := DefaultSSHDPaths()
-	a[0] = "/tmp/evil"
-	if DefaultSSHDPaths()[0] != "/usr/sbin/sshd" {
-		t.Fatal("a caller changed the default for everyone")
+	a := DefaultSSHDUnits()
+	a[0] = "evil.service"
+	if got := DefaultSSHDUnits(); !slices.Equal(got, []string{"sshd.service", "ssh.service", "sshd@.service", "ssh@.service"}) {
+		t.Fatalf("a caller changed the default for everyone: %v", got)
 	}
 }

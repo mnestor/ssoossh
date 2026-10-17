@@ -87,7 +87,8 @@ const maxDebounce = 10000
 type Peer struct {
 	// UID is the caller's uid from SO_PEERCRED.
 	UID uint32
-	// SSHD is set when the caller is uid 0 running one of sshd_paths.
+	// SSHD is set when the caller is uid 0 and its systemd cgroup is one
+	// of sshd_units.
 	SSHD bool
 }
 

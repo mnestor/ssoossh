@@ -47,21 +47,14 @@ const (
 	UserdbSocket = "/run/systemd/userdb/com.github.mnestor.ssoossh"
 )
 
-// DefaultSSHDPaths is the sshd_paths default: the binaries that run as uid
-// 0 and call getpwnam for a login, measured on Debian 12 and 13, Ubuntu
-// 20.04 to 24.04, Rocky 9 and 10, Fedora 44, Arch and Leap 15.6.
-// sshd-auth is left out because it never runs as uid 0, and
-// /usr/sbin/sshd-session because no distribution ships it. One function
-// returning a fresh slice, not a package variable, so no caller can change
-// the default for another.
-func DefaultSSHDPaths() []string {
-	return []string{
-		"/usr/sbin/sshd",
-		"/usr/bin/sshd",
-		"/usr/lib/openssh/sshd-session",
-		"/usr/libexec/openssh/sshd-session",
-		"/usr/lib/ssh/sshd-session",
-	}
+// DefaultSSHDUnits is the sshd_units default: the systemd units sshd runs
+// as on the distributions measured. An entry ending in "@.service" is a
+// template and matches every instance of it, which is how a socket
+// activated sshd runs each connection. One function returning a fresh
+// slice, not a package variable, so no caller can change the default for
+// another.
+func DefaultSSHDUnits() []string {
+	return []string{"sshd.service", "ssh.service", "sshd@.service", "ssh@.service"}
 }
 
 // Cache modes.
@@ -127,9 +120,9 @@ type Config struct {
 	LoginSoftTTL time.Duration `mapstructure:"login_soft_ttl"`
 	// LoginRefreshTimeout bounds that synchronous refresh.
 	LoginRefreshTimeout time.Duration `mapstructure:"login_refresh_timeout"`
-	// SSHDPaths are the executables a uid 0 peer must be running to count
-	// as sshd.
-	SSHDPaths []string `mapstructure:"sshd_paths"`
+	// SSHDUnits are the systemd units a uid 0 peer's cgroup must name to
+	// count as sshd; "name@.service" matches any instance of the template.
+	SSHDUnits []string `mapstructure:"sshd_units"`
 
 	// MinID and MaxID bound every uid and gid served; MaxID 0 means none.
 	MinID uint32 `mapstructure:"min_id"`
@@ -164,11 +157,6 @@ type Config struct {
 	// empty: what SRV discovery queries and what %d expands to. Resolved
 	// at load, never read from the file.
 	Domain string `mapstructure:"-"`
-	// SSHDExecutables is SSHDPaths with each entry's symlinks resolved
-	// added beside it. /proc/<pid>/exe always names the real file, so on
-	// Fedora and Arch, where /usr/sbin links to bin, /usr/sbin/sshd has to
-	// match /usr/bin/sshd. Resolved at load, never read from the file.
-	SSHDExecutables []string `mapstructure:"-"`
 }
 
 // Defaults returns the configuration a file that sets nothing gets: the
@@ -187,7 +175,7 @@ func Defaults() Config {
 		RefreshRate:                2,
 		LoginSoftTTL:               60 * time.Second,
 		LoginRefreshTimeout:        time.Second,
-		SSHDPaths:                  DefaultSSHDPaths(),
+		SSHDUnits:                  DefaultSSHDUnits(),
 		MinID:                      1000,
 		FallbackHomedir:            "/home/%u",
 		ShellFallback:              "/bin/sh",
@@ -234,7 +222,6 @@ func load(path string, euid int, domainOf func() string) (*Config, error) {
 	if c.Domain == "" {
 		c.Domain = domainOf()
 	}
-	c.SSHDExecutables = resolveExecutables(c.SSHDPaths)
 
 	if err := c.Validate(); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
@@ -259,23 +246,6 @@ func secondsToDurationHook() mapstructure.DecodeHookFuncType {
 			return data, nil
 		}
 	}
-}
-
-// resolveExecutables returns paths plus, for each one whose symlinks
-// resolve to somewhere else, the resolved form too, without duplicates. A
-// path that does not exist on this host is kept as configured and is not
-// an error: the default list names every distribution's sshd.
-func resolveExecutables(paths []string) []string {
-	out := make([]string, 0, 2*len(paths))
-	for _, p := range paths {
-		if !slices.Contains(out, p) {
-			out = append(out, p)
-		}
-		if real, err := filepath.EvalSymlinks(p); err == nil && !slices.Contains(out, real) {
-			out = append(out, real)
-		}
-	}
-	return out
 }
 
 // TTLUser is the effective user TTL.
@@ -446,7 +416,6 @@ func (c *Config) validatePaths(add func(string, ...any)) {
 	lists := map[string][]string{
 		"allowed_shells": c.AllowedShells,
 		"vetoed_shells":  c.VetoedShells,
-		"sshd_paths":     c.SSHDPaths,
 	}
 	for _, name := range slices.Sorted(maps.Keys(lists)) {
 		for _, p := range lists[name] {
@@ -460,6 +429,20 @@ func (c *Config) validatePaths(add func(string, ...any)) {
 			add("shell_map %s: %q must be an absolute path", name, c.ShellMap[name])
 		}
 	}
+	for _, unit := range c.SSHDUnits {
+		if !validUnitName(unit) {
+			add("sshd_units entry %q must be a unit name ending in .service", unit)
+		}
+	}
+}
+
+// validUnitName reports whether unit can name a service a cgroup path
+// ends in: "x.service" or the template "x@.service", with no path
+// separator.
+func validUnitName(unit string) bool {
+	stem, ok := strings.CutSuffix(unit, ".service")
+	return ok && stem != "" && stem != "@" && !strings.Contains(unit, "/") &&
+		!strings.ContainsFunc(unit, func(r rune) bool { return r <= ' ' || r == 0x7f })
 }
 
 // ValidPath reports whether p can be a passwd home or shell: absolute,
