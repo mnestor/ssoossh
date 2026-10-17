@@ -196,6 +196,103 @@ table notification_preferences
   fk user_id -> users.id
   index idx_notification_preferences_user_kind CREATE UNIQUE INDEX idx_notification_preferences_user_kind ON public.notification_preferences USING btree (user_id, kind)
   index notification_preferences_pkey CREATE UNIQUE INDEX notification_preferences_pkey ON public.notification_preferences USING btree (id)
+table nss_alerts
+  column kind type=text nullable=false default=<none>
+  column last_raised_at type=timestamp with time zone nullable=false default=<none>
+  column subject type=text nullable=false default=<none>
+  index nss_alerts_pkey CREATE UNIQUE INDEX nss_alerts_pkey ON public.nss_alerts USING btree (kind, subject)
+table nss_key_usage
+  column day type=timestamp with time zone nullable=false default=<none>
+  column first_seen type=timestamp with time zone nullable=false default=<none>
+  column generation type=integer nullable=false default=<none>
+  column key_id type=text nullable=false default=<none>
+  column last_seen type=timestamp with time zone nullable=false default=<none>
+  column lookups type=bigint nullable=false default=0
+  column misses type=bigint nullable=false default=0
+  column source_ip type=text nullable=false default=<none>
+  fk key_id -> nss_keys.id
+  index idx_nss_key_usage_day CREATE INDEX idx_nss_key_usage_day ON public.nss_key_usage USING btree (day)
+  index idx_nss_key_usage_key_day CREATE INDEX idx_nss_key_usage_key_day ON public.nss_key_usage USING btree (key_id, day)
+  index nss_key_usage_pkey CREATE UNIQUE INDEX nss_key_usage_pkey ON public.nss_key_usage USING btree (key_id, source_ip, generation, day)
+table nss_keys
+  column created_at type=timestamp with time zone nullable=false default=<none>
+  column created_by type=text nullable=false default=<none>
+  column current_generation type=integer nullable=false default=1
+  column description type=text nullable=false default=''::text
+  column expires_at type=timestamp with time zone nullable=false default=<none>
+  column expiry_reminder_sent_at type=timestamp with time zone nullable=true default=<none>
+  column group_name type=text nullable=false default=''::text
+  column id type=text nullable=false default=<none>
+  column last_expired_attempt_notified_at type=timestamp with time zone nullable=true default=<none>
+  column name type=text nullable=false default=<none>
+  column notification_email type=text nullable=false default=''::text
+  column previous_expires_at type=timestamp with time zone nullable=true default=<none>
+  column previous_secret_hash type=text nullable=true default=<none>
+  column revoked_at type=timestamp with time zone nullable=true default=<none>
+  column revoked_by type=text nullable=true default=<none>
+  column rotated_at type=timestamp with time zone nullable=true default=<none>
+  column rotation_cleanup_sent_at type=timestamp with time zone nullable=true default=<none>
+  column secret_hash type=text nullable=false default=<none>
+  column updated_at type=timestamp with time zone nullable=false default=<none>
+  fk created_by -> users.id
+  fk revoked_by -> users.id
+  index nss_keys_pkey CREATE UNIQUE INDEX nss_keys_pkey ON public.nss_keys USING btree (id)
+table posix_group_members
+  column gid type=bigint nullable=false default=<none>
+  column uid type=bigint nullable=false default=<none>
+  index idx_posix_group_members_uid CREATE INDEX idx_posix_group_members_uid ON public.posix_group_members USING btree (uid)
+  index posix_group_members_pkey CREATE UNIQUE INDEX posix_group_members_pkey ON public.posix_group_members USING btree (gid, uid)
+table posix_groups
+  column created_at type=timestamp with time zone nullable=false default=<none>
+  column deleted_at type=timestamp with time zone nullable=true default=<none>
+  column directory_id type=text nullable=false default=''::text
+  column dn type=text nullable=false default=''::text
+  column gid type=bigint nullable=false default=<none>
+  column id type=text nullable=false default=<none>
+  column last_synced_at type=timestamp with time zone nullable=true default=<none>
+  column missing_since type=timestamp with time zone nullable=true default=<none>
+  column name type=text nullable=false default=<none>
+  column pending_gid type=bigint nullable=true default=<none>
+  column pending_since type=timestamp with time zone nullable=true default=<none>
+  column synthetic type=boolean nullable=false default=false
+  column updated_at type=timestamp with time zone nullable=false default=<none>
+  column withheld_at type=timestamp with time zone nullable=true default=<none>
+  column withheld_reason type=text nullable=false default=''::text
+  index idx_posix_groups_directory_id CREATE INDEX idx_posix_groups_directory_id ON public.posix_groups USING btree (directory_id) WHERE (directory_id <> ''::text)
+  index idx_posix_groups_dn CREATE INDEX idx_posix_groups_dn ON public.posix_groups USING btree (dn) WHERE (dn <> ''::text)
+  index idx_posix_groups_gid CREATE UNIQUE INDEX idx_posix_groups_gid ON public.posix_groups USING btree (gid)
+  index idx_posix_groups_name CREATE UNIQUE INDEX idx_posix_groups_name ON public.posix_groups USING btree (name)
+  index posix_groups_pkey CREATE UNIQUE INDEX posix_groups_pkey ON public.posix_groups USING btree (id)
+table posix_users
+  column created_at type=timestamp with time zone nullable=false default=<none>
+  column deleted_at type=timestamp with time zone nullable=true default=<none>
+  column dir_disabled type=boolean nullable=false default=false
+  column directory_id type=text nullable=false default=''::text
+  column dn type=text nullable=false default=<none>
+  column gecos type=text nullable=false default=''::text
+  column gid type=bigint nullable=false default=<none>
+  column home type=text nullable=true default=<none>
+  column id type=text nullable=false default=<none>
+  column last_synced_at type=timestamp with time zone nullable=false default=<none>
+  column missing_since type=timestamp with time zone nullable=true default=<none>
+  column name type=text nullable=false default=<none>
+  column pending_gid type=bigint nullable=true default=<none>
+  column pending_since type=timestamp with time zone nullable=true default=<none>
+  column pending_uid type=bigint nullable=true default=<none>
+  column shell type=text nullable=true default=<none>
+  column shell_pref type=text nullable=true default=<none>
+  column uid type=bigint nullable=false default=<none>
+  column updated_at type=timestamp with time zone nullable=false default=<none>
+  column user_id type=text nullable=true default=<none>
+  column withheld_at type=timestamp with time zone nullable=true default=<none>
+  column withheld_reason type=text nullable=false default=''::text
+  fk user_id -> users.id
+  index idx_posix_users_directory_id CREATE INDEX idx_posix_users_directory_id ON public.posix_users USING btree (directory_id) WHERE (directory_id <> ''::text)
+  index idx_posix_users_dn CREATE UNIQUE INDEX idx_posix_users_dn ON public.posix_users USING btree (dn)
+  index idx_posix_users_name CREATE UNIQUE INDEX idx_posix_users_name ON public.posix_users USING btree (name)
+  index idx_posix_users_uid CREATE UNIQUE INDEX idx_posix_users_uid ON public.posix_users USING btree (uid)
+  index idx_posix_users_user_id CREATE UNIQUE INDEX idx_posix_users_user_id ON public.posix_users USING btree (user_id)
+  index posix_users_pkey CREATE UNIQUE INDEX posix_users_pkey ON public.posix_users USING btree (id)
 table server_secrets
   column created_at type=timestamp with time zone nullable=false default=<none>
   column name type=text nullable=false default=<none>

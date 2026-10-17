@@ -95,3 +95,23 @@ const (
 func (l DetailLevel) Valid() bool {
 	return l == DetailLevelSimplified || l == DetailLevelAdvanced
 }
+
+// PosixStatus is the state an NSS account is served in. Never stored:
+// it is derived each time the account is read (see PosixUser), so a
+// disable anywhere reaches hosts on their next refresh without a second
+// write that could fall out of step.
+type PosixStatus string
+
+const (
+	// PosixStatusActive is an account served normally.
+	PosixStatusActive PosixStatus = "active"
+	// PosixStatusDisabled is an account the linked person's disable
+	// (admin, SOC or the directory sync) or the directory's own disabled
+	// flag has locked. It is still served, with nss.disabled_shell as its
+	// shell.
+	PosixStatusDisabled PosixStatus = "disabled"
+	// PosixStatusDeleted is a tombstone: an entry missing from the
+	// directory for longer than nss.tombstone_after. Served as disabled
+	// until nss.tombstone_retention ends, then not at all.
+	PosixStatusDeleted PosixStatus = "deleted"
+)

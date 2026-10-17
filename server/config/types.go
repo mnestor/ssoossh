@@ -48,6 +48,11 @@ type Config struct {
 	// See LDAPConfig.
 	LDAP LDAPConfig `mapstructure:"ldap"`
 
+	// NSS serves POSIX accounts and groups from the directory to the
+	// ssoosshd-nss daemon on each host, authenticated by fleet API keys.
+	// Disabled by default. See NSSConfig.
+	NSS NSSConfig `mapstructure:"nss"`
+
 	// Admin configures administrative and auditor access. Both group names
 	// are optional; empty disables the corresponding role.
 	Admin AdminConfig `mapstructure:"admin"`
@@ -407,6 +412,16 @@ type AdminConfig struct {
 	// or membership in no granting group, denies.
 	AuditorGroup string `mapstructure:"auditor_group" default:""`
 
+	// NSSKeyGroup is the OIDC group a caller must belong to in order to
+	// administer every NSS fleet API key: create keys, rotate, revoke and
+	// edit any of them, and assign the group that manages a key. Admins
+	// hold this access regardless of this setting, so empty narrows key
+	// administration to admins rather than disabling it. Members of a
+	// key's own group manage that key without this role, and SOC and
+	// auditors keep their own revoke and read access. Fails closed: no
+	// identity, or membership in neither group, denies.
+	NSSKeyGroup string `mapstructure:"nss_key_group" default:""`
+
 	// ContactEmail is superseded by branding.support_email, which is the one
 	// setting for who to ask about this deployment and is shown on the
 	// account-disabled page along with the login page and the footer. It is
@@ -439,6 +454,12 @@ func (a *AdminConfig) IsSOCEnabled() bool {
 	return a.SOCGroup != ""
 }
 
+// IsNSSKeyAdminEnabled reports whether a fleet key administration group
+// is configured (NSSKeyGroup is non-empty).
+func (a *AdminConfig) IsNSSKeyAdminEnabled() bool {
+	return a.NSSKeyGroup != ""
+}
+
 // GrantsAdmin reports whether an identity holding groups has admin-level
 // access. Admin is the root role: it is granted only by membership in the
 // configured admin group, and nothing else confers it. Fails closed: an
@@ -461,6 +482,20 @@ func (a *AdminConfig) GrantsSOC(groups []string) bool {
 		return true
 	}
 	return a.IsSOCEnabled() && containsGroup(groups, a.SOCGroup)
+}
+
+// GrantsNSSKeyAdmin reports whether an identity holding groups may
+// administer every NSS fleet API key. Admins are a superset: admin group
+// membership grants access even when nss_key_group is unconfigured, so
+// leaving it unset narrows key administration to admins rather than
+// locking everyone out. SOC and auditor membership never grant it. Fails
+// closed: empty groups, or membership in neither configured group, denies.
+// The single authority for this rule.
+func (a *AdminConfig) GrantsNSSKeyAdmin(groups []string) bool {
+	if a.GrantsAdmin(groups) {
+		return true
+	}
+	return a.IsNSSKeyAdminEnabled() && containsGroup(groups, a.NSSKeyGroup)
 }
 
 // GrantsAuditor reports whether an identity holding groups has

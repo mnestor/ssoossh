@@ -62,6 +62,19 @@
     ]
   },
   {
+    "label": "nss",
+    "items": [
+      {
+        "label": "Overview",
+        "slug": "reference/config/nss"
+      },
+      {
+        "label": "attributes",
+        "slug": "reference/config/nss/attributes"
+      }
+    ]
+  },
+  {
     "label": "admin",
     "slug": "reference/config/admin"
   },

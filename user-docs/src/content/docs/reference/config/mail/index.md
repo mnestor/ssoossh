@@ -16,6 +16,7 @@ Disabled by default; see https://mnestor.github.io/ssoossh/operations/email-noti
 | [`mail.template_dir`](#template_dir) | string | `empty` |
 | [`mail.expiry_reminder_lead`](#expiry_reminder_lead) | duration | `168h` |
 | [`mail.expired_attempt_window`](#expired_attempt_window) | duration | `24h` |
+| [`mail.rotation_quiet_period`](#rotation_quiet_period) | duration | `168h` |
 | [`mail.smtp.host`](/ssoossh/reference/config/mail/smtp/#host) | string | `localhost` |
 | [`mail.smtp.port`](/ssoossh/reference/config/mail/smtp/#port) | int | `25` |
 | [`mail.smtp.tls`](/ssoossh/reference/config/mail/smtp/#tls) | string | `opportunistic` |
@@ -118,4 +119,17 @@ A window rather than a one-shot because the thing it reports is a retry loop: a 
 ```yaml
 mail:
   expired_attempt_window: 24h
+```
+
+## `rotation_quiet_period`
+
+`duration`, default `168h`
+
+How long after an NSS fleet key is rotated the nss_key_rotation_cleanup digest stays silent, giving hosts time to pick up the new secret on their own. After it, the digest goes out daily while any address still presents the previous secret, and stops when none does or the rotation grace (nss.key_rotation_grace) ends. Zero disables the digest entirely.
+
+A week by default: a fleet that redeploys its configuration weekly has switched by then, and what is left is worth a message.
+
+```yaml
+mail:
+  rotation_quiet_period: 168h
 ```
