@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import type { RequestDetail } from '#lib/api/types.js';
+	import type { RequestDetail, RequestStatus } from '#lib/api/types.js';
 	import {
 		anyTrimmed,
 		approvalBlockedReason,
@@ -156,6 +156,21 @@
 	const isConsoleRequest = $derived(detail.type === 'console');
 	const isServiceRequest = $derived(detail.type === 'service');
 	const isUserRequest = $derived(detail.type === 'user');
+	// The badge follows a decision made on this page. `detail` is the request
+	// as loaded and is not read again after a successful decision, so the
+	// badge used to say pending under an Approved or Denied alert (#191). A
+	// service approval mints its enrollment code at once, which the server
+	// records as enrolled; any other approval reads as approved, matching the
+	// outcome alert.
+	const shownStatus = $derived<RequestStatus>(
+		outcome === 'denied'
+			? 'denied'
+			: outcome === 'approved'
+				? isServiceRequest
+					? 'enrolled'
+					: 'approved'
+				: detail.status
+	);
 	// PAM and console requests authorize a local operation on a host, not an
 	// SSH session, and their certificate is shaped entirely by server config:
 	// the requesting machine minted a throwaway key and asked for nothing, so
@@ -528,7 +543,7 @@
 		     request is in, what kind it is, and which one it is. -->
 		<div class="flex items-center justify-between gap-3 pb-4">
 			<div class="flex items-center gap-2">
-				<StatusBadge status={detail.status} />
+				<StatusBadge status={shownStatus} testid="request-status" />
 				<TypeChip type={detail.type} />
 			</div>
 			{#if !simplified}

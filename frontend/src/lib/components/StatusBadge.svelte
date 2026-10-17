@@ -4,9 +4,11 @@
 
 	interface Props {
 		status: RequestStatus;
+		/** Optional data-testid, for a page whose badge a browser test reads. */
+		testid?: string;
 	}
 
-	let { status }: Props = $props();
+	let { status, testid }: Props = $props();
 
 	// Every status gets an explicit style so a new one added server-side
 	// shows up as unstyled-but-visible rather than silently matching some
@@ -49,6 +51,7 @@
 	class="inline-flex flex-shrink-0 items-center gap-1.5 rounded px-2.5 py-1 text-xs font-semibold capitalize {styles[
 		status
 	] ?? 'bg-surface-muted text-ink-muted'}"
+	data-testid={testid}
 >
 	<Icon name={iconMap[status]} size="xs" class={spin} />
 	{status}

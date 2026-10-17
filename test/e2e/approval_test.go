@@ -4,6 +4,7 @@ package e2e
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mnestor/ssoossh/test/e2e/harness"
@@ -120,6 +121,32 @@ func TestApproval_SecondClientOpeningSameLinkIsRefused(t *testing.T) {
 	third := harness.StartBrowser(t)
 	third.Navigate(t, approvalURL, `[data-testid="claim-cookies-blocked"]`)
 	third.AssertNotPresent(t, `[data-testid="approve-button"]`)
+}
+
+// #191: after Approve the status badge kept saying pending under the
+// Approved alert, because the page does not read the request again after a
+// decision. In a real browser against the real server, the badge has to
+// follow the decision.
+func TestApproval_StatusBadgeFollowsTheDecision(t *testing.T) {
+	f := newFixture(t)
+	browser := harness.StartBrowser(t)
+
+	login := harness.StartLogin(t, f.SsoosshBin, f.Server.BaseURL, f.Agent.Socket)
+	browser.Navigate(t, login.ApprovalURL(t, waitFor), `[data-testid="sign-in-button"]`)
+	browser.Click(t, `[data-testid="sign-in-button"]`)
+	browser.CompleteIdPLogin(t, "alice")
+
+	browser.WaitVisible(t, `[data-testid="approve-button"]`)
+	if got := browser.Text(t, `[data-testid="request-status"]`); !strings.EqualFold(got, "pending") {
+		t.Fatalf("status badge before deciding = %q, want pending", got)
+	}
+
+	browser.Click(t, `[data-testid="approve-button"]`)
+	browser.WaitVisible(t, `[data-testid="outcome-approved"]`)
+	// The badge is CSS-capitalised, and Text reads the rendered text.
+	if got := browser.Text(t, `[data-testid="request-status"]`); !strings.EqualFold(got, "approved") {
+		t.Errorf("status badge after Approve = %q, want approved", got)
+	}
 }
 
 // #192: on a service request the Principals row named the requester, while
