@@ -2,18 +2,22 @@
 
 **Status:** proposal in three implementable parts. Split on 2026-10-10
 with a fourth part for our own NSS module; the host side moved to systemd
-userdb on 2026-10-11 and that part was removed (U1). Decisions taken 2026-10-09 to 2026-10-11 (see [Decisions](#decisions)).
-Nothing built.
+userdb on 2026-10-11 and that part was removed (U1). Reviewed again on
+2026-10-17: POSIX rows re-anchored on the directory entry, LDAP made a
+requirement, names stored verbatim, status derived, attribute mapping and
+a gecos template added (see [Review changes
+(2026-10-17)](#review-changes-2026-10-17)). Decisions taken 2026-10-09 to
+2026-10-17 (see [Decisions](#decisions)). Nothing built.
 
-**Anchors verified at:** `ddeff17` (2026-10-10) for this repo; systemd
-`main` (2026-10-11) for nss-systemd and userdb behaviour. `file:line`
+**Anchors verified at:** `bdb5b175` (2026-10-17) for this repo; systemd
+`main` (2026-10-17) for nss-systemd and userdb behaviour. `file:line`
 references drift; re-check before relying on one.
 
 ## Parts
 
 | # | Document | Repo | Depends on |
 | --- | --- | --- | --- |
-| 1 | [Server API](1-server-api.md): `/api/nss/*`, `user_posix`, LDAP fields, fleet keys, usage table, mail, config | `mnestor/ssoossh` | nothing |
+| 1 | [Server API](1-server-api.md): `/api/nss/*`, `posix_users`, attribute mapping, gecos template, fleet keys, usage table, mail, config | `mnestor/ssoossh` | nothing |
 | 2 | [Server web UI](2-server-webui.md): key admin pages, rotation report, shell preference | `mnestor/ssoossh` (`frontend/`) | 1 |
 | 3 | [NSS daemon](3-nss-daemon.md): `ssoosshd-nss` as a systemd userdb service, `internal/varlink`, packaging, SELinux | `mnestor/ssoossh` | 1 (wire) |
 
@@ -31,15 +35,20 @@ It is the NSS counterpart to `pam_ssoossh`: PAM answers "may this person
 act", NSS answers "what POSIX identity is this name". Login authorization
 stays with SSH certificates. Nothing here issues or validates one.
 
-Server side it is behind `nss.enabled` and defaults off. The host side
-never needs the certificate pipeline.
+Server side it is behind `nss.enabled`, defaults off, and requires
+`ldap.enabled`: every POSIX identity, people and shared or service accounts
+alike, is a directory entry with a uid attribute (decided 2026-10-17). The
+host side never needs the certificate pipeline.
 
 ## What exists today, and what this assumes
 
 | Assumption | Reality in the repos | Effect |
 | --- | --- | --- |
-| No host daemon exists | Correct. `ssoossh host` has only `principals` and `mapping`, both offline; "synced from the server" in `client/cmd/host.go:12` is stale help text. `deploy/ssoossh-agent.service` is the CA's ssh-agent, not a host agent. | Daemon is new (Part 3). |
-| The user model carries POSIX attributes | **Wrong.** LDAP enrichment (`server/service/ldap.go`) maps attributes into `other_accounts`, `service_accounts`, `groups`, `name` and untyped extras. No `uidNumber`, `gidNumber`, `homeDirectory` or `loginShell` anywhere. | New table and LDAP destinations (Part 1). |
+| No host daemon exists | Correct. `ssoossh host` has `principals`, `mapping` and `check`, all offline; its help text already says nothing is synced from the server. `deploy/ssoossh-agent.service` is the CA's ssh-agent, not a host agent. | Daemon is new (Part 3). |
+| The user model carries POSIX attributes | **Wrong.** LDAP enrichment (`server/service/ldap.go`) maps attributes into `other_accounts`, `service_accounts`, `groups`, `name` and untyped extras. No `uidNumber`, `gidNumber`, `homeDirectory` or `loginShell` anywhere. | New table and attribute mapping (Part 1). |
+| A POSIX row can hang off `users` | **Wrong** (2026-10-17 review). `users.subject` is NOT NULL and unique and only an OIDC login writes it; shared and service accounts never log in, so a table 1:1 with `users` can never hold them. `user_ldap` already anchors a person on `directory_id` and `dn`. | `posix_users` is unique on uid, anchored on the directory entry, with an optional link to `users` (Part 1, R22). |
+| POSIX attributes may arrive as OIDC claims | Possible in principle, but shared and service accounts have no token, so an OIDC-only directory can never be complete. | NSS requires `ldap.enabled`; no claim source (R36). |
+| Request logging has a header redaction list | **Wrong** (2026-10-17 review). Neither the request log nor the audit log captures headers. | The NSS handler and the `internal/api` trace must never log the key secret (Part 1, Part 3; R34). |
 | Hosts authenticate to the server | **Wrong.** Clients send no credential; context is "a claim, not a control" (`internal/apitypes/certrequest.go`). | Fleet API keys (Part 1). |
 | `internal/api` has TLS pinning and SRV discovery the daemon can reuse | **Wrong** (found in the 2026-10-10 review). `internal/api.Config` has `ServerURL` and `SkipVerifySSL` only; its comment says "no additional pinning". No `LookupSRV` anywhere in `internal/`, `client/` or `server/`. | Pinning, SRV and key headers are new work in `internal/api` (Part 3). |
 | `docs/wire-contract.json` can carry the socket protocol | **Wrong** (review). It is generated by `make wire-contract`, "Do not hand-edit", and lists HTTP endpoints. | Moot since 2026-10-11: the host speaks systemd's documented userdb API (U1); there is no private socket protocol. |
@@ -64,13 +73,39 @@ priority order:
    (U4), so the daemon must always answer fast.
 5. Local users abusing the world-writable userdb socket: forcing upstream
    traffic, or impersonating `sshd` to force synchronous refreshes.
+   Impersonation is closed by R5 and refresh floods by R6. Cold misses for
+   made-up names are accepted as they are with sssd (R33): the concurrency
+   cap bounds the host, the server's per-key miss alert is the signal, and
+   no per-uid budget is built unless an operator asks.
 6. Environment overrides in setuid callers (U9). `nss-systemd` reads
    `SYSTEMD_BYPASS_USERDB` and `SYSTEMD_ONLY_USERDB` with plain `getenv`
    (`src/shared/userdb.c:670-688`), so a local user can hide this service
    from a setuid program they start. The result is fail-closed (user
    unknown, fewer groups) except for rules that **deny** by directory
    group, such as sudoers `!%group`. Do not use directory groups in deny
-   rules.
+   rules. `SYSTEMD_NSS_SERVER_SIDE_NSS=1` (U13) instead routes the
+   caller's lookups through `systemd-userdbd`, so the peer the daemon sees
+   is `systemd-userwork`, not sshd: the sshd freshness refresh (R5) is
+   skipped and the entry ages out at the normal TTL. Fail-safe.
+7. Directory data shaped into passwd fields. `gecos` is rendered from a
+   template over directory attributes (R35); a `:` or a newline in it
+   would corrupt `getent` output and anything that parses it. The server
+   sanitises the rendered value before storing it, and `nss-systemd`
+   mangles anything that still fails `valid_gecos()`
+   (`src/shared/user-record.c:265-293`), so the worst case is a mangled
+   display name, never a broken record. Names are validated with the same
+   rules `nss-systemd` applies before it calls any service (R23).
+8. A uid or gid moved in the directory. Files on every host belong to the
+   number, not the name: a changed `uidNumber` orphans everything the
+   person owns, and a reused one hands it to whoever gets the number next.
+   sssd follows the directory. This design does not (R38): a stored uid or
+   primary gid never changes on sync, a differing directory value is held
+   as a pending change with a daily alert until an admin accepts it, and a
+   tombstoned uid stays reserved for `tombstone_retention`.
+9. Two entries with one name. `getpwnam` returns one record, so a second
+   claimant to a login name is either a directory mistake or an attempt to
+   receive someone's logins. Neither entry is served while it lasts (R39),
+   the same fail-closed rule as a shared uid.
 
 Every lookup requires a fleet API key, so exposure is that of LDAP with a
 shared bind account (the usual sssd deployment), not anonymous bind. Any
@@ -143,7 +178,9 @@ lists console mode as unverified against a real server.
 Taken 2026-10-09 and 2026-10-10:
 
 - ~~Module language: C.~~ Superseded 2026-10-11: no module (U1).
-- POSIX fields: separate `user_posix` table; `users` unchanged.
+- ~~POSIX fields: separate `user_posix` table; `users` unchanged.~~
+  Superseded 2026-10-17: `posix_users`, unique on uid and anchored on the
+  directory entry; `users` is still unchanged (R22).
 - Reverse lookup by uid (`/user/uid/:uid`): kept, unrestricted; the key is
   the control.
 - SOC may revoke NSS keys and read their logs; not create or rotate.
@@ -167,7 +204,8 @@ Taken 2026-10-09 and 2026-10-10:
   `/group/name/:name`, `/group/gid/:gid`), not query strings. Kept
   explicit even though all-numeric names are now rejected (R17), so the
   original disambiguation reason no longer applies; see README R17.
-- Names: all-numeric user and group names are rejected (2026-10-10).
+- Names: all-numeric user and group names are rejected (2026-10-10). Still
+  true under the relaxed rules adopted 2026-10-17 (R23).
 - Daemon source: new top-level `/nssd` (2026-10-10).
 - Rate limiting: per `(key_id, source IP)` with the connection's IP, never a
   header; per-key miss rate alerts, never blocks.
@@ -193,6 +231,40 @@ Taken 2026-10-11:
   across daemon restarts.
 - Disabled and deleted users: `locked: true` plus `disabled_shell` (U6).
 
+Taken 2026-10-17:
+
+- LDAP is required: `nss.enabled` with `ldap.enabled: false` is a startup
+  error. No OIDC claim source for POSIX attributes (R36).
+- POSIX rows anchor on the directory entry: `posix_users` unique on `uid`,
+  carrying `directory_id` and `dn`, with a nullable `user_id` that the
+  login path sets through the existing LDAP resolution (R22). Shared and
+  service accounts are rows with no `user_id`. `users.subject` is opaque
+  to NSS and is never read as a uid (R37).
+- Status is derived, never stored as its own state machine: `deleted_at`,
+  then `users.disabled_at` of the linked person (any source), then the
+  directory's own disabled flag (R24).
+- Names are stored verbatim and matched byte for byte on both sides. The
+  R17 regex is replaced by the relaxed rules `nss-systemd` itself applies,
+  plus a 32-byte cap; the server no longer lower-cases and the daemon's
+  `case_sensitive` option is gone (R23).
+- Attribute names are configurable (`nss.attributes`), and `gecos` is a
+  Go template over an allow-listed set of attributes, sanitised after
+  rendering (R35).
+- Two entries with one uid: neither is served while the collision lasts,
+  with a daily audit alert (R29). Fail closed.
+- uid and primary gid are frozen at first sight. The sync never changes
+  them; a differing directory value becomes a pending change that an
+  admin accepts explicitly, and a tombstoned uid stays reserved until
+  retention ends (R38). Name, home, shell and gecos follow the directory.
+- Names are unique among users and among groups, enforced by the schema
+  and by the sync: two live entries with one name are both withheld with a
+  daily alert, and a tombstone keeps its name until retention or an admin
+  purges it (R39).
+- The `privileged` record section goes only to uid 0 peers (R27).
+- Per-instance limiter, negative cache and usage counters are accepted;
+  the usage flush is an additive upsert (R28).
+- Cold-miss floods from local users are accepted as with sssd (R33).
+
 ## Review changes (2026-10-10)
 
 Problems found in the single-document draft and how the parts resolve them.
@@ -217,11 +289,37 @@ overtaken by the userdb move; see the U table below.
 | R14 | `nss_key_usage` upserted on every lookup: one DB write per request | In-memory aggregation, flushed every 60 s and on shutdown | 1 |
 | R15 | `mail.rotation_quiet_period` written as if existing; only `mail.expiry_reminder_lead` and `mail.expired_attempt_window` exist (`server/config/types_mail.go:117,128`) | Marked as a new key | 1 |
 | R16 | Key-group members manage their key, but the admin area layout gates on admin roles | Team view lives outside `/admin` | 2 |
-| R17 | Name regex `^[a-z_][a-z0-9_-]{0,31}$` rejects all-digit names, while the routes decision said they are legal | **Decided 2026-10-10:** all-numeric names are rejected on server and daemon (shadow-utils does the same; `chown 1234` ambiguity). The regex, which also rejects a leading digit, is kept. `case_sensitive: false` lower-cases before the regex | 1, 3 |
+| R17 | Name regex `^[a-z_][a-z0-9_-]{0,31}$` rejects all-digit names, while the routes decision said they are legal | **Decided 2026-10-10:** all-numeric names are rejected on server and daemon (shadow-utils does the same; `chown 1234` ambiguity). The regex, which also rejects a leading digit, is kept. `case_sensitive: false` lower-cases before the regex. Superseded 2026-10-17 (R23): regex and lower-casing dropped, all-numeric names still rejected | 1, 3 |
 | R18 | Daemon source location: the repo layout has `/server`, `/client`, `/internal`; the daemon fits none | **Decided 2026-10-10:** new top-level `/nssd`, importing only `internal/`; add it to the CLAUDE.md layout table in the first daemon PR | 3 |
 | R19 | `ssoossh-nss-selinux` must label the daemon (shipped from this repo) as well as allow callers to the socket | **Decided 2026-10-10:** policy lives and is built in this repo | 3 |
 | R21 | Two packages (daemon here, module there) needed a min-version handshake and could drift on protocol | Superseded (U1): one package, daemon only | 3 |
 | R20 | Enumeration stubs returning `UNAVAIL` were exported for no benefit | Superseded (U1): no module; the userdb service answers `EnumerationNotSupported` | 3 |
+
+## Review changes (2026-10-17)
+
+Problems found in the 2026-10-17 review of the three parts, and how they
+are resolved. R35 is a new requirement from the same review, not a defect.
+
+| # | Problem | Resolution | Part |
+| --- | --- | --- | --- |
+| R22 | `user_posix` was 1:1 with `users`, whose `subject` is NOT NULL and written only by an OIDC login; shared and service accounts, and anyone who has not logged in, could never get a row | `posix_users` unique on `uid`, anchored on `directory_id` and `dn`, filled by the directory sync; nullable `user_id` set at login through the existing LDAP resolution | 1 |
+| R23 | No rule for the POSIX `name` from directory attribute to certificate principal to `getpwnam`. The server lower-cased, the daemon did not, and the regex rejected dots and upper case that directories and IdPs use | Name attribute stored verbatim; byte-for-byte match on server and daemon; validation is systemd's relaxed rules (`valid_user_group_name(VALID_USER_RELAX)`, `src/basic/user-util.c`) plus a 32-byte cap, because `nss-systemd` applies exactly those before calling any service; lower-casing and `case_sensitive` removed; the sync raises an audit alert when a linked person's `username` claim differs from their POSIX name, since that principal can then never log in | 1, 3 |
+| R24 | `status` had no transitions and no bridge to the existing `users.disabled_at` / `disabled_source` | Derived at response time: `deleted_at` set is `deleted`; else the linked person's `users.disabled_at` (admin, SOC or ldap_sync) or the directory's own `dir_disabled` is `disabled`; else `active`. A SOC disable locks hosts on the next refresh with no new path | 1 |
+| R25 | Part 2 gated on `nss.enabled` and the key-group role, which Part 1 never exposed | Part 1 adds `nss_enabled` beside `mail_enabled` in the settings payload and `is_nss_key_admin` beside `is_admin`/`is_soc`/`is_auditor` on `/api/users/me` | 1, 2 |
+| R26 | Nothing created home directories or warned about nscd | `hosts/nss.md` requires `pam_mkhomedir` or `oddjob-mkhomedir` in the session stack and says nscd/unscd must not cache passwd and group; `ssoosshd-nss status` reports a running nscd | 3 |
+| R27 | The `privileged` section was undecided and open check 1 was speculative | Sent only when the peer uid is 0, else omitted with `incomplete: true`. From source: `["*"]` gives `sp_pwdp = *`, an empty list gives `!*`, `locked` gives `sp_expire = 1`, and `sp_lstchg` is -1 when unset (`userdb-glue.c:160-178`). OpenSSH's `UsePAM no` path treats only a `!` prefix as locked, so `*` passes; check 1 is now a confirmation | 3 |
+| R28 | Multi-instance behaviour unstated | Usage flush is an additive upsert; the rate limiter, server negative cache and miss-alert counters are per instance and accepted as such. Scheduler jobs run in `serve` and `serve api` only (`BootstrapSigner` registers none) | 1 |
+| R29 | Two entries sharing a uid was unspecified | Neither is served while the collision lasts; audit alert `nss_uid_collision` at most daily per uid; fail closed | 1 |
+| R30 | `source_allow_list` was in config but not in the auth path | Checked against the connection IP before key verification; 403 `nss_forbidden`, audited | 1 |
+| R31 | No metrics | Lookup counter by kind and result, latency histogram, active-key gauge on the existing OTel meter; the daemon reports through `status` and the journal only | 1, 3 |
+| R32 | FIPS build unmentioned | The daemon is built with the same `GOFIPS140` setting as the server (`.goreleaser.yml`) | 3 |
+| R33 | Threat 5 listed cold-miss floods with no mitigation | Accepted as sssd does; documented in the threat model; no per-uid budget unless asked | README |
+| R34 | Stale anchors: `USERDB_EXCLUDE_NSS` was split into client and server flags on 2026-10-15; `client/cmd/host.go` help text is already correct; `types.go:371` is now 386 and `types_mail.go:117,128` are 121,132; the "request-logging redaction list" does not exist | Citations updated (U1, U13); `host.go` row and Part 3 note removed; redaction replaced by "never log the secret" in handler and trace | README, 1, 3 |
+| R35 | Attribute names were fixed (`uidNumber`, `homeDirectory`, ...) and `gecos` was `displayName` then `cn` | New requirement: `nss.attributes` maps every POSIX field to an attribute; `nss.gecos_template` renders gecos with the key ID template engine over an allow-listed attribute set, with post-render sanitising | 1 |
+| R36 | POSIX attributes from OIDC claims were half-implied | Rejected: shared and service accounts have no token. NSS requires `ldap.enabled` | 1 |
+| R37 | A numeric `users.subject` was proposed as a uid link | Rejected: the subject's shape says nothing about what it is. `users.subject` is opaque to NSS | 1 |
+| R38 | The sync followed the directory's uid and gid, and with `uid` as the primary key a changed `uidNumber` was a delete plus a create that then collided on the unique name | Surrogate primary key; `uid` and the directory's primary gid are frozen once stored. The sync matches a row by `directory_id`, then `dn`; a differing uid or gid attribute is written to `pending_uid`/`pending_gid` with `pending_since`, the stored values keep being served, and `nss_id_change_pending` fires at most daily. `POST /api/admin/nss/users/:uid/accept-id-change` (admin, audit-logged) applies it in one transaction, re-keying memberships. A tombstoned uid stays reserved through `tombstone_retention`; a new entry presenting it is an R29 collision. Same rule for `posix_groups.gid`. The daemon logs at warning when a refresh changes a cached name's uid or gid. Host behaviour: hosts see a change only after the accept, so an operator can `chown -R` first | 1, 2, 3 |
+| R39 | `posix_users.name` and `posix_groups.name` were unique in the schema, but nothing said what the sync does when the directory breaks that, and the tombstone rule turned every reused login name into a collision for `tombstone_retention` | POSIX needs one record per name, so a name collision is handled like a uid collision: neither entry is served, `nss_name_collision` fires at most daily, and a rename whose target name is held is treated the same way (the renamed entry is withheld, the holder too). A tombstone keeps its name as well as its uid; `DELETE /api/admin/nss/users/:uid/tombstone` (admin, audit-logged) purges it early so a name can be handed on deliberately. User and group namespaces are separate, as POSIX allows (private groups share their user's name) | 1, 2 |
 
 ## Userdb changes (2026-10-11)
 
@@ -230,28 +328,31 @@ systemd `main` source unless marked otherwise.
 
 | # | Change | Resolution | Part |
 | --- | --- | --- | --- |
-| U1 | No NSS module of our own | `ssoosshd-nss` implements `io.systemd.UserDatabase`; `nss-systemd` does the glibc side. The module part was removed; no `ssoossh-nss` repo, no zig module build, no socket protocol doc. `nss-systemd` sets `USERDB_EXCLUDE_NSS`, which skips the `io.systemd.Multiplexer` relay (`src/shared/userdb.c:690`), so user and membership lookups arrive from the calling process and R5's sshd check still works | 3 |
+| U1 | No NSS module of our own | `ssoosshd-nss` implements `io.systemd.UserDatabase`; `nss-systemd` does the glibc side. The module part was removed; no `ssoossh-nss` repo, no zig module build, no socket protocol doc. `nss-systemd` sets `USERDB_EXCLUDE_SERVER_NSS` by default (`src/nss-systemd/userdb-glue.c:16-30`; split out of `USERDB_EXCLUDE_NSS` on 2026-10-15 with no functional change), which skips the `io.systemd.Multiplexer` relay (`src/shared/userdb.c:690`), so user and membership lookups arrive from the calling process and R5's sshd check works; U13 covers the environment override | 3 |
 | U2 | Platform floor | systemd 245+ (userdb arrived in 245, systemd `NEWS`), glibc, `systemd` in `nsswitch.conf`. The daemon checks the `passwd:`/`group:` lines at start and reports a missing entry in `status`. RHEL 8 and musl out of scope; a musl route, if ever needed, is an nscd v2 listener in the same daemon | 3 |
 | U3 | "Unavailable" reaches callers as "not found" | Accepted. `nss-systemd` queries every service in parallel and a `NoRecordFound` from any of them wins over other errors (`src/shared/userdb.c:440-448`); systemd's own services always answer `NoRecordFound` for our users. Mitigated by socket activation (lookups wait through restarts) and the persistent cache | 3 |
 | U4 | Caller timeout is systemd's, not ours | varlink's default is 45 s (`src/libsystemd/sd-varlink/sd-varlink.c:47`) and userdb sets no shorter one. The daemon answers every call within `socket_answer_deadline` and never leaves a connection unaccepted; over the concurrency cap it answers `ServiceNotAvailable` at once | 3 |
 | U5 | No "try again" status | A cold miss with a slow upstream answers `ServiceNotAvailable` (seen as not found) while the fetch completes into the cache. A user's first login on a host while the server is slow can fail once | 3 |
 | U6 | `pw_passwd` is always `x` (`src/nss-systemd/userdb-glue.c:64`) | Disabled and deleted users are served with `locked: true` and `disabled_shell`. Where `shadow:` lists `systemd`, `locked` becomes `sp_expire = 1` (`userdb-glue.c:152-170`), so `pam_unix` account checks reject the user as well | 1, 3 |
-| U7 | Records without a hashed password appear as `!*` in shadow | Open (check 1). Only matters where `shadow:` lists `systemd` (Debian 12+, authselect profiles) **and** sshd runs `UsePAM no`, where OpenSSH treats a `!` prefix as a locked account and would refuse certificate logins | 3 |
-| U8 | `nss-systemd` asks every userdb service during `initgroups` of local users, and for local groups on `[SUCCESS=merge]` group lines | Names and ids present in `/etc/passwd` or `/etc/group` are answered `NoRecordFound` without an upstream call | 3 |
+| U7 | Records without a hashed password appear as `!*` in shadow | Resolved from source (R27): the daemon sends `privileged.hashedPassword: ["*"]` to uid 0 peers, `nss-systemd` copies the first entry into `sp_pwdp` (`userdb-glue.c:158`), and OpenSSH's `UsePAM no` path treats only a `!` prefix as locked. Check 1 confirms it on a host | 3 |
+| U8 | `nss-systemd` asks every userdb service during `initgroups` of local users, and for local groups on `[SUCCESS=merge]` group lines | Names and ids present in `/etc/passwd` or `/etc/group` are answered `NoRecordFound` without an upstream call. This never drops a directory user's membership in a local group; see U12 | 3 |
 | U9 | `SYSTEMD_BYPASS_USERDB` / `SYSTEMD_ONLY_USERDB` honoured in setuid callers | Threat model item 6: fail-closed except deny-by-group rules. The daemon's own unit sets `SYSTEMD_BYPASS_USERDB` to its service name so it can never recurse into itself | README, 3 |
 | U10 | `refresh_user` op had no home | `com.github.mnestor.ssoossh.NSS.RefreshUser` varlink method on the same socket, sent one-way by `ssoossh host principals`; R6 limits apply | 3 |
 | U11 | SELinux for a socket systemd creates under `/run/systemd/userdb/` | Open (check 3): confirm the label systemd gives the activation socket and that `nsswitch_domain` may connect to it | 3 |
+| U12 | `initgroups` resolves each group name with the NSS exclusion cleared (`src/nss-systemd/nss-systemd.c:1025`), so a directory user's membership in a local group such as `sudo` or `wheel` resolves through `files` even though this daemon answers `NoRecordFound` for local names (U8) | No change; stated so U8 is not read as dropping those memberships. Those per-group lookups go through `systemd-userdbd` when it is running, so they are never the sshd peer | 3 |
+| U13 | `SYSTEMD_NSS_SERVER_SIDE_NSS=1` in a caller's environment clears `USERDB_EXCLUDE_SERVER_NSS` (`userdb-glue.c:23`), so its lookups go through the multiplexer and the daemon's peer is `systemd-userwork` | Threat model item 6: the sshd freshness refresh is skipped for that caller and the entry ages out at the normal TTL. Fail-safe; no mitigation | 3 |
 
 ## Open checks
 
 Run these on throwaway hosts before building Part 3. Any failure that
 cannot be designed around reopens the U1 decision.
 
-1. **Shadow `!*` (U7).** On Debian 12 and RHEL 9 with `shadow: ... systemd`,
-   test whether a record with `privileged.hashedPassword: ["*"]` gives
-   `sp_pwdp = *` without other effects, and confirm the `UsePAM no`
-   behaviour either way. If neither works, document `UsePAM yes` as a
-   requirement.
+1. **Shadow `*` (U7, R27).** On Debian 12 and RHEL 9 with `shadow: ...
+   systemd`, confirm that `privileged.hashedPassword: ["*"]` sent to a
+   uid 0 peer gives `sp_pwdp = *` and `sp_lstchg = -1`, that a certificate
+   login succeeds with `UsePAM no`, and that a `locked` record is refused
+   under both `UsePAM` settings. The source says yes; this is the
+   confirmation.
 2. **Socket activation through restarts.** Lookups issued while the
    service restarts wait and then succeed; with the service failed past its
    start limit they return quickly as not found.
@@ -264,3 +365,18 @@ cannot be designed around reopens the U1 decision.
 6. **Oldest systemd in the target set.** U1's multiplexer bypass and U3's
    error precedence were read on systemd `main`; confirm both on the oldest
    systemd that will run this.
+7. **Session stack (R26).** On each target image, confirm whether sshd's
+   PAM session stack already creates home directories, and whether nscd or
+   unscd is installed and caching passwd or group.
+
+## SSOOSSH.md changes (need the owner's say-so)
+
+`SSOOSSH.md` changes only with explicit approval. The first server PR
+should ask for these three edits, which this proposal otherwise assumes:
+
+- Roles: "Roles come from OIDC groups named in config: admin implies SOC
+  implies auditor. `admin.nss_key_group` is a fourth group, outside that
+  chain, that admin also implies."
+- Audit: "Audit records never capture `Cookie`, `Authorization` or
+  `X-Ssoossh-Key-Secret`."
+- Not built yet: "NSS directory (3 parts)".

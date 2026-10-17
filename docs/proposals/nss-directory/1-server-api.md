@@ -7,7 +7,11 @@ and decisions are in [README.md](README.md).
 ## Scope
 
 - `/api/nss/*` lookup endpoints, authenticated by fleet API keys.
-- `user_posix` table, POSIX group storage, LDAP field destinations, sync.
+- `posix_users` and POSIX group storage, configurable attribute mapping,
+  the gecos template, directory sync and the login-time link to `users`.
+- Config validation: `nss.enabled` requires `ldap.enabled` (README R36).
+- `nss_enabled` in the settings payload and `is_nss_key_admin` on
+  `/api/users/me` for Part 2 (README R25).
 - Fleet API key model, admin endpoints, role `admin.nss_key_group`.
 - `nss_key_usage` aggregate, rotation report data, mail events.
 - Shell self-service on `/api/users/me`.
@@ -28,11 +32,17 @@ wire-contract`; the file is generated and bumps its own `version`).
 | `/api/nss/group/name/:name` | GET | fleet key | group JSON; 404 `nss_not_found` |
 | `/api/nss/group/gid/:gid` | GET | fleet key | same |
 
-`:name` is validated against `^[a-z_][a-z0-9_-]{0,31}$` after lower-casing
-(see README R17); `:uid`/`:gid` must parse as `uint32`. Invalid input is 400
+`:name` is matched byte for byte, never lower-cased, and validated with the
+same relaxed rules `nss-systemd` applies before it calls any service
+(README R23): non-empty, valid UTF-8, no control characters, no `:` or
+`/`, no leading or trailing space, not all digits, not `.` or `..`, and at
+most 32 bytes (the utmp field width; systemd itself sets no cap).
+`:uid`/`:gid` must parse as `uint32`. Invalid input is 400
 `nss_bad_request`, not 404, so the daemon does not negative-cache a typo as
 an authoritative miss. All routes return 404 `nss_disabled` when
-`nss.enabled` is false.
+`nss.enabled` is false. The same validator runs at sync time, and an entry
+whose name fails it is skipped with a warning naming the DN, so an
+unresolvable account is visible in the log rather than silently absent.
 
 **User response**
 
@@ -58,7 +68,10 @@ an authoritative miss. All routes return 404 `nss_disabled` when
 - `home`: `homeDirectory`, else `nss.default_home` expanded, else null.
 - `shell`: `loginShell` path, else `nss.default_shell`, else null.
 - `shell_pref`: user's chosen shell **name** or null.
-- `status`: `active` | `disabled` | `deleted`.
+- `gecos`: the rendered and sanitised `nss.gecos_template` output (see
+  [POSIX attribute mapping](#posix-attribute-mapping)).
+- `status`: `active` | `disabled` | `deleted`, derived as described under
+  [Status](#status).
 - `key_id`: the key that made the request, for log correlation.
 
 **Group response**
@@ -79,22 +92,47 @@ secret), `nss_rate_limited` (429 with `Retry-After`).
 Timestamped migration pairs in both the sqlite and postgres trees
 (single-owner directories per `AGENTS.md`).
 
-**`user_posix`** (1:1 with `users`; `users` unchanged)
+**`posix_users`** (anchored on the directory entry, README R22; `users`
+unchanged)
 
 | Column | Type | Notes |
 | --- | --- | --- |
-| `user_id` | FK `users.id`, PK | |
-| `uid` | uint32, unique | `uidNumber`, required |
-| `gid` | uint32 | resolved primary gid after `auto_private_groups` |
-| `home`, `shell` | text, nullable | from LDAP |
-| `shell_pref` | text, nullable | user-set name |
-| `gecos` | text | `displayName`, then `cn` |
-| `status` | enum | `active`, `disabled`, `deleted` |
-| `status_changed_at`, `created_at`, `updated_at` | timestamps | |
+| `id` | text, PK | random id, same convention as `users.id`, so an accepted uid change is a column update |
+| `uid` | uint32, unique | the mapped uid attribute, required; **frozen** after the first write (R38) |
+| `name` | text, unique | the mapped name attribute, verbatim (R23); follows the directory |
+| `directory_id` | text, indexed | the `ldap.id_attribute` value when configured, as `user_ldap.directory_id` |
+| `dn` | text, unique | entry DN from the last successful read |
+| `user_id` | FK `users.id`, nullable, unique | set at login (below); NULL for shared and service accounts |
+| `gid` | uint32 | the mapped primary gid attribute, **frozen** after the first write (R38); `auto_private_groups` is applied on read so a config change is deliberate and a directory change is caught |
+| `pending_uid`, `pending_gid` | uint32, nullable | a differing directory value the sync refused to apply |
+| `pending_since` | timestamp, nullable | first sync that saw the pending value |
+| `home`, `shell` | text, nullable | mapped attributes; follow the directory |
+| `shell_pref` | text, nullable | user-set name; only meaningful with a `user_id` |
+| `gecos` | text | rendered, sanitised template output (R35) |
+| `dir_disabled` | bool | the directory's own disabled flag (`nss.disabled_filter`) |
+| `missing_since` | timestamp, nullable | first sync that could not find the entry by id, DN or filter |
+| `deleted_at` | timestamp, nullable | set when `missing_since` is older than `nss.tombstone_after`; cleared if the entry reappears |
+| `created_at`, `updated_at`, `last_synced_at` | timestamps | |
 
-**`posix_groups`**: `gid` uint32 PK, `name` unique, `synthetic` bool (true
-for auto private groups), timestamps. **`posix_group_members`**: `(gid,
-user_id)` PK. Membership comes from `memberUid` or resolved `member` DNs.
+There is no stored `status` column; see [Status](#status).
+
+**`posix_groups`**: `id` text PK, `gid` uint32 unique and frozen (R38),
+`pending_gid`, `pending_since`, `name` unique (same validator as user
+names), `directory_id`, `dn`, `synthetic` bool (true for auto private
+groups), timestamps. **`posix_group_members`**: `(gid, uid)` PK, keyed by
+uid rather than `users.id` because members include accounts that never log
+in. Membership comes from the mapped member attribute: `memberUid` values
+are names, `member` values are DNs resolved against `posix_users.dn`.
+
+**Linking a person.** When a login's LDAP enrichment resolves the person's
+entry (by ID, then DN, then filter, `server/service/ldap.go:326`), the
+server reads the mapped uid attribute from that entry and sets `user_id`
+on the matching `posix_users` row, creating the row from the same read if
+the sync has not seen it yet. Nothing else links: `users.subject` is never
+read as a uid (README R37) and no claim carries POSIX data (R36). The sync
+raises the audit alert `nss_name_mismatch` once per person whose
+`users.username` differs from the linked row's `name`, because that
+person's own-name certificate principal can never pass `getpwnam` (R23).
 
 **`nss_keys`**
 
@@ -130,8 +168,16 @@ Headers `X-Ssoossh-Key-Id` and `X-Ssoossh-Key-Secret`. The secret is
 4. Dead-key attempts (revoked, expired) feed `nss_key_revoked_attempt` /
    `nss_key_expired_attempt`.
 
-Key headers are added to the request-logging redaction list; the id is
-logged, the secret never.
+Neither the request log nor the audit log captures headers today, so there
+is no redaction list to extend (README R34). The rule is simpler: the key
+id may be logged, the secret never appears in any log line, audit payload
+or error message, and the handler tests assert that a failed verification
+logs the id only.
+
+**Source allow list** (README R30). When `nss.source_allow_list` is
+non-empty, the connection's source IP is checked against it before the key
+is verified; a miss is 403 `nss_forbidden` with an audit event carrying the
+IP and the presented key id. Empty allows all.
 
 ## Rate limiting
 
@@ -141,20 +187,80 @@ forwarded header. Unauthenticated requests hit the existing per-IP limiter
 from the cert-request routes first. Per-key miss rate above
 `nss.miss_alert_rate` raises an alert (log + audit event), never a block.
 
-## Directory sync and status
+The bucket, the server-side negative cache and the miss-rate counter are
+per instance; a multi-instance deployment behind a load balancer gets N
+times the nominal budget, which is accepted (README R28).
 
-- **On demand.** An unknown name or uid triggers the LDAP lookup and upsert
-  first login does, then serves from DB. Server-side negative cache 60 s.
-  LDAP unreachable: serve from DB.
-- **Background.** Scheduler job `nss_ldap_sync` re-reads every user and
-  group with `uidNumber`/`gidNumber` every 15 min (`modifyTimestamp` where
-  supported), full refresh nightly. Updates fields, membership and status;
-  never deletes rows. The existing admin `ldap/sync` endpoint triggers it
-  too (verify the route name before wiring).
-- **No gate.** Every user with POSIX attributes is resolvable. Users without
-  `uidNumber` are 404.
-- **Status, not absence.** A known user stays resolvable until
-  `nss.tombstone_retention` (2160h) after deletion (R11):
+## Directory sync
+
+NSS requires LDAP: `nss.enabled: true` with `ldap.enabled: false` fails
+config validation at startup (README R36). Every POSIX identity, people and
+shared or service accounts alike, is a directory entry with the mapped uid
+attribute.
+
+- **On demand.** An unknown name or uid triggers one directory search
+  (`nss.user_filter` AND the name or uid attribute), upserts the row, then
+  serves from DB. Server-side negative cache 60 s per instance. LDAP
+  unreachable: serve from DB.
+- **Background.** Scheduler job `nss_ldap_sync` enumerates
+  `nss.user_filter` and `nss.group_filter` under `ldap.base_dn` every
+  15 min (`modifyTimestamp` where supported), full refresh nightly. It
+  updates fields, membership, `dir_disabled`, `missing_since` and
+  `deleted_at`; it never deletes rows before `tombstone_retention`. The
+  existing admin `ldap/sync` endpoint triggers it too (verify the route
+  name before wiring). Registered in `serve` and `serve api`; `sign` has
+  no scheduler (README R28).
+- **No gate.** Every entry with a uid attribute and a valid name is
+  resolvable. Entries without the uid attribute, or whose name fails the
+  validator, are skipped with a warning and are 404.
+- **Duplicate uid** (README R29). Two entries carrying the same uid
+  attribute: neither is served while the collision lasts (tracked in the
+  sync run, not stored as a row state), and the audit alert
+  `nss_uid_collision` fires at most daily per uid. Fail closed, because
+  serving either one makes `ls -l` lie. A tombstoned row (`deleted_at`
+  set) still holds its uid, so a new entry presenting that uid is a
+  collision until `tombstone_retention` purges the row.
+- **Frozen ids** (README R38). The sync matches an entry to a row by
+  `directory_id` when `ldap.id_attribute` is configured, else by `dn`. A
+  matched row's `uid` and `gid` never change on sync. When the entry's uid
+  or gid attribute differs, the sync writes `pending_uid` or `pending_gid`
+  with `pending_since`, keeps serving the stored values, and raises the
+  audit alert `nss_id_change_pending` at most daily per row. The directory
+  reverting the value clears the pending columns. Name, home, shell and
+  gecos follow the directory on every sync. Without an id attribute, a
+  moved entry (new DN) is seen as missing plus new; the new entry then
+  collides on uid and name with the old row, which still exists (as
+  missing, then as a tombstone), so neither is served until the old row is
+  purged or ages out. Fail closed, and the reason to configure
+  `ldap.id_attribute`.
+- **Duplicate name** (README R39). POSIX resolves one record per name, so
+  two live entries whose mapped name attribute is equal are both withheld
+  while it lasts, with `nss_name_collision` at most daily per name. A
+  rename whose target is held by another row, a tombstone included, is
+  the same collision: the renamed entry and the holder are both withheld
+  until the directory is fixed or an admin purges the tombstone. User and
+  group names are separate namespaces (a private group shares its user's
+  name), so uniqueness is per table.
+
+## Status
+
+`status` is derived at response time, never stored (README R24):
+
+1. `deleted_at` set: `deleted`.
+2. Else, the linked person's `users.disabled_at` set (admin, SOC or
+   `ldap_sync` source alike), or `dir_disabled`: `disabled`.
+3. Else `active`.
+
+A SOC disable in the web UI therefore locks the host account on the next
+sshd refresh (Part 3) with no new code path, and an unlinked shared or
+service account answers only to the directory. `dir_disabled` comes from
+`nss.disabled_filter`, an LDAP filter the entry is tested against on every
+read (for example `(nsAccountLock=TRUE)` on 389-ds and FreeIPA, or
+`(userAccountControl:1.2.840.113556.1.4.803:=2)` on AD); empty means the
+directory never disables.
+
+A known account stays resolvable until `nss.tombstone_retention` (2160h)
+after `deleted_at` (R11):
 
 | Status | Served as | Notes |
 | --- | --- | --- |
@@ -169,15 +275,83 @@ Group memberships are kept through `disabled`.
 the same gid (R12). In `true` mode a collision rejects the user (logged,
 404) rather than shadowing a real group.
 
+## POSIX attribute mapping
+
+Attribute names are configurable because directories differ (RFC 2307,
+RFC 2307bis, AD with SFU or IdMU, FreeIPA) and because operators sometimes
+keep POSIX data in custom attributes (README R35). `nss.attributes`:
+
+| Key | Default | Used for |
+| --- | --- | --- |
+| `name` | `uid` | `posix_users.name`; must equal the `username` claim for a person to log in by their own name (R23) |
+| `uid` | `uidNumber` | `posix_users.uid`; must parse as `uint32` |
+| `gid` | `gidNumber` | primary gid before `auto_private_groups` |
+| `home` | `homeDirectory` | nullable; must be absolute when present |
+| `shell` | `loginShell` | nullable |
+| `group_name` | `cn` | `posix_groups.name` |
+| `group_gid` | `gidNumber` | `posix_groups.gid` |
+| `group_member` | `memberUid` | names; set `member` for DN-valued groups |
+| `gecos_attributes` | `[displayName, cn]` | the only attributes the gecos template may read |
+
+A value that does not parse (a non-numeric uid, a relative home) skips the
+entry with a warning naming the DN; there are no partial rows. Every key
+must be non-empty; config validation rejects an empty one.
+
+**Gecos template.** `nss.gecos_template` (default `{{.DisplayName}}`) is
+parsed and executed by the key ID template engine
+(`server/service/keyid.go`: `text/template`, `missingkey=zero`, the `join`
+function, and a validation execute at config load so a typo fails
+startup). The data it sees is deliberately small:
+
+| Field | Value |
+| --- | --- |
+| `.Name` | the mapped name attribute |
+| `.DisplayName` | first non-empty of `gecos_attributes`, else `.Name` |
+| `.Attr.<name>` | an attribute listed in `gecos_attributes`, first value; multi-valued attributes render with `join` |
+
+Nothing outside `gecos_attributes` is reachable, so `userPassword`,
+`sshPublicKey`, `description` and the like cannot end up in a field every
+local user can read with `getent` unless the operator lists them on
+purpose. Directory values are template data, never template text, so an
+attribute value cannot inject a directive.
+
+**Safeguarding the rendered value.** After rendering, the server:
+
+1. replaces an invalid UTF-8 result with `.Name` and logs a warning;
+2. replaces every control character (newline included) and every `:` with
+   a space, then collapses runs of whitespace and trims;
+3. caps the result at 256 bytes on a rune boundary;
+4. substitutes `.Name` when the result is empty.
+
+`:` is the passwd field separator and a newline is the record separator.
+`nss-systemd` would mangle either on the host anyway
+(`src/shared/user-record.c:265-293`), but a host must never see the
+mangled form of something the server could have cleaned. An alteration is
+logged once per entry at info with the DN. Names are not sanitised: a
+name that fails the validator rejects the entry (above). The template
+test table covers `:`, a newline, a bare control byte, invalid UTF-8, an
+over-long value, an empty render, a multi-valued attribute with `join`,
+and an attribute outside the allow list (renders empty, never the value).
+
 ## Shell self-service
 
-`GET/PATCH /api/users/me` gains `posix` (`{uid, shell_pref}` or null when
-the user has no POSIX record or NSS is disabled); PATCH accepts
+`GET/PATCH /api/users/me` gains `posix` (`{uid, name, shell_pref}` or null
+when no `posix_users` row is linked to the user or NSS is disabled); PATCH
+accepts
 `shell_pref` (string or null). The server
 validates against `nss.allowed_shells` (names, default `[sh, bash, zsh,
 fish]`), audit-logs changes, and returns 400 `shell_not_allowed` otherwise.
 `GET /api/nss/shells` (session auth) returns the allowed list for the UI.
 Home directory is not user-settable.
+
+## Session flags for the web UI
+
+Part 2 gates on two things Part 1 must expose (README R25): `nss_enabled`
+in the settings payload beside `mail_enabled`
+(`server/webtypes/webtypes.go:924`), and `is_nss_key_admin` beside
+`is_admin`, `is_soc` and `is_auditor` on `/api/users/me`
+(`webtypes.go:90-92`). Both carry the same `validate:"required"` tag as
+their neighbours so the generated TypeScript includes them.
 
 ## Fleet key admin endpoints
 
@@ -199,11 +373,29 @@ List and detail responses carry a per-key `permissions` array for the
 caller (`view`, `rotate`, `revoke`, `edit`, `assign_group`) so the UI does
 not reimplement the role matrix.
 
+## Pending id changes (admin)
+
+Under `/api/admin`, admin role only, audit-logged (README R38):
+
+| Path | Method | Behaviour |
+| --- | --- | --- |
+| `/api/admin/nss/pending-id-changes` | GET | users and groups with a pending uid or gid: name, dn, stored value, pending value, `pending_since` |
+| `/api/admin/nss/users/:uid/accept-id-change` | POST | applies `pending_uid`/`pending_gid` to the row and re-keys `posix_group_members` in one transaction; fails 409 `nss_uid_collision` if the new uid is held by any row, tombstones included |
+| `/api/admin/nss/groups/:gid/accept-id-change` | POST | same for a group's gid, re-keying `posix_group_members` and every `posix_users.gid` that referenced it |
+| `/api/admin/nss/collisions` | GET | current uid and name collisions: the entries involved (name, DN, uid), which one is a tombstone, and since when |
+| `/api/admin/nss/users/:uid/tombstone` | DELETE | purges a tombstoned row before `tombstone_retention`, freeing its uid and name (README R39); 404 unless `deleted_at` is set |
+
+There is no reject: the operator reverts the directory, or the alert keeps
+firing daily until someone decides. After an accept the old number is
+free at once; the accept is the point of judgment, and the admin is
+expected to have re-owned files on hosts first, since hosts see the change
+only after it.
+
 Routes live under `/api/nss/keys`, not `/api/admin`, because key-group
 members are not admins (README R16).
 
 **Role.** `admin.nss_key_group` in `AdminConfig`
-(`server/config/types.go`, beside `require_group` at line 371), with the
+(`server/config/types.go`, beside `require_group` at line 386), with the
 doc-comment + `mapstructure` + `default` convention, fail-closed like the
 others. Admins inherit it.
 
@@ -225,8 +417,23 @@ cleanup digest read the same aggregate query.
 
 ```yaml
 nss:
-  enabled: false
+  enabled: false               # requires ldap.enabled
+  user_filter: (objectClass=posixAccount)
+  group_filter: (objectClass=posixGroup)
+  disabled_filter: ""          # empty: the directory never disables
+  attributes:
+    name: uid
+    uid: uidNumber
+    gid: gidNumber
+    home: homeDirectory
+    shell: loginShell
+    group_name: cn
+    group_gid: gidNumber
+    group_member: memberUid
+    gecos_attributes: [displayName, cn]
+  gecos_template: "{{.DisplayName}}"
   auto_private_groups: hybrid
+  tombstone_after: 168h        # missing from the directory this long: deleted
   tombstone_retention: 2160h
   default_home: /home/%u
   default_shell: ""            # empty: null in responses
@@ -252,15 +459,47 @@ mail:
 `privileged_name_alert`, and one key seen from more than
 `nss.key_source_alert` distinct IPs per day, raise audit alerts.
 
+Validation at load: `nss.enabled` without `ldap.enabled` is an error;
+`gecos_template` must parse and test-execute; every `attributes` key is
+non-empty; `disabled_filter`, `user_filter` and `group_filter` must parse
+as LDAP filters.
+
+## Metrics
+
+On the existing OpenTelemetry meter (README R31): an `ssoossh_nss_lookups`
+counter with `kind` (user, group), `by` (name, id) and `result` (hit, miss,
+unauthorized, rate_limited, forbidden) attributes; an
+`ssoossh_nss_lookup_duration` histogram; an `ssoossh_nss_keys` gauge by
+status. No per-key or per-name attributes, so cardinality stays bounded.
+
 ## Tests (table-driven, colocated)
 
 - Key auth: unknown id, bad secret, revoked, expired, previous within and
   past grace; equal response bodies.
 - Rate limiter keyed on `(key, connection IP)`; spoofed `X-Forwarded-For`
   ignored.
-- Lookups: active, disabled, deleted in and past retention, no `uidNumber`,
-  `auto_private_groups` all three modes plus collision, member cap.
-- Validation: bad names and non-numeric uid return 400.
+- Lookups: active, disabled by each source (admin, SOC, ldap_sync,
+  `dir_disabled`), deleted in and past retention, no uid attribute,
+  duplicate uid, `auto_private_groups` all three modes plus collision,
+  member cap, a shared account with no `user_id`.
+- Validation: each relaxed-rule failure, a 33-byte name, a mixed-case name
+  matched exactly, and a non-numeric uid return 400.
+- Linking: login resolves the entry and sets `user_id`; a second login does
+  not re-link; `nss_name_mismatch` fires once.
+- Frozen ids: a changed uid or gid attribute is held pending and the stored
+  value keeps being served; the alert fires once per day; a revert clears
+  it; accept applies it and re-keys memberships; accept onto a tombstoned
+  uid is 409; a renamed entry with an id attribute keeps its uid; a moved
+  entry without one collides and is not served.
+- Unique names: two live entries with one name are both 404 and
+  `nss_name_collision` fires once per day; a rename onto a held name
+  withholds both; a tombstone holds its name; the purge frees it; purge of
+  a live row is 404; user and group with the same name both resolve.
+- Attribute mapping: every key remapped; unparsable uid and relative home
+  skipped with a warning.
+- Gecos template: parse error fails config load; the safeguarding table;
+  allow-list enforcement.
+- Config: `nss.enabled` without `ldap.enabled` rejected.
 - Role matrix for every key endpoint.
 - Usage flusher: counts aggregate, flush on shutdown, pruning.
 - Rotation report bucketing.
@@ -270,4 +509,5 @@ mail:
 
 `go test ./...` and `golangci-lint run` pass; `make wire-contract`,
 `make confdocs` and swag output are regenerated and committed; a curl with a
-valid key returns the JSON above against a test LDAP.
+valid key returns the JSON above against a test LDAP, for a person and for
+a service account that has never logged in.

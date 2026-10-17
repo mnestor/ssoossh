@@ -9,8 +9,10 @@ in [README.md](README.md).
 1. Fleet key list, detail, create, rotate, revoke, edit.
 2. Rotation report.
 3. Shell preference on the user's own settings page.
-4. Hidden entirely when `nss.enabled` is false (read from the existing
-   config/branding bootstrap; verify which endpoint exposes feature flags).
+4. Hidden entirely when `nss_enabled` in the settings payload is false
+   (Part 1 adds it beside `mail_enabled`; README R25).
+5. "Pending id changes" and "Collisions" panels on the existing
+   `/admin/directory` page (README R38, R39).
 
 No new API surface beyond Part 1. All data comes from `/api/nss/keys*`,
 `/api/nss/shells` and `/api/users/me`.
@@ -19,11 +21,12 @@ No new API surface beyond Part 1. All data comes from `/api/nss/keys*`,
 
 | Route | Who sees it | Notes |
 | --- | --- | --- |
-| `/nss-keys` | anyone whose `/api/nss/keys` list is non-empty, plus `nss_key_group` | top-level nav entry, **not under `/admin`**: `frontend/src/routes/admin/+layout.svelte` gates on admin roles, and key-group members are not admins (README R16) |
-| `/nss-keys/new` | `nss_key_group`, admin | |
+| `/nss-keys` | anyone whose `/api/nss/keys` list is non-empty, plus `is_nss_key_admin` from `/api/users/me` | top-level nav entry, **not under `/admin`**: `frontend/src/routes/admin/+layout.svelte` gates on admin roles, and key-group members are not admins (README R16) |
+| `/nss-keys/new` | `is_nss_key_admin` (admins inherit it) | |
 | `/nss-keys/[id]` | read roles for that key | detail + usage |
 | `/nss-keys/[id]/rotation` | read roles | rotation report |
-| `/preferences` (existing) | every user | gains login shell field. Verify `preferences` vs `account` is the right existing page before editing |
+| `/preferences` (existing) | every user | gains login shell field. `frontend/src/routes/preferences/` holds the notification and detail-level settings; the shell field goes there, not on `/account` |
+| `/admin/directory` (existing) | admin | gains a "Pending id changes" panel listing name, DN, stored and pending uid or gid, and how long it has been pending, from `GET /api/admin/nss/pending-id-changes`. One **Accept** button per row behind a typed confirmation (enter the name), whose copy says hosts will see the new number on their next refresh and that files owned by the old number are not moved. Empty state: "No pending changes". Beside it a "Collisions" panel from `GET /api/admin/nss/collisions`: one row per uid or name held by two entries, naming both, marking a tombstone, with a **Purge tombstone** button (typed confirmation, the name) that calls the DELETE. Live-versus-live collisions have no button, only the DNs to fix in the directory. Both panels hidden when `nss_enabled` is false |
 
 Admins also get a link from the admin area to `/nss-keys`.
 
@@ -81,11 +84,17 @@ On the user's settings page: a "Login shell" select populated from
 `/api/nss/shells`, with a "Directory default" option that sends `null`.
 Help text: "Hosts use this shell if installed; otherwise the directory
 shell." Saves via `PATCH /api/users/me`; shows server validation errors.
-Hidden when `/api/users/me` returns `posix: null`.
+Hidden when `/api/users/me` returns `posix: null` (no linked directory
+entry, or NSS disabled).
 
 ## Tests (vitest, colocated `page.test.ts`)
 
 - Nav entry visibility by role and by `nss.enabled`.
+- Pending id changes: rows render from fixture data; Accept requires the
+  exact name; a 409 from accept is shown on the row; panel hidden when
+  `nss_enabled` is false.
+- Collisions: a tombstone row offers Purge, a live pair does not; Purge
+  requires the exact name.
 - Action buttons follow `permissions`.
 - One-time secret panel cannot be dismissed until acknowledged; secret not
   retained in component state after dismissal.
