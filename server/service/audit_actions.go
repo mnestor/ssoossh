@@ -139,3 +139,56 @@ const (
 	// the worst status each check reached.
 	AuditAdminDiagnosticsRun AuditAction = "admin.diagnostics_run"
 )
+
+// The NSS directory's lookup endpoints and fleet keys. The lookups
+// themselves are never audited, one row per getpwnam would bury everything
+// else; what is recorded is what an operator acts on: a refused source
+// address, a dead key still being presented, the usage alerts, every change
+// to a key, and a person choosing their login shell. The alerts are each
+// raised at most once per window across every instance (see
+// claimNSSAlert), so a flood records one row, not thousands.
+const (
+	// AuditNSSLookupForbidden is a lookup from an address outside
+	// nss.source_allow_list, refused before its key was checked. The
+	// detail carries the address the server observed and the key id the
+	// request presented. At most hourly per address and key id.
+	AuditNSSLookupForbidden AuditAction = "nss.lookup_forbidden"
+	// AuditNSSKeyRevokedAttempt is a lookup presenting a revoked fleet
+	// key's id. At most hourly per key; every attempt is logged at debug.
+	AuditNSSKeyRevokedAttempt AuditAction = "nss.key_revoked_attempt"
+	// AuditNSSKeyExpiredAttempt is a lookup presenting an expired fleet
+	// key's id. At most hourly per key, like the revoked one.
+	AuditNSSKeyExpiredAttempt AuditAction = "nss.key_expired_attempt"
+	// AuditNSSKeySourceAlert is one key seen from more distinct source
+	// addresses in a day than nss.key_source_alert allows, which suggests
+	// the key has leaked beyond its fleet. At most daily per key.
+	AuditNSSKeySourceAlert AuditAction = "nss.key_source_alert"
+	// AuditNSSMissRateAlert is one key's not-found lookups running above
+	// nss.miss_alert_rate per second over a minute: a host enumerating
+	// names it does not know. Never a block. At most daily per key.
+	AuditNSSMissRateAlert AuditAction = "nss.miss_rate_alert"
+	// AuditNSSPrivilegedNameLookup is a lookup for a name listed in
+	// nss.privileged_name_alert, which a directory entry could use to
+	// shadow a host's own system account. At most daily per key and name.
+	AuditNSSPrivilegedNameLookup AuditAction = "nss.privileged_name_lookup"
+
+	// AuditNSSKeyCreated is a fleet key created. The secret is never in
+	// the detail; it is shown once, to the creator.
+	AuditNSSKeyCreated AuditAction = "nss.key_created"
+	// AuditNSSKeyUpdated is a change to a key's description, expiry,
+	// notification address or managing group, recorded with each changed
+	// field's value before and after.
+	AuditNSSKeyUpdated AuditAction = "nss.key_updated"
+	// AuditNSSKeyRotated is a new secret issued for a key. The previous
+	// one stays accepted until the detail's previous_expires_at.
+	AuditNSSKeyRotated AuditAction = "nss.key_rotated"
+	// AuditNSSKeyPreviousCleared is the previous secret ended before its
+	// rotation grace ran out.
+	AuditNSSKeyPreviousCleared AuditAction = "nss.key_previous_cleared"
+	// AuditNSSKeyRevoked is a key revoked. Terminal: a revoked key is
+	// never accepted again.
+	AuditNSSKeyRevoked AuditAction = "nss.key_revoked"
+	// AuditNSSShellChanged is a person choosing, or clearing, the login
+	// shell their own POSIX account is served with.
+	AuditNSSShellChanged AuditAction = "nss.shell_changed"
+)
