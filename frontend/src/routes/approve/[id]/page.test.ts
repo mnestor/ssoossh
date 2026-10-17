@@ -853,3 +853,131 @@ describe('the browser tab', () => {
 		expect(document.title).toBe('Approve a console login · ssoossh');
 	});
 });
+
+// #191: the page reads the request once and never again after a decision
+// goes through, so the status badge must follow the decision itself. Run
+// through the page rather than the view, because the bug was the page
+// leaving `detail.status` at pending under an Approved or Denied alert.
+describe('after a decision goes through', () => {
+	/** pendingOf is a pending request of `type` the visitor owns. */
+	function pendingOf(type: string) {
+		return {
+			id: 'req-1',
+			type,
+			status: 'pending',
+			source_ip: '198.51.100.7',
+			public_key: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5',
+			principals: ['alice'],
+			valid_seconds: 28800,
+			requested: { extensions: [], no_touch_required: false },
+			granted: { extensions: [], no_touch_required: false },
+			created_at: '2026-08-14T09:00:00Z',
+			expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+			approval_url: '/approve/req-1',
+			is_owned_by_you: true,
+			already_closed: false
+		};
+	}
+
+	/** badgeText is the request status badge's text. */
+	function badgeText(): string {
+		return screen.getByTestId('request-status').textContent!.trim();
+	}
+
+	beforeEach(() => {
+		redirectIfUnauthenticated.mockReturnValue(false);
+		vi.stubGlobal('localStorage', { getItem: () => null, setItem: () => undefined });
+		session.user = signedInAs({ approvable_service_accounts: ['svc-deploy'] });
+	});
+
+	afterEach(() => {
+		session.user = null;
+	});
+
+	it.each([
+		{ type: 'user', button: 'approve-button', want: 'approved' },
+		{ type: 'pam', button: 'approve-button', want: 'approved' },
+		{ type: 'console', button: 'approve-button', want: 'approved' },
+		{ type: 'service', button: 'approve-button', want: 'enrolled' },
+		{ type: 'user', button: 'deny-button', want: 'denied' },
+		{ type: 'service', button: 'deny-button', want: 'denied' }
+	])(
+		'should show $want on the badge after $button on a $type request',
+		async ({ type, button, want }) => {
+			mockFetch(200, pendingOf(type));
+			render(Page);
+			await settle();
+			if (type === 'service' && button === 'approve-button') {
+				await userEvent.selectOptions(screen.getByTestId('service-account-select'), 'svc-deploy');
+			}
+
+			await userEvent.click(screen.getByTestId(button));
+			await settle();
+
+			expect(badgeText()).toBe(want);
+		}
+	);
+});
+
+// #192: on a service request the Principals row showed the requester's own
+// name, while the certificate goes to the service account picked on the
+// page. Run through the page so the binding between the select and the row
+// stays covered, before and after Approve.
+describe('the Principals row on a service request', () => {
+	/** serviceRequest is a pending service request the requester alice made. */
+	function serviceRequest() {
+		return {
+			id: 'req-1',
+			type: 'service',
+			status: 'pending',
+			source_ip: '198.51.100.7',
+			public_key: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5',
+			principals: ['alice'],
+			valid_seconds: 28800,
+			requested: { extensions: [], no_touch_required: false },
+			granted: { extensions: [], no_touch_required: false },
+			created_at: '2026-08-14T09:00:00Z',
+			expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+			approval_url: '/approve/req-1',
+			is_owned_by_you: true,
+			already_closed: false
+		};
+	}
+
+	/** principalsRow is the value cell beside the Principals label. */
+	function principalsRow(): HTMLElement {
+		return screen.getByText('Principals', { selector: 'dt' }).nextElementSibling as HTMLElement;
+	}
+
+	beforeEach(() => {
+		redirectIfUnauthenticated.mockReturnValue(false);
+		session.user = signedInAs({ approvable_service_accounts: ['sv-deploy'] });
+		mockFetch(200, serviceRequest());
+	});
+
+	afterEach(() => {
+		session.user = null;
+	});
+
+	it('should not name the requester before an account is chosen', async () => {
+		render(Page);
+		await settle();
+		expect(principalsRow()).toHaveTextContent('the account you select below');
+	});
+
+	it('should name the chosen service account', async () => {
+		render(Page);
+		await settle();
+		await userEvent.selectOptions(screen.getByTestId('service-account-select'), 'sv-deploy');
+		expect(principalsRow()).toHaveTextContent(/^sv-deploy$/);
+	});
+
+	it('should keep naming the chosen account after approval', async () => {
+		render(Page);
+		await settle();
+		await userEvent.selectOptions(screen.getByTestId('service-account-select'), 'sv-deploy');
+		await userEvent.click(screen.getByTestId('approve-button'));
+		await settle();
+		expect(principalsRow()).toHaveTextContent(/^sv-deploy$/);
+	});
+});

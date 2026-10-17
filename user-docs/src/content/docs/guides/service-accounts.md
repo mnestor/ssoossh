@@ -244,7 +244,7 @@ fingerprint of the keypair the code is bound to), the code itself as one
 options, everyone who holds the account, the notification address, and a
 redemption history naming each fetch's address and serial. Never the code.
 
-![A service code's page: What it hands out (principal, certificate life, key ID, bound key), The code itself (valid period, approved by, certificate options), Who has access (two holders), a Notifications address field, and a Redemption history entry with its address and serial](../../../assets/screens/service-code.png)
+![A service code's page in the Advanced view: What it hands out (principal, certificate life, key ID, bound key), The code itself (valid period, approved by, certificate options), Who has access (one holder), a Notifications address field, and a Redemption history with three entries, each with its address and serial](../../../assets/screens/service-code.png)
 
 <p class="screen-caption">A holder's view of an expired code. A live one carries an <strong>Expire this code</strong> control below the notification address; it asks for a reason, and the reason is recorded.</p>
 
@@ -266,7 +266,7 @@ certificate request id, and the approver's username or email, and it is a
 substring match, so the shortened id the code's page shows is enough. That
 id is a button: clicking it copies the whole value.
 
-![Admin → Service codes: a search box accepting an enrollment ID, account, key ID, request ID or approver, and one code row summarising the account, who approved it, the certificate lifetime and its redemption count](../../../assets/screens/admin-service-codes.png)
+![Admin, Service codes: a search box accepting an enrollment ID, account, key ID, request ID or approver, and a row per code summarising the account, who approved it and when, the certificate lifetime and its redemption count](../../../assets/screens/admin-service-codes.png)
 
 <p class="screen-caption">The admin view of every approved code across all accounts. The search is a substring match on any of the identifiers an operator is likely to be holding.</p>
 

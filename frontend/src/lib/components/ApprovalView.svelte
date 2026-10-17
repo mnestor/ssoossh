@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import type { RequestDetail } from '#lib/api/types.js';
+	import type { RequestDetail, RequestStatus } from '#lib/api/types.js';
 	import {
 		anyTrimmed,
 		approvalBlockedReason,
@@ -156,6 +156,21 @@
 	const isConsoleRequest = $derived(detail.type === 'console');
 	const isServiceRequest = $derived(detail.type === 'service');
 	const isUserRequest = $derived(detail.type === 'user');
+	// The badge follows a decision made on this page. `detail` is the request
+	// as loaded and is not read again after a successful decision, so the
+	// badge used to say pending under an Approved or Denied alert (#191). A
+	// service approval mints its enrollment code at once, which the server
+	// records as enrolled; any other approval reads as approved, matching the
+	// outcome alert.
+	const shownStatus = $derived<RequestStatus>(
+		outcome === 'denied'
+			? 'denied'
+			: outcome === 'approved'
+				? isServiceRequest
+					? 'enrolled'
+					: 'approved'
+				: detail.status
+	);
 	// PAM and console requests authorize a local operation on a host, not an
 	// SSH session, and their certificate is shaped entirely by server config:
 	// the requesting machine minted a throwaway key and asked for nothing, so
@@ -419,6 +434,20 @@
 			(detail.status === 'pending' && secondsLeft !== null && secondsLeft <= 0)
 	);
 
+	// A service certificate's sole principal is the account picked under
+	// "Select service account". detail.principals holds the requester's own
+	// name and is not what is signed, so the row used to show the wrong
+	// account (#192). A decided request reads the account back from the
+	// decision; a denied or expired one has none.
+	const servicePrincipals = $derived(
+		selectedServiceAccount ? [selectedServiceAccount] : (detail.decided_principals ?? [])
+	);
+	// Whether the account select below is on screen, mirroring the branch
+	// that renders it, so the row only points at a control that exists.
+	const offersServiceAccount = $derived(
+		isServiceRequest && outcome === null && !blocked && !expired && hasServiceAccounts
+	);
+
 	// How far the host's own clock (client_time) has drifted from when the
 	// server received the request — worth a note past a small tolerance,
 	// since ordinary drift is not, but a clock that is minutes off might mean
@@ -514,7 +543,7 @@
 		     request is in, what kind it is, and which one it is. -->
 		<div class="flex items-center justify-between gap-3 pb-4">
 			<div class="flex items-center gap-2">
-				<StatusBadge status={detail.status} />
+				<StatusBadge status={shownStatus} testid="request-status" />
 				<TypeChip type={detail.type} />
 			</div>
 			{#if !simplified}
@@ -542,7 +571,21 @@
 
 		<dl class="divide-y divide-border-subtle">
 			<DetailRow label="Principals">
-				{#if showsPicker}
+				{#if isServiceRequest}
+					{#if servicePrincipals.length > 0}
+						<span class="flex flex-wrap gap-1.5" data-testid="service-principal">
+							{#each servicePrincipals as principal, index (index)}
+								<MonoChip>{principal}</MonoChip>
+							{/each}
+						</span>
+					{:else if offersServiceAccount}
+						<span class="font-sans text-ink-muted" data-testid="service-principal-pending">
+							the account you select below
+						</span>
+					{:else}
+						<span class="font-sans text-ink-muted">none</span>
+					{/if}
+				{:else if showsPicker}
 					<!-- The approver's held accounts as toggle chips: pressed ones go
 					     into the certificate. In the row itself rather than a section
 					     further down, so the value being decided sits where the value

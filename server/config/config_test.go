@@ -9,6 +9,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -522,5 +523,33 @@ branding:
 
 	if _, err := NewConfig(cc); err == nil {
 		t.Error("NewConfig() error = nil, want an error for an unparseable branding.support_email")
+	}
+}
+
+// #193: the dev server loaded `source-address` under
+// cert_options.service.extensions, and the approval page then offered it as
+// an extension toggle. Load, not just Validate, is checked so the wiring
+// that runs the extension check at startup stays covered.
+func TestNewConfig_ShouldRejectACriticalOptionListedAsAnExtension(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "critical-as-extension.yaml")
+	writeFile(t, path, `
+ssh_key: "test-key-material"
+cert_options:
+  service:
+    extensions:
+      - "source-address"
+`)
+
+	cc := newTestCommand()
+	if err := cc.Flags().Set("config", path); err != nil {
+		t.Fatalf("failed to set --config flag: %v", err)
+	}
+
+	_, err := NewConfig(cc)
+	if err == nil || !strings.Contains(err.Error(), "cert_options.service.extensions") {
+		t.Errorf("NewConfig() error = %v, want one naming cert_options.service.extensions", err)
 	}
 }
