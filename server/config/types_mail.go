@@ -131,6 +131,17 @@ type MailConfig struct {
 	// default, so the useful message is "this is still happening today".
 	ExpiredAttemptWindow time.Duration `mapstructure:"expired_attempt_window" default:"24h"`
 
+	// RotationQuietPeriod is how long after an NSS fleet key is rotated the
+	// nss_key_rotation_cleanup digest stays silent, giving hosts time to
+	// pick up the new secret on their own. After it, the digest goes out
+	// daily while any address still presents the previous secret, and
+	// stops when none does or the rotation grace (nss.key_rotation_grace)
+	// ends. Zero disables the digest entirely.
+	//
+	// A week by default: a fleet that redeploys its configuration weekly
+	// has switched by then, and what is left is worth a message.
+	RotationQuietPeriod time.Duration `mapstructure:"rotation_quiet_period" default:"168h"`
+
 	// SMTP is the relay connection. See SMTPConfig.
 	SMTP SMTPConfig `mapstructure:"smtp"`
 
@@ -260,12 +271,15 @@ func (c *MailConfig) Validate() error {
 	}
 
 	// Negative rejected rather than clamped: zero already means "off" for
-	// both, so a negative is a typo whose intent cannot be guessed.
+	// each, so a negative is a typo whose intent cannot be guessed.
 	if c.ExpiryReminderLead < 0 {
 		return fmt.Errorf("mail.expiry_reminder_lead %s is negative: use 0 to disable the reminder", c.ExpiryReminderLead)
 	}
 	if c.ExpiredAttemptWindow < 0 {
 		return fmt.Errorf("mail.expired_attempt_window %s is negative: use 0 to disable the notification", c.ExpiredAttemptWindow)
+	}
+	if c.RotationQuietPeriod < 0 {
+		return fmt.Errorf("mail.rotation_quiet_period %s is negative: use 0 to disable the rotation cleanup digest", c.RotationQuietPeriod)
 	}
 
 	return c.SMTP.validate()

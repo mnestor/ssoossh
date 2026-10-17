@@ -12,6 +12,7 @@ Both group names are optional; empty disables the corresponding role.
 | [`admin.require_group`](#require_group) | string | `empty` |
 | [`admin.soc_group`](#soc_group) | string | `empty` |
 | [`admin.auditor_group`](#auditor_group) | string | `empty` |
+| [`admin.nss_key_group`](#nss_key_group) | string | `empty` |
 | [`admin.contact_email`](#contact_email) | string | `empty` |
 | [`admin.disabled_message`](#disabled_message) | string | `empty` |
 
@@ -46,6 +47,17 @@ The OIDC group a caller must belong to in order to access auditor-scoped operati
 ```yaml
 admin:
   auditor_group: ""
+```
+
+## `nss_key_group`
+
+`string`, default `empty`
+
+The OIDC group a caller must belong to in order to administer every NSS fleet API key: create keys, rotate, revoke and edit any of them, and assign the group that manages a key. Admins hold this access regardless of this setting, so empty narrows key administration to admins rather than disabling it. Members of a key's own group manage that key without this role, and SOC and auditors keep their own revoke and read access. Fails closed: no identity, or membership in neither group, denies.
+
+```yaml
+admin:
+  nss_key_group: ""
 ```
 
 ## `contact_email`

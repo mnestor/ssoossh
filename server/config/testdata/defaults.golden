@@ -57,6 +57,7 @@ logging.level = WARN
 mail.expired_attempt_window = 24h
 mail.expiry_reminder_lead = 168h
 mail.logging.level = info
+mail.rotation_quiet_period = 168h
 mail.smtp.auth = none
 mail.smtp.host = localhost
 mail.smtp.port = 25

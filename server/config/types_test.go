@@ -591,3 +591,114 @@ func TestGrantsAdmin_ShouldDecideAdminAccess(t *testing.T) {
 		})
 	}
 }
+
+// TestGrantsNSSKeyAdmin_ShouldDecideFleetKeyAdministration exercises the
+// fleet key administration grant. Admins are a superset, so admin
+// membership grants it even when nss_key_group is unset, while SOC and
+// auditor membership never do: they keep their own revoke and read access
+// in the key handlers, not this one. It fails closed like the other roles.
+func TestGrantsNSSKeyAdmin_ShouldDecideFleetKeyAdministration(t *testing.T) {
+	tests := []struct {
+		name   string
+		cfg    AdminConfig
+		groups []string
+		want   bool
+	}{
+		{
+			name:   "should grant when the caller is in the key group",
+			cfg:    AdminConfig{RequireGroup: "admins", NSSKeyGroup: "fleet-keys"},
+			groups: []string{"fleet-keys"},
+			want:   true,
+		},
+		{
+			name:   "should grant when the caller is an admin",
+			cfg:    AdminConfig{RequireGroup: "admins", NSSKeyGroup: "fleet-keys"},
+			groups: []string{"admins"},
+			want:   true,
+		},
+		{
+			name:   "should grant admins when the key group is unconfigured",
+			cfg:    AdminConfig{RequireGroup: "admins"},
+			groups: []string{"admins"},
+			want:   true,
+		},
+		{
+			name:   "should grant when only the key group is configured",
+			cfg:    AdminConfig{NSSKeyGroup: "fleet-keys"},
+			groups: []string{"fleet-keys"},
+			want:   true,
+		},
+		{
+			name:   "should deny when the caller is only in the SOC group",
+			cfg:    AdminConfig{RequireGroup: "admins", SOCGroup: "soc", NSSKeyGroup: "fleet-keys"},
+			groups: []string{"soc"},
+			want:   false,
+		},
+		{
+			name:   "should deny when the caller is only in the auditor group",
+			cfg:    AdminConfig{RequireGroup: "admins", AuditorGroup: "auditors", NSSKeyGroup: "fleet-keys"},
+			groups: []string{"auditors"},
+			want:   false,
+		},
+		{
+			name:   "should deny when the caller is in neither group",
+			cfg:    AdminConfig{RequireGroup: "admins", NSSKeyGroup: "fleet-keys"},
+			groups: []string{"engineering"},
+			want:   false,
+		},
+		{
+			name:   "should deny when the caller has no groups",
+			cfg:    AdminConfig{RequireGroup: "admins", NSSKeyGroup: "fleet-keys"},
+			groups: nil,
+			want:   false,
+		},
+		{
+			name:   "should deny an empty group entry when the key group is unset",
+			cfg:    AdminConfig{RequireGroup: "admins"},
+			groups: []string{""},
+			want:   false,
+		},
+		{
+			name:   "should deny everyone when nothing is configured",
+			cfg:    AdminConfig{},
+			groups: []string{"admins", "fleet-keys", ""},
+			want:   false,
+		},
+		{
+			name:   "should deny when the membership is only a prefix match",
+			cfg:    AdminConfig{RequireGroup: "admins", NSSKeyGroup: "fleet-keys"},
+			groups: []string{"fleet-keys-readonly", "admins-emeritus"},
+			want:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.cfg.GrantsNSSKeyAdmin(tt.groups); got != tt.want {
+				t.Errorf("GrantsNSSKeyAdmin(%v) = %v, want %v", tt.groups, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestAdminConfigIsNSSKeyAdminEnabled_ShouldReportWhetherTheGroupIsSet
+// pins the helper GrantsNSSKeyAdmin gates on.
+func TestAdminConfigIsNSSKeyAdminEnabled_ShouldReportWhetherTheGroupIsSet(t *testing.T) {
+	tests := []struct {
+		name  string
+		group string
+		want  bool
+	}{
+		{name: "should report disabled when the group is empty", group: "", want: false},
+		{name: "should report enabled when the group is set", group: "fleet-keys", want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a := AdminConfig{NSSKeyGroup: tt.group}
+			if got := a.IsNSSKeyAdminEnabled(); got != tt.want {
+				t.Errorf("IsNSSKeyAdminEnabled() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

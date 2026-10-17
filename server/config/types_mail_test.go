@@ -379,3 +379,61 @@ func TestMailConfig_shouldUseTheReminderLeadAsTheExpiringSoonWindow(t *testing.T
 		})
 	}
 }
+
+func TestMailConfig_ShouldCheckTheRotationQuietPeriodWhenValidating(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		period  time.Duration
+		wantErr bool
+	}{
+		{name: "should accept the default week when it is left alone", period: 168 * time.Hour},
+		{name: "should accept zero when the digest is switched off", period: 0},
+		{name: "should accept a short period when it is one nanosecond", period: time.Nanosecond},
+		{name: "should reject a negative period when it is a typo", period: -time.Hour, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			c := validMail()
+			c.RotationQuietPeriod = tt.period
+			err := c.Validate()
+			if tt.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "mail.rotation_quiet_period") {
+					t.Errorf("Validate = %v, want an error naming mail.rotation_quiet_period", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("Validate: %v", err)
+			}
+		})
+	}
+}
+
+func TestNewConfig_ShouldDefaultTheRotationQuietPeriodToAWeekWhenUnset(t *testing.T) {
+	t.Parallel()
+
+	c, err := loadNSSConfig(t, `ssh_key: "test-key-material"`)
+	if err != nil {
+		t.Fatalf("NewConfig: %v", err)
+	}
+	if c.Mail.RotationQuietPeriod != 168*time.Hour {
+		t.Errorf("mail.rotation_quiet_period = %s, want 168h", c.Mail.RotationQuietPeriod)
+	}
+}
+
+func TestNewConfig_ShouldDefaultTheNSSKeyGroupToEmptyWhenUnset(t *testing.T) {
+	t.Parallel()
+
+	c, err := loadNSSConfig(t, `ssh_key: "test-key-material"`)
+	if err != nil {
+		t.Fatalf("NewConfig: %v", err)
+	}
+	if c.Admin.NSSKeyGroup != "" {
+		t.Errorf("admin.nss_key_group = %q, want empty", c.Admin.NSSKeyGroup)
+	}
+}
