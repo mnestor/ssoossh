@@ -7,6 +7,7 @@
 DROP TABLE IF EXISTS nss_alerts;
 DROP TABLE IF EXISTS nss_key_usage;
 DROP TABLE IF EXISTS nss_keys;
+DROP TABLE IF EXISTS nss_collisions;
 DROP TABLE IF EXISTS posix_group_members;
 DROP TABLE IF EXISTS posix_groups;
 DROP TABLE IF EXISTS posix_users;

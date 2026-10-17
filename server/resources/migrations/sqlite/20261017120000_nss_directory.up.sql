@@ -1,5 +1,6 @@
 -- The NSS directory: the POSIX accounts and groups served to hosts over
--- /api/nss/*, the fleet keys those hosts authenticate with, the keys' usage
+-- /api/nss/*, the collisions that withhold some of them, the fleet keys
+-- those hosts authenticate with, the keys' usage
 -- aggregate, and the claim markers that hold each NSS alert to one per
 -- window across instances. See docs/proposals/nss-directory/1-server-api.md
 -- ("Data model") and server/model/posix.go and server/model/nss.go.
@@ -36,7 +37,10 @@ CREATE TABLE posix_users (
     -- Empty string when ldap.id_attribute is unset; the sync then matches
     -- on dn alone.
     directory_id    TEXT NOT NULL DEFAULT '',
-    -- The entry's DN from the last successful read.
+    -- The entry's DN from the last successful read. Set to the empty string
+    -- when an entry with another directory_id turns up at the same DN: two
+    -- entries cannot share one, so this row's copy is stale, and the row is
+    -- matched by directory_id alone from then on.
     dn              TEXT NOT NULL,
     -- The person, set at login when the LDAP enrichment resolves this
     -- entry. NULL for shared and service accounts and for anyone who has
@@ -64,8 +68,8 @@ CREATE TABLE posix_users (
     gecos           TEXT NOT NULL DEFAULT '',
     -- The directory's own disabled flag, from nss.disabled_filter.
     dir_disabled    INTEGER NOT NULL DEFAULT 0,
-    -- The first sync that could not find the entry by id, DN or filter.
-    -- NULL while the entry resolves.
+    -- The first full sync that did not see the entry (a directory outage or
+    -- a failed search is never a miss). NULL while the entry resolves.
     missing_since   DATETIME NULL,
     -- Set once missing_since is older than nss.tombstone_after, cleared if
     -- the entry reappears. A tombstone still holds its uid and name, so
@@ -75,9 +79,9 @@ CREATE TABLE posix_users (
     -- Set while the row is part of a uid or name collision, cleared when
     -- the collision resolves. Lookups treat a withheld row as not found.
     -- Row state rather than state of one sync run, so every instance, and
-    -- one that has just restarted, withholds the same rows. uid and name
-    -- are unique, so the row here is the holder of the contested value and
-    -- withheld_reason names the other entry, in a short sentence for the
+    -- one that has just restarted, withholds the same rows. The collisions
+    -- themselves are in nss_collisions: a row is withheld while one names
+    -- it, and withheld_reason sums them up in a short sentence for the
     -- operator ("uid 1234 is also carried by cn=bob,ou=people,dc=example").
     withheld_at     DATETIME NULL,
     withheld_reason TEXT NOT NULL DEFAULT '',
@@ -93,7 +97,8 @@ CREATE TABLE posix_users (
 CREATE UNIQUE INDEX idx_posix_users_uid ON posix_users (uid);
 CREATE UNIQUE INDEX idx_posix_users_name ON posix_users (name);
 -- The sync's DN anchor, and where a group's member DNs are resolved.
-CREATE UNIQUE INDEX idx_posix_users_dn ON posix_users (dn);
+-- Partial so the empty string of a released DN (above) can repeat.
+CREATE UNIQUE INDEX idx_posix_users_dn ON posix_users (dn) WHERE dn <> '';
 -- The login link and the shell self-service read: at most one account per
 -- person. NULLs are distinct in both dialects, so unlinked rows never
 -- collide.
@@ -102,8 +107,9 @@ CREATE UNIQUE INDEX idx_posix_users_user_id ON posix_users (user_id);
 -- and is not worth indexing.
 CREATE INDEX idx_posix_users_directory_id ON posix_users (directory_id) WHERE directory_id <> '';
 
--- One row per directory group with the mapped gid attribute, plus the
--- synthetic private groups auto_private_groups creates.
+-- One row per directory group with the mapped gid attribute. Private groups
+-- (nss.auto_private_groups) are worked out when an account is read and are
+-- never stored, so every row here is a directory entry.
 --
 -- Groups go missing and are tombstoned the way accounts are: a group missing
 -- from the directory for nss.tombstone_after is tombstoned (deleted_at), and
@@ -121,13 +127,12 @@ CREATE TABLE posix_groups (
     -- shares its user's name.
     name            TEXT NOT NULL,
     directory_id    TEXT NOT NULL DEFAULT '',
-    -- Empty string for a synthetic group, which has no entry.
-    dn              TEXT NOT NULL DEFAULT '',
-    synthetic       INTEGER NOT NULL DEFAULT 0,
-    -- As posix_users: the first sync that could not find the entry, NULL
+    -- As posix_users.dn, including the empty string of a released DN.
+    dn              TEXT NOT NULL,
+    -- As posix_users: the first full sync that did not see the entry, NULL
     -- while it resolves; and the tombstone, set once missing_since is older
-    -- than nss.tombstone_after and cleared if the entry reappears. Always
-    -- NULL on a synthetic group, which goes with its account.
+    -- than nss.tombstone_after and cleared if the entry reappears. The
+    -- sync deletes a tombstoned group's membership rows.
     missing_since   DATETIME NULL,
     deleted_at      DATETIME NULL,
     -- As posix_users: set while the row is part of a gid or name collision.
@@ -136,18 +141,18 @@ CREATE TABLE posix_groups (
     created_at      DATETIME NOT NULL,
     updated_at      DATETIME NOT NULL,
     -- The last sync or on-demand read that reached the directory for this
-    -- entry. Nullable, unlike posix_users', because a synthetic group is
-    -- never read from the directory.
-    last_synced_at  DATETIME NULL
+    -- entry. Every row is born from such a read, so it is never NULL.
+    last_synced_at  DATETIME NOT NULL
 );
 
 -- getgrgid and getgrnam, and one record per number and per name.
 CREATE UNIQUE INDEX idx_posix_groups_gid ON posix_groups (gid);
 CREATE UNIQUE INDEX idx_posix_groups_name ON posix_groups (name);
--- The sync's two anchors. Both partial: synthetic groups hold the empty
--- string in each.
+-- The sync's two anchors, partial as posix_users' are: the empty string
+-- means "no ID" in one and "released" in the other. A DN names one entry,
+-- so it is unique, as posix_users.dn is.
 CREATE INDEX idx_posix_groups_directory_id ON posix_groups (directory_id) WHERE directory_id <> '';
-CREATE INDEX idx_posix_groups_dn ON posix_groups (dn) WHERE dn <> '';
+CREATE UNIQUE INDEX idx_posix_groups_dn ON posix_groups (dn) WHERE dn <> '';
 
 -- Group membership by number. Keyed by uid rather than users.id because
 -- members include accounts that never log in. No foreign keys: an accepted
@@ -162,6 +167,45 @@ CREATE TABLE posix_group_members (
 -- The primary key answers "members of this group"; this answers "groups of
 -- this user", the initgroups lookup.
 CREATE INDEX idx_posix_group_members_uid ON posix_group_members (uid);
+
+-- Directory entries that contend for a uid, gid or name a stored row holds.
+-- POSIX resolves one record per number and per name, so while two entries
+-- claim one, neither is served: the holder row is withheld, and the other
+-- entry is either not stored at all (a new entry whose number or name is
+-- taken, a tombstone's included) or is a stored row withheld as well (a
+-- rename onto a held name). One row per pair; the sync writes it each time
+-- it sees the pair, and deletes it once the pair is gone: when either entry
+-- is read again without the clash, and on a full sync for every pair it did
+-- not see. Nothing else reads it but the admin collisions report.
+CREATE TABLE nss_collisions (
+    -- uid or user_name for an account (holder_id is a posix_users.id), gid
+    -- or group_name for a group (holder_id is a posix_groups.id).
+    kind          TEXT NOT NULL CHECK (kind IN ('uid', 'user_name', 'gid', 'group_name')),
+    -- The row holding the contested value. No foreign key: it names a row
+    -- of one table or the other by kind, and every path that deletes such a
+    -- row deletes its collisions in the same transaction.
+    holder_id     TEXT NOT NULL,
+    -- The other entry's DN as the directory returned it.
+    other_dn      TEXT NOT NULL,
+    -- The contested value as text: the number or the name.
+    value         TEXT NOT NULL,
+    -- The other entry's row when it is stored too, NULL when the sync
+    -- refused to store it. A stored other row is withheld like the holder.
+    other_id      TEXT NULL,
+    -- What the other entry carried when last seen: its mapped name and its
+    -- uid (for an account) or gid (for a group).
+    other_name    TEXT NOT NULL DEFAULT '',
+    other_number  INTEGER NOT NULL,
+    first_seen_at DATETIME NOT NULL,
+    last_seen_at  DATETIME NOT NULL,
+    PRIMARY KEY (kind, holder_id, other_dn)
+);
+
+-- Re-reading an entry replaces the pairs it contends in, and deleting or
+-- re-reading a holder replaces the pairs it holds.
+CREATE INDEX idx_nss_collisions_other_dn ON nss_collisions (other_dn);
+CREATE INDEX idx_nss_collisions_holder_id ON nss_collisions (holder_id);
+CREATE INDEX idx_nss_collisions_other_id ON nss_collisions (other_id) WHERE other_id IS NOT NULL;
 
 -- Fleet API keys: one per fleet of hosts that resolves accounts through the
 -- server. The table is fleet-sized, tens of rows, so nothing but the primary

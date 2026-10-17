@@ -34,7 +34,8 @@ type PosixUser struct {
 
 	// DN is the entry's distinguished name from the last successful read:
 	// the sync's second anchor, and what a group's member DNs resolve
-	// against.
+	// against. Empty once an entry with another DirectoryID has turned up
+	// at the same DN, which makes this row's copy stale; unique otherwise.
 	DN string `gorm:"column:dn;uniqueIndex:idx_posix_users_dn"`
 
 	// UserID links the person, set at login when the LDAP enrichment
@@ -69,8 +70,9 @@ type PosixUser struct {
 	// nss.disabled_filter.
 	DirDisabled bool `gorm:"column:dir_disabled"`
 
-	// MissingSince is the first sync that could not find the entry by id,
-	// DN or filter. Nil while the entry resolves.
+	// MissingSince is the first full sync that did not see the entry; a
+	// directory outage or a failed search is never a miss. Nil while the
+	// entry resolves.
 	MissingSince *time.Time `gorm:"column:missing_since"`
 
 	// DeletedAt is set once MissingSince is older than nss.tombstone_after
@@ -83,8 +85,9 @@ type PosixUser struct {
 	// WithheldAt is set while the row is part of a uid or name collision
 	// and cleared when the collision resolves; lookups treat a withheld row
 	// as not found. Row state, so every instance withholds the same rows.
-	// WithheldReason names the other entry in a short sentence for the
-	// operator, and is empty while the row is not withheld.
+	// The collisions themselves are NSSCollision rows; WithheldReason sums
+	// them up in a short sentence for the operator, and is empty while the
+	// row is not withheld.
 	WithheldAt     *time.Time `gorm:"column:withheld_at"`
 	WithheldReason string     `gorm:"column:withheld_reason"`
 
@@ -100,14 +103,14 @@ type PosixUser struct {
 func (PosixUser) TableName() string { return "posix_users" }
 
 // PosixGroup is one POSIX group the NSS directory serves: a directory group
-// with the mapped gid attribute, or a synthetic private group created by
-// nss.auto_private_groups.
+// with the mapped gid attribute. Private groups (nss.auto_private_groups)
+// are worked out when an account is read and are never stored here.
 //
 // Groups are tombstoned the way accounts are. A group missing from the
 // directory for nss.tombstone_after gets DeletedAt; it still resolves by
 // name and gid, so ls -l keeps showing a name, but is served with no
-// members, so it grants nothing; it is purged after nss.tombstone_retention
-// with the accounts.
+// members (the sync deletes its membership rows), so it grants nothing; it
+// is purged after nss.tombstone_retention with the accounts.
 type PosixGroup struct {
 	ID string `gorm:"column:id;primaryKey"`
 
@@ -123,19 +126,16 @@ type PosixGroup struct {
 	// PosixUser.Name: a private group shares its user's name.
 	Name string `gorm:"column:name;uniqueIndex:idx_posix_groups_name"`
 
-	// DirectoryID and DN are the sync's two anchors, as on PosixUser. Both
-	// are empty on a synthetic group, which has no entry.
+	// DirectoryID and DN are the sync's two anchors, as on PosixUser,
+	// including the empty DN of a released one.
 	DirectoryID string `gorm:"column:directory_id;index:idx_posix_groups_directory_id"`
-	DN          string `gorm:"column:dn;index:idx_posix_groups_dn"`
+	DN          string `gorm:"column:dn;uniqueIndex:idx_posix_groups_dn"`
 
-	// Synthetic is true for a private group auto_private_groups created.
-	Synthetic bool `gorm:"column:synthetic"`
-
-	// MissingSince is the first sync that could not find the entry, nil
+	// MissingSince is the first full sync that did not see the entry, nil
 	// while it resolves. DeletedAt is the tombstone, set once MissingSince
 	// is older than nss.tombstone_after and cleared if the entry reappears;
 	// a *time.Time rather than gorm.DeletedAt for the reason PosixUser's
-	// is. Both stay nil on a synthetic group.
+	// is.
 	MissingSince *time.Time `gorm:"column:missing_since"`
 	DeletedAt    *time.Time `gorm:"column:deleted_at"`
 
@@ -148,9 +148,8 @@ type PosixGroup struct {
 	UpdatedAt time.Time `gorm:"column:updated_at"`
 
 	// LastSyncedAt is the last sync or on-demand read that reached the
-	// directory for this entry. Nil on a synthetic group, which is never
-	// read from the directory.
-	LastSyncedAt *time.Time `gorm:"column:last_synced_at"`
+	// directory for this entry. Every row is born from one.
+	LastSyncedAt time.Time `gorm:"column:last_synced_at"`
 }
 
 // TableName overrides GORM's default pluralization to match the migration.
@@ -167,3 +166,62 @@ type PosixGroupMember struct {
 
 // TableName overrides GORM's default pluralization to match the migration.
 func (PosixGroupMember) TableName() string { return "posix_group_members" }
+
+// NSSCollisionKind says which unique value an NSSCollision contests, and so
+// which table its HolderID and OtherID name.
+type NSSCollisionKind string
+
+// The four contested values. POSIX resolves one record per number and per
+// name, and account and group names are separate namespaces.
+const (
+	// NSSCollisionUID is two accounts with one uid (posix_users).
+	NSSCollisionUID NSSCollisionKind = "uid"
+	// NSSCollisionUserName is two accounts with one name (posix_users).
+	NSSCollisionUserName NSSCollisionKind = "user_name"
+	// NSSCollisionGID is two groups with one gid (posix_groups).
+	NSSCollisionGID NSSCollisionKind = "gid"
+	// NSSCollisionGroupName is two groups with one name (posix_groups).
+	NSSCollisionGroupName NSSCollisionKind = "group_name"
+)
+
+// ForGroups reports whether the kind is about groups rather than accounts.
+func (k NSSCollisionKind) ForGroups() bool {
+	return k == NSSCollisionGID || k == NSSCollisionGroupName
+}
+
+// NSSCollision is one directory entry contending for a value a stored row
+// holds. While it exists the holder is withheld, and so is the other entry
+// when it is stored too (OtherID set); when the sync refused to store the
+// other entry, OtherID is nil and only its DN, name and number are known.
+// The sync writes one each time it sees the pair and deletes it once the
+// pair is gone.
+type NSSCollision struct {
+	// Kind names the contested value and, through ForGroups, the table
+	// HolderID and OtherID belong to.
+	Kind NSSCollisionKind `gorm:"column:kind;primaryKey;check:chk_nss_collisions_kind,kind IN ('uid','user_name','gid','group_name')"`
+
+	// HolderID is the row holding the contested value: a PosixUser.ID or a
+	// PosixGroup.ID by Kind.
+	HolderID string `gorm:"column:holder_id;primaryKey;index:idx_nss_collisions_holder_id"`
+
+	// OtherDN is the contending entry's DN as the directory returned it.
+	OtherDN string `gorm:"column:other_dn;primaryKey;index:idx_nss_collisions_other_dn"`
+
+	// Value is the contested uid, gid or name, as text.
+	Value string `gorm:"column:value"`
+
+	// OtherID is the contending entry's row when it is stored too, nil
+	// when the sync refused to store it.
+	OtherID *string `gorm:"column:other_id;index:idx_nss_collisions_other_id"`
+
+	// OtherName and OtherNumber are what the contending entry carried when
+	// last seen: its mapped name, and its uid or gid.
+	OtherName   string `gorm:"column:other_name"`
+	OtherNumber uint32 `gorm:"column:other_number"`
+
+	FirstSeenAt time.Time `gorm:"column:first_seen_at"`
+	LastSeenAt  time.Time `gorm:"column:last_seen_at"`
+}
+
+// TableName overrides GORM's default pluralization to match the migration.
+func (NSSCollision) TableName() string { return "nss_collisions" }
