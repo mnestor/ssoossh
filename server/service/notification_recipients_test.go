@@ -347,6 +347,7 @@ func TestDiscardNotifications_ShouldBeSafeToCall(t *testing.T) {
 	var n Notifier = discardNotifications{}
 	n.Notify(t.Context(), notify.KindServiceEnrollmentCreated, "user-1", nil)
 	n.NotifyServiceAccount(t.Context(), notify.KindServiceEnrollmentRedeemed, "deploy-bot", nil)
+	n.NotifyNSSKey(t.Context(), notify.KindNSSKeyRotated, "nss_ABCD2345", nil)
 }
 
 // A notification that cannot be queued is logged and dropped: the work it
