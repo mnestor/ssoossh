@@ -291,6 +291,43 @@ export interface NSSKeyResponse {
 	 * carries view alone.
 	 */
 	permissions: NSSKeyPermission[];
+	/**
+	 * LastUsedAt is the last lookup any host made with the key, from the
+	 * retained usage, so up to a minute behind; absent for a key no host
+	 * has used.
+	 */
+	last_used_at?: string;
+	/**
+	 * MissRateAlertAt is when the miss rate alert (nss.miss_alert_rate)
+	 * last fired for the key: many lookups for names the directory does
+	 * not hold. Absent unless it fired in the last 7 days.
+	 */
+	miss_rate_alert_at?: string;
+	/**
+	 * KeySourceAlertAt is when the key source alert
+	 * (nss.key_source_alert) last fired for the key: more source
+	 * addresses in one day than the limit. Absent unless it fired in the
+	 * last 7 days.
+	 */
+	key_source_alert_at?: string;
+}
+/**
+ * NSSKeySettingsResponse is GET /api/nss/key-settings: the parts of the
+ * nss configuration the key pages state before an operator acts, so the
+ * create form can propose an expiry and the rotate dialog can name the day
+ * the previous secret stops working.
+ */
+export interface NSSKeySettingsResponse {
+	/**
+	 * DefaultLifetimeSeconds is nss.key_default_lifetime: a new key's
+	 * expiry when none is given.
+	 */
+	default_lifetime_seconds: number /* int */;
+	/**
+	 * RotationGraceSeconds is nss.key_rotation_grace: how long the
+	 * previous secret stays accepted after a rotation.
+	 */
+	rotation_grace_seconds: number /* int */;
 }
 /**
  * NSSKeyListResponse is GET /api/nss/keys: every key the caller may view,

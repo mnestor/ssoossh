@@ -71,6 +71,32 @@ type NSSKeyResponse struct {
 	// server so the UI never reimplements the role matrix. A revoked key
 	// carries view alone.
 	Permissions []model.NSSKeyPermission `json:"permissions" validate:"required"`
+	// LastUsedAt is the last lookup any host made with the key, from the
+	// retained usage, so up to a minute behind; absent for a key no host
+	// has used.
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+	// MissRateAlertAt is when the miss rate alert (nss.miss_alert_rate)
+	// last fired for the key: many lookups for names the directory does
+	// not hold. Absent unless it fired in the last 7 days.
+	MissRateAlertAt *time.Time `json:"miss_rate_alert_at,omitempty"`
+	// KeySourceAlertAt is when the key source alert
+	// (nss.key_source_alert) last fired for the key: more source
+	// addresses in one day than the limit. Absent unless it fired in the
+	// last 7 days.
+	KeySourceAlertAt *time.Time `json:"key_source_alert_at,omitempty"`
+}
+
+// NSSKeySettingsResponse is GET /api/nss/key-settings: the parts of the
+// nss configuration the key pages state before an operator acts, so the
+// create form can propose an expiry and the rotate dialog can name the day
+// the previous secret stops working.
+type NSSKeySettingsResponse struct {
+	// DefaultLifetimeSeconds is nss.key_default_lifetime: a new key's
+	// expiry when none is given.
+	DefaultLifetimeSeconds int `json:"default_lifetime_seconds" validate:"required"`
+	// RotationGraceSeconds is nss.key_rotation_grace: how long the
+	// previous secret stays accepted after a rotation.
+	RotationGraceSeconds int `json:"rotation_grace_seconds" validate:"required"`
 }
 
 // NSSKeyListResponse is GET /api/nss/keys: every key the caller may view,

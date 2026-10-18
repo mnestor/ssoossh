@@ -142,15 +142,29 @@ func nssKeyStatus(key *model.NSSKey, now time.Time) model.NSSKeyStatus {
 }
 
 // NSSKeyView is one key as a caller sees it: the row, who created and
-// revoked it by username, its derived status, and what this caller may do
-// with it.
+// revoked it by username, its derived status, what this caller may do with
+// it, and how hosts have been using it.
 type NSSKeyView struct {
 	Key               model.NSSKey
 	CreatedByUsername string
 	RevokedByUsername string
 	Status            model.NSSKeyStatus
 	Permissions       []model.NSSKeyPermission
+
+	// LastUsedAt is the latest last_seen in the key's retained usage, nil
+	// for a key no host has used (or whose usage has all been pruned).
+	LastUsedAt *time.Time
+	// MissRateAlertAt and KeySourceAlertAt are when the miss rate and the
+	// key source alerts last fired for the key, nil unless that was
+	// within NSSKeyAlertLookback.
+	MissRateAlertAt  *time.Time
+	KeySourceAlertAt *time.Time
 }
+
+// NSSKeyAlertLookback is how far back a key's view reports its usage
+// alerts. Both are raised at most once a day, so a week shows a pattern
+// without keeping an old alert on the page for good.
+const NSSKeyAlertLookback = 7 * 24 * time.Hour
 
 // HasPermission reports whether the view grants permission.
 func (v *NSSKeyView) HasPermission(permission model.NSSKeyPermission) bool {
@@ -284,6 +298,10 @@ func (s *NSSKeyService) views(ctx context.Context, groups []string, keys []model
 	}
 
 	now := s.now()
+	activity, err := s.activity(ctx, keys, now)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]NSSKeyView, 0, len(keys))
 	for _, key := range keys {
 		view := NSSKeyView{
@@ -295,9 +313,92 @@ func (s *NSSKeyService) views(ctx context.Context, groups []string, keys []model
 		if key.RevokedBy != nil {
 			view.RevokedByUsername = usernames[*key.RevokedBy]
 		}
+		if seen := activity[key.ID]; seen != nil {
+			view.LastUsedAt = seen.lastUsed
+			view.MissRateAlertAt = seen.missRateAlert
+			view.KeySourceAlertAt = seen.keySourceAlert
+		}
 		out = append(out, view)
 	}
 	return out, nil
+}
+
+// nssKeyActivity is what views reports about a key's use: its latest
+// lookup and its recent usage alerts.
+type nssKeyActivity struct {
+	lastUsed       *time.Time
+	missRateAlert  *time.Time
+	keySourceAlert *time.Time
+}
+
+// activity reads, for every key in keys at once, its latest usage and the
+// usage alerts raised for it since now minus NSSKeyAlertLookback: two
+// queries whatever the number of keys, never one per key.
+//
+// The latest use is the row whose last_seen is its key's maximum rather
+// than MAX(last_seen) itself, because an aggregate over a timestamp comes
+// back from SQLite as text that will not scan into a time.Time (see
+// usageByAddress).
+func (s *NSSKeyService) activity(ctx context.Context, keys []model.NSSKey, now time.Time) (map[string]*nssKeyActivity, error) {
+	out := map[string]*nssKeyActivity{}
+	if len(keys) == 0 {
+		return out, nil
+	}
+	ids := make([]string, 0, len(keys))
+	for _, key := range keys {
+		ids = append(ids, key.ID)
+	}
+	entry := func(id string) *nssKeyActivity {
+		if out[id] == nil {
+			out[id] = &nssKeyActivity{}
+		}
+		return out[id]
+	}
+
+	db := s.db.WithContext(ctx)
+	var latest []model.NSSKeyUsage
+	if err := db.Select("key_id, last_seen").Where("key_id IN ?", ids).Where(`last_seen = (
+			SELECT MAX(inner_usage.last_seen) FROM nss_key_usage AS inner_usage
+			WHERE inner_usage.key_id = nss_key_usage.key_id
+		)`).Find(&latest).Error; err != nil {
+		return nil, fmt.Errorf("read each fleet key's latest use: %w", err)
+	}
+	for _, use := range latest {
+		lastSeen := use.LastSeen
+		entry(use.KeyID).lastUsed = &lastSeen
+	}
+
+	var alerts []model.NSSAlert
+	// The cutoff is UTC because SQLite compares the stored timestamps as
+	// text (see server/dbtime).
+	if err := db.Where("kind IN ? AND subject IN ? AND last_raised_at >= ?",
+		[]string{nssAlertMissRate, nssAlertKeySource}, ids, now.Add(-NSSKeyAlertLookback).UTC()).
+		Find(&alerts).Error; err != nil {
+		return nil, fmt.Errorf("read each fleet key's recent usage alerts: %w", err)
+	}
+	for _, alert := range alerts {
+		raised := alert.LastRaisedAt
+		switch alert.Kind {
+		case nssAlertMissRate:
+			entry(alert.Subject).missRateAlert = &raised
+		default:
+			entry(alert.Subject).keySourceAlert = &raised
+		}
+	}
+	return out, nil
+}
+
+// NSSKeySettings is the part of the nss configuration the key pages show
+// before an operator acts: how long a new key lives unless told otherwise,
+// and how long a rotated-out secret stays accepted.
+type NSSKeySettings struct {
+	DefaultLifetime time.Duration
+	RotationGrace   time.Duration
+}
+
+// Settings returns nss.key_default_lifetime and nss.key_rotation_grace.
+func (s *NSSKeyService) Settings() NSSKeySettings {
+	return NSSKeySettings{DefaultLifetime: s.config.NSS.KeyDefaultLifetime, RotationGrace: s.config.NSS.KeyRotationGrace}
 }
 
 // identityGroups is the identity's groups, nil-safe.

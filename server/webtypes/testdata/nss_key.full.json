@@ -22,5 +22,8 @@
     "revoke",
     "edit",
     "assign_group"
-  ]
+  ],
+  "last_used_at": "2026-08-15T10:30:00+02:00",
+  "miss_rate_alert_at": "2026-08-15T10:00:00+02:00",
+  "key_source_alert_at": "2026-08-15T10:15:00+02:00"
 }
