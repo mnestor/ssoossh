@@ -18,6 +18,7 @@ systemctl start ssoosshd-nss.socket
 check "the service waits for its first lookup" "inactive" "$(systemctl is-active ssoosshd-nss.service)"
 lookup_asserts
 check "the first lookup started the service" "active" "$(systemctl is-active ssoosshd-nss.service)"
+collision_asserts "$(ssoosshd-nss status 2>&1)" "$(journalctl -u ssoosshd-nss --no-pager -o cat)"
 
 # Lookups every 20 ms while the service restarts three times: none may
 # fail, because systemd keeps the socket and queues them.

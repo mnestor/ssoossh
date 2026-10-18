@@ -234,7 +234,7 @@ func TestGetMemberships(t *testing.T) {
 		want    []string
 		wantErr string
 	}{
-		{name: "should list the user's groups when userName is given", params: p("userName", "alice"), more: true, want: []string{"alice/alice", "alice/devs", "alice/sudo"}},
+		{name: "should list the user's groups when userName is given", params: p("userName", "alice"), more: true, want: []string{"alice/alice", "alice/devs", "alice/staff"}},
 		{name: "should list the group's members when groupName is given", params: p("groupName", "devs"), more: true, want: []string{"alice/devs", "carol/devs"}},
 		{name: "should answer one pair when both name a membership", params: p("userName", "alice", "groupName", "devs"), want: []string{"alice/devs"}},
 		{name: "should not find when both name no membership", params: p("userName", "alice", "groupName", "ops"), wantErr: ErrorNoRecordFound},
@@ -930,3 +930,31 @@ func (failingStore) Users(context.Context) ([]cache.UserEntry, error)   { return
 func (failingStore) Groups(context.Context) ([]cache.GroupEntry, error) { return nil, errStore }
 func (failingStore) Counts(context.Context) (cache.Counts, error)       { return cache.Counts{}, errStore }
 func (failingStore) Close() error                                       { return nil }
+
+func TestGroupNameCollision(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, nil)
+
+	// The member's list leaves out the colliding name, and by gid the
+	// directory group is not served: files owned by it show the number.
+	f.call(t, MethodGetUserRecord, p("userName", "alice"), rootPeer, false)
+	if got := errorOf(t, f.call(t, MethodGetGroupRecord, p("gid", 2005), rootPeer, false)); got != ErrorNoRecordFound {
+		t.Fatalf("got %q, want the colliding gid not found", got)
+	}
+	s := f.d.Status(t.Context())
+	if len(s.Groups.Collisions) != 1 || s.Groups.Collisions[0].Name != "users" || s.Groups.Collisions[0].GID != 2005 ||
+		s.Groups.Collisions[0].LocalGID == nil || *s.Groups.Collisions[0].LocalGID != 100 {
+		t.Fatalf("should list the collision in status, got %+v", s.Groups)
+	}
+	if len(s.Groups.Refused) != 1 || s.Groups.Refused[0].Name != "sudo" {
+		t.Fatalf("should list sudo's system gid as refused in status, got %+v", s.Groups)
+	}
+	if n := strings.Count(f.logs.String(), "same name as a local group"); n != 1 {
+		t.Fatalf("got %d collision warnings, want 1:\n%s", n, f.logs)
+	}
+
+	f.d.Reset()
+	if s := f.d.Status(t.Context()); len(s.Groups.Collisions)+len(s.Groups.Refused) != 0 {
+		t.Fatalf("should clear the lists on SIGHUP, got %+v", s.Groups)
+	}
+}

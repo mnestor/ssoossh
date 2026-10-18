@@ -56,10 +56,20 @@ func (w *watched[T]) invalidate() {
 	w.ready = false
 }
 
-// localDB is one of /etc/passwd or /etc/group: its names and its ids.
+// localDB is one of /etc/passwd or /etc/group: its names and its ids,
+// each mapped to the first entry that lists it.
 type localDB struct {
-	names map[string]struct{}
-	ids   map[uint32]struct{}
+	// names maps a name to its id.
+	names map[string]localID
+	// ids maps an id to the first name listed with it.
+	ids map[uint32]string
+}
+
+// localID is a local name's id; known is false when its line gives none
+// (a compat "+name" entry).
+type localID struct {
+	id    uint32
+	known bool
 }
 
 // hasName reports whether name is listed.
@@ -74,6 +84,18 @@ func (db localDB) hasID(id uint32) bool {
 	return ok
 }
 
+// idOf returns the id listed for name, and whether name is listed at all.
+func (db localDB) idOf(name string) (localID, bool) {
+	id, ok := db.names[name]
+	return id, ok
+}
+
+// nameOf returns the first name listed with id.
+func (db localDB) nameOf(id uint32) (string, bool) {
+	name, ok := db.ids[id]
+	return name, ok
+}
+
 // readLocalDB reads a passwd- or group-format file: name in the first
 // field, the id in the third. A missing file is an empty database (a
 // container may have no /etc/group); any other read error fails closed in
@@ -81,7 +103,7 @@ func (db localDB) hasID(id uint32) bool {
 func readLocalDB(path string) (localDB, error) {
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		return localDB{names: map[string]struct{}{}, ids: map[uint32]struct{}{}}, nil
+		return localDB{names: map[string]localID{}, ids: map[uint32]string{}}, nil
 	}
 	if err != nil {
 		return localDB{}, fmt.Errorf("read %s: %w", path, err)
@@ -92,9 +114,10 @@ func readLocalDB(path string) (localDB, error) {
 // parseLocalDB parses passwd or group lines. Comments and blank lines are
 // skipped. A compat-mode "+name" or "-name" entry counts as the name
 // itself, which errs towards treating more names as local, the safe side.
-// A line with no parsable id still records its name.
+// A line with no parsable id still records its name. The first line that
+// lists a name or an id wins, as getgrnam and getgrgid return the first.
 func parseLocalDB(data []byte) localDB {
-	db := localDB{names: map[string]struct{}{}, ids: map[uint32]struct{}{}}
+	db := localDB{names: map[string]localID{}, ids: map[uint32]string{}}
 	scanner := bufio.NewScanner(bytes.NewReader(data))
 	scanner.Buffer(make([]byte, 0, 4096), 1<<20)
 	for scanner.Scan() {
@@ -104,13 +127,17 @@ func parseLocalDB(data []byte) localDB {
 		}
 		fields := strings.Split(line, ":")
 		name := strings.TrimLeft(fields[0], "+-")
-		if name != "" {
-			db.names[name] = struct{}{}
-		}
+		var id localID
 		if len(fields) > 2 {
-			if id, err := strconv.ParseUint(fields[2], 10, 32); err == nil {
-				db.ids[uint32(id)] = struct{}{}
+			if n, err := strconv.ParseUint(fields[2], 10, 32); err == nil {
+				id = localID{id: uint32(n), known: true}
+				if _, seen := db.ids[id.id]; !seen {
+					db.ids[id.id] = name
+				}
 			}
+		}
+		if _, seen := db.names[name]; name != "" && !seen {
+			db.names[name] = id
 		}
 	}
 	return db

@@ -54,6 +54,9 @@ const (
 
 // directory is the fake's fixed directory. alice is active with a
 // supplementary group, bob is disabled, and devs has alice as its member.
+// alice is also in users, gid 60200, named like the local users group
+// (gid 100 on Debian) to exercise the gid rule's name collision, and in
+// oldstaff, gid 500, which min_id refuses.
 type directory struct {
 	users  []apitypes.NSSUserResponse
 	groups []apitypes.NSSGroupResponse
@@ -67,7 +70,7 @@ func newDirectory() directory {
 		users: []apitypes.NSSUserResponse{
 			{
 				Name: "alice", UID: 60001, GID: 60001,
-				Groups: []apitypes.NSSMembership{{GID: 60001, Name: "alice"}, {GID: 60100, Name: "devs"}},
+				Groups: []apitypes.NSSMembership{{GID: 60001, Name: "alice"}, {GID: 60100, Name: "devs"}, {GID: 60200, Name: "users"}, {GID: 500, Name: "oldstaff"}},
 				Home:   str("/home/alice"), Shell: str("/bin/bash"),
 				Gecos: "Alice Example", Status: apitypes.NSSStatusActive, KeyID: keyID,
 			},
@@ -82,6 +85,8 @@ func newDirectory() directory {
 			{Name: "alice", GID: 60001, Members: []string{}},
 			{Name: "bob", GID: 60002, Members: []string{}},
 			{Name: "devs", GID: 60100, Members: []string{"alice"}},
+			{Name: "users", GID: 60200, Members: []string{"alice"}},
+			{Name: "oldstaff", GID: 500, Members: []string{"alice"}},
 		},
 	}
 }
