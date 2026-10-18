@@ -177,9 +177,20 @@ func socketDir(t *testing.T) string {
 	return dir
 }
 
+// fixtureReadTimeout is how long the fixture's server waits for each
+// call: short, so the read-timeout tests stay quick.
+const fixtureReadTimeout = 100 * time.Millisecond
+
 // start builds and runs a server; mutate adjusts the configuration and
 // peers sets the peer inspector (the real one when nil).
 func start(t *testing.T, peers PeerInspector, mutate func(*config.Config)) *fixture {
+	t.Helper()
+	return startWithReadTimeout(t, peers, mutate, fixtureReadTimeout)
+}
+
+// startWithReadTimeout is start with the server's per-call read timeout
+// set, for a test that must not be cut by it.
+func startWithReadTimeout(t *testing.T, peers PeerInspector, mutate func(*config.Config), readTimeout time.Duration) *fixture {
 	t.Helper()
 	dir := socketDir(t)
 	files := map[string]string{
@@ -225,7 +236,7 @@ func start(t *testing.T, peers PeerInspector, mutate func(*config.Config)) *fixt
 	}
 	f.srv = New(Options{
 		Daemon: f.daemon, Peers: peers, SSHDUnits: cfg.SSHDUnits, AnswerDeadline: cfg.SocketAnswerDeadline,
-		ReadTimeout: 100 * time.Millisecond, MaxConnections: cfg.SocketMaxConnections, IdleTimeout: cfg.SocketIdleTimeout,
+		ReadTimeout: readTimeout, MaxConnections: cfg.SocketMaxConnections, IdleTimeout: cfg.SocketIdleTimeout,
 		Now: f.clock.Now, Log: log,
 	})
 

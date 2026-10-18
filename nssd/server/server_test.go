@@ -602,7 +602,10 @@ func TestConnSlots(t *testing.T) {
 
 func TestServeShouldCloseAConnectionWhenItsIdleTimeoutIsSpent(t *testing.T) {
 	t.Parallel()
-	f := start(t, nil, func(c *config.Config) { c.SocketIdleTimeout = 300 * time.Millisecond })
+	// A read timeout far longer than the gaps between calls, so only the
+	// idle budget can end the connection: with the fixture's 100ms one, a
+	// gap stretched past it on a loaded machine ended it first.
+	f := startWithReadTimeout(t, nil, func(c *config.Config) { c.SocketIdleTimeout = 300 * time.Millisecond }, 2*time.Second)
 	conn, err := net.Dial("unix", f.socket)
 	if err != nil {
 		t.Fatal(err)
@@ -610,8 +613,8 @@ func TestServeShouldCloseAConnectionWhenItsIdleTimeoutIsSpent(t *testing.T) {
 	defer func() { _ = conn.Close() }()
 	enc, dec := varlink.NewEncoder(conn), varlink.NewDecoder(conn)
 
-	// A call every 50ms, inside the 100ms read timeout each time, would
-	// keep the connection open for ever without the idle budget.
+	// A call every 50ms, each well inside the read timeout, would keep the
+	// connection open for ever without the idle budget.
 	begin := time.Now()
 	for time.Since(begin) < 5*time.Second {
 		if err := enc.WriteCall(varlink.Call{Method: userdb.MethodGetInfo}); err != nil {
@@ -625,7 +628,10 @@ func TestServeShouldCloseAConnectionWhenItsIdleTimeoutIsSpent(t *testing.T) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	if took := time.Since(begin); took < 250*time.Millisecond || took > 3*time.Second {
+	// Under 1.5s: the 2s read timeout cannot have closed it, so the budget
+	// did, whether at the top of the loop or through a read deadline cut to
+	// what was left of it.
+	if took := time.Since(begin); took < 250*time.Millisecond || took > 1500*time.Millisecond {
 		t.Fatalf("should close once 300ms were spent waiting for calls, closed after %v", took)
 	}
 }
