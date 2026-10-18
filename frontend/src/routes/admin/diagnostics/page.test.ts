@@ -63,6 +63,9 @@ function signedIn() {
 		is_admin: true,
 		is_soc: true,
 		is_auditor: true,
+		is_nss_key_admin: false,
+		nss_enabled: false,
+		posix: null,
 		detail_level: 'advanced' as const
 	};
 	session.resolved = true;

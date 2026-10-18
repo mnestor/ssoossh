@@ -43,6 +43,9 @@ function signIn(roles: Roles) {
 		user_own_service_accounts: [],
 		extra: {},
 		...roles,
+		is_nss_key_admin: false,
+		nss_enabled: false,
+		posix: null,
 		detail_level: 'advanced' as const
 	};
 	session.resolved = true;

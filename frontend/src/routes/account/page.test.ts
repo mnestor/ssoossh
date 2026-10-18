@@ -24,6 +24,9 @@ function aliceUser(overrides: Partial<CurrentUser> = {}): CurrentUser {
 		is_admin: false,
 		is_soc: false,
 		is_auditor: false,
+		is_nss_key_admin: false,
+		nss_enabled: false,
+		posix: null,
 		detail_level: 'advanced',
 		...overrides
 	};

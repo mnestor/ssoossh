@@ -35,6 +35,9 @@ function signedInUser(isAuditor: boolean, { isSOC = false, isAdmin = false } = {
 		is_admin: isAdmin,
 		is_soc: isSOC,
 		is_auditor: isAuditor,
+		is_nss_key_admin: false,
+		nss_enabled: false,
+		posix: null,
 		detail_level: 'advanced' as const
 	};
 }
