@@ -67,12 +67,18 @@ function plural(noun: string): string {
  * list runs newest first, "more" where it does not (the user directory is
  * sorted by name, so the rest of it is not older). notLoaded at or below
  * zero says nothing, since everything is in.
+ *
+ * noun, when given, names what is counted ("3 events shown"), for a list
+ * whose lines are not one per counted thing: an NSS entry's history pages
+ * by audit event but can draw several lines, or none, from one.
  */
 export function describeLoaded(
 	shown: number,
 	notLoaded: number,
-	remaining: 'older' | 'more'
+	remaining: 'older' | 'more',
+	noun?: string
 ): string {
 	const rest = notLoaded > 0 ? `, ${notLoaded} ${remaining} not loaded` : '';
-	return `${shown} shown${rest}`;
+	const what = noun ? ` ${shown === 1 ? noun : plural(noun)}` : '';
+	return `${shown}${what} shown${rest}`;
 }

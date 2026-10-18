@@ -4,7 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { NSSAccountDetail } from '#lib/api/types.js';
 import { session } from '#lib/session.svelte.js';
-import { emptyHistory, historySuite } from '#lib/testing/history.js';
+import { formatDateTime } from '#lib/format.js';
+import { emptyHistory, historyLines, historySuite, nssEvent } from '#lib/testing/history.js';
 import {
 	accountFixture,
 	envelope,
@@ -411,4 +412,221 @@ historySuite({
 	open: (history) => open(accountFixture(), '10001', history),
 	testid: 'nss-account-history',
 	path: '/api/admin/nss/users/10001/audit'
+});
+
+// The account's history lines. The page is uid 10001 (bob); each case is
+// the events the history read answers with and the lines it should draw,
+// newest first. A member change lists many members, and only what
+// happened to this account becomes a line.
+describe('account history lines', () => {
+	/** change is an nss.group_members_changed event for the group name. */
+	function change(
+		id: string,
+		name: string,
+		added: { uid: number; name?: string }[],
+		removed: { uid: number; name?: string }[],
+		counts: { added?: number; removed?: number } = {}
+	) {
+		return nssEvent(id, 'nss.group_members_changed', {
+			name,
+			gid: 5100,
+			added,
+			removed,
+			added_count: counts.added ?? added.length,
+			removed_count: counts.removed ?? removed.length
+		});
+	}
+
+	/** others is n listed members that are not this account. */
+	function others(n: number) {
+		return Array.from({ length: n }, (_, i) => ({ uid: 20000 + i, name: `u${i}` }));
+	}
+
+	it.each([
+		{
+			name: 'should say Added to the group when the account was added',
+			events: [change('e1', 'all-users', [{ uid: 10001, name: 'bob' }], [])],
+			want: ['Added to all-users']
+		},
+		{
+			name: 'should say Removed from the group when the account was removed',
+			events: [change('e1', 'wheel', [], [{ uid: 10001, name: 'bob' }])],
+			want: ['Removed from wheel']
+		},
+		{
+			name: 'should draw only this account when a change lists other members too',
+			events: [
+				change(
+					'e1',
+					'ops',
+					[
+						{ uid: 10002, name: 'sonia' },
+						{ uid: 10001, name: 'bob' }
+					],
+					[{ uid: 10003, name: 'mike' }]
+				)
+			],
+			want: ['Added to ops']
+		},
+		{
+			name: 'should name the group by its gid when the event has no group name',
+			events: [change('e1', '', [{ uid: 10001 }], [])],
+			want: ['Added to gid 5100']
+		},
+		{
+			name: 'should say Added when the account is past the capped added list',
+			events: [change('e1', 'all-users', others(100), [], { added: 500 })],
+			want: ['Added to all-users']
+		},
+		{
+			name: 'should say Removed when the account is past the capped removed list',
+			events: [change('e1', 'all-users', [], others(100), { removed: 500 })],
+			want: ['Removed from all-users']
+		},
+		{
+			name: 'should say added or removed when both lists were capped without the account',
+			events: [change('e1', 'all-users', others(100), others(100), { added: 300, removed: 300 })],
+			want: ['Added to or removed from all-users']
+		},
+		{
+			name: 'should match an earlier uid when an accepted uid change names it',
+			events: [
+				nssEvent('e2', 'nss.id_change_accepted', {
+					old_uid: 9001,
+					new_uid: 10001,
+					old_gid: 5000,
+					new_gid: 5000
+				}),
+				change('e1', 'wheel', [{ uid: 9001, name: 'bob' }], [])
+			],
+			want: ['uid changed from 9001 to 10001', 'Added to wheel']
+		},
+		{
+			name: 'should draw no line for the re-key when an accepted uid change moved the memberships',
+			events: [change('e1', 'wheel', [{ uid: 10001, name: 'bob' }], [{ uid: 9001, name: 'bob' }])],
+			want: []
+		},
+		{
+			name: 'should say Created when the account was stored',
+			events: [nssEvent('e1', 'nss.account_created', { uid: 10001, gid: 5000 })],
+			want: ['Created']
+		},
+		{
+			name: 'should name both names when the account was renamed',
+			events: [nssEvent('e1', 'nss.account_renamed', { old_name: 'bobby', new_name: 'bob' })],
+			want: ['Renamed from bobby to bob']
+		},
+		{
+			name: 'should say Renamed alone when the rename names are missing',
+			events: [nssEvent('e1', 'nss.account_renamed', {})],
+			want: ['Renamed']
+		},
+		{
+			name: 'should say it went missing when a full sync did not see it',
+			events: [nssEvent('e1', 'nss.account_missing', { uid: 10001 })],
+			want: ['Missing from the directory']
+		},
+		{
+			name: 'should say Tombstoned when the missing account was tombstoned',
+			events: [nssEvent('e1', 'nss.account_tombstoned', { uid: 10001 })],
+			want: ['Tombstoned']
+		},
+		{
+			name: 'should say Revived from a tombstone when a tombstone came back',
+			events: [nssEvent('e1', 'nss.account_revived', { was_tombstoned: true })],
+			want: ['Revived from a tombstone']
+		},
+		{
+			name: 'should say Revived when a missing account came back',
+			events: [nssEvent('e1', 'nss.account_revived', { was_tombstoned: false })],
+			want: ['Revived']
+		},
+		{
+			name: 'should say Purged when the tombstone was purged',
+			events: [nssEvent('e1', 'nss.tombstone_purged', { uid: 10001 })],
+			want: ['Purged']
+		},
+		{
+			name: 'should name both numbers when the uid and gid change was accepted',
+			events: [
+				nssEvent('e1', 'nss.id_change_accepted', {
+					old_uid: 9001,
+					new_uid: 10001,
+					old_gid: 4000,
+					new_gid: 5000
+				})
+			],
+			want: ['uid changed from 9001 to 10001 and gid from 4000 to 5000']
+		},
+		{
+			name: 'should say the change waits when a uid change is pending',
+			events: [nssEvent('e1', 'nss.id_change_pending', { stored: 10001, pending: 20001 })],
+			want: ['uid change from 10001 to 20001 waiting to be accepted']
+		},
+		{
+			name: 'should name both accounts when a uid collision was raised',
+			events: [
+				nssEvent('e1', 'nss.uid_collision', {
+					kind: 'uid',
+					value: '10001',
+					holder_name: 'bob',
+					other_name: 'robert'
+				})
+			],
+			want: ['uid 10001 claimed by both bob and robert']
+		},
+		{
+			name: 'should name both uids when a name collision was raised',
+			events: [
+				nssEvent('e1', 'nss.name_collision', {
+					kind: 'user_name',
+					value: 'bob',
+					holder_number: 10001,
+					other_number: 10009
+				})
+			],
+			want: ['Account name bob claimed by both uid 10001 and uid 10009']
+		},
+		{
+			name: 'should name both names when the POSIX name differs from the username',
+			events: [nssEvent('e1', 'nss.name_mismatch', { username: 'bbaker', posix_name: 'bob' })],
+			want: ['POSIX name bob differs from the username bbaker']
+		},
+		{
+			name: 'should fall back to the raw action when the action is unknown',
+			events: [nssEvent('e1', 'nss.something_new', { nested: { a: 1 } })],
+			want: ['nss.something_new']
+		},
+		{
+			name: 'should keep the newest first when several events came',
+			events: [
+				nssEvent('e3', 'nss.account_revived', {}, '2026-10-18T09:00:00Z'),
+				nssEvent('e2', 'nss.account_missing', {}, '2026-10-10T09:00:00Z'),
+				nssEvent('e1', 'nss.account_created', {}, '2026-10-01T09:00:00Z')
+			],
+			want: ['Revived', 'Missing from the directory', 'Created']
+		}
+	])('$name', async ({ events, want }) => {
+		await open(accountFixture(), '10001', envelope({ events, total: events.length }));
+
+		expect(historyLines('nss-account-history')).toEqual(want);
+	});
+
+	it('should say none changed this account when no loaded event drew a line', async () => {
+		const events = [change('e1', 'ops', [{ uid: 10002, name: 'sonia' }], [])];
+		await open(accountFixture(), '10001', envelope({ events, total: 1 }));
+
+		expect(screen.getByTestId('nss-account-history-none-shown')).toHaveTextContent(
+			'None of the events loaded so far changed this account.'
+		);
+	});
+
+	it('should show the time through formatDateTime when a line is drawn', async () => {
+		const events = [nssEvent('e1', 'nss.account_created', {}, '2026-10-01T09:00:00Z')];
+		await open(accountFixture(), '10001', envelope({ events, total: 1 }));
+
+		expect(screen.getByTestId('nss-account-history-row').querySelector('time')).toHaveTextContent(
+			formatDateTime('2026-10-01T09:00:00Z')
+		);
+	});
 });
