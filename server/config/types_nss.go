@@ -206,9 +206,10 @@ type NSSConfig struct {
 	RateLimit float64 `mapstructure:"rate_limit" default:"20"`
 
 	// RateBurst is how many lookups one key and source address (as for
-	// rate_limit, with the same http.trusted_proxies caveat) may make back to back before RateLimit starts holding
-	// them back: a host starting up resolves many names at once. Must be
-	// greater than zero, since a zero burst refuses every lookup.
+	// rate_limit, with the same http.trusted_proxies caveat) may make back
+	// to back before RateLimit starts holding them back: a host starting
+	// up resolves many names at once. Must be greater than zero, since a
+	// zero burst refuses every lookup.
 	RateBurst int `mapstructure:"rate_burst" default:"200"`
 
 	// MissAlertRate is the not-found lookups per second for one key above
