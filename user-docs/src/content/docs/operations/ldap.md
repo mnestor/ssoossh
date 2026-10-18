@@ -119,6 +119,7 @@ ldap:
 | [`ldap.url`](/ssoossh/reference/config/ldap/#url) | empty | e.g. `ldaps://ldap.example.net` |
 | [`ldap.bind_dn`](/ssoossh/reference/config/ldap/#bind_dn) / [`bind_password`](/ssoossh/reference/config/ldap/#bind_password) | empty | the implicit "simple" bind mechanism |
 | [`ldap.base_dn`](/ssoossh/reference/config/ldap/#base_dn) | empty | the user lookup base, and the default base for field searches that name none |
+| [`ldap.schema`](/ssoossh/reference/config/ldap/#schema) | empty | a preset for `id_attribute` and the NSS keys: `rfc2307`, `rfc2307bis`, `active-directory`, `lldap` or `freeipa`; see [LDAP schema presets](/ssoossh/operations/ldap-schema-presets/) |
 | [`ldap.id_attribute`](/ssoossh/reference/config/ldap/#id_attribute) | empty | the entry's unique, immutable identifier; see [Surviving a rename](#surviving-a-rename) |
 | [`ldap.user_filter`](/ssoossh/reference/config/ldap/#user_filter) | empty | the template above |
 | [`ldap.fields`](/ssoossh/reference/config/ldap/#fields) | none | destinations mapped to directory sources; reserved names are `other_accounts`, `service_accounts`, `groups` and `name` |
@@ -328,6 +329,11 @@ calls it something else:
 | Active Directory | `objectGUID` | 16 raw bytes |
 | FreeIPA | `ipaUniqueID` | UUID string |
 | 389 DS / Netscape (legacy) | `nsuniqueid` | UUID-like string |
+
+[`ldap.schema`](/ssoossh/reference/config/ldap/#schema) sets the right one
+for your directory, along with the NSS attribute names; see
+[LDAP schema presets](/ssoossh/operations/ldap-schema-presets/), including
+what to do on a database that already stores ids from another attribute.
 
 If you do not know which one your directory has, run a probe from
 **Admin → Directory** and read the suggestion: the probe requests all of them

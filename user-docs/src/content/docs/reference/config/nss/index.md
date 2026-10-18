@@ -59,7 +59,7 @@ nss:
 
 `string`, default `(objectClass=posixAccount)`
 
-The LDAP filter that selects POSIX accounts under ldap.base_dn. A plain RFC 4515 filter in parentheses, not a template: the sync enumerates it with paged searches, so ldap.limits does not cap it, and an on-demand lookup ANDs it with an equality on the name or uid attribute. Required when nss.enabled is on; its syntax is checked when the server starts.
+The LDAP filter that selects POSIX accounts under ldap.base_dn. A plain RFC 4515 filter in parentheses, not a template: the sync enumerates it with paged searches, so ldap.limits does not cap it, and an on-demand lookup ANDs it with an equality on the name or uid attribute. Required when nss.enabled is on; its syntax is checked when the server starts. A preset from ldap.schema may set this.
 
 ```yaml
 nss:
@@ -70,7 +70,7 @@ nss:
 
 `string`, default `(objectClass=posixGroup)`
 
-The LDAP filter that selects POSIX groups under ldap.base_dn, used the same way as `user_filter`. Required when nss.enabled is on.
+The LDAP filter that selects POSIX groups under ldap.base_dn, used the same way as `user_filter`. Required when nss.enabled is on. A preset from ldap.schema may set this.
 
 ```yaml
 nss:
@@ -81,7 +81,7 @@ nss:
 
 `string`, default `empty`
 
-An LDAP filter an account's entry is tested against on every read: a match marks the account disabled by the directory itself, which hosts then lock. For example (nsAccountLock=TRUE) on 389-ds and FreeIPA, or (userAccountControl:1.2.840.113556.1.4.803:=2) on Active Directory. Empty means the directory never disables an account; a person's ssoossh disable still does.
+An LDAP filter an account's entry is tested against on every read: a match marks the account disabled by the directory itself, which hosts then lock. For example (nsAccountLock=TRUE) on 389-ds and FreeIPA, or (userAccountControl:1.2.840.113556.1.4.803:=2) on Active Directory. Empty means the directory never disables an account; a person's ssoossh disable still does. A preset from ldap.schema may set this.
 
 ```yaml
 nss:

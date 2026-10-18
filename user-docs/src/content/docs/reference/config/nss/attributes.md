@@ -23,7 +23,7 @@ Names the directory attribute each POSIX field is read from.
 
 `string`, default `uid`
 
-The account name, stored verbatim. A person can log in by their own name only when it equals their username claim.
+The account name, stored verbatim. A person can log in by their own name only when it equals their username claim. A preset from ldap.schema may set this.
 
 ```yaml
 nss:
@@ -35,7 +35,7 @@ nss:
 
 `string`, default `uidNumber`
 
-The numeric user id; it must parse as an unsigned 32-bit number. Frozen once stored: a later change waits for an admin.
+The numeric user id; it must parse as an unsigned 32-bit number. Frozen once stored: a later change waits for an admin. A preset from ldap.schema may set this.
 
 ```yaml
 nss:
@@ -47,7 +47,7 @@ nss:
 
 `string`, default `gidNumber`
 
-The numeric primary group id, before auto_private_groups is applied. Frozen once stored, like uid.
+The numeric primary group id, before auto_private_groups is applied. Frozen once stored, like uid. A preset from ldap.schema may set this.
 
 ```yaml
 nss:
@@ -59,7 +59,7 @@ nss:
 
 `string`, default `homeDirectory`
 
-The home directory; optional on the entry, absolute when present. An entry without one is served nss.default_home.
+The home directory; optional on the entry, absolute when present. An entry without one is served nss.default_home. A preset from ldap.schema may set this.
 
 ```yaml
 nss:
@@ -71,7 +71,7 @@ nss:
 
 `string`, default `loginShell`
 
-The login shell; optional on the entry.
+The login shell; optional on the entry. A preset from ldap.schema may set this.
 
 ```yaml
 nss:
@@ -83,7 +83,7 @@ nss:
 
 `string`, default `cn`
 
-A group's name.
+A group's name. A preset from ldap.schema may set this.
 
 ```yaml
 nss:
@@ -95,7 +95,7 @@ nss:
 
 `string`, default `gidNumber`
 
-A group's numeric gid. Frozen once stored, like uid.
+A group's numeric gid. Frozen once stored, like uid. A preset from ldap.schema may set this.
 
 ```yaml
 nss:
@@ -107,7 +107,7 @@ nss:
 
 `string`, default `memberUid`
 
-Lists a group's members. Whether its values are names or DNs is decided by the attribute's name, case-insensitively: member and uniqueMember (RFC 2307bis, groupOfNames, groupOfUniqueNames) hold DNs, matched against the accounts' DNs as DNs, so case and the spacing around separators do not matter (a uniqueMember's optional #'...'B suffix is dropped); any other attribute, memberUid (RFC 2307) included, holds account names, matched byte for byte. A member that resolves to no account the sync has stored is left out.
+Lists a group's members. Whether its values are names or DNs is decided by the attribute's name, case-insensitively: member and uniqueMember (RFC 2307bis, groupOfNames, groupOfUniqueNames) hold DNs, matched against the accounts' DNs as DNs, so case and the spacing around separators do not matter (a uniqueMember's optional #'...'B suffix is dropped); any other attribute, memberUid (RFC 2307) included, holds account names, matched byte for byte. A member that resolves to no account the sync has stored is left out. A preset from ldap.schema may set this.
 
 ```yaml
 nss:

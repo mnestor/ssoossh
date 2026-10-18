@@ -1,0 +1,27 @@
+# ldap.schema: rfc2307. POSIX accounts and groups as RFC 2307 defines them,
+# with groups listing their members by name in memberUid.
+#
+# Sources:
+#   - nss.*: sssd's rfc2307_user_map and rfc2307_group_map
+#     (src/providers/ldap/ldap_opts.c), the defaults sssd-ldap-attributes(5)
+#     documents for ldap_schema = rfc2307: member attribute memberuid.
+#   - ldap.id_attribute: entryUUID, defined by RFC 4530 and served by
+#     OpenLDAP and 389 Directory Server. sssd-ldap-attributes(5) leaves
+#     ldap_user_uuid "not set in the general case"; an entry without the
+#     attribute is anchored by its DN alone, as if no id attribute were
+#     configured.
+#   - No disabled filter: RFC 2307 has no account-disabled attribute.
+ldap:
+  id_attribute: entryUUID
+nss:
+  user_filter: "(objectClass=posixAccount)"
+  group_filter: "(objectClass=posixGroup)"
+  attributes:
+    name: uid
+    uid: uidNumber
+    gid: gidNumber
+    home: homeDirectory
+    shell: loginShell
+    group_name: cn
+    group_gid: gidNumber
+    group_member: memberUid

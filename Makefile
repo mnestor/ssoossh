@@ -636,7 +636,8 @@ man-check:
 # No cgo: the generator parses server/config rather than importing it, so it
 # never reaches the HSM key source's libpkcs11 binding.
 CONFDOCS_OUT := docs/man/ssoosshd.yaml.5 server/config/defaults.yaml \
-	user-docs/src/content/docs/reference/config user-docs/config-sidebar.json
+	user-docs/src/content/docs/reference/config user-docs/config-sidebar.json \
+	user-docs/src/content/docs/operations/ldap-schema-presets.md
 
 confdocs: ## Regenerate the config reference and defaults.yaml comments
 	go run ./internal/tools/genconfdocs
@@ -646,7 +647,8 @@ confdocs: ## Regenerate the config reference and defaults.yaml comments
 # server/config's golden test is what guards those.
 STALE_CONFDOCS := The config reference is stale: a config struct's fields or \
 doc comments changed without docs/man/ssoosshd.yaml.5, \
-server/config/defaults.yaml, and the user-docs config pages being regenerated.
+server/config/defaults.yaml, the user-docs config pages and the ldap.schema \
+presets table being regenerated.
 
 confdocs-check:
 	$(call STALENESS_CHECK,$(CONFDOCS_OUT),confdocs,$(STALE_CONFDOCS))

@@ -1,0 +1,33 @@
+# ldap.schema: freeipa. FreeIPA, whose accounts live under
+# cn=users,cn=accounts and groups under cn=groups,cn=accounts.
+#
+# Sources:
+#   - nss.attributes.*, ldap.id_attribute: sssd's ipa_user_map and
+#     ipa_group_map (src/providers/ipa/ipa_opts.c): posixAccount, uid,
+#     uidNumber, gidNumber, homeDirectory, loginShell, cn, member, and
+#     ipaUniqueID as the entry's UUID. FreeIPA's own baseuser plugin
+#     declares uuid_attribute = 'ipauniqueid'.
+#   - nss.group_filter: posixGroup, the class sssd accepts beside
+#     ipaUserGroup; only POSIX groups carry a gidNumber.
+#   - nss.disabled_filter: FreeIPA disables an account by writing
+#     nsAccountLock: TRUE (ipaserver/plugins/ldap2.py, set_entry_active).
+#
+# Set ldap.base_dn to cn=accounts under the suffix: the schema compat tree
+# (cn=compat) republishes every posixAccount and posixGroup
+# (install/updates/80-schema_compat.update), and a base above both reads
+# each account twice.
+ldap:
+  id_attribute: ipaUniqueID
+nss:
+  user_filter: "(objectClass=posixAccount)"
+  group_filter: "(objectClass=posixGroup)"
+  disabled_filter: "(nsAccountLock=TRUE)"
+  attributes:
+    name: uid
+    uid: uidNumber
+    gid: gidNumber
+    home: homeDirectory
+    shell: loginShell
+    group_name: cn
+    group_gid: gidNumber
+    group_member: member

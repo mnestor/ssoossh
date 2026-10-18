@@ -1,0 +1,33 @@
+# ldap.schema: lldap. lldap (github.com/lldap/lldap) with the POSIX custom
+# attributes its PAM guide has an administrator create.
+#
+# Sources (lldap at 99c510a7, 2026-09-26):
+#   - Object classes: users are inetOrgPerson, posixAccount, mailAccount
+#     and person; groups are groupOfUniqueNames and groupOfNames
+#     (crates/ldap/src/core/user.rs, crates/ldap/src/core/group.rs).
+#   - ldap.id_attribute: lldap serves each entry's UUID as entryUUID
+#     (crates/ldap/src/core/utils.rs, map_user_field and map_group_field).
+#   - nss.attributes.*: uidNumber, gidNumber, homeDirectory and unixShell
+#     are not built in. They are user-schema custom attributes, and gidNumber
+#     a group-schema one, which example_configs/pam/README.md tells the
+#     administrator to create under exactly these names; lldap matches
+#     attribute names case-insensitively. Members are listed by DN in
+#     uniqueMember (member is an alias), as that guide's sssd config uses.
+#   - nss.user_filter, nss.group_filter: the guide's sssd search bases
+#     filter on (uidNumber=*) and (gidNumber=*), because the custom
+#     attributes are absent on entries nobody populated.
+#   - No disabled filter: lldap has no account-disabled flag.
+ldap:
+  id_attribute: entryUUID
+nss:
+  user_filter: "(&(objectClass=posixAccount)(uidNumber=*))"
+  group_filter: "(&(objectClass=groupOfUniqueNames)(gidNumber=*))"
+  attributes:
+    name: uid
+    uid: uidNumber
+    gid: gidNumber
+    home: homeDirectory
+    shell: unixShell
+    group_name: cn
+    group_gid: gidNumber
+    group_member: uniqueMember

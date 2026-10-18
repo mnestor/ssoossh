@@ -317,9 +317,32 @@ type LDAPConfig struct {
 	// display name is not in that set — see the name destination above.
 	Fields map[string]LDAPField `mapstructure:"fields"`
 
+	// Schema selects a preset for the keys whose right value depends on the
+	// directory: ldap.id_attribute, nss.user_filter, nss.group_filter,
+	// nss.disabled_filter and nss.attributes. One of rfc2307, rfc2307bis,
+	// active-directory, lldap or freeipa; any other value fails startup.
+	// Empty (the default) applies no preset, and every key keeps its own
+	// default. Each preset's values, and the source each came from, are
+	// listed at https://mnestor.github.io/ssoossh/operations/ldap-schema-presets/.
+	//
+	// A preset sits between the built-in defaults and the config file: any
+	// key the file sets beats the preset, so a preset is a starting point
+	// rather than a lock. Setting nss.attributes.shell to an attribute of
+	// your own with active-directory selected keeps every other
+	// active-directory value.
+	//
+	// Every preset sets ldap.id_attribute. On a database that already holds
+	// directory ids read from another attribute (or an earlier
+	// ldap.id_attribute), set ldap.id_attribute explicitly to the attribute
+	// in use, or start from a fresh database: there is no migration tool
+	// yet, and the NSS directory treats an entry whose id changed at the
+	// same DN as a new entry where the old one used to be.
+	Schema string `mapstructure:"schema" default:"" example:"rfc2307bis"`
+
 	// IDAttribute names the attribute holding the entry's unique, immutable
 	// identifier, and is what makes a directory rename survivable. Empty
 	// (the default) keeps the DN-then-filter resolution described below.
+	// A preset from ldap.schema may set this.
 	//
 	// Every directory has one under a different name: entryUUID on OpenLDAP
 	// and 389 Directory Server (RFC 4530), objectGUID on Active Directory,
@@ -334,8 +357,16 @@ type LDAPConfig struct {
 	// sync.disable_after auto-disable. The ID is read at login, stored on
 	// user_ldap.directory_id, and never used for authorization.
 	//
-	// Binary-valued attributes (objectGUID) are stored as their hex form,
-	// which is also how they must be written in a filter.
+	// Binary-valued attributes (objectGUID) are stored as their hex form
+	// behind a 0x marker, and searched with the RFC 4515 escape of each
+	// byte.
+	//
+	// Changing this on a database that already holds directory ids, by
+	// hand or by picking an ldap.schema preset, makes every stored id stop
+	// matching: there is no migration tool yet. Login enrichment recovers
+	// by DN and logs a warning, but the NSS directory treats an entry whose
+	// id changed at the same DN as a new entry. Keep the attribute the ids
+	// were read from set explicitly, or start from a fresh database.
 	IDAttribute string `mapstructure:"id_attribute" default:"" example:"entryUUID"`
 
 	// GroupNameAttribute names the attribute to read a group's name from

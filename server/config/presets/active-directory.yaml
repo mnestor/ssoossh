@@ -1,0 +1,41 @@
+# ldap.schema: active-directory. Active Directory entries that carry POSIX
+# attributes (uidNumber, gidNumber), the layout sssd-ad(5) reads with
+# ldap_id_mapping = False.
+#
+# Sources:
+#   - nss.attributes.*, ldap.id_attribute: sssd's ad_2008r2_user_map and
+#     ad_2008r2_group_map (src/providers/ad/ad_opts.c): sAMAccountName for
+#     user and group names, unixHomeDirectory, loginShell, uidNumber,
+#     gidNumber, member, and objectGUID as the entry's UUID.
+#   - nss.user_filter, nss.group_filter: the object classes from those maps
+#     (user, group), with the presence tests sssd adds when it does not map
+#     ids (src/providers/ldap/sdap_async_enum.c): uidNumber for users,
+#     gidNumber for groups. sssd also requires gidNumber on users; here an
+#     account without one is skipped by the sync with a warning naming its
+#     DN, which is louder than leaving it out of the filter.
+#     objectCategory=person keeps computer accounts out, which are also of
+#     class user: Microsoft's "Search Filter Syntax" (learn.microsoft.com,
+#     windows/win32/adsi/search-filter-syntax) gives
+#     (&(objectCategory=person)(objectClass=user)) for user objects.
+#   - nss.disabled_filter: ACCOUNTDISABLE is bit 0x0002 of
+#     userAccountControl (Microsoft, "UserAccountControl property flags"),
+#     tested with LDAP_MATCHING_RULE_BIT_AND, 1.2.840.113556.1.4.803
+#     ("Search Filter Syntax").
+#
+# objectGUID is sixteen raw bytes. It is stored in hex behind a 0x marker
+# and searched with RFC 4515 byte escapes; see server/service/ldapid.go.
+ldap:
+  id_attribute: objectGUID
+nss:
+  user_filter: "(&(objectCategory=person)(objectClass=user)(uidNumber=*))"
+  group_filter: "(&(objectClass=group)(gidNumber=*))"
+  disabled_filter: "(userAccountControl:1.2.840.113556.1.4.803:=2)"
+  attributes:
+    name: sAMAccountName
+    uid: uidNumber
+    gid: gidNumber
+    home: unixHomeDirectory
+    shell: loginShell
+    group_name: sAMAccountName
+    group_gid: gidNumber
+    group_member: member

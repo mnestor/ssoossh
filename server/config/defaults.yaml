@@ -754,9 +754,31 @@ ldap:
   #        filter: (manager={{.DN}})
   #        value: uid
 
+  # Selects a preset for the keys whose right value depends on the directory:
+  # ldap.id_attribute, nss.user_filter, nss.group_filter, nss.disabled_filter
+  # and nss.attributes. One of rfc2307, rfc2307bis, active-directory, lldap or
+  # freeipa; any other value fails startup. Empty (the default) applies no
+  # preset, and every key keeps its own default. Each preset's values, and the
+  # source each came from, are listed at
+  # https://mnestor.github.io/ssoossh/operations/ldap-schema-presets/.
+  #
+  # A preset sits between the built-in defaults and the config file: any key
+  # the file sets beats the preset, so a preset is a starting point rather
+  # than a lock. Setting nss.attributes.shell to an attribute of your own with
+  # active-directory selected keeps every other active-directory value.
+  #
+  # Every preset sets ldap.id_attribute. On a database that already holds
+  # directory ids read from another attribute (or an earlier
+  # ldap.id_attribute), set ldap.id_attribute explicitly to the attribute in
+  # use, or start from a fresh database: there is no migration tool yet, and
+  # the NSS directory treats an entry whose id changed at the same DN as a new
+  # entry where the old one used to be.
+  #schema: ""
+
   # Names the attribute holding the entry's unique, immutable identifier, and
   # is what makes a directory rename survivable. Empty (the default) keeps the
-  # DN-then-filter resolution described below.
+  # DN-then-filter resolution described below. A preset from ldap.schema may
+  # set this.
   #
   # Every directory has one under a different name: entryUUID on OpenLDAP and
   # 389 Directory Server (RFC 4530), objectGUID on Active Directory,
@@ -771,8 +793,15 @@ ldap:
   # is read at login, stored on user_ldap.directory_id, and never used for
   # authorization.
   #
-  # Binary-valued attributes (objectGUID) are stored as their hex form, which
-  # is also how they must be written in a filter.
+  # Binary-valued attributes (objectGUID) are stored as their hex form behind
+  # a 0x marker, and searched with the RFC 4515 escape of each byte.
+  #
+  # Changing this on a database that already holds directory ids, by hand or
+  # by picking an ldap.schema preset, makes every stored id stop matching:
+  # there is no migration tool yet. Login enrichment recovers by DN and logs a
+  # warning, but the NSS directory treats an entry whose id changed at the
+  # same DN as a new entry. Keep the attribute the ids were read from set
+  # explicitly, or start from a fresh database.
   #id_attribute: ""
 
   # Names the attribute to read a group's name from when a group search is
@@ -895,11 +924,13 @@ nss:
   # RFC 4515 filter in parentheses, not a template: the sync enumerates it
   # with paged searches, so ldap.limits does not cap it, and an on-demand
   # lookup ANDs it with an equality on the name or uid attribute. Required
-  # when nss.enabled is on; its syntax is checked when the server starts.
+  # when nss.enabled is on; its syntax is checked when the server starts. A
+  # preset from ldap.schema may set this.
   user_filter: "(objectClass=posixAccount)"
 
   # The LDAP filter that selects POSIX groups under ldap.base_dn, used the
-  # same way as user_filter. Required when nss.enabled is on.
+  # same way as user_filter. Required when nss.enabled is on. A preset from
+  # ldap.schema may set this.
   group_filter: "(objectClass=posixGroup)"
 
   # An LDAP filter an account's entry is tested against on every read: a match
@@ -907,7 +938,7 @@ nss:
   # For example (nsAccountLock=TRUE) on 389-ds and FreeIPA, or
   # (userAccountControl:1.2.840.113556.1.4.803:=2) on Active Directory. Empty
   # means the directory never disables an account; a person's ssoossh disable
-  # still does.
+  # still does. A preset from ldap.schema may set this.
   #disabled_filter: ""
 
   # How often the incremental sync runs: it reads only the accounts and groups
@@ -928,28 +959,33 @@ nss:
   # Names the directory attribute each POSIX field is read from.
   attributes:
     # The account name, stored verbatim. A person can log in by their own name
-    # only when it equals their username claim.
+    # only when it equals their username claim. A preset from ldap.schema may
+    # set this.
     name: "uid"
 
     # The numeric user id; it must parse as an unsigned 32-bit number. Frozen
-    # once stored: a later change waits for an admin.
+    # once stored: a later change waits for an admin. A preset from ldap.schema
+    # may set this.
     uid: "uidNumber"
 
     # The numeric primary group id, before auto_private_groups is applied.
-    # Frozen once stored, like uid.
+    # Frozen once stored, like uid. A preset from ldap.schema may set this.
     gid: "gidNumber"
 
     # The home directory; optional on the entry, absolute when present. An entry
-    # without one is served nss.default_home.
+    # without one is served nss.default_home. A preset from ldap.schema may set
+    # this.
     home: "homeDirectory"
 
-    # The login shell; optional on the entry.
+    # The login shell; optional on the entry. A preset from ldap.schema may set
+    # this.
     shell: "loginShell"
 
-    # A group's name.
+    # A group's name. A preset from ldap.schema may set this.
     group_name: "cn"
 
-    # A group's numeric gid. Frozen once stored, like uid.
+    # A group's numeric gid. Frozen once stored, like uid. A preset from
+    # ldap.schema may set this.
     group_gid: "gidNumber"
 
     # Lists a group's members. Whether its values are names or DNs is decided by
@@ -959,7 +995,7 @@ nss:
     # matter (a uniqueMember's optional #'...'B suffix is dropped); any other
     # attribute, memberUid (RFC 2307) included, holds account names, matched
     # byte for byte. A member that resolves to no account the sync has stored is
-    # left out.
+    # left out. A preset from ldap.schema may set this.
     group_member: "memberUid"
 
     # The only attributes nss.gecos_template may read, in order of preference

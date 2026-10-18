@@ -42,20 +42,25 @@ func RequireDocs(sections []*Section) error {
 // WriteManPage splices the generated OPTIONS body into path, replacing only
 // the region between the markers. Reports whether the file changed.
 func WriteManPage(path string, sections []*Section, defaults *Defaults) (bool, error) {
+	return WriteRegion(path, ManBegin, ManEnd, ManPage(sections, defaults))
+}
+
+// WriteRegion splices body into path between the begin and end marker
+// lines, leaving the hand-written rest of the file alone. Reports whether
+// the file changed.
+func WriteRegion(path, begin, end, body string) (bool, error) {
 	before, err := os.ReadFile(path)
 	if err != nil {
 		return false, fmt.Errorf("read %s: %w", path, err)
 	}
-
-	body := ManPage(sections, defaults)
-	next, err := spliceMarkers(string(before), ManBegin, ManEnd, body)
+	next, err := spliceMarkers(string(before), begin, end, body)
 	if err != nil {
 		return false, fmt.Errorf("%s: %w", path, err)
 	}
 	if next == string(before) {
 		return false, nil
 	}
-	// genconfdocs passes one of two path constants and nothing else reaches
+	// genconfdocs passes one of its path constants and nothing else reaches
 	// this function, but gosec's taint analysis only sees an exported
 	// parameter. filepath.Clean and an explicit traversal guard were both
 	// tried here and neither is recognised as a sanitiser, so the finding is
