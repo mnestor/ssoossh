@@ -154,9 +154,10 @@ No `members`; `nss-systemd` fetches them through `GetMemberships`.
   `GetGroupRecord(groupName)` per group, skipping the primary gid. One
   login is 1 + N calls, all served from cache. Those group lookups may
   arrive through `systemd-userdbd` rather than from the caller, and they
-  run with the NSS exclusion cleared (`nss-systemd.c:1025`), so a
-  membership in a local group such as `sudo` resolves through `files` even
-  though this daemon answers `NoRecordFound` for it (README U12).
+  run with the NSS exclusion cleared (`nss-systemd.c:1025`), so each name
+  resolves through `files` first (README U12). The daemon therefore lists
+  a membership only under a name that resolves to its own gid: the gid
+  rule under "Policy and sanity rules".
 - `nss-systemd` never resolves `root` or `nobody` through userdb.
 
 ## `internal/api` additions
@@ -284,7 +285,27 @@ with the reason and treated as `NoRecordFound` (and negative-cached).
 
 - uid and gid within `min_id..max_id`.
 - Name absent from `/etc/passwd` / `/etc/group`.
-- `require_groups`: user must be a member of one, else `NoRecordFound`.
+- `require_groups`: user must be a member of one, else `NoRecordFound`,
+  checked against the memberships the gid rule keeps, by directory name.
+- **Gid rule for memberships** (decided 2026-10-18 by the owner; README
+  U12): match on gid, never on name. For each membership in a user
+  answer, first match wins:
+  1. gid outside `min_id..max_id`: dropped, as the group answer is;
+     logged once per name and gid per daemon run.
+  2. gid of a local group: the local group's name is listed (it resolves
+     to the same gid through `files`), unless `filter_groups` lists it; a
+     debug line when the names differ.
+  3. name of a local group with another gid: a name collision. Dropped,
+     since userdb cannot carry a gid without a name that resolves to it,
+     so the member does not get the directory gid on this host. Warned
+     about once per name, directory gid and local gid per daemon run.
+  4. invalid name or in `filter_groups`: dropped.
+  5. otherwise the directory name.
+- Group answers (and membership stubs): a name collision is still not
+  served by name or gid, and is recorded and warned about under the same
+  once-per-run key, as is a gid outside the range. Only server answers and
+  memberships are checked, never the local-name short-circuit, so the log
+  cannot flood.
 - Home: `override_homedir` -> server `home` -> `fallback_homedir`;
   must be absolute after expansion.
 - Shell, first acceptable wins:
@@ -334,7 +355,7 @@ concurrently and works in memory mode.
 | `ssoosshd-nss run` | default; the daemon |
 | `ssoosshd-nss cache -E \| -u NAME \| -g NAME \| -U \| -G` | `sss_cache` equivalent: mark stale, never delete |
 | `ssoosshd-nss override list \| set USER --uid --gid --home --shell \| unset USER` | edits `nss-overrides.yaml` atomically, signals reload |
-| `ssoosshd-nss status` | online/offline/unauthorized, server, key id, cache counts, last error, `nsswitch.conf` check, and a warning when nscd or unscd is running (README R26) |
+| `ssoosshd-nss status` | online/offline/unauthorized, server, key id, cache counts, last error, group name collisions and groups refused by the id range since the start or the last SIGHUP (twenty of each, then a count), `nsswitch.conf` check, and a warning when nscd or unscd is running (README R26) |
 | `ssoosshd-nss lookup user NAME \| group NAME \| memberships NAME` | calls the userdb socket exactly as `nss-systemd` does; for debugging |
 
 `userdbctl user NAME` and `getent passwd NAME` exercise the full path

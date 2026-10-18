@@ -331,8 +331,52 @@ take effect now, `sudo ssoosshd-nss cache -u alice` marks the entry stale.
 `/etc/group` is never served and never sent to the server, and a directory
 user whose uid a local account already uses is refused. `root` is in
 `filter_users` and `filter_groups`, and `min_id` (1000, never below 1) keeps
-every system id out of reach. A directory user's membership in a local group
-such as `wheel` or `sudo`, listed in `/etc/group`, still resolves.
+every system id out of reach.
+
+**Group memberships match on gid, never on name.** systemd hands a
+membership to glibc as a group name, and glibc looks that name up in
+`/etc/group` first. So for each of a user's directory groups the daemon
+decides by gid, first match wins:
+
+1. a gid outside `min_id..max_id` is dropped, as the group itself is not
+   served (`status` lists it under `refused`);
+2. a gid a local group has is listed under the local group's name, so the
+   user gets that same gid (unless `filter_groups` lists that name);
+3. a name a local group has, with another gid, is a **name collision**: it
+   is dropped, and the daemon logs a warning once;
+4. an invalid name, or one in `filter_groups`, is dropped;
+5. anything else is listed under its directory name.
+
+A directory group can therefore never hand out a local group by name: a
+directory `wheel` or `docker` with its own gid does not make its members
+members of the local one. A membership in a local system group such as
+`sudo` (gid 27) is not granted from the directory either, since that gid is
+below `min_id`; list those users in `/etc/group`, or grant the right to a
+directory group with its own gid instead (a sudoers `%devs` rule, for
+example). `require_groups` is checked against the memberships these rules
+keep, by directory name, so a colliding or refused group never satisfies it.
+
+**A group name collision leaves the directory group unresolved on this
+host.** When the directory has `users` with gid 2005 and `/etc/group` has
+`users` with gid 100, the daemon logs, once per daemon run:
+
+```json
+{"level":"WARN","msg":"a directory group has the same name as a local group; it is not resolved on this host: its members do not get its gid here, files owned by its gid show the number, and the local group is unaffected. Rename one of the two to fix it","group":"users","gid":2005,"local_gid":100}
+```
+
+The members get neither gid 2005 nor gid 100, `ls -l` shows files owned by
+gid 2005 as the number, and the local `users` keeps its own members.
+`ssoosshd-nss status` lists the collisions met since the daemon started
+(twenty, then a count of the rest):
+
+```text
+collisions:    1 group name collision (a directory group with a local group's name; not resolved here, rename one of the two)
+  users: directory gid 2005, local gid 100, first seen 2026-10-18T09:00:00Z
+```
+
+The fix is to rename one of the two groups, in the directory or on the host.
+A SIGHUP clears the list, and anything still colliding is logged and listed
+again the next time a lookup meets it.
 
 **A uid or gid never moves on its own.** The server holds a changed number
 as pending until an admin accepts it, so re-own the files on hosts first;
@@ -438,7 +482,7 @@ three in step.
 
 | Command | What it does |
 | --- | --- |
-| `ssoosshd-nss status` | the connection state (online, offline, unauthorized or rate limited), the server, the key id, the cache counts and the last error, from the running daemon; then the `nsswitch.conf` check and the nscd warning. Exits non-zero when the daemon does not answer or a check fails |
+| `ssoosshd-nss status` | the connection state (online, offline, unauthorized or rate limited), the server, the key id, the cache counts and the last error, from the running daemon, with any group name collisions and groups refused by `min_id..max_id` (twenty of each, then a count); then the `nsswitch.conf` check and the nscd warning. Exits non-zero when the daemon does not answer or a check fails |
 | `ssoosshd-nss lookup user NAME` | asks the userdb socket exactly as `nss-systemd` does and prints the JSON reply; `group NAME` and `memberships NAME` likewise |
 | `ssoosshd-nss cache -u NAME` | marks cached entries stale, like `sss_cache`: `-u`/`-g` one user or group, `-U`/`-G` every user or group, `-E` everything. Nothing is deleted, and a stale entry is still served while the server is unreachable |
 | `ssoosshd-nss override list\|set\|unset` | the host overrides, above |
@@ -448,8 +492,9 @@ three in step.
 its admin socket, `/run/ssoossh-nss/admin.sock`, which only root may use.
 The daemon reads `nss.yaml` once, at start: restart the service after
 editing it. A SIGHUP (`sudo systemctl kill -s HUP ssoosshd-nss.service`)
-re-reads the host files and the fleet key and clears the offline backoff and
-the unauthorized latch; replacing the key file clears the latch on its own.
+re-reads the host files and the fleet key and clears the offline backoff,
+the unauthorized latch and the collisions and refused groups that `status`
+lists; replacing the key file clears the latch on its own.
 The daemon logs JSON lines to the journal (`journalctl -u ssoosshd-nss`).
 
 ## Troubleshooting
@@ -476,6 +521,8 @@ it. `ssoosshd-nss lookup` asks the same socket and is always there.
 | `state: offline` with a pin error | the server's key changed; the error names the digest it presented |
 | `state: rate_limited` | the server answered 429; the daemon waits out its `Retry-After` and serves the cache meanwhile |
 | A user resolves on one host but not another | `status` on both, then the host policy: a local account of the same name or uid, `min_id`, `max_id`, `filter_users` and `require_groups` all refuse. A name refused before any upstream call is logged only at `debug` (`run --log-level debug`); a server answer the policy refuses is a warning naming the reason |
+| A directory user lacks a directory group on one host, or files show a bare gid | a local group with the same name: `status` lists it under `collisions`, and the journal has the warning. Rename one of the two ([memberships match on gid](#what-to-expect)) |
+| A directory user lacks a group whose gid is below `min_id` | expected: `status` lists it under `refused`; such a gid is never served |
 | A removed group still works for someone already logged in | expected: see [what to expect](#what-to-expect) |
 | Lookups hang for 45 s | the daemon is failing to start; `systemctl status ssoosshd-nss` |
 
