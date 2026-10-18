@@ -20,6 +20,7 @@
 		NSSKeyPermissionRevoke,
 		NSSKeyPermissionRotate,
 		NSSKeyStatusActive,
+		NSSKeyStatusExpired,
 		NSSKeyStatusRevoked
 	} from '#lib/api/generated/enums.js';
 	import type {
@@ -53,7 +54,8 @@
 		keyAlerts,
 		keyStatus,
 		missRate,
-		previousLive
+		previousLive,
+		renewedExpiry
 	} from '#lib/nss.js';
 
 	// One fleet key: what it is, its secret's state, who may change what,
@@ -196,6 +198,12 @@
 	});
 	const graceUntil = $derived(
 		settings ? graceEnd(now, settings.rotation_grace_seconds).toISOString() : null
+	);
+
+	// The expiry the rotation will give the key: undefined until the
+	// server's limit is known, null when the key will still never expire.
+	const renewed = $derived(
+		key && settings ? renewedExpiry(key, now, settings.max_lifetime_seconds) : undefined
 	);
 
 	let confirmRotate = $state(false);
@@ -735,7 +743,10 @@
 	>
 		<p data-testid="nss-key-rotate-grace">
 			A new secret is issued and shown once.
-			{#if settings && graceUntil && settings.rotation_grace_seconds > 0}
+			{#if key.status === NSSKeyStatusExpired}
+				<span class="font-semibold text-trimmed">The current secret is not accepted again:</span>
+				the key has expired, so there is no grace period and every host fails until it has the new secret.
+			{:else if settings && graceUntil && settings.rotation_grace_seconds > 0}
 				The current secret becomes the previous one and is still accepted until
 				<span class="font-semibold text-ink">{formatDateTime(graceUntil)}</span>
 				({formatDuration(settings.rotation_grace_seconds)} from now), so hosts can switch over; the rotation
@@ -746,6 +757,16 @@
 			{:else}
 				The current secret becomes the previous one and is still accepted for the rotation grace
 				period, so hosts can switch over; the rotation report shows which have.
+			{/if}
+		</p>
+		<p class="mt-2" data-testid="nss-key-rotate-expiry">
+			{#if renewed === undefined}
+				The key's expiry is renewed by its lifetime, up to the server's limit.
+			{:else if renewed === null}
+				The key still never expires.
+			{:else}
+				The key's expiry is renewed to
+				<span class="font-semibold text-ink">{formatDateTime(renewed.toISOString())}</span>.
 			{/if}
 		</p>
 		{#if graceLive && key.previous_expires_at}

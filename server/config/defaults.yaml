@@ -1059,10 +1059,10 @@ nss:
   usage_retention: 2160h
 
   # The longest a new fleet key may live, and how long it lives when its
-  # creator gives no expiry. A later expiry is trimmed to it. A key's expiry
-  # is fixed at creation, so lowering this does not shorten keys that already
-  # exist. 0 sets no limit: a key created without an expiry then never
-  # expires.
+  # creator gives no expiry. A later expiry is trimmed to it, and each
+  # rotation renews a key by its own lifetime up to it. Changing this does not
+  # touch existing keys until their next rotation. 0 sets no limit: a key
+  # created without an expiry then never expires.
   key_max_lifetime: 8760h
 
   # How long the previous secret stays accepted after a key is rotated, so

@@ -11,7 +11,7 @@
 <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width:600px;background:#ffffff"><tr><td style="padding:28px 24px;font-family:'IBM Plex Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#1e1a16">
 
 <p style="margin:0 0 8px;font-size:16px;line-height:1.5;color:#1e1a16">{{ if .RotatedByName }}{{ .RotatedByName }} ({{ .RotatedByUsername }}){{ else }}{{ .RotatedByUsername }}{{ end }} rotated NSS key <span style="font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">{{ .KeyName }}</span> (<span style="font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">{{ .KeyID }}</span>) at {{ datetime .RotatedAt }}. The key is now on generation {{ .Generation }}.</p>
-<p style="margin:0 0 24px;font-size:14px;line-height:1.5;color:#5d5751">Hosts should present the new secret that the rotation issued.</p>
+<p style="margin:0 0 24px;font-size:14px;line-height:1.5;color:#5d5751">Hosts should present the new secret that the rotation issued. {{ if .ExpiresAt.IsZero }}The key still never expires.{{ else }}The rotation renewed the key's expiry to {{ datetime .ExpiresAt }}.{{ end }}</p>
 {{ if .PreviousExpiresAt.Equal .RotatedAt }}
 <p style="margin:0 0 24px;font-size:14px;line-height:1.5;color:#5d5751">The previous secret stopped working at the same moment, so a host that still presents it is refused.</p>
 {{ else }}
@@ -19,6 +19,7 @@
 {{ end }}
 <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse">
 <tr><td style="padding:12px 16px 12px 0;border-bottom:1px solid #e0ddda;font-size:14px;line-height:1.375;color:#5d5751;white-space:nowrap;vertical-align:top;width:1%">Rotated at</td><td style="padding:12px 0;border-bottom:1px solid #e0ddda;font-size:16px;line-height:1.375;color:#1e1a16;vertical-align:top;word-break:break-word;font-variant-numeric:tabular-nums">{{ datetime .RotatedAt }}</td></tr>
+<tr><td style="padding:12px 16px 12px 0;border-bottom:1px solid #e0ddda;font-size:14px;line-height:1.375;color:#5d5751;white-space:nowrap;vertical-align:top;width:1%">Key expires</td><td style="padding:12px 0;border-bottom:1px solid #e0ddda;font-size:16px;line-height:1.375;color:#1e1a16;vertical-align:top;word-break:break-word;font-variant-numeric:tabular-nums">{{ if .ExpiresAt.IsZero }}Never{{ else }}{{ datetime .ExpiresAt }} ({{ remaining .ExpiresAt }}){{ end }}</td></tr>
 </table>
 {{ if .Advanced }}
 <p style="margin:32px 0 4px;font-size:11px;font-weight:600;line-height:1.25;letter-spacing:.06em;text-transform:uppercase;color:#5d5751">Details</p>

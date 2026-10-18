@@ -202,6 +202,27 @@ export function latestExpiryDay(now: Date, lifetimeSeconds: number): string | nu
 	return localDay(before);
 }
 
+/**
+ * renewedExpiry is the expiry a rotation at `now` gives the key, worked out
+ * as the server does: the key's own lifetime again, measured from its last
+ * rotation or its creation, and no longer than nss.key_max_lifetime
+ * (`maxSeconds`, 0 for no limit). A key that never expired takes the limit.
+ * Null when the key will still never expire.
+ */
+export function renewedExpiry(
+	key: Pick<NSSKey, 'expires_at' | 'rotated_at' | 'created_at'>,
+	now: Date,
+	maxSeconds: number
+): Date | null {
+	const limit = Number.isFinite(maxSeconds) && maxSeconds > 0 ? maxSeconds * 1000 : 0;
+	if (!key.expires_at) return limit > 0 ? new Date(now.getTime() + limit) : null;
+	const expires = new Date(key.expires_at).getTime();
+	let lifetime = expires - new Date(key.rotated_at ?? key.created_at).getTime();
+	if (limit > 0 && (!(lifetime > 0) || lifetime > limit)) lifetime = limit;
+	if (!(lifetime > 0)) return new Date(expires);
+	return new Date(now.getTime() + lifetime);
+}
+
 /** graceEnd is when a secret rotated out at `now` stops being accepted. */
 export function graceEnd(now: Date, graceSeconds: number): Date {
 	return new Date(now.getTime() + Math.max(0, graceSeconds) * 1000);

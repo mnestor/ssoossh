@@ -412,7 +412,7 @@ func identityGroups(identity *Identity) []string {
 // NSSKeyCreate is what a caller supplies for a new key. Nil fields take
 // their defaults: expires_at now plus nss.key_max_lifetime, the
 // notification address the creator's own. An expires_at past that ceiling
-// is trimmed to it. The expiry is fixed once the key exists.
+// is trimmed to it. Afterwards only a rotation renews the expiry.
 type NSSKeyCreate struct {
 	Name              string
 	Description       string
@@ -423,7 +423,7 @@ type NSSKeyCreate struct {
 
 // NSSKeyUpdate is a change to a key; nil fields are left alone.
 // GroupName needs assign_group, the rest edit. The expiry is not here: it
-// is set once, at creation, inside nss.key_max_lifetime.
+// is set at creation and renewed only by a rotation.
 type NSSKeyUpdate struct {
 	Description       *string
 	NotificationEmail *string
@@ -689,7 +689,7 @@ func (s *NSSKeyService) keyExpiry(asked *time.Time, now time.Time) (expires, req
 }
 
 // Update changes a key's description, notification address or group.
-// The expiry is fixed at creation.
+// The expiry is not editable; Rotate renews it.
 func (s *NSSKeyService) Update(ctx context.Context, identity *Identity, id string, in NSSKeyUpdate, sourceIP string) (*NSSKeyView, error) {
 	if in.Description == nil && in.NotificationEmail == nil && in.GroupName == nil {
 		return nil, &errorresponses.InvalidRequestError{Reason: "nothing to change: send description, notification_email or group_name"}
@@ -762,7 +762,10 @@ func (s *NSSKeyService) updates(key *model.NSSKey, in NSSKeyUpdate, now time.Tim
 
 // Rotate issues a new secret and returns it with the key; it is never
 // available again. The current secret becomes the previous one, accepted
-// until now plus nss.key_rotation_grace, so hosts can switch over.
+// until now plus nss.key_rotation_grace, so hosts can switch over; an
+// expired key's secret had already stopped working and gets no grace.
+// The rotation renews the expiry (renewedExpiry) and restarts its
+// reminders.
 func (s *NSSKeyService) Rotate(ctx context.Context, identity *Identity, id, sourceIP string) (*NSSKeyView, string, error) {
 	secret, err := newNSSKeySecret()
 	if err != nil {
@@ -772,6 +775,10 @@ func (s *NSSKeyService) Rotate(ctx context.Context, identity *Identity, id, sour
 	view, key, err := s.mutate(ctx, identity, id, []model.NSSKeyPermission{model.NSSKeyPermissionRotate}, func(tx *gorm.DB, actor *nssActor, key *model.NSSKey, now time.Time) (*AuditEvent, error) {
 		rotatedBy = actor
 		previousExpires := now.Add(s.config.NSS.KeyRotationGrace).UTC()
+		if nssKeyStatus(key, now) == model.NSSKeyStatusExpired {
+			previousExpires = now.UTC()
+		}
+		expiresAt := s.renewedExpiry(key, now)
 		generation := key.CurrentGeneration + 1
 		result := tx.Model(&model.NSSKey{}).
 			Where("id = ? AND current_generation = ?", key.ID, key.CurrentGeneration).
@@ -781,6 +788,8 @@ func (s *NSSKeyService) Rotate(ctx context.Context, identity *Identity, id, sour
 				"previous_expires_at":      previousExpires,
 				"current_generation":       generation,
 				"rotated_at":               now.UTC(),
+				"expires_at":               expiresAt,
+				"expiry_reminder_sent_at":  nil,
 				"rotation_cleanup_sent_at": nil,
 				"updated_at":               now,
 			})
@@ -799,6 +808,7 @@ func (s *NSSKeyService) Rotate(ctx context.Context, identity *Identity, id, sour
 				"key_id":              key.ID,
 				"generation":          generation,
 				"previous_expires_at": previousExpires,
+				"expires_at":          expiresAt,
 				"source_ip":           sourceIP,
 			},
 		}, nil
@@ -810,6 +820,37 @@ func (s *NSSKeyService) Rotate(ctx context.Context, identity *Identity, id, sour
 		s.notifyRotated(ctx, key, rotatedBy)
 	}
 	return view, secret, err
+}
+
+// renewedExpiry is the expiry a rotation gives key: its own lifetime again
+// from now, measured from its last rotation or its creation, and no longer
+// than nss.key_max_lifetime. A rotation re-issues the key, so a limit set
+// since it was made applies, and a key that never expired gets one. With
+// no limit, a key that never expires stays that way.
+func (s *NSSKeyService) renewedExpiry(key *model.NSSKey, now time.Time) *time.Time {
+	limit := s.config.NSS.KeyMaxLifetime
+	if key.ExpiresAt == nil {
+		if limit <= 0 {
+			return nil
+		}
+		at := now.Add(limit).UTC()
+		return &at
+	}
+	from := key.CreatedAt
+	if key.RotatedAt != nil {
+		from = *key.RotatedAt
+	}
+	lifetime := key.ExpiresAt.Sub(from)
+	if limit > 0 && (lifetime <= 0 || lifetime > limit) {
+		lifetime = limit
+	}
+	if lifetime <= 0 {
+		// A row whose expiry precedes its own start, under no limit:
+		// nothing sane to renew by, so the expiry stands.
+		return key.ExpiresAt
+	}
+	at := now.Add(lifetime).UTC()
+	return &at
 }
 
 // ClearPrevious ends the previous secret before its grace runs out, once

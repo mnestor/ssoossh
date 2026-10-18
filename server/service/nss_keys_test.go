@@ -510,6 +510,74 @@ func TestNSSKeys_ShouldIssueANewSecretAndKeepThePreviousOneWhenRotated(t *testin
 	}
 }
 
+func TestNSSKeys_ShouldRenewTheExpiryWhenTheKeyIsRotated(t *testing.T) {
+	t.Parallel()
+
+	const day = 24 * time.Hour
+	tests := []struct {
+		name      string
+		limit     time.Duration
+		created   time.Duration // before now
+		rotated   *time.Time
+		expires   *time.Time
+		want      *time.Time
+		wantGrace bool
+	}{
+		{name: "should renew by the key's own lifetime when it is inside the limit", limit: 365 * day, created: 10 * day, expires: nssAt(20 * day), want: nssAt(30 * day), wantGrace: true},
+		{name: "should measure the lifetime from the last rotation when there was one", limit: 365 * day, created: 400 * day, rotated: nssAt(-10 * day), expires: nssAt(20 * day), want: nssAt(30 * day), wantGrace: true},
+		{name: "should cap the renewal at the limit when the key's lifetime is longer", limit: 30 * day, created: 10 * day, expires: nssAt(355 * day), want: nssAt(30 * day), wantGrace: true},
+		{name: "should give a key that never expired the limit when one is set", limit: 365 * day, created: 10 * day, want: nssAt(365 * day), wantGrace: true},
+		{name: "should keep a key that never expires when there is no limit", limit: 0, created: 10 * day, want: nil, wantGrace: true},
+		{name: "should renew by the key's own lifetime when there is no limit", limit: 0, created: 10 * day, expires: nssAt(20 * day), want: nssAt(30 * day), wantGrace: true},
+		{name: "should renew an expired key and give its old secret no grace", limit: 365 * day, created: 40 * day, expires: nssAt(-10 * day), want: nssAt(30 * day), wantGrace: false},
+		{name: "should keep the expiry when it precedes the key's start and there is no limit", limit: 0, created: day, expires: nssAt(-2 * day), want: nssAt(-2 * day), wantGrace: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			db := testdb.New(t)
+			seedNSSCallers(t, db)
+			cfg := nssLookupTestConfig()
+			cfg.NSS.KeyMaxLifetime = tt.limit
+			keys, notifier := newTestNSSKeys(t, cfg, db)
+			created, oldSecret := createNSSKey(t, keys, "web fleet", "web-admins")
+			if err := db.Model(&model.NSSKey{}).Where("id = ?", created.Key.ID).Updates(map[string]any{
+				"created_at":              nssNow.Add(-tt.created),
+				"rotated_at":              tt.rotated,
+				"expires_at":              tt.expires,
+				"expiry_reminder_sent_at": nssNow,
+			}).Error; err != nil {
+				t.Fatalf("shape the key: %v", err)
+			}
+
+			view, _, err := keys.Rotate(t.Context(), nssKeyAdmin, created.Key.ID, "")
+			if err != nil {
+				t.Fatalf("Rotate: %v", err)
+			}
+			key := view.Key
+			if (key.ExpiresAt == nil) != (tt.want == nil) || (key.ExpiresAt != nil && !key.ExpiresAt.Equal(*tt.want)) {
+				t.Errorf("expires_at = %v, want %v", key.ExpiresAt, tt.want)
+			}
+			if key.ExpiryReminderSentAt != nil {
+				t.Errorf("expiry_reminder_sent_at = %v, want the reminders restarted", key.ExpiryReminderSentAt)
+			}
+			verdict, err := keys.VerifyFleetKey(t.Context(), key.ID, oldSecret)
+			if err != nil || verdict.OK != tt.wantGrace {
+				t.Errorf("old secret accepted = %v (%v), want %v", verdict.OK, err, tt.wantGrace)
+			}
+			payload, _ := notifier.only(t, notify.KindNSSKeyRotated).Payload.(*notify.NSSKeyRotated)
+			if payload == nil || !payload.ExpiresAt.Equal(derefTime(tt.want)) {
+				t.Errorf("rotated mail = %+v, want the renewed expiry", payload)
+			}
+			details := auditDetails(t, db, AuditNSSKeyRotated)
+			if _, recorded := details[0]["expires_at"]; len(details) != 1 || !recorded {
+				t.Errorf("nss.key_rotated rows = %v, want one carrying the renewed expiry", details)
+			}
+		})
+	}
+}
+
 func TestNSSKeys_ShouldRefuseTheRotationWhenTheCallerMayNotRotate(t *testing.T) {
 	t.Parallel()
 

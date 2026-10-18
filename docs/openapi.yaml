@@ -2807,8 +2807,8 @@ components:
           type: string
         expires_at:
           description: |-
-            ExpiresAt is when the key stops being accepted, fixed at creation;
-            absent for a key that never expires.
+            ExpiresAt is when the key stops being accepted, set at creation and
+            renewed by each rotation; absent for a key that never expires.
           type: string
         group_name:
           description: |-
@@ -6038,7 +6038,7 @@ paths:
         Fleet key admin role and admins only. Returns the key and its secret; the secret is shown
         this once and never again, so the caller must store it now. expires_at defaults to
         nss.key_max_lifetime from now, and a later one is trimmed to that; with the setting at 0 a key
-        created without one never expires. The expiry cannot be changed afterwards. notification_email
+        created without one never expires. Afterwards only a rotation renews it. notification_email
         defaults to the creator's address.
       requestBody:
         content:
@@ -6126,7 +6126,7 @@ paths:
       description: |-
         description and notification_email need edit: the fleet key admin role, admins, or the key's
         group. group_name needs assign_group: the fleet key admin role or admins. Fields left out are
-        unchanged. The expiry is fixed at creation and cannot be changed. A revoked key is a 409.
+        unchanged. The expiry is not editable: rotation renews it. A revoked key is a 409.
       parameters:
       - description: Key id
         in: path
@@ -6287,8 +6287,9 @@ paths:
     post:
       description: |-
         Issues a new secret, shown this once. The current secret becomes the previous one and stays
-        accepted for nss.key_rotation_grace, so hosts can switch over. The fleet key admin role,
-        admins, or the key's group. A revoked key is a 409.
+        accepted for nss.key_rotation_grace, so hosts can switch over; an expired key's secret gets no
+        grace. Renews expires_at to the key's own lifetime from now, at most nss.key_max_lifetime. The
+        fleet key admin role, admins, or the key's group. A revoked key is a 409.
       parameters:
       - description: Key id
         in: path

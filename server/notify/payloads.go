@@ -359,8 +359,8 @@ type NSSKeyExpiring struct {
 	Description string `json:"description,omitempty"`
 	GroupName   string `json:"group_name,omitempty"`
 
-	// ExpiresAt is when the key stops being accepted. The expiry cannot be
-	// moved, so a replacement key has to reach the hosts before this.
+	// ExpiresAt is when the key stops being accepted. Only a rotation
+	// renews it, and the new secret has to reach the hosts before this.
 	ExpiresAt time.Time `json:"expires_at"`
 
 	// Daily is true once the key is inside its final week and reminders have
@@ -467,8 +467,12 @@ type NSSKeyRotated struct {
 	RotatedByName     string `json:"rotated_by_name,omitempty"`
 
 	// PreviousExpiresAt is when the previous secret stops working. Equal to
-	// RotatedAt when nss.key_rotation_grace is zero.
+	// RotatedAt when nss.key_rotation_grace is zero or the key had expired.
 	PreviousExpiresAt time.Time `json:"previous_expires_at"`
+
+	// ExpiresAt is the key's expiry as the rotation renewed it; zero for a
+	// key that never expires.
+	ExpiresAt time.Time `json:"expires_at"`
 
 	ServerURL string `json:"server_url"`
 }

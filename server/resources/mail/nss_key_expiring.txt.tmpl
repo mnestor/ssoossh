@@ -2,9 +2,9 @@ The NSS key {{ .KeyName }} ({{ .KeyID }}) expires in {{ until .ExpiresAt }}.
 Hosts that present its secret are refused from then on, and they stop
 resolving accounts through it.
 
-A key's expiry cannot be moved. To keep the fleet running, create a new key
-in the web UI{{ if .ServerURL }} at {{ .ServerURL }}{{ end }} and put its id
-and secret on the hosts before this one expires.
+To keep the fleet running, rotate the key in the web UI{{ if .ServerURL }} at
+{{ .ServerURL }}{{ end }}. Rotation renews the expiry and issues a new secret,
+which must reach the hosts before the previous one stops working.
 {{ if .Description }}
   Description       {{ .Description }}{{ end }}
   Key expires       {{ datetime .ExpiresAt }} ({{ remaining .ExpiresAt }})

@@ -802,7 +802,8 @@ Templates:
 | `.RotatedAt` | `time.Time` | When the key was rotated. |
 | `.RotatedByUsername` | `string` | The account that rotated the key. |
 | `.RotatedByName` | `string` | That account's human-readable name, or empty if none was captured. |
-| `.PreviousExpiresAt` | `time.Time` | When the previous secret stops working. Equal to RotatedAt when no grace period is set. |
+| `.PreviousExpiresAt` | `time.Time` | When the previous secret stops working. Equal to RotatedAt when no grace period is set or the key had expired. |
+| `.ExpiresAt` | `time.Time` | The key's expiry as the rotation renewed it: its own lifetime again from the rotation, at most nss.key_max_lifetime. Zero for a key that never expires. |
 | `.ServerURL` | `string` | The server's public origin, naming the deployment the key belongs to. |
 | `.Advanced` | `bool` | True when the recipient chose the advanced email detail level, false for simplified. Set per recipient at delivery; a template that ignores it sends the same message at both levels. |
 

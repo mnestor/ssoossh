@@ -186,6 +186,7 @@ func samplePayload(t *testing.T, kind notify.Kind) any {
 			RotatedByUsername: "alice",
 			RotatedByName:     "Alice Admin",
 			PreviousExpiresAt: time.Now().Add(30 * 24 * time.Hour),
+			ExpiresAt:         expires,
 			ServerURL:         "https://ssoossh.example.com",
 		}
 	case notify.KindNSSKeyRevoked:

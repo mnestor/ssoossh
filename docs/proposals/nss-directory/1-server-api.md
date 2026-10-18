@@ -144,7 +144,7 @@ person's own-name certificate principal can never pass `getpwnam` (R23).
 | `previous_secret_hash`, `previous_expires_at` | generation `current-1`, accepted until expiry (default `nss.key_rotation_grace` 720h) |
 | `name`, `description`, `created_by` | |
 | `group` | optional OIDC/LDAP group whose members manage this key |
-| `expires_at` | at most now + `nss.key_max_lifetime` (8760h), which is also the default; a later date is trimmed. NULL (never expires) only when the setting is 0 and no date is given. Fixed at creation (decided 2026-10-18) |
+| `expires_at` | at most now + `nss.key_max_lifetime` (8760h), which is also the default; a later date is trimmed. NULL (never expires) only when the setting is 0 and no date is given. Not editable; each rotation renews it to the key's own lifetime from the rotation, capped by the setting, and an expired key's previous secret gets no grace (decided 2026-10-18) |
 | `notification_email` | defaults to creator's address |
 | `revoked_at`, `revoked_by` | |
 
@@ -363,7 +363,7 @@ Session-authenticated; swag-annotated; all mutations audit-logged.
 | `/api/nss/keys` | GET | all keys: `nss_key_group`, admin, SOC, auditor; others: keys whose `group` they are in |
 | `/api/nss/keys` | POST | `nss_key_group`, admin. Returns the secret once |
 | `/api/nss/keys/:id` | GET | as list |
-| `/api/nss/keys/:id` | PATCH | `description`, `notification_email`: key group members too. `group`: `nss_key_group`, admin only. The expiry cannot be changed (decided 2026-10-18) |
+| `/api/nss/keys/:id` | PATCH | `description`, `notification_email`: key group members too. `group`: `nss_key_group`, admin only. The expiry cannot be edited; rotation renews it (decided 2026-10-18) |
 | `/api/nss/keys/:id/rotate` | POST | `nss_key_group`, admin, key group members. Returns new secret once |
 | `/api/nss/keys/:id/previous` | DELETE | same as rotate: clears previous secret early |
 | `/api/nss/keys/:id/revoke` | POST | above plus SOC |

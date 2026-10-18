@@ -148,7 +148,7 @@ func (k *nssKeyController) listHandler(g *gin.Context) {
 // @Description Fleet key admin role and admins only. Returns the key and its secret; the secret is shown
 // @Description this once and never again, so the caller must store it now. expires_at defaults to
 // @Description nss.key_max_lifetime from now, and a later one is trimmed to that; with the setting at 0 a key
-// @Description created without one never expires. The expiry cannot be changed afterwards. notification_email
+// @Description created without one never expires. Afterwards only a rotation renews it. notification_email
 // @Description defaults to the creator's address.
 // @Tags        web
 // @Accept      json
@@ -215,7 +215,7 @@ func (k *nssKeyController) getHandler(g *gin.Context) {
 // @Summary     Change a fleet API key
 // @Description description and notification_email need edit: the fleet key admin role, admins, or the key's
 // @Description group. group_name needs assign_group: the fleet key admin role or admins. Fields left out are
-// @Description unchanged. The expiry is fixed at creation and cannot be changed. A revoked key is a 409.
+// @Description unchanged. The expiry is not editable: rotation renews it. A revoked key is a 409.
 // @Tags        web
 // @Accept      json
 // @Produce     json
@@ -255,8 +255,9 @@ func (k *nssKeyController) updateHandler(g *gin.Context) {
 //
 // @Summary     Rotate a fleet API key
 // @Description Issues a new secret, shown this once. The current secret becomes the previous one and stays
-// @Description accepted for nss.key_rotation_grace, so hosts can switch over. The fleet key admin role,
-// @Description admins, or the key's group. A revoked key is a 409.
+// @Description accepted for nss.key_rotation_grace, so hosts can switch over; an expired key's secret gets no
+// @Description grace. Renews expires_at to the key's own lifetime from now, at most nss.key_max_lifetime. The
+// @Description fleet key admin role, admins, or the key's group. A revoked key is a 409.
 // @Tags        web
 // @Produce     json
 // @Param       id path string true "Key id"

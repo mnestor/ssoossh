@@ -252,12 +252,12 @@ what that exposes.
   (`8760h`), and exactly that unless its creator sets an earlier date. A
   later date sent to the API is trimmed to it, and the audit event records
   the date asked for as `requested_expires_at`.
-- The expiry is fixed when the key is created and cannot be changed. To
-  keep a fleet running past it, create a new key and put it on the hosts
-  before the old one expires.
+- The expiry cannot be edited. Rotation renews it (see
+  [Rotation](#rotation)), so a fleet keeps its key id by rotating before
+  the expiry.
 - Setting `nss.key_max_lifetime` to `0` removes the limit: a key created
-  without a date then never expires. Raising or lowering the setting later
-  does not change keys that already exist.
+  without a date then never expires. Changing the setting does not touch
+  existing keys until their next rotation.
 
 | Action | Endpoint | Who | Audit |
 | --- | --- | --- | --- |
@@ -293,6 +293,16 @@ Rotation keeps the id and replaces the secret. The previous secret stays
 accepted for
 [`nss.key_rotation_grace`](/ssoossh/reference/config/nss/#key_rotation_grace)
 (`720h`), so hosts can be redeployed with the new key file at their own pace.
+
+Rotation also renews the expiry: the key gets its own lifetime again from
+the rotation, measured from its last rotation or its creation, and never
+more than `nss.key_max_lifetime`. A key created for 30 days is renewed for
+30 days; a key that never expired is given the limit if one is now set; with
+the limit at `0`, a key that never expires stays that way.
+
+An expired key can be rotated too, which brings it back with a new secret.
+Its old secret gets no grace period: it had already stopped working, so
+every host fails until it has the new key file.
 
 1. Rotate, and write the new secret into the image or configuration
    management.

@@ -265,8 +265,8 @@ export interface NSSKeyResponse {
 	created_at: string;
 	updated_at: string;
 	/**
-	 * ExpiresAt is when the key stops being accepted, fixed at creation;
-	 * absent for a key that never expires.
+	 * ExpiresAt is when the key stops being accepted, set at creation and
+	 * renewed by each rotation; absent for a key that never expires.
 	 */
 	expires_at?: string;
 	/**
@@ -357,8 +357,8 @@ export interface NSSKeySecretResponse {
 /**
  * CreateNSSKeyBody creates a key. ExpiresAt defaults to now plus
  * nss.key_max_lifetime, and a later one is trimmed to that; with the
- * setting at 0 a key without one never expires. The expiry cannot be
- * changed afterwards. NotificationEmail defaults to the creator's
+ * setting at 0 a key without one never expires. Afterwards only a
+ * rotation renews it. NotificationEmail defaults to the creator's
  * address; an empty one sends the key's mail nowhere.
  */
 export interface CreateNSSKeyBody {
@@ -371,7 +371,7 @@ export interface CreateNSSKeyBody {
 /**
  * UpdateNSSKeyBody changes a key; fields left out are unchanged.
  * GroupName needs the fleet key admin role, the rest the key's own group.
- * The expiry is not here: it is fixed at creation.
+ * The expiry is not here: only a rotation renews it.
  */
 export interface UpdateNSSKeyBody {
 	description?: string;

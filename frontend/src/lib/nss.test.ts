@@ -8,6 +8,7 @@ import {
 	collisionLabel,
 	endOfDay,
 	latestExpiryDay,
+	renewedExpiry,
 	expiryTone,
 	formatPercent,
 	graceEnd,
@@ -316,6 +317,65 @@ describe('localDay', () => {
 	it('should pad the month and day when they are single digits', () => {
 		expect(localDay(new Date(2027, 2, 5, 15, 0))).toBe('2027-03-05');
 	});
+});
+
+describe('renewedExpiry', () => {
+	const DAY = 86400;
+	const at = (days: number) => new Date(now.getTime() + days * DAY * 1000).toISOString();
+	const cases: {
+		name: string;
+		key: { expires_at?: string; rotated_at?: string; created_at: string };
+		max: number;
+		want: string | null;
+	}[] = [
+		{
+			name: 'its own lifetime is inside the limit',
+			key: { created_at: at(-10), expires_at: at(20) },
+			max: 365 * DAY,
+			want: at(30)
+		},
+		{
+			name: 'it was rotated since it was made',
+			key: { created_at: at(-400), rotated_at: at(-10), expires_at: at(20) },
+			max: 365 * DAY,
+			want: at(30)
+		},
+		{
+			name: 'its own lifetime is past the limit',
+			key: { created_at: at(-10), expires_at: at(355) },
+			max: 30 * DAY,
+			want: at(30)
+		},
+		{
+			name: 'it never expired and there is a limit',
+			key: { created_at: at(-10) },
+			max: 365 * DAY,
+			want: at(365)
+		},
+		{
+			name: 'it never expires and there is no limit',
+			key: { created_at: at(-10) },
+			max: 0,
+			want: null
+		},
+		{
+			name: 'there is no limit',
+			key: { created_at: at(-10), expires_at: at(20) },
+			max: 0,
+			want: at(30)
+		},
+		{
+			name: 'its expiry precedes its start and there is no limit',
+			key: { created_at: at(-1), expires_at: at(-2) },
+			max: 0,
+			want: at(-2)
+		}
+	];
+	for (const { name, key, max, want } of cases) {
+		it(`should renew to ${want ?? 'never'} when ${name}`, () => {
+			expect(renewedExpiry(key, now, max)?.toISOString() ?? null).toBe(want);
+		});
+	}
 });
 
 describe('graceEnd', () => {

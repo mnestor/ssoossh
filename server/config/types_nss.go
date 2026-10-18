@@ -222,9 +222,10 @@ type NSSConfig struct {
 
 	// KeyMaxLifetime is the longest a new fleet key may live, and how
 	// long it lives when its creator gives no expiry. A later expiry is
-	// trimmed to it. A key's expiry is fixed at creation, so lowering
-	// this does not shorten keys that already exist. 0 sets no limit: a
-	// key created without an expiry then never expires.
+	// trimmed to it, and each rotation renews a key by its own lifetime
+	// up to it. Changing this does not touch existing keys until their
+	// next rotation. 0 sets no limit: a key created without an expiry then
+	// never expires.
 	KeyMaxLifetime time.Duration `mapstructure:"key_max_lifetime,string" default:"8760h"`
 
 	// KeyRotationGrace is how long the previous secret stays accepted

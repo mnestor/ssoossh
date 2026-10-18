@@ -1,6 +1,7 @@
 {{ if .RotatedByName }}{{ .RotatedByName }} ({{ .RotatedByUsername }}){{ else }}{{ .RotatedByUsername }}{{ end }} rotated NSS key {{ .KeyName }} ({{ .KeyID }}) at {{ datetime .RotatedAt }}.
 The key is now on generation {{ .Generation }}. Hosts should present the new
-secret that the rotation issued.
+secret that the rotation issued. {{ if .ExpiresAt.IsZero }}The key still never expires.{{ else }}The rotation renewed the key's
+expiry to {{ datetime .ExpiresAt }}.{{ end }}
 {{ if .PreviousExpiresAt.Equal .RotatedAt }}
 The previous secret stopped working at the same moment, so a host that still
 presents it is refused.
@@ -10,6 +11,7 @@ The previous secret keeps working until {{ datetime .PreviousExpiresAt }}
 are refused after it.
 {{ end }}
   Rotated at        {{ datetime .RotatedAt }}
+  Key expires       {{ if .ExpiresAt.IsZero }}never{{ else }}{{ datetime .ExpiresAt }} ({{ remaining .ExpiresAt }}){{ end }}
 {{ if .Advanced }}
 DETAILS
 

@@ -41,6 +41,7 @@ func (s *NSSKeyService) notifyRotated(ctx context.Context, key *model.NSSKey, ac
 		RotatedByUsername: actor.user.Username,
 		RotatedByName:     actor.displayName(),
 		PreviousExpiresAt: derefTime(key.PreviousExpiresAt),
+		ExpiresAt:         derefTime(key.ExpiresAt),
 		ServerURL:         s.config.HTTP.PublicOrigin(),
 	})
 }

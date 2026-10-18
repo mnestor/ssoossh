@@ -54,8 +54,8 @@ type NSSKeyResponse struct {
 	CreatedByUsername string    `json:"created_by_username" validate:"required"`
 	CreatedAt         time.Time `json:"created_at" validate:"required"`
 	UpdatedAt         time.Time `json:"updated_at" validate:"required"`
-	// ExpiresAt is when the key stops being accepted, fixed at creation;
-	// absent for a key that never expires.
+	// ExpiresAt is when the key stops being accepted, set at creation and
+	// renewed by each rotation; absent for a key that never expires.
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 	// NotificationEmail is where the key's mail goes, empty for nowhere.
 	NotificationEmail string `json:"notification_email" validate:"required"`
@@ -120,8 +120,8 @@ type NSSKeySecretResponse struct {
 
 // CreateNSSKeyBody creates a key. ExpiresAt defaults to now plus
 // nss.key_max_lifetime, and a later one is trimmed to that; with the
-// setting at 0 a key without one never expires. The expiry cannot be
-// changed afterwards. NotificationEmail defaults to the creator's
+// setting at 0 a key without one never expires. Afterwards only a
+// rotation renews it. NotificationEmail defaults to the creator's
 // address; an empty one sends the key's mail nowhere.
 type CreateNSSKeyBody struct {
 	Name              string     `json:"name" validate:"required"`
@@ -133,7 +133,7 @@ type CreateNSSKeyBody struct {
 
 // UpdateNSSKeyBody changes a key; fields left out are unchanged.
 // GroupName needs the fleet key admin role, the rest the key's own group.
-// The expiry is not here: it is fixed at creation.
+// The expiry is not here: only a rotation renews it.
 type UpdateNSSKeyBody struct {
 	Description       *string `json:"description,omitempty"`
 	NotificationEmail *string `json:"notification_email,omitempty"`

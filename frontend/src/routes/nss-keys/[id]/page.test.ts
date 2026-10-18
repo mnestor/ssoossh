@@ -302,6 +302,57 @@ describe('NSS key detail', () => {
 			});
 		}
 
+		// The fixture key lived a year from 2026-01-10; the clock is 2026-10-18 12:00 UTC.
+		const renewCases: { name: string; key: NSSKey; settings: Route | Response; want: string }[] = [
+			{
+				name: 'the server limits keys to a year',
+				key: keyFixture({ permissions: ALL }),
+				settings: envelope({ max_lifetime_seconds: 31536000, rotation_grace_seconds: 0 }),
+				want: `renewed to ${formatDateTime('2027-10-18T12:00:00.000Z')}`
+			},
+			{
+				name: 'the server limits keys to 30 days',
+				key: keyFixture({ permissions: ALL }),
+				settings: envelope({ max_lifetime_seconds: 2592000, rotation_grace_seconds: 0 }),
+				want: `renewed to ${formatDateTime('2026-11-17T12:00:00.000Z')}`
+			},
+			{
+				name: 'the key never expires and the server sets no limit',
+				key: keyFixture({ permissions: ALL, expires_at: undefined }),
+				settings: envelope({ max_lifetime_seconds: 0, rotation_grace_seconds: 0 }),
+				want: 'The key still never expires.'
+			},
+			{
+				name: 'the settings fail to load',
+				key: keyFixture({ permissions: ALL }),
+				settings: envelope(null, 500, 'database unavailable'),
+				want: "renewed by its lifetime, up to the server's limit"
+			}
+		];
+		for (const { name, key, settings, want } of renewCases) {
+			it(`should say what the rotation does to the expiry when ${name}`, async () => {
+				serve(key, { 'GET /api/nss/key-settings': settings });
+				await loaded();
+				await settle();
+				await userEvent.click(screen.getByTestId('nss-key-rotate'));
+
+				expect(screen.getByTestId('nss-key-rotate-expiry')).toHaveTextContent(want);
+			});
+		}
+
+		it('should say an expired key gets no grace before confirming', async () => {
+			serve(
+				keyFixture({ permissions: ALL, status: 'expired', expires_at: '2026-10-01T12:00:00Z' })
+			);
+			await loaded();
+			await settle();
+			await userEvent.click(screen.getByTestId('nss-key-rotate'));
+
+			expect(screen.getByTestId('nss-key-rotate-grace')).toHaveTextContent(
+				'The current secret is not accepted again'
+			);
+		});
+
 		it('should show the server reason in the dialog when the rotation is refused', async () => {
 			serve(keyFixture({ permissions: ALL }), {
 				'POST /api/nss/keys/nss_k7m4qp2x/rotate': envelope(

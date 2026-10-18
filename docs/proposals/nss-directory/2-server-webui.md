@@ -45,7 +45,8 @@ aggregate), status (`active`, `rotating` while a previous secret is live,
 Form: name (required), description, group (free text with suggestions from
 known groups if an endpoint exists; otherwise free text), expiry (date
 picker bounded by `nss.key_max_lifetime` and starting at its last day;
-empty means no expiry when the setting is 0; fixed once the key exists),
+empty means no expiry when the setting is 0; not editable, and each
+rotation renews it),
 notification email (default the current user's).
 
 On success, a one-time secret panel:
@@ -58,7 +59,7 @@ On success, a one-time secret panel:
 
 ## Detail
 
-Metadata block, editable inline per `permissions`, except the expiry, which is fixed at creation. Actions:
+Metadata block, editable inline per `permissions`, except the expiry, which only rotation renews. Actions:
 
 - **Rotate**: confirm dialog stating the grace expiry date; then the same
   one-time secret panel as create.
