@@ -95,7 +95,7 @@ table certificate_requests
   column username type=text nullable=false default=''::text
   check chk_certificate_requests_status (status = ANY (ARRAY['pending'::text, 'signing'::text, 'approved'::text, 'enrolled'::text, 'denied'::text, 'expired'::text, 'failed'::text]))
   check chk_certificate_requests_type (type = ANY (ARRAY['user'::text, 'service'::text, 'pam'::text, 'console'::text]))
-  fk user_id -> users.id
+  fk user_id -> users.id on_delete=NO ACTION on_update=NO ACTION
   index certificate_requests_pkey CREATE UNIQUE INDEX certificate_requests_pkey ON public.certificate_requests USING btree (id)
   index idx_certificate_requests_status_created_at CREATE INDEX idx_certificate_requests_status_created_at ON public.certificate_requests USING btree (status, created_at)
   index idx_certificate_requests_user_code CREATE UNIQUE INDEX idx_certificate_requests_user_code ON public.certificate_requests USING btree (user_code) WHERE ((user_code <> ''::text) AND (status = ANY (ARRAY['pending'::text, 'signing'::text])))
@@ -114,8 +114,8 @@ table certificates
   column type type=text nullable=false default=<none>
   column user_id type=text nullable=true default=<none>
   check chk_certificates_type (type = ANY (ARRAY['user'::text, 'service'::text, 'pam'::text, 'console'::text]))
-  fk certificate_request_id -> certificate_requests.id
-  fk user_id -> users.id
+  fk certificate_request_id -> certificate_requests.id on_delete=NO ACTION on_update=NO ACTION
+  fk user_id -> users.id on_delete=NO ACTION on_update=NO ACTION
   index certificates_pkey CREATE UNIQUE INDEX certificates_pkey ON public.certificates USING btree (id)
   index certificates_serial_number_key CREATE UNIQUE INDEX certificates_serial_number_key ON public.certificates USING btree (serial_number)
   index idx_certificates_certificate_request_id CREATE INDEX idx_certificates_certificate_request_id ON public.certificates USING btree (certificate_request_id)
@@ -139,7 +139,7 @@ table enrollment_retrievals
   column retrieved_at type=timestamp with time zone nullable=false default=<none>
   column source_ip type=text nullable=false default=''::text
   column succeeded type=boolean nullable=false default=false
-  fk enrollment_id -> enrollments.id
+  fk enrollment_id -> enrollments.id on_delete=NO ACTION on_update=NO ACTION
   index enrollment_retrievals_pkey CREATE UNIQUE INDEX enrollment_retrievals_pkey ON public.enrollment_retrievals USING btree (id)
   index idx_enrollment_retrievals_certificate_serial CREATE INDEX idx_enrollment_retrievals_certificate_serial ON public.enrollment_retrievals USING btree (certificate_serial)
   index idx_enrollment_retrievals_enrollment_id CREATE INDEX idx_enrollment_retrievals_enrollment_id ON public.enrollment_retrievals USING btree (enrollment_id)
@@ -160,8 +160,8 @@ table enrollments
   column redeemed_at type=timestamp with time zone nullable=true default=<none>
   column service_account type=text nullable=false default=''::text
   column user_id type=text nullable=false default=<none>
-  fk certificate_request_id -> certificate_requests.id
-  fk user_id -> users.id
+  fk certificate_request_id -> certificate_requests.id on_delete=NO ACTION on_update=NO ACTION
+  fk user_id -> users.id on_delete=NO ACTION on_update=NO ACTION
   index enrollments_pkey CREATE UNIQUE INDEX enrollments_pkey ON public.enrollments USING btree (id)
   index idx_enrollments_code CREATE UNIQUE INDEX idx_enrollments_code ON public.enrollments USING btree (code)
   index idx_enrollments_created_at_id CREATE INDEX idx_enrollments_created_at_id ON public.enrollments USING btree (created_at, id)
@@ -183,7 +183,7 @@ table ldap_sync_runs
   column started_at type=timestamp with time zone nullable=false default=<none>
   column trigger_source type=text nullable=false default=<none>
   column users_seen type=integer nullable=false default=0
-  fk actor_user_id -> users.id
+  fk actor_user_id -> users.id on_delete=SET NULL on_update=NO ACTION
   index idx_ldap_sync_runs_started CREATE INDEX idx_ldap_sync_runs_started ON public.ldap_sync_runs USING btree (started_at DESC)
   index ldap_sync_runs_pkey CREATE UNIQUE INDEX ldap_sync_runs_pkey ON public.ldap_sync_runs USING btree (id)
 table notification_preferences
@@ -193,7 +193,7 @@ table notification_preferences
   column kind type=text nullable=false default=<none>
   column updated_at type=timestamp with time zone nullable=false default=<none>
   column user_id type=text nullable=false default=<none>
-  fk user_id -> users.id
+  fk user_id -> users.id on_delete=NO ACTION on_update=NO ACTION
   index idx_notification_preferences_user_kind CREATE UNIQUE INDEX idx_notification_preferences_user_kind ON public.notification_preferences USING btree (user_id, kind)
   index notification_preferences_pkey CREATE UNIQUE INDEX notification_preferences_pkey ON public.notification_preferences USING btree (id)
 table nss_alerts
@@ -207,7 +207,7 @@ table nss_audit_refs
   column kind type=text nullable=false default=<none>
   column row_id type=text nullable=false default=<none>
   check nss_audit_refs_kind_check (kind = ANY (ARRAY['account'::text, 'group'::text]))
-  fk event_id -> audit_events.id
+  fk event_id -> audit_events.id on_delete=CASCADE on_update=NO ACTION
   index idx_nss_audit_refs_row CREATE INDEX idx_nss_audit_refs_row ON public.nss_audit_refs USING btree (kind, row_id, created_at, event_id)
   index nss_audit_refs_pkey CREATE UNIQUE INDEX nss_audit_refs_pkey ON public.nss_audit_refs USING btree (event_id, kind, row_id)
 table nss_collisions
@@ -234,7 +234,7 @@ table nss_key_usage
   column lookups type=bigint nullable=false default=0
   column misses type=bigint nullable=false default=0
   column source_ip type=text nullable=false default=<none>
-  fk key_id -> nss_keys.id
+  fk key_id -> nss_keys.id on_delete=NO ACTION on_update=NO ACTION
   index idx_nss_key_usage_day CREATE INDEX idx_nss_key_usage_day ON public.nss_key_usage USING btree (day)
   index idx_nss_key_usage_key_day CREATE INDEX idx_nss_key_usage_key_day ON public.nss_key_usage USING btree (key_id, day)
   index nss_key_usage_pkey CREATE UNIQUE INDEX nss_key_usage_pkey ON public.nss_key_usage USING btree (key_id, source_ip, generation, day)
@@ -258,8 +258,8 @@ table nss_keys
   column rotation_cleanup_sent_at type=timestamp with time zone nullable=true default=<none>
   column secret_hash type=text nullable=false default=<none>
   column updated_at type=timestamp with time zone nullable=false default=<none>
-  fk created_by -> users.id
-  fk revoked_by -> users.id
+  fk created_by -> users.id on_delete=NO ACTION on_update=NO ACTION
+  fk revoked_by -> users.id on_delete=NO ACTION on_update=NO ACTION
   index nss_keys_pkey CREATE UNIQUE INDEX nss_keys_pkey ON public.nss_keys USING btree (id)
 table posix_group_members
   column gid type=bigint nullable=false default=<none>
@@ -308,7 +308,7 @@ table posix_users
   column user_id type=text nullable=true default=<none>
   column withheld_at type=timestamp with time zone nullable=true default=<none>
   column withheld_reason type=text nullable=false default=''::text
-  fk user_id -> users.id
+  fk user_id -> users.id on_delete=SET NULL on_update=NO ACTION
   index idx_posix_users_directory_id CREATE INDEX idx_posix_users_directory_id ON public.posix_users USING btree (directory_id) WHERE (directory_id <> ''::text)
   index idx_posix_users_dn CREATE UNIQUE INDEX idx_posix_users_dn ON public.posix_users USING btree (dn) WHERE (dn <> ''::text)
   index idx_posix_users_name CREATE UNIQUE INDEX idx_posix_users_name ON public.posix_users USING btree (name)
@@ -328,7 +328,7 @@ table user_groups
   column source type=text nullable=false default=<none>
   column user_id type=text nullable=false default=<none>
   check chk_user_groups_source (source = ANY (ARRAY['oidc'::text, 'ldap'::text]))
-  fk user_id -> users.id
+  fk user_id -> users.id on_delete=CASCADE on_update=NO ACTION
   index idx_user_groups_name CREATE INDEX idx_user_groups_name ON public.user_groups USING btree (group_name)
   index idx_user_groups_unique CREATE UNIQUE INDEX idx_user_groups_unique ON public.user_groups USING btree (user_id, group_name, source)
   index idx_user_groups_user CREATE INDEX idx_user_groups_user ON public.user_groups USING btree (user_id)
@@ -344,7 +344,7 @@ table user_ldap
   column last_synced_at type=timestamp with time zone nullable=true default=<none>
   column updated_at type=timestamp with time zone nullable=false default=<none>
   column user_id type=text nullable=false default=<none>
-  fk user_id -> users.id
+  fk user_id -> users.id on_delete=CASCADE on_update=NO ACTION
   index idx_user_ldap_directory_id CREATE INDEX idx_user_ldap_directory_id ON public.user_ldap USING btree (directory_id) WHERE (directory_id <> ''::text)
   index user_ldap_pkey CREATE UNIQUE INDEX user_ldap_pkey ON public.user_ldap USING btree (user_id)
 table users
@@ -364,6 +364,6 @@ table users
   column updated_at type=timestamp with time zone nullable=false default=<none>
   column username type=text nullable=false default=<none>
   column web_detail_level type=text nullable=true default=<none>
-  fk disabled_by_user_id -> users.id
+  fk disabled_by_user_id -> users.id on_delete=NO ACTION on_update=NO ACTION
   index idx_users_subject CREATE UNIQUE INDEX idx_users_subject ON public.users USING btree (subject)
   index users_pkey CREATE UNIQUE INDEX users_pkey ON public.users USING btree (id)

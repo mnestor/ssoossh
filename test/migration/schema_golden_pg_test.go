@@ -47,8 +47,8 @@ func TestMigrations_PostgresSchemaShouldMatchGolden(t *testing.T) {
 			lines = append(lines, fmt.Sprintf("  index %s %s", name, normalizeSpace(strings.Join(defs, " "))))
 		}
 		for _, fk := range postgres.ForeignKeys(t, db, table) {
-			lines = append(lines, fmt.Sprintf("  fk %s -> %s.%s",
-				fk.ColumnName, fk.ReferencedTable, fk.ReferencedColumn))
+			lines = append(lines, fmt.Sprintf("  fk %s -> %s.%s on_delete=%s on_update=%s",
+				fk.ColumnName, fk.ReferencedTable, fk.ReferencedColumn, fk.OnDelete, fk.OnUpdate))
 		}
 		for _, chk := range postgres.CheckConstraints(t, db, table) {
 			lines = append(lines, fmt.Sprintf("  check %s %s", chk.ConstraintName, normalizeSpace(chk.Expression)))
