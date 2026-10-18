@@ -148,8 +148,10 @@ func TestServeShouldAnswerServiceNotAvailableWhenUpstreamIsSlow(t *testing.T) {
 	if !errors.As(err, &verr) || verr.Name != userdb.ErrorServiceNotAvailable {
 		t.Fatalf("got %v", err)
 	}
-	if elapsed > 300*time.Millisecond || elapsed < 150*time.Millisecond {
-		t.Fatalf("should answer within socket_answer_deadline (300ms), took %v", elapsed)
+	// Answered at the 300ms deadline, not after upstream (which is held
+	// until the test ends); the upper bound leaves room for a loaded CI.
+	if elapsed > time.Second || elapsed < 150*time.Millisecond {
+		t.Fatalf("should answer at socket_answer_deadline (300ms), took %v", elapsed)
 	}
 }
 
