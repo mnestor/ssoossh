@@ -171,6 +171,12 @@ export const NSSNotServedPastRetention: NSSNotServedReason = "past_retention";
  */
 export const NSSNotServedPrivateGroupClash: NSSNotServedReason = "private_group_clash";
 /**
+ * NSSNotServedNoGID is an account stored without a gid attribute,
+ * which only nss.auto_private_groups "true" accepts, read under
+ * "hybrid" or "false", which have no primary gid to give it.
+ */
+export const NSSNotServedNoGID: NSSNotServedReason = "no_gid";
+/**
  * NSSKeyStatus is the state a fleet API key is in. Never stored: it is
  * derived from the key's revocation and expiry each time the key is read,
  * so a key that passes its expires_at is expired without a job having to

@@ -127,7 +127,15 @@ nss:
 
 `string`, default `hybrid`
 
-Chooses each account's primary group: "hybrid" (a private group only for an account whose uid equals its gid and whose gid no directory group holds), "true" (every account gets a private group with gid equal to its uid, and an account whose uid is a directory group's gid is not served) or "false" (the directory's gid, no private groups). The same names and meanings as sssd's option. Applied by the server when an account is read, so every host sees the same gid; there is no host-side setting.
+Chooses each account's primary group, with the names and meanings of sssd's option (decided 2026-10-18 by the owner: match sssd):
+
+"hybrid": the directory's gid. An account whose uid equals its gid, when no directory group holds that gid, gets a private group named after it; a directory group that does hold it is the primary group. An entry without the gid attribute is skipped with a warning.
+
+"true": every account gets a private group with gid equal to its uid, and the gid attribute is optional. A gid attribute other than the uid is served as a supplementary group when a directory group holds it, and follows the directory without waiting for an admin. An account whose uid is a directory group's gid, or whose name is a directory group's name, is not served (sssd refuses whichever of the two it caches second; here the directory group always wins).
+
+"false": the directory's gid, no private groups. A gid no directory group holds is still served; it just does not resolve to a name. An entry without the gid attribute is skipped with a warning.
+
+Applied by the server when an account is read, so every host sees the same gid; there is no host-side setting. An account stored without a gid under "true" is not served after a switch to the other modes, which have no primary gid to give it.
 
 ```yaml
 nss:

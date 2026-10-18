@@ -145,8 +145,9 @@
 						data-testid="nss-account-name">{account.name}</span
 					>
 					<span class="text-sm text-ink-muted" data-testid="nss-account-numbers">
-						uid <span class="font-mono text-ink">{account.uid}</span>, gid
-						<span class="font-mono text-ink">{account.gid}</span>
+						uid <span class="font-mono text-ink">{account.uid}</span>,
+						{#if account.gid === undefined}no gid{:else}gid
+							<span class="font-mono text-ink">{account.gid}</span>{/if}
 					</span>
 				</div>
 				<CopyableId
@@ -237,8 +238,15 @@
 					{/if}
 				</DetailRow>
 				<DetailRow label="Stored GID">
-					<span class="font-mono">{account.gid}</span>
-					<span class="text-ink-muted">(before <code>nss.auto_private_groups</code>)</span>
+					{#if account.gid === undefined}
+						<span class="text-ink-muted" data-testid="nss-account-no-gid"
+							>None: the entry has no gid attribute, which only <code>nss.auto_private_groups</code> true
+							accepts</span
+						>
+					{:else}
+						<span class="font-mono">{account.gid}</span>
+						<span class="text-ink-muted">(before <code>nss.auto_private_groups</code>)</span>
+					{/if}
 				</DetailRow>
 				<DetailRow label="Home">
 					{#if account.home}<span class="font-mono">{account.home}</span>{:else}<span

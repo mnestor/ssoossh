@@ -17,6 +17,7 @@ import (
 	"github.com/go-ldap/ldap/v3"
 
 	"github.com/mnestor/ssoossh/internal/posixname"
+	"github.com/mnestor/ssoossh/server/config"
 )
 
 // nssAccount is one account entry read from the directory and parsed per
@@ -28,7 +29,9 @@ type nssAccount struct {
 	DirectoryID string
 	Name        string
 	UID         uint32
-	GID         uint32
+	// GID is nil when the entry has no usable gid attribute, which only
+	// nss.auto_private_groups "true" accepts (see accountGID).
+	GID *uint32
 	// Home and Shell are nil when the entry has no such attribute.
 	Home  *string
 	Shell *string
@@ -141,7 +144,7 @@ func (s *NSSDirectoryService) parseAccount(e *ldap.Entry) (*nssAccount, error) {
 	if err != nil {
 		return nil, err
 	}
-	gid, err := nssNumber(e, attrs.GID)
+	gid, err := s.accountGID(e)
 	if err != nil {
 		return nil, err
 	}
@@ -165,6 +168,47 @@ func (s *NSSDirectoryService) parseAccount(e *ldap.Entry) (*nssAccount, error) {
 		Gecos:        gecos,
 		GecosCleaned: cleaned,
 	}, nil
+}
+
+// accountGID reads an account's gid attribute the way sssd's LDAP provider
+// does for nss.auto_private_groups (sssd 2.14.0-beta1-37-g493e37fe,
+// src/providers/ldap/sdap_async_users.c sdap_save_user):
+//
+//   - "true" (an MPG domain): the gid is optional. sssd stores the uid as
+//     the gid, and keeps a gid it can read only as
+//     origPrimaryGroupGidNumber; one that is absent, zero or does not
+//     parse is dropped ("Missing GID" / "Cannot retrieve GID, won't save
+//     the origPrimaryGroupGidNumber attribute", sdap_user_set_mpg). Nil
+//     here stands for that.
+//   - "hybrid" and "false": the gid is required, and an entry without one
+//     is refused (ERR_NO_POSIX, "Cannot retrieve GID"). The warning names
+//     the setting that would accept it.
+func (s *NSSDirectoryService) accountGID(e *ldap.Entry) (*uint32, error) {
+	attr := s.config.NSS.Attributes.GID
+	gid, err := nssNumber(e, attr)
+	if s.config.NSS.AutoPrivateGroups == config.AutoPrivateGroupsOn {
+		if err != nil {
+			if _, present := nssFirst(e, attr); present {
+				s.log.Warn("ignoring a directory account's gid attribute that does not parse; nss.auto_private_groups is true, so its primary group is its private group",
+					"dn", e.DN, "error", err)
+			}
+			return nil, nil //nolint:nilnil // no gid is a valid account under "true".
+		}
+		if gid == 0 {
+			// sdap_user_set_mpg reads a zero gid as "the entry had no GID
+			// number" and saves no origPrimaryGroupGidNumber.
+			return nil, nil //nolint:nilnil // as above.
+		}
+		return &gid, nil
+	}
+	if err != nil {
+		if _, present := nssFirst(e, attr); !present {
+			return nil, fmt.Errorf("%w: no %s attribute, which nss.auto_private_groups %q requires (\"true\" would give the account a private group with gid equal to its uid)",
+				errNSSEntry, attr, s.config.NSS.AutoPrivateGroups)
+		}
+		return nil, err
+	}
+	return &gid, nil
 }
 
 // parseGroup turns a group entry into an nssGroup, or rejects it as

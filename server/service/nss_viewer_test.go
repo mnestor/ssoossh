@@ -161,7 +161,7 @@ func numberedCombos() map[uint32]nssMarkCombo {
 func seedAccountCombo(t *testing.T, db *gorm.DB, n uint32, combo nssMarkCombo) (string, model.NSSEntryState) {
 	t.Helper()
 	at := nssAt(-time.Hour)
-	row := model.PosixUser{Name: fmt.Sprintf("acct%03d", n), UID: 10000 + n, GID: 100, DirDisabled: combo.dirDisabled}
+	row := model.PosixUser{Name: fmt.Sprintf("acct%03d", n), UID: 10000 + n, GID: new(uint32(100)), DirDisabled: combo.dirDisabled}
 	var personDisabled *time.Time
 	if combo.person > 0 {
 		if combo.person == 2 {
@@ -330,9 +330,9 @@ func TestNSSViewerAccounts_ShouldMatchTheSearchWhenGivenANameDNOrUID(t *testing.
 	t.Parallel()
 
 	db := testdb.New(t)
-	seedPosixUser(t, db, model.PosixUser{Name: "ada", UID: 1001, GID: 100, DN: "uid=ada,ou=Engineering,dc=example"})
-	seedPosixUser(t, db, model.PosixUser{Name: "bob_ops", UID: 2002, GID: 100, DN: "uid=bob_ops,ou=ops,dc=example"})
-	seedPosixUser(t, db, model.PosixUser{Name: "bobXops", UID: 3003, GID: 100001, DN: "uid=bobXops,ou=ops,dc=example"})
+	seedPosixUser(t, db, model.PosixUser{Name: "ada", UID: 1001, GID: new(uint32(100)), DN: "uid=ada,ou=Engineering,dc=example"})
+	seedPosixUser(t, db, model.PosixUser{Name: "bob_ops", UID: 2002, GID: new(uint32(100)), DN: "uid=bob_ops,ou=ops,dc=example"})
+	seedPosixUser(t, db, model.PosixUser{Name: "bobXops", UID: 3003, GID: new(uint32(100001)), DN: "uid=bobXops,ou=ops,dc=example"})
 	s := newTestNSSViewer(t, nssLookupTestConfig(), db)
 
 	tests := []struct {
@@ -428,7 +428,7 @@ func TestNSSViewerAccounts_ShouldPageByNameWhenTheListIsLong(t *testing.T) {
 
 	db := testdb.New(t)
 	for i, name := range []string{"dan", "ada", "cy", "bea", "eve"} {
-		seedPosixUser(t, db, model.PosixUser{Name: name, UID: uint32(1000 + i), GID: 100})
+		seedPosixUser(t, db, model.PosixUser{Name: name, UID: uint32(1000 + i), GID: new(uint32(100))})
 	}
 	s := newTestNSSViewer(t, nssLookupTestConfig(), db)
 
@@ -459,7 +459,7 @@ func TestNSSViewerLists_ShouldRefuseTheCursorWhenItNamesNoRow(t *testing.T) {
 	t.Parallel()
 
 	db := testdb.New(t)
-	account := seedPosixUser(t, db, model.PosixUser{Name: "ada", UID: 1001, GID: 100})
+	account := seedPosixUser(t, db, model.PosixUser{Name: "ada", UID: 1001, GID: new(uint32(100))})
 	seedPosixGroup(t, db, model.PosixGroup{Name: "staff", GID: 500})
 	s := newTestNSSViewer(t, nssLookupTestConfig(), db)
 
@@ -498,6 +498,7 @@ func TestNSSViewerAccount_ShouldShowWhatIsServedWhenTheAccountIsLookedUp(t *test
 		name          string
 		row           func(t *testing.T, db *gorm.DB) model.PosixUser
 		private       config.AutoPrivateGroupsMode
+		noGID         bool
 		wantState     model.NSSEntryState
 		wantStatus    string
 		wantNotServed model.NSSNotServedReason
@@ -545,6 +546,27 @@ func TestNSSViewerAccount_ShouldShowWhatIsServedWhenTheAccountIsLookedUp(t *test
 			private:   config.AutoPrivateGroupsOn,
 			wantState: model.NSSEntryStateActive, wantNotServed: model.NSSNotServedPrivateGroupClash,
 		},
+		{
+			name:      "should not serve the account when it has no gid and the mode is hybrid",
+			row:       func(*testing.T, *gorm.DB) model.PosixUser { return model.PosixUser{} },
+			private:   config.AutoPrivateGroupsHybrid,
+			noGID:     true,
+			wantState: model.NSSEntryStateActive, wantNotServed: model.NSSNotServedNoGID,
+		},
+		{
+			name:      "should not serve the account when it has no gid and the mode is false",
+			row:       func(*testing.T, *gorm.DB) model.PosixUser { return model.PosixUser{} },
+			private:   config.AutoPrivateGroupsOff,
+			noGID:     true,
+			wantState: model.NSSEntryStateActive, wantNotServed: model.NSSNotServedNoGID,
+		},
+		{
+			name:      "should serve the account when it has no gid and the mode is true",
+			row:       func(*testing.T, *gorm.DB) model.PosixUser { return model.PosixUser{} },
+			private:   config.AutoPrivateGroupsOn,
+			noGID:     true,
+			wantState: model.NSSEntryStateActive, wantStatus: apitypes.NSSStatusActive,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -552,7 +574,10 @@ func TestNSSViewerAccount_ShouldShowWhatIsServedWhenTheAccountIsLookedUp(t *test
 
 			db := testdb.New(t)
 			row := tt.row(t, db)
-			row.Name, row.UID, row.GID = "alice", 10001, 10001
+			row.Name, row.UID, row.GID = "alice", 10001, new(uint32(10001))
+			if tt.noGID {
+				row.GID = nil
+			}
 			seedPosixUser(t, db, row)
 			c := nssLookupTestConfig()
 			if tt.private != "" {
@@ -581,7 +606,7 @@ func TestNSSViewerAccount_ShouldMatchTheLookupWhenTheAccountIsServed(t *testing.
 
 	db := testdb.New(t)
 	id := seedNSSPerson(t, db, "sub-alice", "alice", nil)
-	seedPosixUser(t, db, model.PosixUser{Name: "alice", UID: 10001, GID: 500, UserID: &id, ShellPref: ptr("/bin/zsh"), Gecos: "Alice"})
+	seedPosixUser(t, db, model.PosixUser{Name: "alice", UID: 10001, GID: new(uint32(500)), UserID: &id, ShellPref: ptr("/bin/zsh"), Gecos: "Alice"})
 	seedPosixGroup(t, db, model.PosixGroup{Name: "staff", GID: 500})
 	seedPosixGroup(t, db, model.PosixGroup{Name: "ops", GID: 600})
 	seedPosixMembers(t, db, 600, 10001)
@@ -607,7 +632,7 @@ func TestNSSViewerAccount_ShouldListEveryMembershipRowWhenSomeGroupsAreNotStored
 	t.Parallel()
 
 	db := testdb.New(t)
-	seedPosixUser(t, db, model.PosixUser{Name: "alice", UID: 10001, GID: 10001})
+	seedPosixUser(t, db, model.PosixUser{Name: "alice", UID: 10001, GID: new(uint32(10001))})
 	seedPosixGroup(t, db, model.PosixGroup{Name: "ops", GID: 600, PendingGID: u32p(601)})
 	seedPosixGroup(t, db, model.PosixGroup{Name: "old", GID: 400, DeletedAt: nssAt(-time.Hour)})
 	seedPosixMembers(t, db, 600, 10001)
@@ -668,7 +693,7 @@ func TestNSSViewerGroup_ShouldShowWhatIsServedWhenTheGroupIsLookedUp(t *testing.
 
 			db := testdb.New(t)
 			for i, name := range []string{"ada", "bea", "cy"} {
-				seedPosixUser(t, db, model.PosixUser{Name: name, UID: uint32(1000 + i), GID: 100})
+				seedPosixUser(t, db, model.PosixUser{Name: name, UID: uint32(1000 + i), GID: new(uint32(100))})
 			}
 			row := tt.row
 			row.Name, row.GID = "staff", 500
@@ -721,9 +746,9 @@ func TestNSSViewerGroupMembers_ShouldDescribeEachMemberWhenListed(t *testing.T) 
 
 	db := testdb.New(t)
 	id := seedNSSPerson(t, db, "sub-bea", "bea", nssAt(-time.Hour))
-	seedPosixUser(t, db, model.PosixUser{Name: "ada", UID: 1000, GID: 100})
-	seedPosixUser(t, db, model.PosixUser{Name: "bea", UID: 1001, GID: 100, UserID: &id})
-	seedPosixUser(t, db, model.PosixUser{Name: "cy", UID: 1002, GID: 100, WithheldAt: nssAt(-time.Hour)})
+	seedPosixUser(t, db, model.PosixUser{Name: "ada", UID: 1000, GID: new(uint32(100))})
+	seedPosixUser(t, db, model.PosixUser{Name: "bea", UID: 1001, GID: new(uint32(100)), UserID: &id})
+	seedPosixUser(t, db, model.PosixUser{Name: "cy", UID: 1002, GID: new(uint32(100)), WithheldAt: nssAt(-time.Hour)})
 	seedPosixGroup(t, db, model.PosixGroup{Name: "staff", GID: 500})
 	seedPosixMembers(t, db, 500, 1002, 4242, 1000, 1001)
 	s := newTestNSSViewer(t, nssLookupTestConfig(), db)
@@ -759,7 +784,7 @@ func TestNSSViewer_ShouldNotWriteWhenEveryReadRuns(t *testing.T) {
 	t.Parallel()
 
 	db := testdb.New(t)
-	seedPosixUser(t, db, model.PosixUser{Name: "alice", UID: 10001, GID: 10001, WithheldAt: nssAt(-time.Hour)})
+	seedPosixUser(t, db, model.PosixUser{Name: "alice", UID: 10001, GID: new(uint32(10001)), WithheldAt: nssAt(-time.Hour)})
 	seedPosixGroup(t, db, model.PosixGroup{Name: "staff", GID: 500, DeletedAt: nssAt(-3000 * time.Hour)})
 	seedPosixMembers(t, db, 500, 10001)
 	s := newTestNSSViewer(t, nssLookupTestConfig(), db)

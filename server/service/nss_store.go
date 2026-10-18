@@ -13,6 +13,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/model"
 )
 
@@ -385,6 +386,44 @@ func (s *NSSDirectoryService) writeAccount(ctx context.Context, tx *gorm.DB, acc
 	return stored, nil, account.GecosCleaned, nil
 }
 
+// accountGIDUpdate works out a matched account's stored gid and pending
+// gid after a read of a. Under nss.auto_private_groups "true" the
+// directory's gid is followed as it comes, absent included: sssd ignores it
+// for the primary gid and keeps it only as origPrimaryGroupGidNumber, a
+// supplementary group refreshed on every save (sdap_save_user), so there is
+// no file ownership to protect and nothing for an admin to accept; a value
+// left pending from another mode is dropped. In the other modes the stored
+// gid is the primary gid and frozen: a differing value waits in
+// pending_gid. A row stored without one (under "true") takes the
+// directory's first gid as a new row would.
+func (s *NSSDirectoryService) accountGIDUpdate(row *model.PosixUser, a *nssAccount) (*uint32, *uint32) {
+	if s.config.NSS.AutoPrivateGroups == config.AutoPrivateGroupsOn {
+		if !equalGID(row.GID, a.GID) {
+			s.log.Info("followed a directory account's gid; nss.auto_private_groups is true, so it is a supplementary group, not the primary one",
+				"dn", a.DN, "old_gid", row.GID, "gid", a.GID)
+		}
+		return a.GID, nil
+	}
+	if row.GID == nil {
+		return a.GID, nil
+	}
+	if a.GID == nil {
+		// not covered: only "true", handled above, parses an account
+		// without a gid.
+		return row.GID, nil
+	}
+	return row.GID, nssPending(*row.GID, *a.GID, row.PendingGID)
+}
+
+// equalGID reports whether two optional gids are the same, both absent
+// included.
+func equalGID(a, b *uint32) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
 // accountRowRef is a stored account's shared view, nil for none.
 func accountRowRef(row *model.PosixUser) *nssRowRef {
 	if row == nil {
@@ -448,8 +487,9 @@ func (s *NSSDirectoryService) updateAccount(ctx context.Context, tx *gorm.DB, id
 	*ch = nssRowChange{oldName: row.Name, oldDN: row.DN, missingSince: row.MissingSince, deletedAt: row.DeletedAt}
 
 	pendingUID := nssPending(row.UID, a.UID, row.PendingUID)
-	pendingGID := nssPending(row.GID, a.GID, row.PendingGID)
+	gid, pendingGID := s.accountGIDUpdate(&row, a)
 	updates := map[string]any{
+		"gid":            gid,
 		"home":           a.Home,
 		"shell":          a.Shell,
 		"gecos":          a.Gecos,
@@ -525,7 +565,7 @@ func (s *NSSDirectoryService) storeGroup(ctx context.Context, group *nssGroup, c
 	}
 	s.raiseCollisionAlerts(ctx, groupTable(), out.observed)
 	if out.row != nil && out.row.PendingGID != nil {
-		s.raisePendingAlert(ctx, groupTable(), out.row.ID, out.row.Name, out.row.DN, pendingDetail(out.row.GID, out.row.PendingGID, 0, nil))
+		s.raisePendingAlert(ctx, groupTable(), out.row.ID, out.row.Name, out.row.DN, pendingDetail(out.row.GID, out.row.PendingGID, nil, nil))
 	}
 	return out, nil
 }

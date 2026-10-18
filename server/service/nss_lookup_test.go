@@ -115,7 +115,7 @@ func TestNSSLookup_ShouldServeEachStatusWhenAUserIsLookedUpByName(t *testing.T) 
 
 			db := testdb.New(t)
 			row := tt.row(db)
-			row.Name, row.UID, row.GID, row.Gecos = "alice", 10001, 10001, "Alice Ashworth"
+			row.Name, row.UID, row.GID, row.Gecos = "alice", 10001, new(uint32(10001)), "Alice Ashworth"
 			seedPosixUser(t, db, row)
 
 			got, err := newTestNSSLookup(nssLookupTestConfig(), db, nil).UserByName(t.Context(), "alice")
@@ -173,7 +173,7 @@ func TestNSSLookup_ShouldServeTheHomeAndShellDefaultsWhenTheEntryHasNone(t *test
 			t.Parallel()
 
 			db := testdb.New(t)
-			seedPosixUser(t, db, model.PosixUser{Name: "alice", UID: 10001, GID: 10001, Home: tt.home, Shell: tt.shell})
+			seedPosixUser(t, db, model.PosixUser{Name: "alice", UID: 10001, GID: new(uint32(10001)), Home: tt.home, Shell: tt.shell})
 			c := nssLookupTestConfig()
 			c.NSS.DefaultHome = tt.defaultHome
 			c.NSS.DefaultShell = tt.defaultShell
@@ -197,8 +197,8 @@ func TestNSSLookup_ShouldServeTheShellPrefOnlyWhenTheAccountIsAPersons(t *testin
 
 	db := testdb.New(t)
 	personID := seedNSSPerson(t, db, "sub-alice", "alice", nil)
-	seedPosixUser(t, db, model.PosixUser{Name: "alice", UID: 10001, GID: 10001, UserID: &personID, ShellPref: ptr("zsh")})
-	seedPosixUser(t, db, model.PosixUser{Name: "svc-backup", UID: 20001, GID: 20001, ShellPref: ptr("fish")})
+	seedPosixUser(t, db, model.PosixUser{Name: "alice", UID: 10001, GID: new(uint32(10001)), UserID: &personID, ShellPref: ptr("zsh")})
+	seedPosixUser(t, db, model.PosixUser{Name: "svc-backup", UID: 20001, GID: new(uint32(20001)), ShellPref: ptr("fish")})
 	lookups := newTestNSSLookup(nssLookupTestConfig(), db, nil)
 
 	tests := []struct {
@@ -229,7 +229,7 @@ func TestNSSLookup_ShouldMatchNamesByteForByteWhenTheCaseDiffers(t *testing.T) {
 	t.Parallel()
 
 	db := testdb.New(t)
-	seedPosixUser(t, db, model.PosixUser{Name: "Ada.Lovelace", UID: 10001, GID: 10001})
+	seedPosixUser(t, db, model.PosixUser{Name: "Ada.Lovelace", UID: 10001, GID: new(uint32(10001))})
 	lookups := newTestNSSLookup(nssLookupTestConfig(), db, nil)
 
 	tests := []struct {
@@ -330,82 +330,94 @@ func TestParseNSSID_ShouldReadOnlyADecimalUint32WhenGivenAPathSegment(t *testing
 	}
 }
 
-func TestNSSLookup_ShouldApplyAutoPrivateGroupsWhenTheUserIsRead(t *testing.T) {
+func TestNSSLookup_ShouldApplyAutoPrivateGroupsAsSSSDDoesWhenTheUserIsRead(t *testing.T) {
 	t.Parallel()
 
+	// alice has uid 10001; her stored gid is equal to it, 500 (staff, a
+	// directory group unless noStaff), or absent. holder seeds alice-upg,
+	// a directory group holding 10001 as its gid. byGID is the group a
+	// lookup of gid 10001 finds, "" for none. The rules and their sssd
+	// sources are on primaryGroup.
+	equal, other := new(uint32(10001)), new(uint32(500))
+	private := apitypes.NSSMembership{GID: 10001, Name: "alice"}
+	upg := apitypes.NSSMembership{GID: 10001, Name: "alice-upg"}
+	staff := apitypes.NSSMembership{GID: 500, Name: "staff"}
 	tests := []struct {
 		name       string
 		mode       config.AutoPrivateGroupsMode
-		uid, gid   uint32
+		gid        *uint32
+		holder     bool
+		noStaff    bool
 		groups     []model.PosixGroup
+		memberOf   []uint32
 		wantGID    uint32
 		wantGroups []apitypes.NSSMembership
 		wantMiss   bool
+		byGID      string
 	}{
-		{
-			name: "should keep the directory gid and name its group when the mode is false",
-			mode: config.AutoPrivateGroupsOff, uid: 10001, gid: 500,
-			groups:  []model.PosixGroup{{Name: "staff", GID: 500}},
-			wantGID: 500, wantGroups: []apitypes.NSSMembership{{GID: 500, Name: "staff"}},
-		},
-		{
-			name: "should list no primary group when the mode is false and no group holds the gid",
-			mode: config.AutoPrivateGroupsOff, uid: 10001, gid: 10001,
-			wantGID: 10001, wantGroups: []apitypes.NSSMembership{},
-		},
-		{
-			name: "should give every account a private group when the mode is true",
-			mode: config.AutoPrivateGroupsOn, uid: 10001, gid: 500,
-			groups:  []model.PosixGroup{{Name: "staff", GID: 500}},
-			wantGID: 10001, wantGroups: []apitypes.NSSMembership{{GID: 10001, Name: "alice"}},
-		},
-		{
-			name: "should not serve the account when the mode is true and a directory group holds its uid as gid",
-			mode: config.AutoPrivateGroupsOn, uid: 10001, gid: 500,
-			groups:   []model.PosixGroup{{Name: "engineering", GID: 10001}},
-			wantMiss: true,
-		},
-		{
-			name: "should not serve the account when the mode is true and a directory group has its name",
-			mode: config.AutoPrivateGroupsOn, uid: 10001, gid: 500,
-			groups:   []model.PosixGroup{{Name: "alice", GID: 30000}},
-			wantMiss: true,
-		},
-		{
-			name: "should not serve the account when the mode is true and a tombstoned group still holds the gid",
-			mode: config.AutoPrivateGroupsOn, uid: 10001, gid: 500,
-			groups:   []model.PosixGroup{{Name: "old", GID: 10001, DeletedAt: nssAt(-time.Hour)}},
-			wantMiss: true,
-		},
-		{
-			name: "should give a private group when the mode is hybrid, gid equals uid and no group holds it",
-			mode: config.AutoPrivateGroupsHybrid, uid: 10001, gid: 10001,
-			wantGID: 10001, wantGroups: []apitypes.NSSMembership{{GID: 10001, Name: "alice"}},
-		},
-		{
-			name: "should name the directory group when the mode is hybrid and a real group holds the gid",
-			mode: config.AutoPrivateGroupsHybrid, uid: 10001, gid: 10001,
-			groups:  []model.PosixGroup{{Name: "alice-upg", GID: 10001}},
-			wantGID: 10001, wantGroups: []apitypes.NSSMembership{{GID: 10001, Name: "alice-upg"}},
-		},
-		{
-			name: "should keep the directory gid when the mode is hybrid and gid differs from uid",
-			mode: config.AutoPrivateGroupsHybrid, uid: 10001, gid: 500,
-			groups:  []model.PosixGroup{{Name: "staff", GID: 500}},
-			wantGID: 500, wantGroups: []apitypes.NSSMembership{{GID: 500, Name: "staff"}},
-		},
-		{
-			name: "should give no private group when the mode is hybrid and a directory group has the name",
-			mode: config.AutoPrivateGroupsHybrid, uid: 10001, gid: 10001,
-			groups:  []model.PosixGroup{{Name: "alice", GID: 30000}},
-			wantGID: 10001, wantGroups: []apitypes.NSSMembership{},
-		},
-		{
-			name: "should not list a tombstoned primary group when the mode is false",
-			mode: config.AutoPrivateGroupsOff, uid: 10001, gid: 500,
-			groups:  []model.PosixGroup{{Name: "staff", GID: 500, DeletedAt: nssAt(-time.Hour)}},
-			wantGID: 500, wantGroups: []apitypes.NSSMembership{},
-		},
+		{name: "should serve the gid unresolved when the mode is false, gid equals uid and no group holds it",
+			mode: config.AutoPrivateGroupsOff, gid: equal, wantGID: 10001, wantGroups: []apitypes.NSSMembership{}},
+		{name: "should name the holder when the mode is false, gid equals uid and a group holds it",
+			mode: config.AutoPrivateGroupsOff, gid: equal, holder: true, wantGID: 10001, wantGroups: []apitypes.NSSMembership{upg}, byGID: "alice-upg"},
+		{name: "should serve the directory gid when the mode is false and gid differs from uid",
+			mode: config.AutoPrivateGroupsOff, gid: other, wantGID: 500, wantGroups: []apitypes.NSSMembership{staff}},
+		{name: "should serve the directory gid when the mode is false, gid differs and a group holds the uid",
+			mode: config.AutoPrivateGroupsOff, gid: other, holder: true, wantGID: 500, wantGroups: []apitypes.NSSMembership{staff}, byGID: "alice-upg"},
+		{name: "should serve the gid unresolved when the mode is false and no group holds it",
+			mode: config.AutoPrivateGroupsOff, gid: other, noStaff: true, wantGID: 500, wantGroups: []apitypes.NSSMembership{}},
+		{name: "should not serve the account when the mode is false and it has no gid",
+			mode: config.AutoPrivateGroupsOff, wantMiss: true},
+		{name: "should not serve the account when the mode is false, it has no gid and a group holds the uid",
+			mode: config.AutoPrivateGroupsOff, holder: true, wantMiss: true, byGID: "alice-upg"},
+
+		{name: "should give a private group when the mode is hybrid, gid equals uid and no group holds it",
+			mode: config.AutoPrivateGroupsHybrid, gid: equal, wantGID: 10001, wantGroups: []apitypes.NSSMembership{private}, byGID: "alice"},
+		{name: "should name the holder when the mode is hybrid, gid equals uid and a group holds it",
+			mode: config.AutoPrivateGroupsHybrid, gid: equal, holder: true, wantGID: 10001, wantGroups: []apitypes.NSSMembership{upg}, byGID: "alice-upg"},
+		{name: "should serve the directory gid when the mode is hybrid and gid differs from uid",
+			mode: config.AutoPrivateGroupsHybrid, gid: other, wantGID: 500, wantGroups: []apitypes.NSSMembership{staff}},
+		{name: "should serve the directory gid when the mode is hybrid, gid differs and a group holds the uid",
+			mode: config.AutoPrivateGroupsHybrid, gid: other, holder: true, wantGID: 500, wantGroups: []apitypes.NSSMembership{staff}, byGID: "alice-upg"},
+		{name: "should serve the gid unresolved when the mode is hybrid, gid differs and no group holds it",
+			mode: config.AutoPrivateGroupsHybrid, gid: other, noStaff: true, wantGID: 500, wantGroups: []apitypes.NSSMembership{}},
+		{name: "should not serve the account when the mode is hybrid and it has no gid",
+			mode: config.AutoPrivateGroupsHybrid, wantMiss: true},
+		{name: "should not serve the account when the mode is hybrid, it has no gid and a group holds the uid",
+			mode: config.AutoPrivateGroupsHybrid, holder: true, wantMiss: true, byGID: "alice-upg"},
+		{name: "should give no private group when the mode is hybrid and a directory group has the name",
+			mode: config.AutoPrivateGroupsHybrid, gid: equal, groups: []model.PosixGroup{{Name: "alice", GID: 30000}},
+			wantGID: 10001, wantGroups: []apitypes.NSSMembership{}},
+
+		{name: "should give a private group when the mode is true and gid equals uid",
+			mode: config.AutoPrivateGroupsOn, gid: equal, wantGID: 10001, wantGroups: []apitypes.NSSMembership{private}, byGID: "alice"},
+		{name: "should not serve the account when the mode is true, gid equals uid and a group holds it",
+			mode: config.AutoPrivateGroupsOn, gid: equal, holder: true, wantMiss: true, byGID: "alice-upg"},
+		{name: "should add the directory gid's group when the mode is true and gid differs from uid",
+			mode: config.AutoPrivateGroupsOn, gid: other, wantGID: 10001, wantGroups: []apitypes.NSSMembership{private, staff}, byGID: "alice"},
+		{name: "should not serve the account when the mode is true, gid differs and a group holds the uid",
+			mode: config.AutoPrivateGroupsOn, gid: other, holder: true, wantMiss: true, byGID: "alice-upg"},
+		{name: "should give a private group when the mode is true and the account has no gid",
+			mode: config.AutoPrivateGroupsOn, wantGID: 10001, wantGroups: []apitypes.NSSMembership{private}, byGID: "alice"},
+		{name: "should not serve the account when the mode is true, it has no gid and a group holds the uid",
+			mode: config.AutoPrivateGroupsOn, holder: true, wantMiss: true, byGID: "alice-upg"},
+		{name: "should leave out the directory gid when the mode is true and no group holds it",
+			mode: config.AutoPrivateGroupsOn, gid: other, noStaff: true, wantGID: 10001, wantGroups: []apitypes.NSSMembership{private}, byGID: "alice"},
+		{name: "should list the directory gid's group once when the mode is true and she is also its member",
+			mode: config.AutoPrivateGroupsOn, gid: other, memberOf: []uint32{500}, wantGID: 10001, wantGroups: []apitypes.NSSMembership{private, staff}, byGID: "alice"},
+		{name: "should put the directory gid's group in gid order when the mode is true and she has other memberships",
+			mode: config.AutoPrivateGroupsOn, gid: other, memberOf: []uint32{100, 600},
+			groups:  []model.PosixGroup{{Name: "wheel", GID: 100}, {Name: "dev", GID: 600}},
+			wantGID: 10001, wantGroups: []apitypes.NSSMembership{private, {GID: 100, Name: "wheel"}, staff, {GID: 600, Name: "dev"}}, byGID: "alice"},
+		{name: "should leave out a tombstoned directory gid's group when the mode is true",
+			mode: config.AutoPrivateGroupsOn, gid: other, noStaff: true, groups: []model.PosixGroup{{Name: "staff", GID: 500, DeletedAt: nssAt(-time.Hour)}},
+			wantGID: 10001, wantGroups: []apitypes.NSSMembership{private}, byGID: "alice"},
+		{name: "should not serve the account when the mode is true and a directory group has its name",
+			mode: config.AutoPrivateGroupsOn, gid: other, groups: []model.PosixGroup{{Name: "alice", GID: 30000}}, wantMiss: true},
+		{name: "should not serve the account when the mode is true and a tombstoned group still holds the uid",
+			mode: config.AutoPrivateGroupsOn, gid: other, groups: []model.PosixGroup{{Name: "old", GID: 10001, DeletedAt: nssAt(-time.Hour)}}, wantMiss: true, byGID: "old"},
+		{name: "should not list a tombstoned primary group when the mode is false",
+			mode: config.AutoPrivateGroupsOff, gid: other, noStaff: true, groups: []model.PosixGroup{{Name: "staff", GID: 500, DeletedAt: nssAt(-time.Hour)}},
+			wantGID: 500, wantGroups: []apitypes.NSSMembership{}},
 	}
 
 	for _, tt := range tests {
@@ -413,16 +425,33 @@ func TestNSSLookup_ShouldApplyAutoPrivateGroupsWhenTheUserIsRead(t *testing.T) {
 			t.Parallel()
 
 			db := testdb.New(t)
-			seedPosixUser(t, db, model.PosixUser{Name: "alice", UID: tt.uid, GID: tt.gid})
+			seedPosixUser(t, db, model.PosixUser{Name: "alice", UID: 10001, GID: tt.gid})
+			if !tt.noStaff {
+				seedPosixGroup(t, db, model.PosixGroup{Name: "staff", GID: 500})
+			}
+			if tt.holder {
+				seedPosixGroup(t, db, model.PosixGroup{Name: "alice-upg", GID: 10001})
+			}
 			for _, group := range tt.groups {
 				seedPosixGroup(t, db, group)
+			}
+			for _, gid := range tt.memberOf {
+				seedPosixMembers(t, db, gid, 10001)
 			}
 			c := nssLookupTestConfig()
 			c.NSS.AutoPrivateGroups = tt.mode
 			lookups := newTestNSSLookup(c, db, nil)
 
+			group, groupErr := lookups.GroupByGID(t.Context(), 10001)
+			switch {
+			case tt.byGID == "":
+				wantNSSCode(t, groupErr, apitypes.ErrorCodeNSSNotFound)
+			case groupErr != nil || group.Name != tt.byGID:
+				t.Errorf("group by gid 10001 = %+v, %v; want %q", group, groupErr, tt.byGID)
+			}
+
 			byName, err := lookups.UserByName(t.Context(), "alice")
-			byUID, uidErr := lookups.UserByUID(t.Context(), tt.uid)
+			byUID, uidErr := lookups.UserByUID(t.Context(), 10001)
 			if tt.wantMiss {
 				wantNSSCode(t, err, apitypes.ErrorCodeNSSNotFound)
 				wantNSSCode(t, uidErr, apitypes.ErrorCodeNSSNotFound)
@@ -448,7 +477,7 @@ func TestNSSLookup_ShouldListMembershipsPrimaryFirstThenByGIDWhenTheUserHasSever
 	t.Parallel()
 
 	db := testdb.New(t)
-	seedPosixUser(t, db, model.PosixUser{Name: "alice", UID: 10001, GID: 500})
+	seedPosixUser(t, db, model.PosixUser{Name: "alice", UID: 10001, GID: new(uint32(500))})
 	seedPosixGroup(t, db, model.PosixGroup{Name: "staff", GID: 500})
 	seedPosixGroup(t, db, model.PosixGroup{Name: "wheel", GID: 10})
 	seedPosixGroup(t, db, model.PosixGroup{Name: "sudo", GID: 27})
@@ -527,14 +556,14 @@ func TestNSSLookup_ShouldServeGroupMembersWhenAGroupIsLookedUp(t *testing.T) {
 
 			db := testdb.New(t)
 			personID := seedNSSPerson(t, db, "sub-bob", "bob", nssAt(-time.Hour))
-			seedPosixUser(t, db, model.PosixUser{Name: "carol", UID: 9000, GID: 700})
-			seedPosixUser(t, db, model.PosixUser{Name: "alice", UID: 10001, GID: 700})
+			seedPosixUser(t, db, model.PosixUser{Name: "carol", UID: 9000, GID: new(uint32(700))})
+			seedPosixUser(t, db, model.PosixUser{Name: "alice", UID: 10001, GID: new(uint32(700))})
 			// Disabled people keep their memberships.
-			seedPosixUser(t, db, model.PosixUser{Name: "bob", UID: 10002, GID: 700, UserID: &personID})
+			seedPosixUser(t, db, model.PosixUser{Name: "bob", UID: 10002, GID: new(uint32(700)), UserID: &personID})
 			// So do tombstones inside the retention.
-			seedPosixUser(t, db, model.PosixUser{Name: "dave", UID: 10003, GID: 700, DeletedAt: nssAt(-time.Hour)})
-			seedPosixUser(t, db, model.PosixUser{Name: "erin", UID: 10004, GID: 700, WithheldAt: nssAt(-time.Hour)})
-			seedPosixUser(t, db, model.PosixUser{Name: "frank", UID: 10005, GID: 700, DeletedAt: nssAt(-2161 * time.Hour)})
+			seedPosixUser(t, db, model.PosixUser{Name: "dave", UID: 10003, GID: new(uint32(700)), DeletedAt: nssAt(-time.Hour)})
+			seedPosixUser(t, db, model.PosixUser{Name: "erin", UID: 10004, GID: new(uint32(700)), WithheldAt: nssAt(-time.Hour)})
+			seedPosixUser(t, db, model.PosixUser{Name: "frank", UID: 10005, GID: new(uint32(700)), DeletedAt: nssAt(-2161 * time.Hour)})
 			seedPosixGroup(t, db, tt.group)
 			seedPosixMembers(t, db, 700, 9000, 10001, 10002, 10003, 10004, 10005)
 			c := nssLookupTestConfig()
@@ -573,17 +602,21 @@ func TestNSSLookup_ShouldResolvePrivateGroupsWhenAGroupIsLookedUp(t *testing.T) 
 		wantMiss bool
 	}{
 		{name: "should resolve the private group when the mode is true", mode: config.AutoPrivateGroupsOn,
-			user: model.PosixUser{Name: "alice", UID: 10001, GID: 500}},
+			user: model.PosixUser{Name: "alice", UID: 10001, GID: new(uint32(500))}},
 		{name: "should resolve the private group when the mode is hybrid and gid equals uid", mode: config.AutoPrivateGroupsHybrid,
-			user: model.PosixUser{Name: "alice", UID: 10001, GID: 10001}},
+			user: model.PosixUser{Name: "alice", UID: 10001, GID: new(uint32(10001))}},
+		{name: "should resolve the private group when the mode is true and the account has no gid", mode: config.AutoPrivateGroupsOn,
+			user: model.PosixUser{Name: "alice", UID: 10001}},
+		{name: "should not resolve a private group when the mode is hybrid and the account has no gid", mode: config.AutoPrivateGroupsHybrid,
+			user: model.PosixUser{Name: "alice", UID: 10001}, wantMiss: true},
 		{name: "should not resolve a private group when the mode is false", mode: config.AutoPrivateGroupsOff,
-			user: model.PosixUser{Name: "alice", UID: 10001, GID: 10001}, wantMiss: true},
+			user: model.PosixUser{Name: "alice", UID: 10001, GID: new(uint32(10001))}, wantMiss: true},
 		{name: "should not resolve a private group when the mode is hybrid and gid differs from uid", mode: config.AutoPrivateGroupsHybrid,
-			user: model.PosixUser{Name: "alice", UID: 10001, GID: 500}, wantMiss: true},
+			user: model.PosixUser{Name: "alice", UID: 10001, GID: new(uint32(500))}, wantMiss: true},
 		{name: "should not resolve a private group when its account is withheld", mode: config.AutoPrivateGroupsOn,
-			user: model.PosixUser{Name: "alice", UID: 10001, GID: 500, WithheldAt: nssAt(-time.Hour)}, wantMiss: true},
+			user: model.PosixUser{Name: "alice", UID: 10001, GID: new(uint32(500)), WithheldAt: nssAt(-time.Hour)}, wantMiss: true},
 		{name: "should not resolve a private group when the mode is true and a directory group has the name", mode: config.AutoPrivateGroupsOn,
-			user: model.PosixUser{Name: "alice", UID: 10001, GID: 500}, groups: []model.PosixGroup{{Name: "alice", GID: 30000, WithheldAt: nssAt(-time.Hour)}}, wantMiss: true},
+			user: model.PosixUser{Name: "alice", UID: 10001, GID: new(uint32(500))}, groups: []model.PosixGroup{{Name: "alice", GID: 30000, WithheldAt: nssAt(-time.Hour)}}, wantMiss: true},
 	}
 
 	for _, tt := range tests {
@@ -621,7 +654,7 @@ func TestNSSLookup_ShouldServeAUserAndAGroupWhenTheyShareAName(t *testing.T) {
 	t.Parallel()
 
 	db := testdb.New(t)
-	seedPosixUser(t, db, model.PosixUser{Name: "ops", UID: 10001, GID: 500})
+	seedPosixUser(t, db, model.PosixUser{Name: "ops", UID: 10001, GID: new(uint32(500))})
 	seedPosixGroup(t, db, model.PosixGroup{Name: "ops", GID: 600})
 	lookups := newTestNSSLookup(nssLookupTestConfig(), db, nil)
 
@@ -649,7 +682,7 @@ func TestNSSLookup_ShouldAskTheDirectoryOnlyWhenTheDatabaseHasNoServableRow(t *t
 		{
 			name: "should not ask the directory when the row is in the database",
 			seed: func(t *testing.T, db *gorm.DB) {
-				seedPosixUser(t, db, model.PosixUser{Name: "alice", UID: 10001, GID: 10001})
+				seedPosixUser(t, db, model.PosixUser{Name: "alice", UID: 10001, GID: new(uint32(10001))})
 			},
 			refresher: func(*testing.T, *gorm.DB) *fakeNSSRefresher { return &fakeNSSRefresher{} },
 			lookup:    func(ctx context.Context, s *NSSLookupService) error { _, err := s.UserByName(ctx, "alice"); return err },
@@ -659,7 +692,7 @@ func TestNSSLookup_ShouldAskTheDirectoryOnlyWhenTheDatabaseHasNoServableRow(t *t
 			name: "should serve the row the refresh wrote when the name was unknown",
 			refresher: func(t *testing.T, db *gorm.DB) *fakeNSSRefresher {
 				return &fakeNSSRefresher{found: true, onRefresh: func(string) {
-					seedPosixUser(t, db, model.PosixUser{Name: "alice", UID: 10001, GID: 10001})
+					seedPosixUser(t, db, model.PosixUser{Name: "alice", UID: 10001, GID: new(uint32(10001))})
 				}}
 			},
 			lookup:    func(ctx context.Context, s *NSSLookupService) error { _, err := s.UserByName(ctx, "alice"); return err },
@@ -677,7 +710,7 @@ func TestNSSLookup_ShouldAskTheDirectoryOnlyWhenTheDatabaseHasNoServableRow(t *t
 		{
 			name: "should ask the directory when the only row is withheld",
 			seed: func(t *testing.T, db *gorm.DB) {
-				seedPosixUser(t, db, model.PosixUser{Name: "alice", UID: 10001, GID: 10001, WithheldAt: nssAt(-time.Hour)})
+				seedPosixUser(t, db, model.PosixUser{Name: "alice", UID: 10001, GID: new(uint32(10001)), WithheldAt: nssAt(-time.Hour)})
 			},
 			refresher: func(*testing.T, *gorm.DB) *fakeNSSRefresher { return &fakeNSSRefresher{} },
 			lookup:    func(ctx context.Context, s *NSSLookupService) error { _, err := s.UserByName(ctx, "alice"); return err },
@@ -704,7 +737,7 @@ func TestNSSLookup_ShouldAskTheDirectoryOnlyWhenTheDatabaseHasNoServableRow(t *t
 			name: "should serve a row that appeared meanwhile when the directory cannot be asked",
 			refresher: func(t *testing.T, db *gorm.DB) *fakeNSSRefresher {
 				return &fakeNSSRefresher{err: errors.New("ldap: timeout"), onRefresh: func(string) {
-					seedPosixUser(t, db, model.PosixUser{Name: "alice", UID: 10001, GID: 10001})
+					seedPosixUser(t, db, model.PosixUser{Name: "alice", UID: 10001, GID: new(uint32(10001))})
 				}}
 			},
 			lookup:    func(ctx context.Context, s *NSSLookupService) error { _, err := s.UserByName(ctx, "alice"); return err },

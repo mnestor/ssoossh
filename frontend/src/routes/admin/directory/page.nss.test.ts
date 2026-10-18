@@ -188,6 +188,26 @@ describe('Directory page NSS panels', () => {
 			expect(await pendingRow('ops')).toHaveTextContent('gid 5100 to 5200');
 		});
 
+		it('should say none for a stored gid the server did not send', async () => {
+			serve({
+				'GET /api/admin/nss/pending-id-changes': envelope({
+					users: [
+						{
+							name: 'sv-build',
+							dn: 'uid=sv-build,ou=People,dc=corp,dc=example',
+							uid: 9001,
+							pending_gid: 9001,
+							pending_since: '2026-10-15T12:00:00Z'
+						}
+					],
+					groups: []
+				})
+			});
+			render(Page);
+
+			expect(await pendingRow('sv-build')).toHaveTextContent('gid none to 9001');
+		});
+
 		it('should say there is nothing pending when the list is empty', async () => {
 			routeFetch({
 				'GET /api/admin/ldap/status': envelope(status),

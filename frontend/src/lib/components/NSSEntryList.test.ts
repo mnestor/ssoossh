@@ -301,6 +301,19 @@ describe('stored account list columns', () => {
 		expect(await screen.findByTestId('nss-list-row')).toHaveTextContent('bob user');
 	});
 
+	it('should say none in the gid column when the account has no gid', async () => {
+		routeFetch({
+			'GET /api/admin/nss/users': envelope({
+				accounts: [accountSummary('sv-ssoossh', 9001, { gid: undefined })],
+				total: 1
+			})
+		});
+		render(NSSEntryList, { kind: 'account' });
+
+		const cells = within(await screen.findByTestId('nss-list-row')).getAllByRole('cell');
+		expect(cells[2]).toHaveTextContent(/^none$/);
+	});
+
 	// The groups list answers 400 for state=disabled: groups have no such state.
 	it('should drop a disabled state from a groups address', async () => {
 		resetFakePage('http://localhost/admin/nss/groups?state=disabled');

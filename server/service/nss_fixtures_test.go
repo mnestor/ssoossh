@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -51,6 +52,15 @@ func nssLookupTestConfig() *config.Config {
 	c.Mail.ExpiredAttemptWindow = 24 * time.Hour
 	c.Mail.RotationQuietPeriod = 168 * time.Hour
 	return c
+}
+
+// gidText renders an optional stored gid for a failure message: the
+// number, or "none".
+func gidText(gid *uint32) string {
+	if gid == nil {
+		return "none"
+	}
+	return strconv.FormatUint(uint64(*gid), 10)
 }
 
 // seedPosixUser writes a posix_users row, filling the anchors and

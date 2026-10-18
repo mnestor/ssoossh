@@ -97,7 +97,7 @@ func (s *NSSDirectoryService) acceptUserTx(tx *gorm.DB, uid uint32, actor *Audit
 		newUID = *row.PendingUID
 	}
 	if row.PendingGID != nil {
-		newGID = *row.PendingGID
+		newGID = row.PendingGID
 	}
 	var before nssMembers
 	if newUID != row.UID {

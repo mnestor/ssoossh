@@ -48,8 +48,10 @@ CREATE TABLE posix_users (
     user_id         TEXT NULL REFERENCES users(id) ON DELETE SET NULL,
     -- The mapped primary gid, frozen like uid. auto_private_groups is
     -- applied when the row is read, never stored here, so a config change
-    -- is deliberate and a directory change is caught.
-    gid             BIGINT NOT NULL,
+    -- is deliberate and a directory change is caught. NULL when the entry
+    -- has no gid attribute, which only auto_private_groups "true" accepts
+    -- (as sssd does); under "true" it follows the directory unfrozen.
+    gid             BIGINT NULL,
     -- A differing directory value the sync refused to apply, and the first
     -- sync that saw one. The directory reverting clears all three; an
     -- admin accepting applies them.

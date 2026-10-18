@@ -47,7 +47,7 @@ nss:
 
 `string`, default `gidNumber`
 
-The numeric primary group id, before auto_private_groups is applied. Frozen once stored, like uid. A preset from ldap.schema may set this.
+The numeric primary group id, before auto_private_groups is applied. Required unless auto_private_groups is true, where it is optional and only a supplementary group. Frozen once stored, like uid, except under auto_private_groups true, where it follows the directory. A preset from ldap.schema may set this.
 
 ```yaml
 nss:

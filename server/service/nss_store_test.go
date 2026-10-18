@@ -18,6 +18,7 @@ import (
 
 	"github.com/go-ldap/ldap/v3"
 
+	"github.com/mnestor/ssoossh/internal/apitypes"
 	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/model"
 )
@@ -482,5 +483,190 @@ func TestNSSAccountRename_ShouldStillWithholdTheAccountWhenItIsRenamedWithoutAnI
 	}
 	if n := h.audits(t, AuditNSSGroupRenamed); n != 0 {
 		t.Errorf("nss.group_renamed events = %d, want none", n)
+	}
+}
+
+// nssGIDEntry is alice (uid 10001) with gid, or with no gid attribute when
+// gid is nil.
+func nssGIDEntry(gid *uint32) *ldap.Entry {
+	if gid == nil {
+		return nssAccountEntry("", "alice", 10001, 0, map[string][]string{"gidNumber": nil})
+	}
+	return nssAccountEntry("", "alice", 10001, *gid, nil)
+}
+
+func TestNSSStoreAccount_ShouldStoreTheGIDAsSSSDDoesWhenEachModeReadsTheEntry(t *testing.T) {
+	t.Parallel()
+
+	// Each read path parses and stores the same way: a full sync and an
+	// on-demand read. A directory group holding the uid as its gid never
+	// stops the row being stored; it decides only what is served (see the
+	// lookup tests).
+	equal, other := new(uint32(10001)), new(uint32(500))
+	tests := []struct {
+		name       string
+		mode       config.AutoPrivateGroupsMode
+		gid        *uint32
+		holder     bool
+		wantStored bool
+		wantGID    *uint32
+	}{
+		{name: "should store a gid equal to the uid when the mode is false", mode: config.AutoPrivateGroupsOff, gid: equal, wantStored: true, wantGID: equal},
+		{name: "should store a differing gid when the mode is false and a group holds the uid", mode: config.AutoPrivateGroupsOff, gid: other, holder: true, wantStored: true, wantGID: other},
+		{name: "should refuse the entry when the mode is false and it has no gid", mode: config.AutoPrivateGroupsOff},
+		{name: "should store a gid equal to the uid when the mode is hybrid and a group holds it", mode: config.AutoPrivateGroupsHybrid, gid: equal, holder: true, wantStored: true, wantGID: equal},
+		{name: "should store a differing gid when the mode is hybrid", mode: config.AutoPrivateGroupsHybrid, gid: other, wantStored: true, wantGID: other},
+		{name: "should refuse the entry when the mode is hybrid and it has no gid", mode: config.AutoPrivateGroupsHybrid, holder: true},
+		{name: "should store a gid equal to the uid when the mode is true", mode: config.AutoPrivateGroupsOn, gid: equal, wantStored: true, wantGID: equal},
+		{name: "should store a differing gid when the mode is true and a group holds the uid", mode: config.AutoPrivateGroupsOn, gid: other, holder: true, wantStored: true, wantGID: other},
+		{name: "should store no gid when the mode is true and the entry has none", mode: config.AutoPrivateGroupsOn, wantStored: true},
+	}
+
+	reads := map[string]func(t *testing.T, h *nssHarness){
+		"full sync": func(t *testing.T, h *nssHarness) { h.fullSync(t) },
+		"on-demand read": func(t *testing.T, h *nssHarness) {
+			if _, err := h.svc.RefreshUserByName(t.Context(), "alice"); err != nil {
+				t.Fatalf("RefreshUserByName() error = %v", err)
+			}
+		},
+	}
+	for _, tt := range tests {
+		for path, read := range reads {
+			t.Run(tt.name+" by "+path, func(t *testing.T) {
+				t.Parallel()
+
+				cfg := nssTestConfig()
+				cfg.NSS.AutoPrivateGroups = tt.mode
+				h := newNSSHarness(t, cfg)
+				h.dir.put(nssGIDEntry(tt.gid))
+				if tt.holder {
+					h.dir.put(nssGroupEntry("alice-upg", 10001))
+				}
+				read(t, h)
+
+				if n := h.count(t, &model.PosixUser{}, "name = ?", "alice"); n != map[bool]int64{true: 1}[tt.wantStored] {
+					t.Fatalf("stored rows = %d, want stored %v", n, tt.wantStored)
+				}
+				if !tt.wantStored {
+					return
+				}
+				if row := h.accountByName(t, "alice"); !equalGID(row.GID, tt.wantGID) || row.PendingGID != nil {
+					t.Errorf("gid = %s pending %s, want %s with nothing pending", gidText(row.GID), gidText(row.PendingGID), gidText(tt.wantGID))
+				}
+			})
+		}
+	}
+}
+
+func TestNSSStoreAccount_ShouldHoldOrFollowAGIDChangeWhenEachModeSyncs(t *testing.T) {
+	t.Parallel()
+
+	// stored is the row's gid (and any pending one left by another mode)
+	// before the sync; directory the entry's gid then. Under "true" sssd
+	// keeps the directory gid only as a supplementary group, so it is
+	// followed; in the other modes it is the primary gid and frozen.
+	tests := []struct {
+		name        string
+		mode        config.AutoPrivateGroupsMode
+		stored      *uint32
+		pending     *uint32
+		directory   *uint32
+		wantGID     *uint32
+		wantPending *uint32
+	}{
+		{name: "should hold a changed gid pending when the mode is false", mode: config.AutoPrivateGroupsOff,
+			stored: new(uint32(500)), directory: new(uint32(600)), wantGID: new(uint32(500)), wantPending: new(uint32(600))},
+		{name: "should hold a changed gid pending when the mode is hybrid", mode: config.AutoPrivateGroupsHybrid,
+			stored: new(uint32(500)), directory: new(uint32(600)), wantGID: new(uint32(500)), wantPending: new(uint32(600))},
+		{name: "should hold a gid changed to the uid pending when the mode is hybrid", mode: config.AutoPrivateGroupsHybrid,
+			stored: new(uint32(500)), directory: new(uint32(10001)), wantGID: new(uint32(500)), wantPending: new(uint32(10001))},
+		{name: "should follow a changed gid when the mode is true", mode: config.AutoPrivateGroupsOn,
+			stored: new(uint32(500)), directory: new(uint32(600)), wantGID: new(uint32(600))},
+		{name: "should drop a gid the entry no longer has when the mode is true", mode: config.AutoPrivateGroupsOn,
+			stored: new(uint32(500)), wantGID: nil},
+		{name: "should keep the stored gid when the mode is hybrid and the entry lost its gid", mode: config.AutoPrivateGroupsHybrid,
+			stored: new(uint32(500)), wantGID: new(uint32(500))},
+		{name: "should keep the stored gid when the mode is false and the entry lost its gid", mode: config.AutoPrivateGroupsOff,
+			stored: new(uint32(500)), wantGID: new(uint32(500))},
+		{name: "should take the first gid when the mode is hybrid and the row has none", mode: config.AutoPrivateGroupsHybrid,
+			directory: new(uint32(600)), wantGID: new(uint32(600))},
+		{name: "should take the first gid when the mode is false and the row has none", mode: config.AutoPrivateGroupsOff,
+			directory: new(uint32(600)), wantGID: new(uint32(600))},
+		{name: "should take the first gid when the mode is true and the row has none", mode: config.AutoPrivateGroupsOn,
+			directory: new(uint32(600)), wantGID: new(uint32(600))},
+		{name: "should drop a pending gid left by another mode when the mode is true", mode: config.AutoPrivateGroupsOn,
+			stored: new(uint32(500)), pending: new(uint32(600)), directory: new(uint32(600)), wantGID: new(uint32(600))},
+		{name: "should keep an unchanged gid when the mode is true", mode: config.AutoPrivateGroupsOn,
+			stored: new(uint32(500)), directory: new(uint32(500)), wantGID: new(uint32(500))},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg := nssTestConfig()
+			cfg.NSS.AutoPrivateGroups = tt.mode
+			h := newNSSHarness(t, cfg)
+			seeded := model.PosixUser{Name: "alice", UID: 10001, DN: "uid=alice,ou=people,dc=test", GID: tt.stored, PendingGID: tt.pending}
+			if tt.pending != nil {
+				seeded.PendingSince = nssAt(-time.Hour)
+			}
+			seedPosixUser(t, h.db, seeded)
+			h.dir.put(nssGIDEntry(tt.directory))
+			h.fullSync(t)
+
+			row := h.accountByName(t, "alice")
+			if !equalGID(row.GID, tt.wantGID) || !equalGID(row.PendingGID, tt.wantPending) {
+				t.Errorf("gid = %s pending %s, want %s pending %s", gidText(row.GID), gidText(row.PendingGID), gidText(tt.wantGID), gidText(tt.wantPending))
+			}
+			if (row.PendingSince != nil) != (tt.wantPending != nil) {
+				t.Errorf("pending_since = %v, want set exactly when a gid is pending", row.PendingSince)
+			}
+			if n := h.audits(t, AuditNSSIDChangePending); (n > 0) != (tt.wantPending != nil) {
+				t.Errorf("%s events = %d, want one exactly when a gid is pending", AuditNSSIDChangePending, n)
+			}
+		})
+	}
+}
+
+func TestNSSStoreAccount_ShouldServeTheOwnersServiceAccountOnlyWhenTheModeIsTrue(t *testing.T) {
+	t.Parallel()
+
+	// sv-ssoossh (uid 9001, no gidNumber), the owner's lldap entry of
+	// 2026-10-18: refused under hybrid as sssd refuses it, and under true
+	// given its private group, by the sync and by a lookup's on-demand read.
+	tests := []struct {
+		name     string
+		mode     config.AutoPrivateGroupsMode
+		wantMiss bool
+	}{
+		{name: "should not serve it when the mode is hybrid", mode: config.AutoPrivateGroupsHybrid, wantMiss: true},
+		{name: "should serve it with its private group when the mode is true", mode: config.AutoPrivateGroupsOn},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg := nssTestConfig()
+			cfg.NSS.AutoPrivateGroups = tt.mode
+			h := newNSSHarness(t, cfg)
+			h.dir.put(nssAccountEntry("", "sv-ssoossh", 9001, 0, map[string][]string{"gidNumber": nil}))
+			result := h.fullSync(t)
+			lookups := NewNSSLookupService(cfg, h.db, h.svc)
+
+			got, err := lookups.UserByName(t.Context(), "sv-ssoossh")
+			if tt.wantMiss {
+				wantNSSCode(t, err, apitypes.ErrorCodeNSSNotFound)
+				if result.Accounts.Skipped != 1 {
+					t.Errorf("skipped = %d, want the entry skipped", result.Accounts.Skipped)
+				}
+				return
+			}
+			want := []apitypes.NSSMembership{{GID: 9001, Name: "sv-ssoossh"}}
+			if err != nil || got.GID != 9001 || !reflect.DeepEqual(got.Groups, want) {
+				t.Errorf("UserByName() = %+v, %v; want gid 9001 and groups %+v", got, err, want)
+			}
+		})
 	}
 }

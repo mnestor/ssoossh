@@ -238,7 +238,7 @@ func seedPosix(t *testing.T, db *gorm.DB, name string, uid uint32, userID *strin
 	t.Helper()
 	now := time.Now().UTC()
 	row := model.PosixUser{
-		ID: "p-" + name, UID: uid, GID: uid, Name: name, DN: "uid=" + name + ",dc=example,dc=test",
+		ID: "p-" + name, UID: uid, GID: new(uid), Name: name, DN: "uid=" + name + ",dc=example,dc=test",
 		UserID: userID, Gecos: name, CreatedAt: now, UpdatedAt: now, LastSyncedAt: now,
 	}
 	if err := db.Create(&row).Error; err != nil {

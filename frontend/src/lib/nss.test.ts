@@ -506,6 +506,11 @@ describe('notServedReason', () => {
 			kind: 'account',
 			want: `nss.auto_private_groups is "true" and a directory group already holds this account's private group gid or name.`
 		},
+		{
+			reason: 'no_gid',
+			kind: 'account',
+			want: `The entry has no gid attribute, which only nss.auto_private_groups "true" accepts; this mode has no primary gid to serve it with.`
+		},
 		{ reason: '', kind: 'group', want: 'The server gave no reason.' },
 		{ reason: 'new_reason', kind: 'group', want: "The server's reason: new_reason." }
 	];

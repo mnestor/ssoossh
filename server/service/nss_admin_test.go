@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/utils/errorresponses"
 )
@@ -188,7 +189,7 @@ func TestNSSAcceptUserIDChange_ShouldApplyThePendingNumbersWhenNothingHoldsThem(
 	if err != nil {
 		t.Fatalf("AcceptUserIDChange() error = %v", err)
 	}
-	if accepted.UID != 2001 || accepted.GID != 200 || accepted.PendingUID != nil || accepted.PendingGID != nil || accepted.PendingSince != nil {
+	if accepted.UID != 2001 || !equalGID(accepted.GID, new(uint32(200))) || accepted.PendingUID != nil || accepted.PendingGID != nil || accepted.PendingSince != nil {
 		t.Errorf("accepted = %+v, want the pending numbers applied and cleared", accepted)
 	}
 	if got := h.members(t, 700); !reflect.DeepEqual(got, []uint32{2001}) {
@@ -203,6 +204,30 @@ func TestNSSAcceptUserIDChange_ShouldApplyThePendingNumbersWhenNothingHoldsThem(
 	h.fullSync(t)
 	if ada := h.accountByName(t, "ada"); ada.PendingUID != nil {
 		t.Errorf("ada pending_uid = %v after the next sync, want nil", ada.PendingUID)
+	}
+}
+
+func TestNSSAcceptUserIDChange_ShouldKeepNoGIDWhenTheAccountHasNoneUnderTrue(t *testing.T) {
+	t.Parallel()
+
+	// auto_private_groups true stores an entry with no gid attribute; a uid
+	// change on it is accepted without inventing one.
+	cfg := nssTestConfig()
+	cfg.NSS.AutoPrivateGroups = config.AutoPrivateGroupsOn
+	h := newNSSHarness(t, cfg)
+	noGID := map[string][]string{"gidNumber": nil}
+	h.dir.put(nssAccountEntry("", "sv-build", 9001, 0, noGID))
+	h.fullSync(t)
+	h.dir.put(nssAccountEntry("", "sv-build", 9002, 0, noGID))
+	h.fullSync(t)
+
+	accepted, err := h.svc.AcceptUserIDChange(t.Context(), 9001, nssAdminActor())
+	if err != nil {
+		t.Fatalf("AcceptUserIDChange() error = %v", err)
+	}
+	if accepted.UID != 9002 || accepted.GID != nil || accepted.PendingUID != nil || accepted.PendingGID != nil {
+		t.Errorf("accepted = uid %d gid %s pending %v/%v, want uid 9002, no gid and nothing pending",
+			accepted.UID, gidText(accepted.GID), accepted.PendingUID, accepted.PendingGID)
 	}
 }
 
@@ -275,8 +300,8 @@ func TestNSSAcceptGroupIDChange_ShouldReKeyMembersAndPrimaryGidsWhenAccepted(t *
 		t.Errorf("members of 6000 = %v, want both re-keyed", got)
 	}
 	for _, name := range []string{"ada", "bob"} {
-		if row := h.accountByName(t, name); row.GID != 6000 || row.PendingGID != nil || row.PendingSince != nil {
-			t.Errorf("%s = gid %d pending %v since %v, want 6000 with nothing pending", name, row.GID, row.PendingGID, row.PendingSince)
+		if row := h.accountByName(t, name); !equalGID(row.GID, new(uint32(6000))) || row.PendingGID != nil || row.PendingSince != nil {
+			t.Errorf("%s = gid %v pending %v since %v, want 6000 with nothing pending", name, gidText(row.GID), row.PendingGID, row.PendingSince)
 		}
 	}
 }

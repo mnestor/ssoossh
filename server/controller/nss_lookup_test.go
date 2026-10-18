@@ -141,11 +141,11 @@ func newNSSLookupEnv(t *testing.T) *nssLookupEnv {
 
 	aliceUser := "nss-alice"
 	seedNSSPosixUser(t, db, model.PosixUser{
-		Name: "alice", UID: 1500, GID: 100, UserID: &aliceUser,
+		Name: "alice", UID: 1500, GID: new(uint32(100)), UserID: &aliceUser,
 		Home: ptrTo("/home/alice"), Shell: ptrTo("/bin/bash"), ShellPref: ptrTo("zsh"), Gecos: "Alice Example",
 	})
-	seedNSSPosixUser(t, db, model.PosixUser{Name: "first.last", UID: 1501, GID: 100})
-	seedNSSPosixUser(t, db, model.PosixUser{Name: "MixedCase", UID: 1502, GID: 100})
+	seedNSSPosixUser(t, db, model.PosixUser{Name: "first.last", UID: 1501, GID: new(uint32(100))})
+	seedNSSPosixUser(t, db, model.PosixUser{Name: "MixedCase", UID: 1502, GID: new(uint32(100))})
 	seedNSSPosixGroup(t, db, 100, "staff")
 	seedNSSPosixGroup(t, db, 2000, "devs")
 	seedNSSPosixGroup(t, db, 2001, "ops.team")

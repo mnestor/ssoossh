@@ -73,13 +73,15 @@ func (s *NSSDirectoryService) raiseCollisionAlerts(ctx context.Context, t nssTab
 
 // pendingDetail describes a pending change for the alert: the stored
 // number and the one waiting, for each that is waiting.
-func pendingDetail(number uint32, pending *uint32, gid uint32, pendingGID *uint32) map[string]any {
+func pendingDetail(number uint32, pending *uint32, gid, pendingGID *uint32) map[string]any {
 	detail := map[string]any{}
 	if pending != nil {
 		detail["stored"] = number
 		detail["pending"] = *pending
 	}
 	if pendingGID != nil {
+		// A gid is pending only against a stored one (accountGIDUpdate),
+		// so gid is set here.
 		detail["stored_gid"] = gid
 		detail["pending_gid"] = *pendingGID
 	}
