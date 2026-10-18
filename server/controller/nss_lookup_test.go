@@ -8,7 +8,9 @@ package controller
 // through NSSKeyService.Create, so every secret is a real one.
 
 import (
+	"bytes"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -542,5 +544,66 @@ func TestNSSLookupController_ShouldCountServedLookupsInTheUsage(t *testing.T) {
 	if got.Lookups != 3 || got.Misses != 1 || got.Generation != 1 || got.SourceIP != "192.0.2.1" {
 		t.Errorf("usage = %d lookups, %d misses, generation %d from %q; want 3, 1, 1 from 192.0.2.1",
 			got.Lookups, got.Misses, got.Generation, got.SourceIP)
+	}
+}
+
+// TestNSSLookupController_ShouldLogTheKeyIDButNeverTheSecret follows the
+// proposal's rule for failed verifications: the key id may be logged and
+// audited, the secret never. Not parallel: it swaps the default logger,
+// which every parallel test would otherwise write to as well.
+func TestNSSLookupController_ShouldLogTheKeyIDButNeverTheSecret(t *testing.T) {
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	env := newNSSLookupEnv(t)
+	audit := service.NewAuditService(env.cfg, env.db)
+	env.keys.SetAuditor(audit)
+	env.usage.SetAuditor(audit)
+	creator := nssCreatorIdentity()
+	revokedID, revokedSecret := createNSSKey(t, env.keys, creator, "")
+	if _, err := env.keys.Revoke(t.Context(), creator, revokedID, "192.0.2.10"); err != nil {
+		t.Fatalf("revoke: %v", err)
+	}
+	r := env.engine(t)
+
+	presented := []struct{ keyID, secret string }{
+		{revokedID, revokedSecret},
+		{env.keyID, "ssoossh_nss_wrong_secret"},
+		{"nss_unknown1", env.secret},
+	}
+	for _, p := range presented {
+		assertNSSError(t, serveNSSLookup(r, "/api/nss/user/name/alice", p.keyID, p.secret), http.StatusUnauthorized, apitypes.ErrorCodeNSSUnauthorized)
+	}
+	// Raise the queued dead key alert, as the background loop would.
+	if err := env.usage.Shutdown(t.Context()); err != nil {
+		t.Fatalf("shutdown: %v", err)
+	}
+
+	var events []model.AuditEvent
+	if err := env.db.Where("action = ?", string(service.AuditNSSKeyRevokedAttempt)).Find(&events).Error; err != nil {
+		t.Fatalf("read audit: %v", err)
+	}
+	if len(events) != 1 || !strings.Contains(events[0].Payload, revokedID) {
+		t.Errorf("revoked attempt audit = %+v, want one row naming %s", events, revokedID)
+	}
+	if !strings.Contains(logs.String(), revokedID) {
+		t.Errorf("the logs never name the revoked key %s:\n%s", revokedID, logs.String())
+	}
+
+	var all []model.AuditEvent
+	if err := env.db.Find(&all).Error; err != nil {
+		t.Fatalf("read audit: %v", err)
+	}
+	for _, secret := range []string{revokedSecret, env.secret, "ssoossh_nss_wrong_secret"} {
+		if strings.Contains(logs.String(), secret) {
+			t.Errorf("a log line carries a presented secret:\n%s", logs.String())
+		}
+		for _, event := range all {
+			if strings.Contains(event.Payload, secret) {
+				t.Errorf("audit %s carries a presented secret: %s", event.Action, event.Payload)
+			}
+		}
 	}
 }
