@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { AuditEvent } from '#lib/api/types.js';
-	import { describeAuditAction, visibleAuditEvents } from '#lib/audit.js';
+	import { describeAuditAction, detailRows, visibleAuditEvents } from '#lib/audit.js';
 	import { formatDateTime } from '#lib/format.js';
 
 	interface Props {
@@ -79,12 +79,10 @@
 		return event.target.username || event.target.subject || '';
 	}
 
-	/** Detail entries worth showing inline, in a stable order. */
+	/** Detail entries worth showing inline, in a stable order; nested
+	 * objects spread into dotted names (see detailRows). */
 	function details(event: AuditEvent): [string, string][] {
-		if (!event.detail) return [];
-		return Object.entries(event.detail)
-			.filter(([, v]) => v !== null && v !== undefined && v !== '')
-			.map(([k, v]): [string, string] => [k, Array.isArray(v) ? v.join(', ') : String(v)]);
+		return detailRows(event.detail);
 	}
 </script>
 

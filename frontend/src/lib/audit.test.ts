@@ -4,6 +4,7 @@ import * as taxonomy from './api/generated/auditactions';
 import * as namespaces from './api/generated/auditnamespaces';
 import type { AuditEvent } from './api/types';
 import {
+	detailRows,
 	auditActionGroups,
 	auditNamespaceLabels,
 	auditFilterSearch,
@@ -170,6 +171,65 @@ describe('auditActionGroups', () => {
 	)) {
 		it(`should label the ${namespace} namespace`, () => {
 			expect(labelled).toContain(namespace);
+		});
+	}
+});
+
+describe('detailRows', () => {
+	const cases: {
+		name: string;
+		detail: Record<string, unknown> | undefined;
+		want: [string, string][];
+	}[] = [
+		{ name: 'no detail', detail: undefined, want: [] },
+		{
+			name: 'plain values, false and zero kept',
+			detail: { dry_run: false, failed: 0, source_ip: '203.0.113.9' },
+			want: [
+				['dry_run', 'false'],
+				['failed', '0'],
+				['source_ip', '203.0.113.9']
+			]
+		},
+		{
+			name: 'a list of plain values',
+			detail: { principals: ['alice', 'a.smith'] },
+			want: [['principals', 'alice, a.smith']]
+		},
+		{
+			name: 'a nested object, spread into dotted names',
+			detail: { nss: { full: true, accounts: { seen: 3, created: 1 } } },
+			want: [
+				['nss.full', 'true'],
+				['nss.accounts.seen', '3'],
+				['nss.accounts.created', '1']
+			]
+		},
+		{
+			name: 'a list of objects, one field list per item',
+			detail: {
+				added: [
+					{ uid: 1037, name: 'mnestor' },
+					{ uid: 1038, name: 'sonia' }
+				]
+			},
+			want: [['added', 'uid 1037, name mnestor; uid 1038, name sonia']]
+		},
+		{
+			name: 'empty values and empty lists left out',
+			detail: { reason: '', removed: [], note: null, nss: { error: '' } },
+			want: []
+		},
+		{
+			name: 'an object nested past the depth limit, on one line',
+			detail: { a: { b: { c: { d: { e: 1, f: 'x' } } } } },
+			want: [['a.b.c.d', 'e 1, f x']]
+		}
+	];
+
+	for (const { name, detail, want } of cases) {
+		it(`should render the rows when the detail has ${name}`, () => {
+			expect(detailRows(detail)).toEqual(want);
 		});
 	}
 });

@@ -304,3 +304,55 @@ export function auditFilterSearch(action: string, sourceIP: string): string {
 	const search = query.toString();
 	return search ? `?${search}` : '';
 }
+
+/** detailValue renders one detail value on a single line: a list joined with
+ * commas, an object as its fields ("uid 1037, name mnestor"), anything else
+ * as its string. Empty parts are left out. */
+function detailValue(value: unknown): string {
+	if (Array.isArray(value)) {
+		const items = value.map(detailValue).filter((item) => item !== '');
+		// Items that are themselves field lists need a stronger separator
+		// than the commas inside them.
+		const objects = value.some((item) => item !== null && typeof item === 'object');
+		return items.join(objects ? '; ' : ', ');
+	}
+	if (value !== null && typeof value === 'object') {
+		return Object.entries(value)
+			.filter(([, v]) => v !== null && v !== undefined && v !== '')
+			.map(([k, v]) => `${k} ${detailValue(v)}`)
+			.join(', ');
+	}
+	return value === null || value === undefined ? '' : String(value);
+}
+
+/** The deepest nested object detailRows still spreads into dotted names;
+ * anything deeper is shown on one line by detailValue. */
+const detailDepth = 3;
+
+/**
+ * detailRows turns an audit event's detail into name and value rows for the
+ * timeline's field list. A nested object becomes dotted names, one row per
+ * field ("nss.accounts.created"), so a directory sync's counts read as
+ * fields instead of "[object Object]". A list of plain values is joined with
+ * commas, a list of objects shows each one's fields separated by semicolons,
+ * and empty values and empty lists are left out.
+ */
+export function detailRows(detail: Record<string, unknown> | null | undefined): [string, string][] {
+	const rows: [string, string][] = [];
+	const walk = (name: string, value: unknown, depth: number): void => {
+		if (value === null || value === undefined || value === '') return;
+		if (Array.isArray(value)) {
+			const joined = detailValue(value);
+			if (joined !== '') rows.push([name, joined]);
+			return;
+		}
+		if (typeof value === 'object' && depth < detailDepth) {
+			for (const [key, inner] of Object.entries(value)) walk(`${name}.${key}`, inner, depth + 1);
+			return;
+		}
+		const text = detailValue(value);
+		if (text !== '') rows.push([name, text]);
+	};
+	for (const [key, value] of Object.entries(detail ?? {})) walk(key, value, 0);
+	return rows;
+}

@@ -224,6 +224,26 @@ describe('AuditTimeline', () => {
 		expect(screen.getByText('alice, a.smith')).toBeInTheDocument();
 	});
 
+	it('should spread a nested detail object into dotted names when the event carries one', () => {
+		render(AuditTimeline, {
+			props: { events: [event({ detail: { nss: { accounts: { created: 7 } } } })] }
+		});
+
+		expect(screen.getByText('nss.accounts.created')).toBeInTheDocument();
+	});
+
+	it('should never print [object Object] when a detail holds objects', () => {
+		const { container } = render(AuditTimeline, {
+			props: {
+				events: [
+					event({ detail: { nss: { full: true }, added: [{ uid: 1037, name: 'mnestor' }] } })
+				]
+			}
+		});
+
+		expect(container.textContent).not.toContain('[object Object]');
+	});
+
 	it('should render the timestamp with its timezone named', () => {
 		render(AuditTimeline, {
 			props: { events: [event({ created_at: '2026-09-04T18:24:27Z' })] }
