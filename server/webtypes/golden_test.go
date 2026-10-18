@@ -91,6 +91,9 @@ func fullFixtures() map[string]any {
 	keyPreviousExpires := keyRotatedAt.Add(720 * time.Hour)
 	keyRevokedAt := keyRotatedAt.Add(48 * time.Hour)
 	keyRevokedBy := "4b7d0c55-1e2f-4a3b-8c9d-0e1f2a3b4c5d"
+	keyLastUsed := keyRotatedAt.Add(time.Hour)
+	keyMissRateAlert := keyRotatedAt.Add(30 * time.Minute)
+	keySourceAlert := keyRotatedAt.Add(45 * time.Minute)
 	nssKey := webtypes.NSSKeyResponse{
 		ID:                "nss_k7m4qp2x",
 		Name:              "web fleet",
@@ -109,7 +112,10 @@ func fullFixtures() map[string]any {
 		RevokedAt:         &keyRevokedAt,
 		RevokedBy:         &keyRevokedBy,
 		RevokedByUsername: "bob",
-		Permissions:       []string{"view", "rotate", "revoke", "edit", "assign_group"},
+		Permissions:       []model.NSSKeyPermission{"view", "rotate", "revoke", "edit", "assign_group"},
+		LastUsedAt:        &keyLastUsed,
+		MissRateAlertAt:   &keyMissRateAlert,
+		KeySourceAlertAt:  &keySourceAlert,
 	}
 	usageCursor := "1792022400.2.192.0.2.10"
 	nssKeyExpires := issuedAt.Add(8760 * time.Hour)
@@ -118,15 +124,16 @@ func fullFixtures() map[string]any {
 	nssGroup := "web-admins"
 
 	return map[string]any{
-		"posix_account":  posixAccount,
-		"update_shell":   webtypes.UpdateShellBody{ShellPref: &shellPref},
-		"nss_shells":     webtypes.NSSShellsResponse{AllowedShells: []string{"sh", "bash", "zsh", "fish"}},
-		"nss_key":        nssKey,
-		"nss_key_list":   webtypes.NSSKeyListResponse{Keys: []webtypes.NSSKeyResponse{nssKey}, CanCreate: true},
-		"nss_key_secret": webtypes.NSSKeySecretResponse{Key: nssKey, Secret: "ssoossh_nss_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"},
-		"create_nss_key": webtypes.CreateNSSKeyBody{Name: "web fleet", Description: nssDescription, GroupName: nssGroup, ExpiresAt: &nssKeyExpires, NotificationEmail: &nssNotificationEmail},
-		"update_nss_key": webtypes.UpdateNSSKeyBody{Description: &nssDescription, ExpiresAt: &nssKeyExpires, NotificationEmail: &nssNotificationEmail, GroupName: &nssGroup},
-		"nss_key_usage":  webtypes.NSSKeyUsageResponse{Rows: []webtypes.NSSKeyUsageRowResponse{{SourceIP: "192.0.2.10", Generation: 2, Day: time.Date(2026, 10, 17, 0, 0, 0, 0, time.UTC), Lookups: 1200, Misses: 7, FirstSeen: keyRotatedAt, LastSeen: keyRotatedAt.Add(time.Hour)}}, Total: 41, NextCursor: &usageCursor},
+		"posix_account":    posixAccount,
+		"update_shell":     webtypes.UpdateShellBody{ShellPref: &shellPref},
+		"nss_shells":       webtypes.NSSShellsResponse{AllowedShells: []string{"sh", "bash", "zsh", "fish"}},
+		"nss_key_settings": webtypes.NSSKeySettingsResponse{DefaultLifetimeSeconds: 31536000, RotationGraceSeconds: 604800},
+		"nss_key":          nssKey,
+		"nss_key_list":     webtypes.NSSKeyListResponse{Keys: []webtypes.NSSKeyResponse{nssKey}, CanCreate: true},
+		"nss_key_secret":   webtypes.NSSKeySecretResponse{Key: nssKey, Secret: "ssoossh_nss_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"},
+		"create_nss_key":   webtypes.CreateNSSKeyBody{Name: "web fleet", Description: nssDescription, GroupName: nssGroup, ExpiresAt: &nssKeyExpires, NotificationEmail: &nssNotificationEmail},
+		"update_nss_key":   webtypes.UpdateNSSKeyBody{Description: &nssDescription, ExpiresAt: &nssKeyExpires, NotificationEmail: &nssNotificationEmail, GroupName: &nssGroup},
+		"nss_key_usage":    webtypes.NSSKeyUsageResponse{Rows: []webtypes.NSSKeyUsageRowResponse{{SourceIP: "192.0.2.10", Generation: 2, Day: time.Date(2026, 10, 17, 0, 0, 0, 0, time.UTC), Lookups: 1200, Misses: 7, FirstSeen: keyRotatedAt, LastSeen: keyRotatedAt.Add(time.Hour)}}, Total: 41, NextCursor: &usageCursor},
 		"nss_rotation_report": webtypes.NSSRotationReportResponse{
 			KeyID: "nss_k7m4qp2x", CurrentGeneration: 2, RotatedAt: &keyRotatedAt, PreviousExpiresAt: &keyPreviousExpires,
 			GraceDaysLeft: 29, Switched: 40, NotSwitched: 2, Gone: 1,
@@ -452,6 +459,7 @@ func zeroFixtures() map[string]any {
 		"update_shell":                 webtypes.UpdateShellBody{},
 		"nss_shells":                   webtypes.NSSShellsResponse{},
 		"nss_key":                      webtypes.NSSKeyResponse{},
+		"nss_key_settings":             webtypes.NSSKeySettingsResponse{},
 		"nss_key_list":                 webtypes.NSSKeyListResponse{},
 		"nss_key_secret":               webtypes.NSSKeySecretResponse{},
 		"create_nss_key":               webtypes.CreateNSSKeyBody{},

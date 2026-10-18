@@ -3,7 +3,7 @@
 	import { resolve } from '$app/paths';
 
 	import { ApiError } from '#lib/api/client.js';
-	import { createNSSKey, listNSSKeys } from '#lib/api/endpoints.js';
+	import { createNSSKey, getNSSKeySettings, listNSSKeys } from '#lib/api/endpoints.js';
 	import type { NSSKeySecret } from '#lib/api/types.js';
 	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
 	import AccessDenied from '#lib/components/AccessDenied.svelte';
@@ -13,6 +13,8 @@
 	import PageSection from '#lib/components/PageSection.svelte';
 	import PageShell from '#lib/components/PageShell.svelte';
 	import SecretPanel from '#lib/components/SecretPanel.svelte';
+	import { formatDuration } from '#lib/format.js';
+	import { defaultExpiryDay, localDay } from '#lib/nss.js';
 	import { session } from '#lib/session.svelte.js';
 
 	// Creating a fleet key: one short form, then the secret, once.
@@ -20,9 +22,10 @@
 	// The form asks only what the server needs and what an operator would
 	// otherwise come back to set: a name, what the key is for, the group that
 	// may manage it, when it ends and where its mail goes. Everything but the
-	// name is optional, and the two with a server-side default say what the
-	// default is rather than guessing it here: an empty expiry takes
-	// nss.key_default_lifetime, and the address starts as the reader's own.
+	// name is optional, and the two with a server-side default start at it:
+	// the expiry at today plus nss.key_default_lifetime, read from the
+	// server, and the address at the reader's own. An empty expiry still
+	// takes the server's default, so a failed read costs only the proposal.
 
 	const allowed = $derived(session.user?.is_nss_key_admin ?? false);
 
@@ -63,10 +66,23 @@
 
 	// The earliest expiry the date field offers: tomorrow, since the server
 	// refuses a time already past.
-	const minDate = $derived.by(() => {
-		const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
-		const pad = (n: number) => String(n).padStart(2, '0');
-		return `${tomorrow.getFullYear()}-${pad(tomorrow.getMonth() + 1)}-${pad(tomorrow.getDate())}`;
+	const minDate = $derived(localDay(new Date(Date.now() + 24 * 60 * 60 * 1000)));
+
+	// The server's default lifetime, once read, and whether the expiry field
+	// still holds the day proposed from it. A day the reader typed first is
+	// never overwritten.
+	let defaultLifetime = $state<number | null>(null);
+	$effect(() => {
+		if (!allowed) return;
+		const controller = new AbortController();
+		getNSSKeySettings(controller.signal)
+			.then((result) => {
+				defaultLifetime = result.default_lifetime_seconds;
+				const day = defaultExpiryDay(new Date(), result.default_lifetime_seconds);
+				if (day && expires === '') expires = day;
+			})
+			.catch(() => {});
+		return () => controller.abort();
 	});
 
 	// A key whose secret has not been stored yet is lost by leaving, so
@@ -230,8 +246,14 @@
 							data-testid="nss-key-expires"
 							class="{field} max-w-[420px]"
 						/>
-						<span class="text-xs text-ink-muted">
-							At the end of that day. Leave it empty for the server's default lifetime.
+						<span class="text-xs text-ink-muted" data-testid="nss-key-expires-hint">
+							{#if defaultLifetime}
+								At the end of that day. Starts at the server's default lifetime, {formatDuration(
+									defaultLifetime
+								)} from today.
+							{:else}
+								At the end of that day. Leave it empty for the server's default lifetime.
+							{/if}
 						</span>
 					</label>
 

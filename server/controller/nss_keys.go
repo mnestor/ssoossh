@@ -33,6 +33,7 @@ func NewNSSController(group *gin.RouterGroup, keys *service.NSSKeyService, looku
 	// share it with the mutations.
 	nss := group.Group("/nss", k.enabled, sessionAuthMiddleware, csrfMiddleware)
 	nss.GET("/shells", k.shellsHandler)
+	nss.GET("/key-settings", k.keySettingsHandler)
 	nss.GET("/keys", k.listHandler)
 	nss.POST("/keys", k.createHandler)
 	nss.GET("/keys/:id", k.getHandler)
@@ -89,6 +90,27 @@ func sessionIdentity(g *gin.Context) (*service.Identity, bool) {
 // @Router      /api/nss/shells [get]
 func (k *nssKeyController) shellsHandler(g *gin.Context) {
 	respondData(g, webtypes.NSSShellsResponse{AllowedShells: orEmpty(k.lookups.AllowedShells())})
+}
+
+// keySettingsHandler handles GET /api/nss/key-settings.
+//
+// @Summary     The fleet key lifetimes
+// @Description nss.key_default_lifetime and nss.key_rotation_grace in seconds, so the create form can propose
+// @Description an expiry and the rotate dialog can say when the previous secret stops working. Any session:
+// @Description the two values decide nothing on their own, and every key action is still authorised per key.
+// @Tags        web
+// @Produce     json
+// @Success     200 {object} openapidoc.NSSKeySettingsEnvelope "The lifetimes"
+// @Failure     401 {object} openapidoc.ErrorEnvelope "No valid session"
+// @Failure     404 {object} openapidoc.ErrorEnvelope "nss_disabled: nss.enabled is false"
+// @Security    sessionCookie
+// @Router      /api/nss/key-settings [get]
+func (k *nssKeyController) keySettingsHandler(g *gin.Context) {
+	settings := k.keys.Settings()
+	respondData(g, webtypes.NSSKeySettingsResponse{
+		DefaultLifetimeSeconds: int(settings.DefaultLifetime / time.Second),
+		RotationGraceSeconds:   int(settings.RotationGrace / time.Second),
+	})
 }
 
 // listHandler handles GET /api/nss/keys.
@@ -434,7 +456,7 @@ func writeRotationReportCSV(g *gin.Context, report *service.NSSRotationReport) {
 	for _, row := range report.Rows {
 		records = append(records, []string{
 			row.SourceIP,
-			row.Bucket,
+			string(row.Bucket),
 			strconv.Itoa(row.LastGeneration),
 			row.FirstSeen.UTC().Format(time.RFC3339),
 			row.LastSeen.UTC().Format(time.RFC3339),
@@ -468,5 +490,8 @@ func newNSSKeyResponse(view *service.NSSKeyView) webtypes.NSSKeyResponse {
 		RevokedBy:         key.RevokedBy,
 		RevokedByUsername: view.RevokedByUsername,
 		Permissions:       orEmpty(view.Permissions),
+		LastUsedAt:        view.LastUsedAt,
+		MissRateAlertAt:   view.MissRateAlertAt,
+		KeySourceAlertAt:  view.KeySourceAlertAt,
 	}
 }

@@ -37,6 +37,7 @@ import type {
 	NSSKey,
 	NSSKeyListResponse,
 	NSSKeySecret,
+	NSSKeySettings,
 	NSSKeyUsageResponse,
 	NSSPendingIDChangesResponse,
 	NSSPurgedTombstoneResponse,
@@ -671,6 +672,11 @@ export function updateShellPreference(shell: string | null): Promise<PosixAccoun
 /** GET /api/nss/shells — the shell names a person may choose, in configured order. */
 export function listNSSShells(signal?: AbortSignal): Promise<NSSShellsResponse> {
 	return request<NSSShellsResponse>('/nss/shells', { signal });
+}
+
+/** GET /api/nss/key-settings: a new key's default lifetime and a rotation's grace, in seconds. */
+export function getNSSKeySettings(signal?: AbortSignal): Promise<NSSKeySettings> {
+	return request<NSSKeySettings>('/nss/key-settings', { signal });
 }
 
 /** GET /api/nss/keys — every fleet key the caller may view, each with what they may do to it. */

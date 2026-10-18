@@ -115,3 +115,74 @@ const (
 	// until nss.tombstone_retention ends, then not at all.
 	PosixStatusDeleted PosixStatus = "deleted"
 )
+
+// NSSKeyStatus is the state a fleet API key is in. Never stored: it is
+// derived from the key's revocation and expiry each time the key is read,
+// so a key that passes its expires_at is expired without a job having to
+// run. The web UI shows a fourth state, rotating, for an active key whose
+// previous secret is still accepted; the server never sends it.
+type NSSKeyStatus string
+
+const (
+	// NSSKeyStatusActive is a key hosts may use.
+	NSSKeyStatusActive NSSKeyStatus = "active"
+	// NSSKeyStatusExpired is a key past its expires_at.
+	NSSKeyStatusExpired NSSKeyStatus = "expired"
+	// NSSKeyStatusRevoked is a key revoked by someone. Terminal.
+	NSSKeyStatusRevoked NSSKeyStatus = "revoked"
+)
+
+// NSSKeyPermission is one thing a caller may do with one fleet API key,
+// sent with every key so the web UI shows exactly the affordances the
+// server will honour.
+type NSSKeyPermission string
+
+const (
+	// NSSKeyPermissionView reads the key, its usage and its rotation
+	// report.
+	NSSKeyPermissionView NSSKeyPermission = "view"
+	// NSSKeyPermissionRotate issues a new secret, and ends the previous
+	// one early.
+	NSSKeyPermissionRotate NSSKeyPermission = "rotate"
+	// NSSKeyPermissionRevoke revokes the key.
+	NSSKeyPermissionRevoke NSSKeyPermission = "revoke"
+	// NSSKeyPermissionEdit changes the description, expiry and
+	// notification address.
+	NSSKeyPermissionEdit NSSKeyPermission = "edit"
+	// NSSKeyPermissionAssignGroup changes the group that manages the key.
+	NSSKeyPermissionAssignGroup NSSKeyPermission = "assign_group"
+)
+
+// NSSRotationBucket is where one source address stands in a fleet key's
+// rotation report since the key was last rotated.
+type NSSRotationBucket string
+
+const (
+	// NSSRotationBucketSwitched is an address whose latest lookup
+	// presented the current secret.
+	NSSRotationBucketSwitched NSSRotationBucket = "switched"
+	// NSSRotationBucketNotSwitched is an address whose latest lookup
+	// presented an older secret: it stops resolving accounts when the
+	// grace ends.
+	NSSRotationBucketNotSwitched NSSRotationBucket = "not_switched"
+	// NSSRotationBucketGone is an address seen before the rotation and
+	// not since, a host retired or one that has not booted since.
+	NSSRotationBucketGone NSSRotationBucket = "gone"
+)
+
+// NSSCollisionKind says which unique value an NSSCollision contests, and so
+// which table its HolderID and OtherID name.
+type NSSCollisionKind string
+
+// The four contested values. POSIX resolves one record per number and per
+// name, and account and group names are separate namespaces.
+const (
+	// NSSCollisionKindUID is two accounts with one uid (posix_users).
+	NSSCollisionKindUID NSSCollisionKind = "uid"
+	// NSSCollisionKindUserName is two accounts with one name (posix_users).
+	NSSCollisionKindUserName NSSCollisionKind = "user_name"
+	// NSSCollisionKindGID is two groups with one gid (posix_groups).
+	NSSCollisionKindGID NSSCollisionKind = "gid"
+	// NSSCollisionKindGroupName is two groups with one name (posix_groups).
+	NSSCollisionKindGroupName NSSCollisionKind = "group_name"
+)

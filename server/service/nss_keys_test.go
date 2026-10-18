@@ -93,25 +93,25 @@ func auditDetails(t *testing.T, db *gorm.DB, action AuditAction) []map[string]an
 func TestNSSKeys_ShouldGrantEachRoleItsPermissionsWhenAKeyIsViewed(t *testing.T) {
 	t.Parallel()
 
-	all := []string{NSSKeyPermissionView, NSSKeyPermissionRotate, NSSKeyPermissionRevoke, NSSKeyPermissionEdit, NSSKeyPermissionAssignGroup}
+	all := []model.NSSKeyPermission{model.NSSKeyPermissionView, model.NSSKeyPermissionRotate, model.NSSKeyPermissionRevoke, model.NSSKeyPermissionEdit, model.NSSKeyPermissionAssignGroup}
 	tests := []struct {
 		name        string
 		caller      *Identity
 		revoked     bool
-		want        []string
+		want        []model.NSSKeyPermission
 		wantVisible bool
 	}{
 		{name: "should grant everything when the caller is an admin", caller: nssAdmin, want: all, wantVisible: true},
 		{name: "should grant everything when the caller holds the key admin role", caller: nssKeyAdmin, want: all, wantVisible: true},
-		{name: "should grant view and revoke when the caller is SOC", caller: nssSOC, want: []string{NSSKeyPermissionView, NSSKeyPermissionRevoke}, wantVisible: true},
-		{name: "should grant view alone when the caller is an auditor", caller: nssAuditor, want: []string{NSSKeyPermissionView}, wantVisible: true},
+		{name: "should grant view and revoke when the caller is SOC", caller: nssSOC, want: []model.NSSKeyPermission{model.NSSKeyPermissionView, model.NSSKeyPermissionRevoke}, wantVisible: true},
+		{name: "should grant view alone when the caller is an auditor", caller: nssAuditor, want: []model.NSSKeyPermission{model.NSSKeyPermissionView}, wantVisible: true},
 		{name: "should grant all but assign_group when the caller is in the key's group", caller: nssMember,
-			want: []string{NSSKeyPermissionView, NSSKeyPermissionRotate, NSSKeyPermissionRevoke, NSSKeyPermissionEdit}, wantVisible: true},
+			want: []model.NSSKeyPermission{model.NSSKeyPermissionView, model.NSSKeyPermissionRotate, model.NSSKeyPermissionRevoke, model.NSSKeyPermissionEdit}, wantVisible: true},
 		{name: "should hide the key when the caller holds no role and is not in its group", caller: nssPlain},
 		{name: "should leave only view when the key is revoked and the caller is an admin", caller: nssAdmin, revoked: true,
-			want: []string{NSSKeyPermissionView}, wantVisible: true},
+			want: []model.NSSKeyPermission{model.NSSKeyPermissionView}, wantVisible: true},
 		{name: "should leave only view when the key is revoked and the caller is in its group", caller: nssMember, revoked: true,
-			want: []string{NSSKeyPermissionView}, wantVisible: true},
+			want: []model.NSSKeyPermission{model.NSSKeyPermissionView}, wantVisible: true},
 	}
 
 	for _, tt := range tests {
@@ -216,7 +216,7 @@ func TestNSSKeys_ShouldCreateAKeyWithItsDefaultsWhenOnlyANameIsGiven(t *testing.
 	if key.NotificationEmail != "kim@example.org" {
 		t.Errorf("notification_email = %q, want the creator's address", key.NotificationEmail)
 	}
-	if view.Status != NSSKeyStatusActive || view.CreatedByUsername != "kim" {
+	if view.Status != model.NSSKeyStatusActive || view.CreatedByUsername != "kim" {
 		t.Errorf("view = %+v, want active and created by kim", view)
 	}
 
@@ -563,7 +563,7 @@ func TestNSSKeys_ShouldEndTheKeyForGoodWhenItIsRevoked(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Revoke: %v", err)
 	}
-	if view.Status != NSSKeyStatusRevoked || view.Key.RevokedBy == nil || *view.Key.RevokedBy != ids[nssSOC.Subject] ||
+	if view.Status != model.NSSKeyStatusRevoked || view.Key.RevokedBy == nil || *view.Key.RevokedBy != ids[nssSOC.Subject] ||
 		view.RevokedByUsername != "sam" {
 		t.Errorf("view = %+v, want revoked by the SOC caller", view)
 	}
@@ -693,11 +693,11 @@ func TestNSSKeys_ShouldDeriveTheStatusWhenTheKeyIsRead(t *testing.T) {
 	tests := []struct {
 		name string
 		key  model.NSSKey
-		want string
+		want model.NSSKeyStatus
 	}{
-		{name: "should be active when the key is live", key: model.NSSKey{ExpiresAt: nssNow.Add(time.Hour)}, want: NSSKeyStatusActive},
-		{name: "should be expired when expires_at is now", key: model.NSSKey{ExpiresAt: nssNow}, want: NSSKeyStatusExpired},
-		{name: "should be revoked when it is revoked, expired or not", key: model.NSSKey{ExpiresAt: nssNow.Add(-time.Hour), RevokedAt: nssAt(-time.Hour)}, want: NSSKeyStatusRevoked},
+		{name: "should be active when the key is live", key: model.NSSKey{ExpiresAt: nssNow.Add(time.Hour)}, want: model.NSSKeyStatusActive},
+		{name: "should be expired when expires_at is now", key: model.NSSKey{ExpiresAt: nssNow}, want: model.NSSKeyStatusExpired},
+		{name: "should be revoked when it is revoked, expired or not", key: model.NSSKey{ExpiresAt: nssNow.Add(-time.Hour), RevokedAt: nssAt(-time.Hour)}, want: model.NSSKeyStatusRevoked},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -747,6 +747,215 @@ func TestNSSKeys_ShouldDrawAnotherIDWhenTheFirstIsTaken(t *testing.T) {
 			}
 			if err != nil || view.Key.ID != tt.wantID || draws != 2 {
 				t.Errorf("Create = %v, %v after %d draws; want %s on the second", view, err, draws, tt.wantID)
+			}
+		})
+	}
+}
+
+// seedNSSAlert writes one alert claim, as the usage service's raise would.
+func seedNSSAlert(t *testing.T, db *gorm.DB, kind, subject string, at time.Time) {
+	t.Helper()
+
+	if err := db.Create(&model.NSSAlert{Kind: kind, Subject: subject, LastRaisedAt: at.UTC()}).Error; err != nil {
+		t.Fatalf("seed alert: %v", err)
+	}
+}
+
+// timeOrNil renders an optional time for a failure message.
+func timeOrNil(at *time.Time) string {
+	if at == nil {
+		return "nil"
+	}
+	return at.UTC().Format(time.RFC3339)
+}
+
+// sameTime reports whether two optional times are both nil or the same
+// instant.
+func sameTime(got, want *time.Time) bool {
+	if got == nil || want == nil {
+		return got == nil && want == nil
+	}
+	return got.Equal(*want)
+}
+
+func TestNSSKeys_ShouldReportTheLatestUseWhenTheKeyIsRead(t *testing.T) {
+	t.Parallel()
+
+	db := testdb.New(t)
+	seedNSSCallers(t, db)
+	keys, _ := newTestNSSKeys(t, nssLookupTestConfig(), db)
+	used, _ := createNSSKey(t, keys, "web fleet", "web-admins")
+	unused, _ := createNSSKey(t, keys, "db fleet", "web-admins")
+	single, _ := createNSSKey(t, keys, "bastions", "web-admins")
+
+	// The used key's latest use is on an older generation from a second
+	// address, a day after the newer row's day: the newest instant wins,
+	// not the newest day or generation.
+	latest := nssNow.Add(-2 * time.Hour)
+	seedNSSUsage(t, db, used.Key.ID, "192.0.2.1", 2, nssNow.Add(-30*time.Hour), nssNow.Add(-26*time.Hour), 40)
+	seedNSSUsage(t, db, used.Key.ID, "192.0.2.2", 1, nssNow.Add(-5*time.Hour), latest, 3)
+	seedNSSUsage(t, db, used.Key.ID, "192.0.2.3", 2, nssNow.Add(-50*time.Hour), nssNow.Add(-49*time.Hour), 9)
+	singleSeen := nssNow.Add(-72 * time.Hour)
+	seedNSSUsage(t, db, single.Key.ID, "192.0.2.9", 1, singleSeen.Add(-time.Hour), singleSeen, 1)
+
+	tests := []struct {
+		name string
+		id   string
+		want *time.Time
+	}{
+		{name: "should report the newest last seen when the key was used from several addresses", id: used.Key.ID, want: &latest},
+		{name: "should report nothing when no host has used the key", id: unused.Key.ID},
+		{name: "should report the one row's last seen when the key was used once", id: single.Key.ID, want: &singleSeen},
+	}
+	views, err := keys.List(t.Context(), nssMember)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	listed := map[string]*time.Time{}
+	for _, view := range views {
+		listed[view.Key.ID] = view.LastUsedAt
+	}
+	for _, tt := range tests {
+		t.Run(tt.name+" in the list", func(t *testing.T) {
+			if got := listed[tt.id]; !sameTime(got, tt.want) {
+				t.Errorf("listed last used = %s, want %s", timeOrNil(got), timeOrNil(tt.want))
+			}
+		})
+		t.Run(tt.name+" on its own", func(t *testing.T) {
+			view, err := keys.Get(t.Context(), nssMember, tt.id)
+			if err != nil {
+				t.Fatalf("Get: %v", err)
+			}
+			if !sameTime(view.LastUsedAt, tt.want) {
+				t.Errorf("last used = %s, want %s", timeOrNil(view.LastUsedAt), timeOrNil(tt.want))
+			}
+		})
+	}
+}
+
+func TestNSSKeys_ShouldKeepTheLatestUseWhenTheKeyIsChanged(t *testing.T) {
+	t.Parallel()
+
+	db := testdb.New(t)
+	seedNSSCallers(t, db)
+	keys, _ := newTestNSSKeys(t, nssLookupTestConfig(), db)
+	created, _ := createNSSKey(t, keys, "web fleet", "web-admins")
+	lastSeen := nssNow.Add(-time.Hour)
+	seedNSSUsage(t, db, created.Key.ID, "192.0.2.1", 1, nssNow.Add(-3*time.Hour), lastSeen, 5)
+
+	description := "every host in the web tier"
+	view, err := keys.Update(t.Context(), nssMember, created.Key.ID, NSSKeyUpdate{Description: &description}, "")
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if !sameTime(view.LastUsedAt, &lastSeen) {
+		t.Errorf("last used after the change = %s, want %s", timeOrNil(view.LastUsedAt), timeOrNil(&lastSeen))
+	}
+}
+
+func TestNSSKeys_ShouldReportTheRecentUsageAlertsWhenTheKeyIsRead(t *testing.T) {
+	t.Parallel()
+
+	db := testdb.New(t)
+	seedNSSCallers(t, db)
+	keys, _ := newTestNSSKeys(t, nssLookupTestConfig(), db)
+	both, _ := createNSSKey(t, keys, "web fleet", "web-admins")
+	stale, _ := createNSSKey(t, keys, "db fleet", "web-admins")
+	quiet, _ := createNSSKey(t, keys, "bastions", "web-admins")
+	edge, _ := createNSSKey(t, keys, "build fleet", "web-admins")
+
+	missAt := nssNow.Add(-time.Hour)
+	sourceAt := nssNow.Add(-50 * time.Hour)
+	edgeAt := nssNow.Add(-NSSKeyAlertLookback)
+	seedNSSAlert(t, db, nssAlertMissRate, both.Key.ID, missAt)
+	seedNSSAlert(t, db, nssAlertKeySource, both.Key.ID, sourceAt)
+	// Older than the lookback: not reported.
+	seedNSSAlert(t, db, nssAlertMissRate, stale.Key.ID, nssNow.Add(-NSSKeyAlertLookback-time.Minute))
+	seedNSSAlert(t, db, nssAlertKeySource, stale.Key.ID, nssNow.Add(-30*24*time.Hour))
+	// Other kinds about the quiet key, and a usage alert about something
+	// that is not a key id: none is a usage alert for a key.
+	seedNSSAlert(t, db, nssAlertRevokedAttempt, quiet.Key.ID, missAt)
+	seedNSSAlert(t, db, nssAlertExpiredAttempt, quiet.Key.ID, missAt)
+	seedNSSAlert(t, db, nssAlertPrivilegedName, quiet.Key.ID+"|root", missAt)
+	// Exactly at the lookback's edge: reported.
+	seedNSSAlert(t, db, nssAlertKeySource, edge.Key.ID, edgeAt)
+
+	tests := []struct {
+		name       string
+		id         string
+		wantMiss   *time.Time
+		wantSource *time.Time
+	}{
+		{name: "should report both alerts when both fired this week", id: both.Key.ID, wantMiss: &missAt, wantSource: &sourceAt},
+		{name: "should report neither alert when both fired before the last 7 days", id: stale.Key.ID},
+		{name: "should report neither alert when only other kinds were raised about the key", id: quiet.Key.ID},
+		{name: "should report the alert when it fired exactly 7 days ago", id: edge.Key.ID, wantSource: &edgeAt},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			view, err := keys.Get(t.Context(), nssAuditor, tt.id)
+			if err != nil {
+				t.Fatalf("Get: %v", err)
+			}
+			if !sameTime(view.MissRateAlertAt, tt.wantMiss) || !sameTime(view.KeySourceAlertAt, tt.wantSource) {
+				t.Errorf("alerts = miss rate %s, key source %s; want %s, %s",
+					timeOrNil(view.MissRateAlertAt), timeOrNil(view.KeySourceAlertAt), timeOrNil(tt.wantMiss), timeOrNil(tt.wantSource))
+			}
+		})
+	}
+}
+
+func TestNSSKeys_ShouldReturnTheConfiguredLifetimesWhenTheSettingsAreRead(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		grace time.Duration
+		want  NSSKeySettings
+	}{
+		{name: "should return both durations when the grace is set", grace: 720 * time.Hour, want: NSSKeySettings{DefaultLifetime: 8760 * time.Hour, RotationGrace: 720 * time.Hour}},
+		{name: "should return a zero grace when rotation ends the previous secret at once", grace: 0, want: NSSKeySettings{DefaultLifetime: 8760 * time.Hour}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			c := nssLookupTestConfig()
+			c.NSS.KeyRotationGrace = tt.grace
+			keys, err := NewNSSKeyService(c, nil, nil)
+			if err != nil {
+				t.Fatalf("NewNSSKeyService: %v", err)
+			}
+			if got := keys.Settings(); got != tt.want {
+				t.Errorf("Settings = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNSSKeys_ShouldReturnTheDatabaseErrorWhenTheKeysActivityCannotBeRead(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		table string
+	}{
+		{name: "should fail the list when the usage table cannot be read", table: "nss_key_usage"},
+		{name: "should fail the list when the alert claims cannot be read", table: "nss_alerts"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			db := testdb.New(t)
+			seedNSSCallers(t, db)
+			keys, _ := newTestNSSKeys(t, nssLookupTestConfig(), db)
+			createNSSKey(t, keys, "web fleet", "web-admins")
+			if err := db.Exec("DROP TABLE " + tt.table).Error; err != nil {
+				t.Fatalf("drop %s: %v", tt.table, err)
+			}
+			if views, err := keys.List(t.Context(), nssAdmin); err == nil {
+				t.Errorf("List = %d keys, want the error reading %s", len(views), tt.table)
 			}
 		})
 	}

@@ -1,59 +1,40 @@
+import {
+	NSSCollisionKindGID,
+	NSSCollisionKindGroupName,
+	NSSCollisionKindUID,
+	NSSCollisionKindUserName,
+	NSSKeyStatusActive,
+	NSSKeyStatusExpired,
+	NSSKeyStatusRevoked,
+	NSSRotationBucketGone,
+	NSSRotationBucketNotSwitched,
+	NSSRotationBucketSwitched,
+	type NSSKeyPermission,
+	type NSSKeyStatus,
+	type NSSRotationBucket
+} from '#lib/api/generated/enums.js';
 import type { CurrentUser, NSSKey, NSSRotationReportRow } from '#lib/api/types.js';
 
 // The NSS directory's vocabulary as the web UI reads it: what a caller may do
 // with a fleet key, the state a key is shown in, and the kinds of collision
 // and rotation bucket the server reports.
 //
-// The wire values below are spelled out because tygo generates no constants
-// for them: they are Go string constants in server/service (nss_keys.go) and
-// model.NSSCollisionKind, neither of which tygo.yaml exports. One place, so a
-// renamed value is fixed once; the tests pin each against the server's
-// spelling.
-
-/** What a caller may do with one key (service.NSSKeyPermission*). */
-export const NSSKeyPermission = {
-	View: 'view',
-	Rotate: 'rotate',
-	Revoke: 'revoke',
-	Edit: 'edit',
-	AssignGroup: 'assign_group'
-} as const;
-
-export type NSSKeyPermissionName = (typeof NSSKeyPermission)[keyof typeof NSSKeyPermission];
-
-/** The status the server derives for a key (service.NSSKeyStatus*). */
-export const NSSKeyWireStatus = {
-	Active: 'active',
-	Expired: 'expired',
-	Revoked: 'revoked'
-} as const;
+// The wire values themselves come from the generated constants
+// (server/model/enums.go through tygo), so a value renamed on the server
+// fails svelte-check here instead of silently matching nothing.
 
 /**
- * KeyDisplayStatus is the status a key is shown in. `rotating` is not a
- * server status: it is an active key whose previous secret is still
- * accepted, which is the window an operator has to watch.
+ * KeyRotating is the status an active key is shown in while its previous
+ * secret is still accepted. Not a server status: the browser derives it,
+ * because it is the window an operator has to watch.
  */
-export type KeyDisplayStatus = 'active' | 'rotating' | 'expired' | 'revoked';
+export const KeyRotating = 'rotating';
 
-/** The rotation report's buckets (NSSRotationReportRowResponse.Bucket). */
-export const RotationBucket = {
-	Switched: 'switched',
-	NotSwitched: 'not_switched',
-	Gone: 'gone'
-} as const;
-
-export type RotationBucketName = (typeof RotationBucket)[keyof typeof RotationBucket];
-
-/** The contested value of a collision (model.NSSCollisionKind). */
-export const NSSCollisionKind = {
-	UID: 'uid',
-	UserName: 'user_name',
-	GID: 'gid',
-	GroupName: 'group_name'
-} as const;
+/** KeyDisplayStatus is the status a key is shown in: the server's, or rotating. */
+export type KeyDisplayStatus = NSSKeyStatus | typeof KeyRotating;
 
 /** can reports whether the server lets the caller do `permission` to `key`. */
-export function can(key: Pick<NSSKey, 'permissions'>, permission: NSSKeyPermissionName): boolean {
+export function can(key: Pick<NSSKey, 'permissions'>, permission: NSSKeyPermission): boolean {
 	return key.permissions.includes(permission);
 }
 
@@ -75,9 +56,9 @@ export function keyStatus(
 	key: Pick<NSSKey, 'status' | 'previous_expires_at'>,
 	now: Date
 ): KeyDisplayStatus {
-	if (key.status === NSSKeyWireStatus.Revoked) return 'revoked';
-	if (key.status === NSSKeyWireStatus.Expired) return 'expired';
-	return previousLive(key, now) ? 'rotating' : 'active';
+	if (key.status === NSSKeyStatusRevoked) return NSSKeyStatusRevoked;
+	if (key.status === NSSKeyStatusExpired) return NSSKeyStatusExpired;
+	return previousLive(key, now) ? KeyRotating : NSSKeyStatusActive;
 }
 
 /** ExpiryTone is how an expiry date is coloured: past, within 30 days, or neither. */
@@ -107,19 +88,19 @@ export function nssKeyFile(id: string, secret: string): string {
 
 /** isAccountCollision reports whether a collision is between accounts rather than groups. */
 export function isAccountCollision(kind: string): boolean {
-	return kind === NSSCollisionKind.UID || kind === NSSCollisionKind.UserName;
+	return kind === NSSCollisionKindUID || kind === NSSCollisionKindUserName;
 }
 
 /** collisionNoun names the kind of value two entries contend for: "uid", "group name". */
 export function collisionNoun(kind: string): string {
 	switch (kind) {
-		case NSSCollisionKind.UID:
+		case NSSCollisionKindUID:
 			return 'uid';
-		case NSSCollisionKind.GID:
+		case NSSCollisionKindGID:
 			return 'gid';
-		case NSSCollisionKind.UserName:
+		case NSSCollisionKindUserName:
 			return 'account name';
-		case NSSCollisionKind.GroupName:
+		case NSSCollisionKindGroupName:
 			return 'group name';
 		default:
 			return kind;
@@ -167,18 +148,62 @@ export function formatPercent(share: number | null): string {
 }
 
 /** RotationGroups is the report's rows split by bucket. */
-export interface RotationGroups {
-	not_switched: NSSRotationReportRow[];
-	switched: NSSRotationReportRow[];
-	gone: NSSRotationReportRow[];
-}
+export type RotationGroups = Record<NSSRotationBucket, NSSRotationReportRow[]>;
 
 /** groupRotationRows splits the rows by bucket, keeping their order; an unknown bucket is dropped. */
 export function groupRotationRows(rows: NSSRotationReportRow[]): RotationGroups {
-	const groups: RotationGroups = { not_switched: [], switched: [], gone: [] };
+	const groups: RotationGroups = {
+		[NSSRotationBucketNotSwitched]: [],
+		[NSSRotationBucketSwitched]: [],
+		[NSSRotationBucketGone]: []
+	};
 	for (const row of rows) {
-		const bucket = groups[row.bucket as RotationBucketName];
+		// The type says one of the three, but a newer server may send a
+		// fourth; it is dropped rather than thrown on.
+		const bucket: NSSRotationReportRow[] | undefined = groups[row.bucket];
 		bucket?.push(row);
 	}
 	return groups;
+}
+
+/** localDay is a moment as a date field's YYYY-MM-DD, in the reader's zone. */
+export function localDay(at: Date): string {
+	const pad = (n: number) => String(n).padStart(2, '0');
+	return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
+}
+
+/**
+ * defaultExpiryDay is the day the create form proposes: `now` plus the
+ * server's default lifetime, as a date field value. Null when that day is
+ * not after today, since the form only offers tomorrow onwards and an empty
+ * field already takes the server's default.
+ */
+export function defaultExpiryDay(now: Date, lifetimeSeconds: number): string | null {
+	if (!Number.isFinite(lifetimeSeconds) || lifetimeSeconds <= 0) return null;
+	const day = localDay(new Date(now.getTime() + lifetimeSeconds * 1000));
+	return day > localDay(now) ? day : null;
+}
+
+/** graceEnd is when a secret rotated out at `now` stops being accepted. */
+export function graceEnd(now: Date, graceSeconds: number): Date {
+	return new Date(now.getTime() + Math.max(0, graceSeconds) * 1000);
+}
+
+/** KeyAlert is one usage alert the server reports for a key: which, and when it last fired. */
+export interface KeyAlert {
+	kind: 'misses' | 'sources';
+	at: string;
+}
+
+/**
+ * keyAlerts lists the usage alerts that fired for a key in the server's
+ * lookback (the last 7 days), newest first. Empty when neither did.
+ */
+export function keyAlerts(
+	key: Pick<NSSKey, 'miss_rate_alert_at' | 'key_source_alert_at'>
+): KeyAlert[] {
+	const alerts: KeyAlert[] = [];
+	if (key.miss_rate_alert_at) alerts.push({ kind: 'misses', at: key.miss_rate_alert_at });
+	if (key.key_source_alert_at) alerts.push({ kind: 'sources', at: key.key_source_alert_at });
+	return alerts.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
 }

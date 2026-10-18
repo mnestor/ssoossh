@@ -1,6 +1,10 @@
 package webtypes
 
-import "time"
+import (
+	"time"
+
+	"github.com/mnestor/ssoossh/server/model"
+)
 
 // The NSS directory's session-authenticated shapes: the fleet API key
 // administration under /api/nss/keys, the allowed shells, and a person's
@@ -41,7 +45,7 @@ type NSSKeyResponse struct {
 	// none.
 	GroupName string `json:"group_name" validate:"required"`
 	// Status is derived from the revocation and expiry.
-	Status string `json:"status" enums:"active,expired,revoked" validate:"required"`
+	Status model.NSSKeyStatus `json:"status" validate:"required"`
 	// CurrentGeneration is 1 at creation and grows by one per rotation.
 	CurrentGeneration int `json:"current_generation" validate:"required"`
 	// CreatedBy is the creator's users.id, and CreatedByUsername their
@@ -66,7 +70,33 @@ type NSSKeyResponse struct {
 	// Permissions is what the caller may do with this key, decided by the
 	// server so the UI never reimplements the role matrix. A revoked key
 	// carries view alone.
-	Permissions []string `json:"permissions" enums:"view,rotate,revoke,edit,assign_group" validate:"required"`
+	Permissions []model.NSSKeyPermission `json:"permissions" validate:"required"`
+	// LastUsedAt is the last lookup any host made with the key, from the
+	// retained usage, so up to a minute behind; absent for a key no host
+	// has used.
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+	// MissRateAlertAt is when the miss rate alert (nss.miss_alert_rate)
+	// last fired for the key: many lookups for names the directory does
+	// not hold. Absent unless it fired in the last 7 days.
+	MissRateAlertAt *time.Time `json:"miss_rate_alert_at,omitempty"`
+	// KeySourceAlertAt is when the key source alert
+	// (nss.key_source_alert) last fired for the key: more source
+	// addresses in one day than the limit. Absent unless it fired in the
+	// last 7 days.
+	KeySourceAlertAt *time.Time `json:"key_source_alert_at,omitempty"`
+}
+
+// NSSKeySettingsResponse is GET /api/nss/key-settings: the parts of the
+// nss configuration the key pages state before an operator acts, so the
+// create form can propose an expiry and the rotate dialog can name the day
+// the previous secret stops working.
+type NSSKeySettingsResponse struct {
+	// DefaultLifetimeSeconds is nss.key_default_lifetime: a new key's
+	// expiry when none is given.
+	DefaultLifetimeSeconds int `json:"default_lifetime_seconds" validate:"required"`
+	// RotationGraceSeconds is nss.key_rotation_grace: how long the
+	// previous secret stays accepted after a rotation.
+	RotationGraceSeconds int `json:"rotation_grace_seconds" validate:"required"`
 }
 
 // NSSKeyListResponse is GET /api/nss/keys: every key the caller may view,
@@ -138,7 +168,7 @@ type NSSRotationReportRowResponse struct {
 	LastGeneration int       `json:"last_generation" validate:"required"`
 	// Bucket is switched (last presented the current secret), not_switched
 	// (last presented an older one) or gone (not seen since the rotation).
-	Bucket string `json:"bucket" enums:"switched,not_switched,gone" validate:"required"`
+	Bucket model.NSSRotationBucket `json:"bucket" validate:"required"`
 }
 
 // NSSRotationReportResponse is GET /api/nss/keys/{id}/rotation-report:

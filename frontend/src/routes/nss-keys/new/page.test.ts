@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { session } from '#lib/session.svelte.js';
-import { envelope, keyFixture, routeFetch, userFixture } from '#lib/testing/nss.js';
+import { envelope, keyFixture, routeFetch, settle, userFixture } from '#lib/testing/nss.js';
 
 // Test methodology: fill the form and route the create call to a fixture
 // answer, then drive the one-time secret panel. What is pinned: who may
@@ -104,6 +104,66 @@ describe('New NSS key', () => {
 
 		const body = calls.find((call) => call.method === 'POST')?.body as { expires_at: string };
 		expect(new Date(body.expires_at).getTime()).toBe(new Date('2027-03-01T23:59:59').getTime());
+	});
+
+	describe('proposed expiry', () => {
+		const now = new Date('2026-10-18T12:00:00Z');
+
+		beforeEach(() => {
+			vi.useFakeTimers({ now, toFake: ['Date'] });
+		});
+
+		afterEach(() => {
+			vi.useRealTimers();
+		});
+
+		/** withSettings routes the form's reads, the key settings among them. */
+		function withSettings(settings: Response) {
+			return routeFetch({
+				'GET /api/nss/keys': envelope({ keys: [], can_create: true }),
+				'GET /api/nss/key-settings': settings,
+				'POST /api/nss/keys': envelope({ key: keyFixture(), secret: SECRET })
+			});
+		}
+
+		const cases: { name: string; settings: Response; want: string }[] = [
+			{
+				name: 'the server keeps a one year default',
+				settings: envelope({ default_lifetime_seconds: 31536000, rotation_grace_seconds: 2592000 }),
+				want: '2027-10-18'
+			},
+			{
+				name: 'the server keeps a default shorter than a day',
+				settings: envelope({ default_lifetime_seconds: 3600, rotation_grace_seconds: 0 }),
+				want: ''
+			},
+			{
+				name: 'the settings fail to load',
+				settings: envelope(null, 500, 'database unavailable'),
+				want: ''
+			}
+		];
+		for (const { name, settings, want } of cases) {
+			it(`should start the expiry at ${want || 'nothing'} when ${name}`, async () => {
+				withSettings(settings);
+				render(Page);
+				await settle();
+
+				expect(screen.getByTestId('nss-key-expires')).toHaveValue(want);
+			});
+		}
+
+		it('should send the end of the proposed day when the expiry is left as proposed', async () => {
+			const calls = withSettings(
+				envelope({ default_lifetime_seconds: 31536000, rotation_grace_seconds: 2592000 })
+			);
+			render(Page);
+			await settle();
+			await createNamed();
+
+			const body = calls.find((call) => call.method === 'POST')?.body as { expires_at: string };
+			expect(new Date(body.expires_at).getTime()).toBe(new Date('2027-10-18T23:59:59').getTime());
+		});
 	});
 
 	it('should show the server reason when the create is refused', async () => {

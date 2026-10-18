@@ -35,7 +35,7 @@ type nssTable struct {
 func accountTable() nssTable {
 	return nssTable{
 		table: "posix_users", numberColumn: "uid",
-		numberKind: model.NSSCollisionUID, nameKind: model.NSSCollisionUserName,
+		numberKind: model.NSSCollisionKindUID, nameKind: model.NSSCollisionKindUserName,
 		label: "account",
 	}
 }
@@ -44,7 +44,7 @@ func accountTable() nssTable {
 func groupTable() nssTable {
 	return nssTable{
 		table: "posix_groups", numberColumn: "gid",
-		numberKind: model.NSSCollisionGID, nameKind: model.NSSCollisionGroupName,
+		numberKind: model.NSSCollisionKindGID, nameKind: model.NSSCollisionKindGroupName,
 		label: "group",
 	}
 }
@@ -407,7 +407,7 @@ func (s *NSSDirectoryService) updateAccount(ctx context.Context, tx *gorm.DB, id
 		if holder != nil {
 			rowID := row.ID
 			blocked = append(blocked, model.NSSCollision{
-				Kind: model.NSSCollisionUserName, HolderID: holder.ID, OtherDN: a.DN, Value: a.Name,
+				Kind: model.NSSCollisionKindUserName, HolderID: holder.ID, OtherDN: a.DN, Value: a.Name,
 				OtherID: &rowID, OtherName: a.Name, OtherNumber: a.UID, FirstSeenAt: now, LastSeenAt: now,
 			})
 		} else {
@@ -545,7 +545,7 @@ func (s *NSSDirectoryService) updateGroup(ctx context.Context, tx *gorm.DB, id s
 		if holder != nil {
 			rowID := row.ID
 			blocked = append(blocked, model.NSSCollision{
-				Kind: model.NSSCollisionGroupName, HolderID: holder.ID, OtherDN: g.DN, Value: g.Name,
+				Kind: model.NSSCollisionKindGroupName, HolderID: holder.ID, OtherDN: g.DN, Value: g.Name,
 				OtherID: &rowID, OtherName: g.Name, OtherNumber: g.GID, FirstSeenAt: now, LastSeenAt: now,
 			})
 		} else {

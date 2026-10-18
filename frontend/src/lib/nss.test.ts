@@ -1,17 +1,20 @@
 import { describe, expect, it } from 'vitest';
 
+import * as enums from '#lib/api/generated/enums.js';
 import type { NSSRotationReportRow } from '#lib/api/types.js';
 import {
-	NSSCollisionKind,
-	NSSKeyPermission,
-	RotationBucket,
+	KeyRotating,
 	can,
 	collisionLabel,
+	defaultExpiryDay,
 	expiryTone,
 	formatPercent,
+	graceEnd,
 	groupRotationRows,
 	isAccountCollision,
+	keyAlerts,
 	keyStatus,
+	localDay,
 	missRate,
 	needsKeyCheck,
 	nssKeyFile,
@@ -21,24 +24,35 @@ import {
 const now = new Date('2026-10-18T12:00:00Z');
 
 describe('wire values', () => {
-	// Literal on purpose: these are the server's spellings, which tygo does
-	// not generate, so this is where a rename on either side shows up.
-	it('should spell the key permissions as the server does', () => {
-		expect(Object.values(NSSKeyPermission)).toEqual([
-			'view',
-			'rotate',
-			'revoke',
-			'edit',
-			'assign_group'
-		]);
+	// Literal on purpose: these are the server's spellings, so a rename on
+	// either side shows up here as well as in svelte-check.
+	const cases: { name: string; got: string; want: string }[] = [
+		{ name: 'key status active', got: enums.NSSKeyStatusActive, want: 'active' },
+		{ name: 'key status expired', got: enums.NSSKeyStatusExpired, want: 'expired' },
+		{ name: 'key status revoked', got: enums.NSSKeyStatusRevoked, want: 'revoked' },
+		{ name: 'permission view', got: enums.NSSKeyPermissionView, want: 'view' },
+		{ name: 'permission rotate', got: enums.NSSKeyPermissionRotate, want: 'rotate' },
+		{ name: 'permission revoke', got: enums.NSSKeyPermissionRevoke, want: 'revoke' },
+		{ name: 'permission edit', got: enums.NSSKeyPermissionEdit, want: 'edit' },
+		{
+			name: 'permission assign_group',
+			got: enums.NSSKeyPermissionAssignGroup,
+			want: 'assign_group'
+		},
+		{ name: 'bucket switched', got: enums.NSSRotationBucketSwitched, want: 'switched' },
+		{ name: 'bucket not_switched', got: enums.NSSRotationBucketNotSwitched, want: 'not_switched' },
+		{ name: 'bucket gone', got: enums.NSSRotationBucketGone, want: 'gone' },
+		{ name: 'collision uid', got: enums.NSSCollisionKindUID, want: 'uid' },
+		{ name: 'collision user_name', got: enums.NSSCollisionKindUserName, want: 'user_name' },
+		{ name: 'collision gid', got: enums.NSSCollisionKindGID, want: 'gid' },
+		{ name: 'collision group_name', got: enums.NSSCollisionKindGroupName, want: 'group_name' }
+	];
+	it.each(cases)('should spell the $name as the server does', ({ got, want }) => {
+		expect(got).toBe(want);
 	});
 
-	it('should spell the rotation buckets as the server does', () => {
-		expect(Object.values(RotationBucket)).toEqual(['switched', 'not_switched', 'gone']);
-	});
-
-	it('should spell the collision kinds as the server does', () => {
-		expect(Object.values(NSSCollisionKind)).toEqual(['uid', 'user_name', 'gid', 'group_name']);
+	it('should keep rotating apart from every server status', () => {
+		expect(KeyRotating).toBe('rotating');
 	});
 });
 
@@ -74,22 +88,25 @@ describe('keyStatus', () => {
 
 	for (const { name, status, previous, want } of cases) {
 		it(`should read ${want} when the key is ${name}`, () => {
-			expect(keyStatus({ status, previous_expires_at: previous }, now)).toBe(want);
+			// Cast: the cases include a status no server sends today.
+			expect(
+				keyStatus({ status: status as enums.NSSKeyStatus, previous_expires_at: previous }, now)
+			).toBe(want);
 		});
 	}
 });
 
 describe('can', () => {
 	it('should allow what the permissions list names', () => {
-		expect(can({ permissions: ['view', 'rotate'] }, NSSKeyPermission.Rotate)).toBe(true);
+		expect(can({ permissions: ['view', 'rotate'] }, enums.NSSKeyPermissionRotate)).toBe(true);
 	});
 
 	it('should refuse what the permissions list leaves out', () => {
-		expect(can({ permissions: ['view'] }, NSSKeyPermission.Revoke)).toBe(false);
+		expect(can({ permissions: ['view'] }, enums.NSSKeyPermissionRevoke)).toBe(false);
 	});
 
 	it('should refuse everything when the list is empty', () => {
-		expect(can({ permissions: [] }, NSSKeyPermission.View)).toBe(false);
+		expect(can({ permissions: [] }, enums.NSSKeyPermissionView)).toBe(false);
 	});
 });
 
@@ -223,7 +240,8 @@ describe('groupRotationRows', () => {
 	function row(source_ip: string, bucket: string): NSSRotationReportRow {
 		return {
 			source_ip,
-			bucket,
+			// Cast: one case sends a bucket no server sends today.
+			bucket: bucket as enums.NSSRotationBucket,
 			first_seen: '2026-10-01T00:00:00Z',
 			last_seen: '2026-10-18T00:00:00Z',
 			lookups: 1,
@@ -253,4 +271,79 @@ describe('groupRotationRows', () => {
 		const groups = groupRotationRows([row('10.0.0.9', 'lost')]);
 		expect(groups.not_switched.length + groups.switched.length + groups.gone.length).toBe(0);
 	});
+});
+
+describe('localDay', () => {
+	it('should pad the month and day when they are single digits', () => {
+		expect(localDay(new Date(2027, 2, 5, 15, 0))).toBe('2027-03-05');
+	});
+});
+
+describe('defaultExpiryDay', () => {
+	const cases: { name: string; seconds: number; want: string | null }[] = [
+		{
+			name: 'the lifetime is a year',
+			seconds: 365 * 86400,
+			want: localDay(new Date(now.getTime() + 365 * 86400 * 1000))
+		},
+		{
+			name: 'the lifetime is a week',
+			seconds: 7 * 86400,
+			want: localDay(new Date(now.getTime() + 7 * 86400 * 1000))
+		},
+		{ name: 'the lifetime ends today', seconds: 60, want: null },
+		{ name: 'the lifetime is zero', seconds: 0, want: null },
+		{ name: 'the lifetime is not a number', seconds: Number.NaN, want: null }
+	];
+	for (const { name, seconds, want } of cases) {
+		it(`should propose ${want ?? 'nothing'} when ${name}`, () => {
+			expect(defaultExpiryDay(now, seconds)).toBe(want);
+		});
+	}
+});
+
+describe('graceEnd', () => {
+	const cases: { name: string; seconds: number; want: string }[] = [
+		{ name: 'the grace is 30 days', seconds: 30 * 86400, want: '2026-11-17T12:00:00.000Z' },
+		{ name: 'the grace is zero', seconds: 0, want: '2026-10-18T12:00:00.000Z' },
+		{ name: 'the grace is negative', seconds: -60, want: '2026-10-18T12:00:00.000Z' }
+	];
+	for (const { name, seconds, want } of cases) {
+		it(`should end at ${want} when ${name}`, () => {
+			expect(graceEnd(now, seconds).toISOString()).toBe(want);
+		});
+	}
+});
+
+describe('keyAlerts', () => {
+	const cases: {
+		name: string;
+		key: { miss_rate_alert_at?: string; key_source_alert_at?: string };
+		want: string[];
+	}[] = [
+		{ name: 'neither alert fired', key: {}, want: [] },
+		{
+			name: 'only the miss rate alert fired',
+			key: { miss_rate_alert_at: '2026-10-17T09:00:00Z' },
+			want: ['misses']
+		},
+		{
+			name: 'only the key source alert fired',
+			key: { key_source_alert_at: '2026-10-17T09:00:00Z' },
+			want: ['sources']
+		},
+		{
+			name: 'both fired, the source alert later',
+			key: {
+				miss_rate_alert_at: '2026-10-15T09:00:00Z',
+				key_source_alert_at: '2026-10-17T09:00:00Z'
+			},
+			want: ['sources', 'misses']
+		}
+	];
+	for (const { name, key, want } of cases) {
+		it(`should list ${want.join(' then ') || 'nothing'} when ${name}`, () => {
+			expect(keyAlerts(key).map((alert) => alert.kind)).toEqual(want);
+		});
+	}
 });

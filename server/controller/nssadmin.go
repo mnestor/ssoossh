@@ -250,7 +250,7 @@ func (a *nssAdminController) collisionsHandler(g *gin.Context) {
 	resp := webtypes.NSSCollisionsResponse{Collisions: make([]webtypes.NSSCollisionResponse, 0, len(reports))}
 	for _, r := range reports {
 		resp.Collisions = append(resp.Collisions, webtypes.NSSCollisionResponse{
-			Kind:        string(r.Kind),
+			Kind:        r.Kind,
 			Value:       r.Value,
 			Holder:      nssCollisionEntryResponse(r.Holder),
 			Other:       nssCollisionEntryResponse(r.Other),

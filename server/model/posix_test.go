@@ -341,7 +341,7 @@ func TestNSSCollision_ShouldRoundTripEveryColumnWhenStoredAndReadBack(t *testing
 		{
 			name: "should keep every field when the other entry is stored too",
 			row: NSSCollision{
-				Kind: NSSCollisionUserName, HolderID: "pu-1", OtherDN: "uid=alice,ou=people,dc=example",
+				Kind: NSSCollisionKindUserName, HolderID: "pu-1", OtherDN: "uid=alice,ou=people,dc=example",
 				Value: "alice", OtherID: ptr("pu-2"), OtherName: "alice", OtherNumber: math.MaxUint32,
 				FirstSeenAt: nssTestTime(), LastSeenAt: nssTestTime().Add(time.Hour),
 			},
@@ -349,7 +349,7 @@ func TestNSSCollision_ShouldRoundTripEveryColumnWhenStoredAndReadBack(t *testing
 		{
 			name: "should keep the other row nil when the other entry was refused",
 			row: NSSCollision{
-				Kind: NSSCollisionGID, HolderID: "pg-1", OtherDN: "cn=dup,dc=example", Value: "20000",
+				Kind: NSSCollisionKindGID, HolderID: "pg-1", OtherDN: "cn=dup,dc=example", Value: "20000",
 				OtherName: "dup", OtherNumber: 20000, FirstSeenAt: nssTestTime(), LastSeenAt: nssTestTime(),
 			},
 		},
@@ -385,10 +385,10 @@ func TestNSSCollisionKind_ShouldReportTheGroupTableWhenTheKindIsAboutGroups(t *t
 		kind NSSCollisionKind
 		want bool
 	}{
-		{name: "should report accounts when the kind is uid", kind: NSSCollisionUID, want: false},
-		{name: "should report accounts when the kind is user_name", kind: NSSCollisionUserName, want: false},
-		{name: "should report groups when the kind is gid", kind: NSSCollisionGID, want: true},
-		{name: "should report groups when the kind is group_name", kind: NSSCollisionGroupName, want: true},
+		{name: "should report accounts when the kind is uid", kind: NSSCollisionKindUID, want: false},
+		{name: "should report accounts when the kind is user_name", kind: NSSCollisionKindUserName, want: false},
+		{name: "should report groups when the kind is gid", kind: NSSCollisionKindGID, want: true},
+		{name: "should report groups when the kind is group_name", kind: NSSCollisionKindGroupName, want: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

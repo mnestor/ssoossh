@@ -8,6 +8,7 @@ import {
 	createNSSKey,
 	getNSSCollisions,
 	getNSSKey,
+	getNSSKeySettings,
 	getNSSKeyUsage,
 	getNSSPendingIDChanges,
 	getNSSRotationReport,
@@ -134,6 +135,12 @@ describe('NSS endpoints', () => {
 	// Method and path per wrapper, pinned against the routes registered in
 	// server/controller/nss_keys.go, nssadmin.go and users.go.
 	const cases: { name: string; call: () => Promise<unknown>; method: string; url: string }[] = [
+		{
+			name: 'key settings',
+			call: () => getNSSKeySettings(),
+			method: 'GET',
+			url: '/api/nss/key-settings'
+		},
 		{ name: 'list keys', call: () => listNSSKeys(), method: 'GET', url: '/api/nss/keys' },
 		{
 			name: 'one key',

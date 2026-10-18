@@ -57,6 +57,7 @@ export type {
 	NSSKeyListResponse,
 	NSSKeyResponse as NSSKey,
 	NSSKeySecretResponse as NSSKeySecret,
+	NSSKeySettingsResponse as NSSKeySettings,
 	NSSKeyUsageResponse,
 	NSSKeyUsageRowResponse as NSSKeyUsageRow,
 	NSSPendingGroupIDChange,

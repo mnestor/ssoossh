@@ -2,7 +2,9 @@ import { render, screen, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { NSSKeyPermission } from '#lib/api/generated/enums.js';
 import type { NSSKey } from '#lib/api/types.js';
+import { formatDateTime } from '#lib/format.js';
 import { session } from '#lib/session.svelte.js';
 import {
 	envelope,
@@ -40,7 +42,7 @@ import { fakePage } from '#lib/testing/page.svelte.js';
 import Page from './+page.svelte';
 
 const now = new Date('2026-10-18T12:00:00Z');
-const ALL = ['view', 'rotate', 'revoke', 'edit', 'assign_group'];
+const ALL: NSSKeyPermission[] = ['view', 'rotate', 'revoke', 'edit', 'assign_group'];
 const SECRET = 'bmV3LXNlY3JldA';
 
 beforeEach(() => {
@@ -260,6 +262,34 @@ describe('NSS key detail', () => {
 			expect(screen.getByTestId('nss-key-rotate-replaces')).toBeInTheDocument();
 		});
 
+		const graceCases: { name: string; settings: Route | Response; want: string }[] = [
+			{
+				name: 'the server keeps a 30 day grace',
+				settings: envelope({ default_lifetime_seconds: 31536000, rotation_grace_seconds: 2592000 }),
+				want: `still accepted until ${formatDateTime('2026-11-17T12:00:00.000Z')} (1mo from now)`
+			},
+			{
+				name: 'the server keeps no grace',
+				settings: envelope({ default_lifetime_seconds: 31536000, rotation_grace_seconds: 0 }),
+				want: 'The current secret stops working at once'
+			},
+			{
+				name: 'the settings fail to load',
+				settings: envelope(null, 500, 'database unavailable'),
+				want: 'still accepted for the rotation grace period'
+			}
+		];
+		for (const { name, settings, want } of graceCases) {
+			it(`should say when the current secret stops before confirming when ${name}`, async () => {
+				serve(keyFixture({ permissions: ALL }), { 'GET /api/nss/key-settings': settings });
+				await loaded();
+				await settle();
+				await userEvent.click(screen.getByTestId('nss-key-rotate'));
+
+				expect(screen.getByTestId('nss-key-rotate-grace')).toHaveTextContent(want);
+			});
+		}
+
 		it('should show the server reason in the dialog when the rotation is refused', async () => {
 			serve(keyFixture({ permissions: ALL }), {
 				'POST /api/nss/keys/nss_k7m4qp2x/rotate': envelope(
@@ -273,6 +303,58 @@ describe('NSS key detail', () => {
 			await userEvent.click(screen.getByTestId('nss-key-rotate-confirm'));
 
 			expect(await screen.findByText('the key was rotated meanwhile')).toBeInTheDocument();
+		});
+	});
+
+	describe('usage alerts', () => {
+		const cases: { name: string; key: NSSKey; shown: string[] }[] = [
+			{
+				name: 'the miss rate alert fired this week',
+				key: keyFixture({ miss_rate_alert_at: '2026-10-17T09:30:00Z' }),
+				shown: ['nss-key-alert-misses']
+			},
+			{
+				name: 'the key source alert fired this week',
+				key: keyFixture({ key_source_alert_at: '2026-10-16T00:05:00Z' }),
+				shown: ['nss-key-alert-sources']
+			},
+			{
+				name: 'both fired this week',
+				key: keyFixture({
+					miss_rate_alert_at: '2026-10-17T09:30:00Z',
+					key_source_alert_at: '2026-10-16T00:05:00Z'
+				}),
+				shown: ['nss-key-alert-misses', 'nss-key-alert-sources']
+			}
+		];
+		for (const { name, key, shown } of cases) {
+			it(`should name each alert when ${name}`, async () => {
+				serve(key);
+				await loaded();
+
+				const notice = screen.getByTestId('nss-key-alerts');
+				expect(
+					['nss-key-alert-misses', 'nss-key-alert-sources'].filter(
+						(id) => within(notice).queryByTestId(id) !== null
+					)
+				).toEqual(shown);
+			});
+		}
+
+		it('should say when the miss rate alert fired', async () => {
+			serve(keyFixture({ miss_rate_alert_at: '2026-10-17T09:30:00Z' }));
+			await loaded();
+
+			expect(screen.getByTestId('nss-key-alert-misses')).toHaveTextContent(
+				`Many unknown names were looked up with this key at ${formatDateTime('2026-10-17T09:30:00Z')}.`
+			);
+		});
+
+		it('should show no notice when neither alert fired in the last 7 days', async () => {
+			serve(keyFixture());
+			await loaded();
+
+			expect(screen.queryByTestId('nss-key-alerts')).not.toBeInTheDocument();
 		});
 	});
 

@@ -3,6 +3,11 @@
 
 	import { ApiError } from '#lib/api/client.js';
 	import { listNSSKeys } from '#lib/api/endpoints.js';
+	import {
+		NSSKeyStatusActive,
+		NSSKeyStatusExpired,
+		NSSKeyStatusRevoked
+	} from '#lib/api/generated/enums.js';
 	import type { NSSKey, NSSKeyListResponse } from '#lib/api/types.js';
 	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
 	import Alert from '#lib/components/Alert.svelte';
@@ -15,8 +20,8 @@
 	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import PageShell from '#lib/components/PageShell.svelte';
-	import { formatDateTime, remainingLabel } from '#lib/format.js';
-	import { expiryTone, keyStatus, type KeyDisplayStatus } from '#lib/nss.js';
+	import { formatDateTime, relativeTime, remainingLabel } from '#lib/format.js';
+	import { expiryTone, KeyRotating, keyStatus, type KeyDisplayStatus } from '#lib/nss.js';
 
 	// Every fleet key the caller may see. The server decides which: all of
 	// them for the fleet key admin role and the admin area's roles, and for
@@ -50,10 +55,10 @@
 
 	const statusOptions = [
 		{ value: '', label: 'All', icon: 'filter-off' },
-		{ value: 'active', label: 'Active', icon: 'server-2' },
-		{ value: 'rotating', label: 'Rotating', icon: 'rotate' },
-		{ value: 'expired', label: 'Expired', icon: 'clock-cancel' },
-		{ value: 'revoked', label: 'Revoked', icon: 'server-off' }
+		{ value: NSSKeyStatusActive, label: 'Active', icon: 'server-2' },
+		{ value: KeyRotating, label: 'Rotating', icon: 'rotate' },
+		{ value: NSSKeyStatusExpired, label: 'Expired', icon: 'clock-cancel' },
+		{ value: NSSKeyStatusRevoked, label: 'Revoked', icon: 'server-off' }
 	];
 
 	const keys = $derived(list?.keys ?? []);
@@ -119,7 +124,7 @@
 
 	/** toneClass colours an expiry by how close it is; a revoked key's expiry no longer matters. */
 	function toneClass(key: NSSKey, status: KeyDisplayStatus): string {
-		if (status === 'revoked') return 'text-ink-muted';
+		if (status === NSSKeyStatusRevoked) return 'text-ink-muted';
 		const tone = expiryTone(key.expires_at, now);
 		return tone === 'past' ? 'text-danger' : tone === 'soon' ? 'text-trimmed' : 'text-ink';
 	}
@@ -257,6 +262,7 @@
 										{#if sort === 'expiry'}<Icon name="chevron-down" size="xs" />{/if}
 									</button>
 								</th>
+								<th scope="col" class="max-sm:hidden">Last used</th>
 								<th scope="col" class="max-sm:hidden">Status</th>
 							</tr>
 						</thead>
@@ -295,7 +301,7 @@
 											class="inline-flex items-center gap-1 {toneClass(key, status)}"
 											data-testid="nss-key-expiry"
 										>
-											{#if status === 'revoked'}
+											{#if status === NSSKeyStatusRevoked}
 												<!-- A revoked key's expiry no longer means anything. -->
 												no longer used
 											{:else}
@@ -306,6 +312,14 @@
 											{/if}
 										</span>
 										<div class="text-xs text-ink-muted">{formatDateTime(key.expires_at)}</div>
+									</td>
+									<td class="whitespace-nowrap max-sm:hidden" data-testid="nss-key-last-used">
+										{#if key.last_used_at}
+											<span class="text-ink">{relativeTime(key.last_used_at, now)}</span>
+											<div class="text-xs text-ink-muted">{formatDateTime(key.last_used_at)}</div>
+										{:else}
+											<span class="text-ink-muted">Never</span>
+										{/if}
 									</td>
 									<td class="max-sm:hidden"><KeyStatusBadge {status} testid="nss-key-status" /></td>
 								</tr>

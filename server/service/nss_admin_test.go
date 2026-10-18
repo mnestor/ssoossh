@@ -354,7 +354,7 @@ func TestNSSCollisions_ShouldDescribeBothSidesWhenACollisionIsListed(t *testing.
 		t.Fatalf("Collisions() = %d reports, %v; want 1", len(reports), err)
 	}
 	r := reports[0]
-	if r.Kind != model.NSSCollisionUID || r.Value != "3000" {
+	if r.Kind != model.NSSCollisionKindUID || r.Value != "3000" {
 		t.Errorf("report = %+v, want the uid", r)
 	}
 	if !r.Holder.Stored || r.Holder.DeletedAt == nil || r.Holder.Name != "ada" {

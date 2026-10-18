@@ -67,10 +67,10 @@ func TestNSSKeyReport_ShouldBucketEachAddressWhenTheKeyWasRotated(t *testing.T) 
 		t.Errorf("report = %+v, want 29 days left at generation 2", report)
 	}
 	want := []NSSRotationReportRow{
-		{SourceIP: "192.0.2.2", FirstSeen: rotatedAt.Add(-48 * time.Hour), LastSeen: rotatedAt.Add(3 * time.Hour), Lookups: 7, LastGeneration: 1, Bucket: NSSRotationNotSwitched},
-		{SourceIP: "2001:db8::4", FirstSeen: rotatedAt.Add(4 * time.Hour), LastSeen: rotatedAt.Add(5 * time.Hour), Lookups: 1, LastGeneration: 2, Bucket: NSSRotationSwitched},
-		{SourceIP: "192.0.2.1", FirstSeen: rotatedAt.Add(-72 * time.Hour), LastSeen: rotatedAt.Add(2 * time.Hour), Lookups: 15, LastGeneration: 2, Bucket: NSSRotationSwitched},
-		{SourceIP: "192.0.2.3", FirstSeen: rotatedAt.Add(-50 * time.Hour), LastSeen: rotatedAt.Add(-48 * time.Hour), Lookups: 3, LastGeneration: 1, Bucket: NSSRotationGone},
+		{SourceIP: "192.0.2.2", FirstSeen: rotatedAt.Add(-48 * time.Hour), LastSeen: rotatedAt.Add(3 * time.Hour), Lookups: 7, LastGeneration: 1, Bucket: model.NSSRotationBucketNotSwitched},
+		{SourceIP: "2001:db8::4", FirstSeen: rotatedAt.Add(4 * time.Hour), LastSeen: rotatedAt.Add(5 * time.Hour), Lookups: 1, LastGeneration: 2, Bucket: model.NSSRotationBucketSwitched},
+		{SourceIP: "192.0.2.1", FirstSeen: rotatedAt.Add(-72 * time.Hour), LastSeen: rotatedAt.Add(2 * time.Hour), Lookups: 15, LastGeneration: 2, Bucket: model.NSSRotationBucketSwitched},
+		{SourceIP: "192.0.2.3", FirstSeen: rotatedAt.Add(-50 * time.Hour), LastSeen: rotatedAt.Add(-48 * time.Hour), Lookups: 3, LastGeneration: 1, Bucket: model.NSSRotationBucketGone},
 	}
 	for i := range report.Rows {
 		report.Rows[i].FirstSeen = report.Rows[i].FirstSeen.UTC()

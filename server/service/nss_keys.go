@@ -37,35 +37,6 @@ const (
 	maxNSSKeyGroupLength       = 512
 )
 
-// The status a key is in, derived from its revocation and expiry rather
-// than stored.
-const (
-	// NSSKeyStatusActive is a key hosts may use.
-	NSSKeyStatusActive = "active"
-	// NSSKeyStatusExpired is a key past its expires_at.
-	NSSKeyStatusExpired = "expired"
-	// NSSKeyStatusRevoked is a key revoked by someone. Terminal.
-	NSSKeyStatusRevoked = "revoked"
-)
-
-// What a caller may do with one key, sent with every key so the web UI
-// shows exactly the affordances the server will honour.
-const (
-	// NSSKeyPermissionView reads the key, its usage and its rotation
-	// report.
-	NSSKeyPermissionView = "view"
-	// NSSKeyPermissionRotate issues a new secret, and ends the previous
-	// one early.
-	NSSKeyPermissionRotate = "rotate"
-	// NSSKeyPermissionRevoke revokes the key.
-	NSSKeyPermissionRevoke = "revoke"
-	// NSSKeyPermissionEdit changes the description, expiry and
-	// notification address.
-	NSSKeyPermissionEdit = "edit"
-	// NSSKeyPermissionAssignGroup changes the group that manages the key.
-	NSSKeyPermissionAssignGroup = "assign_group"
-)
-
 // NSSKeyService administers the fleet API keys hosts present to the NSS
 // lookups, verifies them on every lookup, and reports and mails on their
 // use. See docs/proposals/nss-directory/1-server-api.md, "Fleet key
@@ -159,30 +130,44 @@ func newNSSKeySecret() (string, error) {
 }
 
 // nssKeyStatus derives a key's status at now.
-func nssKeyStatus(key *model.NSSKey, now time.Time) string {
+func nssKeyStatus(key *model.NSSKey, now time.Time) model.NSSKeyStatus {
 	switch {
 	case key.RevokedAt != nil:
-		return NSSKeyStatusRevoked
+		return model.NSSKeyStatusRevoked
 	case !key.ExpiresAt.After(now):
-		return NSSKeyStatusExpired
+		return model.NSSKeyStatusExpired
 	default:
-		return NSSKeyStatusActive
+		return model.NSSKeyStatusActive
 	}
 }
 
 // NSSKeyView is one key as a caller sees it: the row, who created and
-// revoked it by username, its derived status, and what this caller may do
-// with it.
+// revoked it by username, its derived status, what this caller may do with
+// it, and how hosts have been using it.
 type NSSKeyView struct {
 	Key               model.NSSKey
 	CreatedByUsername string
 	RevokedByUsername string
-	Status            string
-	Permissions       []string
+	Status            model.NSSKeyStatus
+	Permissions       []model.NSSKeyPermission
+
+	// LastUsedAt is the latest last_seen in the key's retained usage, nil
+	// for a key no host has used (or whose usage has all been pruned).
+	LastUsedAt *time.Time
+	// MissRateAlertAt and KeySourceAlertAt are when the miss rate and the
+	// key source alerts last fired for the key, nil unless that was
+	// within NSSKeyAlertLookback.
+	MissRateAlertAt  *time.Time
+	KeySourceAlertAt *time.Time
 }
 
+// NSSKeyAlertLookback is how far back a key's view reports its usage
+// alerts. Both are raised at most once a day, so a week shows a pattern
+// without keeping an old alert on the page for good.
+const NSSKeyAlertLookback = 7 * 24 * time.Hour
+
 // HasPermission reports whether the view grants permission.
-func (v *NSSKeyView) HasPermission(permission string) bool {
+func (v *NSSKeyView) HasPermission(permission model.NSSKeyPermission) bool {
 	return slices.Contains(v.Permissions, permission)
 }
 
@@ -195,28 +180,28 @@ func keyGroupMember(groups []string, key *model.NSSKey) bool {
 
 // permissions is the role matrix for one key and one caller. A revoked key
 // is terminal, so it keeps only view.
-func (s *NSSKeyService) permissions(groups []string, key *model.NSSKey) []string {
+func (s *NSSKeyService) permissions(groups []string, key *model.NSSKey) []model.NSSKeyPermission {
 	keyAdmin := s.config.Admin.GrantsNSSKeyAdmin(groups)
 	member := keyGroupMember(groups, key)
 
-	var granted []string
+	var granted []model.NSSKeyPermission
 	if keyAdmin || member || s.config.Admin.GrantsAuditor(groups) {
-		granted = append(granted, NSSKeyPermissionView)
+		granted = append(granted, model.NSSKeyPermissionView)
 	}
 	if key.RevokedAt != nil {
 		return granted
 	}
 	if keyAdmin || member {
-		granted = append(granted, NSSKeyPermissionRotate)
+		granted = append(granted, model.NSSKeyPermissionRotate)
 	}
 	if keyAdmin || member || s.config.Admin.GrantsSOC(groups) {
-		granted = append(granted, NSSKeyPermissionRevoke)
+		granted = append(granted, model.NSSKeyPermissionRevoke)
 	}
 	if keyAdmin || member {
-		granted = append(granted, NSSKeyPermissionEdit)
+		granted = append(granted, model.NSSKeyPermissionEdit)
 	}
 	if keyAdmin {
-		granted = append(granted, NSSKeyPermissionAssignGroup)
+		granted = append(granted, model.NSSKeyPermissionAssignGroup)
 	}
 	return granted
 }
@@ -267,7 +252,7 @@ func (s *NSSKeyService) viewable(ctx context.Context, identity *Identity, key *m
 	if err != nil {
 		return nil, err
 	}
-	if !views[0].HasPermission(NSSKeyPermissionView) {
+	if !views[0].HasPermission(model.NSSKeyPermissionView) {
 		return nil, nssKeyNotFound()
 	}
 	return &views[0], nil
@@ -313,6 +298,10 @@ func (s *NSSKeyService) views(ctx context.Context, groups []string, keys []model
 	}
 
 	now := s.now()
+	activity, err := s.activity(ctx, keys, now)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]NSSKeyView, 0, len(keys))
 	for _, key := range keys {
 		view := NSSKeyView{
@@ -324,9 +313,92 @@ func (s *NSSKeyService) views(ctx context.Context, groups []string, keys []model
 		if key.RevokedBy != nil {
 			view.RevokedByUsername = usernames[*key.RevokedBy]
 		}
+		if seen := activity[key.ID]; seen != nil {
+			view.LastUsedAt = seen.lastUsed
+			view.MissRateAlertAt = seen.missRateAlert
+			view.KeySourceAlertAt = seen.keySourceAlert
+		}
 		out = append(out, view)
 	}
 	return out, nil
+}
+
+// nssKeyActivity is what views reports about a key's use: its latest
+// lookup and its recent usage alerts.
+type nssKeyActivity struct {
+	lastUsed       *time.Time
+	missRateAlert  *time.Time
+	keySourceAlert *time.Time
+}
+
+// activity reads, for every key in keys at once, its latest usage and the
+// usage alerts raised for it since now minus NSSKeyAlertLookback: two
+// queries whatever the number of keys, never one per key.
+//
+// The latest use is the row whose last_seen is its key's maximum rather
+// than MAX(last_seen) itself, because an aggregate over a timestamp comes
+// back from SQLite as text that will not scan into a time.Time (see
+// usageByAddress).
+func (s *NSSKeyService) activity(ctx context.Context, keys []model.NSSKey, now time.Time) (map[string]*nssKeyActivity, error) {
+	out := map[string]*nssKeyActivity{}
+	if len(keys) == 0 {
+		return out, nil
+	}
+	ids := make([]string, 0, len(keys))
+	for _, key := range keys {
+		ids = append(ids, key.ID)
+	}
+	entry := func(id string) *nssKeyActivity {
+		if out[id] == nil {
+			out[id] = &nssKeyActivity{}
+		}
+		return out[id]
+	}
+
+	db := s.db.WithContext(ctx)
+	var latest []model.NSSKeyUsage
+	if err := db.Select("key_id, last_seen").Where("key_id IN ?", ids).Where(`last_seen = (
+			SELECT MAX(inner_usage.last_seen) FROM nss_key_usage AS inner_usage
+			WHERE inner_usage.key_id = nss_key_usage.key_id
+		)`).Find(&latest).Error; err != nil {
+		return nil, fmt.Errorf("read each fleet key's latest use: %w", err)
+	}
+	for _, use := range latest {
+		lastSeen := use.LastSeen
+		entry(use.KeyID).lastUsed = &lastSeen
+	}
+
+	var alerts []model.NSSAlert
+	// The cutoff is UTC because SQLite compares the stored timestamps as
+	// text (see server/dbtime).
+	if err := db.Where("kind IN ? AND subject IN ? AND last_raised_at >= ?",
+		[]string{nssAlertMissRate, nssAlertKeySource}, ids, now.Add(-NSSKeyAlertLookback).UTC()).
+		Find(&alerts).Error; err != nil {
+		return nil, fmt.Errorf("read each fleet key's recent usage alerts: %w", err)
+	}
+	for _, alert := range alerts {
+		raised := alert.LastRaisedAt
+		switch alert.Kind {
+		case nssAlertMissRate:
+			entry(alert.Subject).missRateAlert = &raised
+		default:
+			entry(alert.Subject).keySourceAlert = &raised
+		}
+	}
+	return out, nil
+}
+
+// NSSKeySettings is the part of the nss configuration the key pages show
+// before an operator acts: how long a new key lives unless told otherwise,
+// and how long a rotated-out secret stays accepted.
+type NSSKeySettings struct {
+	DefaultLifetime time.Duration
+	RotationGrace   time.Duration
+}
+
+// Settings returns nss.key_default_lifetime and nss.key_rotation_grace.
+func (s *NSSKeyService) Settings() NSSKeySettings {
+	return NSSKeySettings{DefaultLifetime: s.config.NSS.KeyDefaultLifetime, RotationGrace: s.config.NSS.KeyRotationGrace}
 }
 
 // identityGroups is the identity's groups, nil-safe.
@@ -527,7 +599,7 @@ func boundedText(field, value string, limit int, required bool) (string, error) 
 // transaction with the key locked to its current generation, recording the
 // event it returns. The 404 for a key the caller cannot view comes before
 // any 403, so a key is never confirmed to someone who may not see it.
-func (s *NSSKeyService) mutate(ctx context.Context, identity *Identity, id string, permissions []string,
+func (s *NSSKeyService) mutate(ctx context.Context, identity *Identity, id string, permissions []model.NSSKeyPermission,
 	change func(tx *gorm.DB, actor *nssActor, key *model.NSSKey, now time.Time) (*AuditEvent, error)) (*NSSKeyView, *model.NSSKey, error) {
 	key, err := s.load(ctx, s.db, id)
 	if err != nil {
@@ -542,7 +614,7 @@ func (s *NSSKeyService) mutate(ctx context.Context, identity *Identity, id strin
 	}
 	for _, permission := range permissions {
 		if !view.HasPermission(permission) {
-			return nil, nil, &errorresponses.ForbiddenError{Reason: "you may not " + strings.ReplaceAll(permission, "_", " ") + " this fleet key"}
+			return nil, nil, &errorresponses.ForbiddenError{Reason: "you may not " + strings.ReplaceAll(string(permission), "_", " ") + " this fleet key"}
 		}
 	}
 	actor, err := s.resolveActor(ctx, identity)
@@ -591,12 +663,12 @@ func (s *NSSKeyService) Update(ctx context.Context, identity *Identity, id strin
 	if in.Description == nil && in.ExpiresAt == nil && in.NotificationEmail == nil && in.GroupName == nil {
 		return nil, &errorresponses.InvalidRequestError{Reason: "nothing to change: send description, expires_at, notification_email or group_name"}
 	}
-	needed := []string{}
+	needed := []model.NSSKeyPermission{}
 	if in.Description != nil || in.ExpiresAt != nil || in.NotificationEmail != nil {
-		needed = append(needed, NSSKeyPermissionEdit)
+		needed = append(needed, model.NSSKeyPermissionEdit)
 	}
 	if in.GroupName != nil {
-		needed = append(needed, NSSKeyPermissionAssignGroup)
+		needed = append(needed, model.NSSKeyPermissionAssignGroup)
 	}
 
 	view, _, err := s.mutate(ctx, identity, id, needed, func(tx *gorm.DB, actor *nssActor, key *model.NSSKey, now time.Time) (*AuditEvent, error) {
@@ -677,7 +749,7 @@ func (s *NSSKeyService) Rotate(ctx context.Context, identity *Identity, id, sour
 		return nil, "", err
 	}
 	var rotatedBy *nssActor
-	view, key, err := s.mutate(ctx, identity, id, []string{NSSKeyPermissionRotate}, func(tx *gorm.DB, actor *nssActor, key *model.NSSKey, now time.Time) (*AuditEvent, error) {
+	view, key, err := s.mutate(ctx, identity, id, []model.NSSKeyPermission{model.NSSKeyPermissionRotate}, func(tx *gorm.DB, actor *nssActor, key *model.NSSKey, now time.Time) (*AuditEvent, error) {
 		rotatedBy = actor
 		previousExpires := now.Add(s.config.NSS.KeyRotationGrace).UTC()
 		generation := key.CurrentGeneration + 1
@@ -723,7 +795,7 @@ func (s *NSSKeyService) Rotate(ctx context.Context, identity *Identity, id, sour
 // ClearPrevious ends the previous secret before its grace runs out, once
 // every host has switched.
 func (s *NSSKeyService) ClearPrevious(ctx context.Context, identity *Identity, id, sourceIP string) (*NSSKeyView, error) {
-	view, _, err := s.mutate(ctx, identity, id, []string{NSSKeyPermissionRotate}, func(tx *gorm.DB, actor *nssActor, key *model.NSSKey, now time.Time) (*AuditEvent, error) {
+	view, _, err := s.mutate(ctx, identity, id, []model.NSSKeyPermission{model.NSSKeyPermissionRotate}, func(tx *gorm.DB, actor *nssActor, key *model.NSSKey, now time.Time) (*AuditEvent, error) {
 		if key.PreviousSecretHash == nil {
 			return nil, &errorresponses.ConflictError{Reason: "the fleet key has no previous secret"}
 		}
@@ -746,7 +818,7 @@ func (s *NSSKeyService) ClearPrevious(ctx context.Context, identity *Identity, i
 // Revoke ends the key for good: neither secret is accepted again.
 func (s *NSSKeyService) Revoke(ctx context.Context, identity *Identity, id, sourceIP string) (*NSSKeyView, error) {
 	var revokedBy *nssActor
-	view, key, err := s.mutate(ctx, identity, id, []string{NSSKeyPermissionRevoke}, func(tx *gorm.DB, actor *nssActor, key *model.NSSKey, now time.Time) (*AuditEvent, error) {
+	view, key, err := s.mutate(ctx, identity, id, []model.NSSKeyPermission{model.NSSKeyPermissionRevoke}, func(tx *gorm.DB, actor *nssActor, key *model.NSSKey, now time.Time) (*AuditEvent, error) {
 		revokedBy = actor
 		if err := tx.Model(&model.NSSKey{}).Where("id = ?", key.ID).Updates(map[string]any{
 			"revoked_at": now.UTC(),
@@ -798,8 +870,8 @@ func (s *NSSKeyService) registerKeyGauge(meter metric.Meter) error {
 		if err != nil {
 			return err
 		}
-		for _, status := range []string{NSSKeyStatusActive, NSSKeyStatusExpired, NSSKeyStatusRevoked} {
-			o.ObserveInt64(gauge, counts[status], metric.WithAttributes(nssAttr("status", status)))
+		for _, status := range []model.NSSKeyStatus{model.NSSKeyStatusActive, model.NSSKeyStatusExpired, model.NSSKeyStatusRevoked} {
+			o.ObserveInt64(gauge, counts[status], metric.WithAttributes(nssAttr("status", string(status))))
 		}
 		return nil
 	}, gauge)
@@ -812,20 +884,20 @@ func (s *NSSKeyService) registerKeyGauge(meter metric.Meter) error {
 }
 
 // countByStatus counts the keys in each status at now.
-func (s *NSSKeyService) countByStatus(ctx context.Context) (map[string]int64, error) {
+func (s *NSSKeyService) countByStatus(ctx context.Context) (map[model.NSSKeyStatus]int64, error) {
 	var rows []struct {
-		Status string `gorm:"column:status"`
-		Count  int64  `gorm:"column:n"`
+		Status model.NSSKeyStatus `gorm:"column:status"`
+		Count  int64              `gorm:"column:n"`
 	}
 	err := s.db.WithContext(ctx).Model(&model.NSSKey{}).
 		Select(`CASE WHEN revoked_at IS NOT NULL THEN ? WHEN expires_at <= ? THEN ? ELSE ? END AS status, COUNT(*) AS n`,
-			NSSKeyStatusRevoked, s.now().UTC(), NSSKeyStatusExpired, NSSKeyStatusActive).
+			model.NSSKeyStatusRevoked, s.now().UTC(), model.NSSKeyStatusExpired, model.NSSKeyStatusActive).
 		Group("status").
 		Scan(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("count fleet keys by status: %w", err)
 	}
-	counts := map[string]int64{}
+	counts := map[model.NSSKeyStatus]int64{}
 	for _, row := range rows {
 		counts[row.Status] = row.Count
 	}

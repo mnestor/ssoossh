@@ -309,7 +309,7 @@ func TestNSSAdminCollisions_ShouldReportBothSidesWhenAPairExists(t *testing.T) {
 		r.DeletedAt, r.WithheldAt = ptrTime(nssAdminTime()), ptrTime(nssAdminTime())
 	})
 	if err := db.Create(&model.NSSCollision{
-		Kind: model.NSSCollisionUID, HolderID: holder.ID, OtherDN: "uid=eve,dc=test", Value: "3000",
+		Kind: model.NSSCollisionKindUID, HolderID: holder.ID, OtherDN: "uid=eve,dc=test", Value: "3000",
 		OtherName: "eve", OtherNumber: 3000, FirstSeenAt: nssAdminTime(), LastSeenAt: nssAdminTime(),
 	}).Error; err != nil {
 		t.Fatal(err)

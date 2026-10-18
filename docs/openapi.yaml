@@ -544,6 +544,59 @@ components:
       x-enum-varnames:
       - DetailLevelSimplified
       - DetailLevelAdvanced
+    model.NSSCollisionKind:
+      description: |-
+        Kind is the contested value: uid or user_name between accounts, gid
+        or group_name between groups.
+      enum:
+      - uid
+      - user_name
+      - gid
+      - group_name
+      type: string
+      x-enum-varnames:
+      - NSSCollisionKindUID
+      - NSSCollisionKindUserName
+      - NSSCollisionKindGID
+      - NSSCollisionKindGroupName
+    model.NSSKeyPermission:
+      enum:
+      - view
+      - rotate
+      - revoke
+      - edit
+      - assign_group
+      type: string
+      x-enum-varnames:
+      - NSSKeyPermissionView
+      - NSSKeyPermissionRotate
+      - NSSKeyPermissionRevoke
+      - NSSKeyPermissionEdit
+      - NSSKeyPermissionAssignGroup
+    model.NSSKeyStatus:
+      description: Status is derived from the revocation and expiry.
+      enum:
+      - active
+      - expired
+      - revoked
+      type: string
+      x-enum-varnames:
+      - NSSKeyStatusActive
+      - NSSKeyStatusExpired
+      - NSSKeyStatusRevoked
+    model.NSSRotationBucket:
+      description: |-
+        Bucket is switched (last presented the current secret), not_switched
+        (last presented an older one) or gone (not seen since the rotation).
+      enum:
+      - switched
+      - not_switched
+      - gone
+      type: string
+      x-enum-varnames:
+      - NSSRotationBucketSwitched
+      - NSSRotationBucketNotSwitched
+      - NSSRotationBucketGone
     openapidoc.AccountHoldersEnvelope:
       properties:
         data:
@@ -764,6 +817,15 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/webtypes.NSSKeySecretResponse'
+        error:
+          type: string
+      required:
+      - data
+      type: object
+    openapidoc.NSSKeySettingsEnvelope:
+      properties:
+        data:
+          $ref: '#/components/schemas/webtypes.NSSKeySettingsResponse'
         error:
           type: string
       required:
@@ -2687,10 +2749,7 @@ components:
         holder:
           $ref: '#/components/schemas/webtypes.NSSCollisionEntryResponse'
         kind:
-          description: |-
-            Kind is the contested value: uid or user_name between accounts, gid
-            or group_name between groups.
-          type: string
+          $ref: '#/components/schemas/model.NSSCollisionKind'
         last_seen_at:
           type: string
         other:
@@ -2758,6 +2817,25 @@ components:
             ID is "nss_" and 8 base32 characters, what hosts send as
             X-Ssoossh-Key-Id. Fixed for the key's life.
           type: string
+        key_source_alert_at:
+          description: |-
+            KeySourceAlertAt is when the key source alert
+            (nss.key_source_alert) last fired for the key: more source
+            addresses in one day than the limit. Absent unless it fired in the
+            last 7 days.
+          type: string
+        last_used_at:
+          description: |-
+            LastUsedAt is the last lookup any host made with the key, from the
+            retained usage, so up to a minute behind; absent for a key no host
+            has used.
+          type: string
+        miss_rate_alert_at:
+          description: |-
+            MissRateAlertAt is when the miss rate alert (nss.miss_alert_rate)
+            last fired for the key: many lookups for names the directory does
+            not hold. Absent unless it fired in the last 7 days.
+          type: string
         name:
           type: string
         notification_email:
@@ -2769,13 +2847,7 @@ components:
             server so the UI never reimplements the role matrix. A revoked key
             carries view alone.
           items:
-            enum:
-            - view
-            - rotate
-            - revoke
-            - edit
-            - assign_group
-            type: string
+            $ref: '#/components/schemas/model.NSSKeyPermission'
           type: array
           uniqueItems: false
         previous_expires_at:
@@ -2796,12 +2868,7 @@ components:
           description: RotatedAt is the last rotation, absent for a key never rotated.
           type: string
         status:
-          description: Status is derived from the revocation and expiry.
-          enum:
-          - active
-          - expired
-          - revoked
-          type: string
+          $ref: '#/components/schemas/model.NSSKeyStatus'
         updated_at:
           type: string
       required:
@@ -2828,6 +2895,22 @@ components:
       required:
       - key
       - secret
+      type: object
+    webtypes.NSSKeySettingsResponse:
+      properties:
+        default_lifetime_seconds:
+          description: |-
+            DefaultLifetimeSeconds is nss.key_default_lifetime: a new key's
+            expiry when none is given.
+          type: integer
+        rotation_grace_seconds:
+          description: |-
+            RotationGraceSeconds is nss.key_rotation_grace: how long the
+            previous secret stays accepted after a rotation.
+          type: integer
+      required:
+      - default_lifetime_seconds
+      - rotation_grace_seconds
       type: object
     webtypes.NSSKeyUsageResponse:
       properties:
@@ -2988,14 +3071,7 @@ components:
     webtypes.NSSRotationReportRowResponse:
       properties:
         bucket:
-          description: |-
-            Bucket is switched (last presented the current secret), not_switched
-            (last presented an older one) or gone (not seen since the rotation).
-          enum:
-          - switched
-          - not_switched
-          - gone
-          type: string
+          $ref: '#/components/schemas/model.NSSRotationBucket'
         first_seen:
           type: string
         last_generation:
@@ -5897,6 +5973,36 @@ paths:
       summary: Look a POSIX group up by name
       tags:
       - nss
+  /api/nss/key-settings:
+    get:
+      description: |-
+        nss.key_default_lifetime and nss.key_rotation_grace in seconds, so the create form can propose
+        an expiry and the rotate dialog can say when the previous secret stops working. Any session:
+        the two values decide nothing on their own, and every key action is still authorised per key.
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.NSSKeySettingsEnvelope'
+          description: The lifetimes
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No valid session
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: 'nss_disabled: nss.enabled is false'
+      security:
+      - sessionCookie: []
+      summary: The fleet key lifetimes
+      tags:
+      - web
   /api/nss/keys:
     get:
       description: |-

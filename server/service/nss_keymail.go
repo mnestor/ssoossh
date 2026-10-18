@@ -243,7 +243,7 @@ func cleanupPayload(key *model.NSSKey, report *NSSRotationReport, serverURL stri
 		ServerURL:            serverURL,
 	}
 	for _, row := range report.Rows {
-		if row.Bucket != NSSRotationNotSwitched {
+		if row.Bucket != model.NSSRotationBucketNotSwitched {
 			continue
 		}
 		if len(payload.NotSwitchedAddresses) == nssCleanupListLimit {

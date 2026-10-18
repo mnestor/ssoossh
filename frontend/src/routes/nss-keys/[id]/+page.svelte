@@ -7,13 +7,28 @@
 	import {
 		clearNSSKeyPrevious,
 		getNSSKey,
+		getNSSKeySettings,
 		getNSSKeyUsage,
 		getNSSRotationReport,
 		revokeNSSKey,
 		rotateNSSKey,
 		updateNSSKey
 	} from '#lib/api/endpoints.js';
-	import type { NSSKey, NSSKeySecret, NSSKeyUsageRow, UpdateNSSKeyBody } from '#lib/api/types.js';
+	import {
+		NSSKeyPermissionAssignGroup,
+		NSSKeyPermissionEdit,
+		NSSKeyPermissionRevoke,
+		NSSKeyPermissionRotate,
+		NSSKeyStatusActive,
+		NSSKeyStatusRevoked
+	} from '#lib/api/generated/enums.js';
+	import type {
+		NSSKey,
+		NSSKeySecret,
+		NSSKeySettings,
+		NSSKeyUsageRow,
+		UpdateNSSKeyBody
+	} from '#lib/api/types.js';
 	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
 	import Alert from '#lib/components/Alert.svelte';
 	import Button from '#lib/components/Button.svelte';
@@ -28,13 +43,14 @@
 	import PageSection from '#lib/components/PageSection.svelte';
 	import PageShell from '#lib/components/PageShell.svelte';
 	import SecretPanel from '#lib/components/SecretPanel.svelte';
-	import { formatDateTime, remainingLabel } from '#lib/format.js';
+	import { formatDateTime, formatDuration, remainingLabel } from '#lib/format.js';
 	import { describeLoaded } from '#lib/listStatus.js';
 	import {
-		NSSKeyPermission,
 		can,
 		expiryTone,
 		formatPercent,
+		graceEnd,
+		keyAlerts,
 		keyStatus,
 		missRate,
 		previousLive
@@ -94,12 +110,12 @@
 		return () => controller.abort();
 	});
 
-	const status = $derived(key ? keyStatus(key, now) : 'active');
-	const revoked = $derived(key?.status === 'revoked');
-	const mayRotate = $derived(!!key && !revoked && can(key, NSSKeyPermission.Rotate));
-	const mayRevoke = $derived(!!key && !revoked && can(key, NSSKeyPermission.Revoke));
-	const mayEdit = $derived(!!key && !revoked && can(key, NSSKeyPermission.Edit));
-	const mayAssign = $derived(!!key && !revoked && can(key, NSSKeyPermission.AssignGroup));
+	const status = $derived(key ? keyStatus(key, now) : NSSKeyStatusActive);
+	const revoked = $derived(key?.status === NSSKeyStatusRevoked);
+	const mayRotate = $derived(!!key && !revoked && can(key, NSSKeyPermissionRotate));
+	const mayRevoke = $derived(!!key && !revoked && can(key, NSSKeyPermissionRevoke));
+	const mayEdit = $derived(!!key && !revoked && can(key, NSSKeyPermissionEdit));
+	const mayAssign = $derived(!!key && !revoked && can(key, NSSKeyPermissionAssignGroup));
 	const graceLive = $derived(!!key && previousLive(key, now));
 
 	// ---- Inline edits ---------------------------------------------------
@@ -175,7 +191,29 @@
 		}
 	}
 
+	// ---- Usage alerts ---------------------------------------------------
+
+	// The miss rate and key source alerts that fired this week. The usage
+	// table's rows are daily counts and the miss rate alert is a per-minute
+	// rate, so the alert is stated here rather than as a highlighted row.
+	const alerts = $derived(key ? keyAlerts(key) : []);
+
 	// ---- Rotate ---------------------------------------------------------
+
+	// The server's rotation grace, so the dialog can name the day the
+	// current secret stops working. A failed read only loses the date: the
+	// dialog then speaks of the grace period without one.
+	let settings = $state<NSSKeySettings | null>(null);
+	$effect(() => {
+		const controller = new AbortController();
+		getNSSKeySettings(controller.signal)
+			.then((result) => (settings = result))
+			.catch(() => {});
+		return () => controller.abort();
+	});
+	const graceUntil = $derived(
+		settings ? graceEnd(now, settings.rotation_grace_seconds).toISOString() : null
+	);
 
 	let confirmRotate = $state(false);
 	let rotating = $state(false);
@@ -490,6 +528,28 @@
 			</Alert>
 		{/if}
 
+		{#if alerts.length > 0}
+			<Alert variant="warning" title="Unusual use in the last 7 days" testid="nss-key-alerts">
+				<div class="flex flex-col gap-2">
+					{#each alerts as alert (alert.kind)}
+						{#if alert.kind === 'misses'}
+							<p data-testid="nss-key-alert-misses">
+								Many unknown names were looked up with this key at {formatDateTime(alert.at)}. A
+								host may be asking for names the directory does not hold, or someone may be guessing
+								account names; the usage below shows which address.
+							</p>
+						{:else}
+							<p data-testid="nss-key-alert-sources">
+								More addresses used this key in one day than the server expects, at {formatDateTime(
+									alert.at
+								)}. If the key has spread beyond its fleet, rotate it.
+							</p>
+						{/if}
+					{/each}
+				</div>
+			</Alert>
+		{/if}
+
 		<PageSection
 			title="Secret"
 			description="Hosts present the current secret. After a rotation the previous one is still accepted for a grace period, so hosts can switch over."
@@ -597,8 +657,9 @@
 					{/if}
 				</DetailRow>
 				<DetailRow label="Created">
-					{formatDateTime(key.created_at)}{#if key.created_by_username}{' '}by
-						<span class="font-mono">{key.created_by_username}</span>{/if}
+					{formatDateTime(key.created_at)}
+					{#if key.created_by_username}by <span class="font-mono">{key.created_by_username}</span
+						>{/if}
 				</DetailRow>
 			</dl>
 		</PageSection>
@@ -692,10 +753,20 @@
 		onconfirm={rotate}
 		oncancel={() => (confirmRotate = false)}
 	>
-		<p>
-			A new secret is issued and shown once. The current secret becomes the previous one and is
-			still accepted for the rotation grace period, so hosts can switch over; the rotation report
-			shows which have.
+		<p data-testid="nss-key-rotate-grace">
+			A new secret is issued and shown once.
+			{#if settings && graceUntil && settings.rotation_grace_seconds > 0}
+				The current secret becomes the previous one and is still accepted until
+				<span class="font-semibold text-ink">{formatDateTime(graceUntil)}</span>
+				({formatDuration(settings.rotation_grace_seconds)} from now), so hosts can switch over; the rotation
+				report shows which have.
+			{:else if settings}
+				<span class="font-semibold text-trimmed">The current secret stops working at once:</span>
+				this server keeps no grace period, so every host fails until it has the new secret.
+			{:else}
+				The current secret becomes the previous one and is still accepted for the rotation grace
+				period, so hosts can switch over; the rotation report shows which have.
+			{/if}
 		</p>
 		{#if graceLive && key.previous_expires_at}
 			<p class="mt-2 text-trimmed" data-testid="nss-key-rotate-replaces">

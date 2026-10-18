@@ -47,9 +47,9 @@ func (s *NSSDirectoryService) raiseCollisionAlerts(ctx context.Context, t nssTab
 	for _, p := range pairs {
 		kind, action, subject := nssAlertNameCollision, AuditNSSNameCollision, t.label+":"+p.Value
 		switch p.Kind {
-		case model.NSSCollisionUID:
+		case model.NSSCollisionKindUID:
 			kind, action, subject = nssAlertUIDCollision, AuditNSSUIDCollision, p.Value
-		case model.NSSCollisionGID:
+		case model.NSSCollisionKindGID:
 			kind, action, subject = nssAlertGIDCollision, AuditNSSGIDCollision, p.Value
 		}
 

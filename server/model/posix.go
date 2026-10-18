@@ -167,26 +167,11 @@ type PosixGroupMember struct {
 // TableName overrides GORM's default pluralization to match the migration.
 func (PosixGroupMember) TableName() string { return "posix_group_members" }
 
-// NSSCollisionKind says which unique value an NSSCollision contests, and so
-// which table its HolderID and OtherID name.
-type NSSCollisionKind string
-
-// The four contested values. POSIX resolves one record per number and per
-// name, and account and group names are separate namespaces.
-const (
-	// NSSCollisionUID is two accounts with one uid (posix_users).
-	NSSCollisionUID NSSCollisionKind = "uid"
-	// NSSCollisionUserName is two accounts with one name (posix_users).
-	NSSCollisionUserName NSSCollisionKind = "user_name"
-	// NSSCollisionGID is two groups with one gid (posix_groups).
-	NSSCollisionGID NSSCollisionKind = "gid"
-	// NSSCollisionGroupName is two groups with one name (posix_groups).
-	NSSCollisionGroupName NSSCollisionKind = "group_name"
-)
-
 // ForGroups reports whether the kind is about groups rather than accounts.
+// NSSCollisionKind itself is declared in enums.go, so tygo generates it for
+// the web UI.
 func (k NSSCollisionKind) ForGroups() bool {
-	return k == NSSCollisionGID || k == NSSCollisionGroupName
+	return k == NSSCollisionKindGID || k == NSSCollisionKindGroupName
 }
 
 // NSSCollision is one directory entry contending for a value a stored row

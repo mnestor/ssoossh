@@ -79,20 +79,6 @@ func parseNSSUsageCursor(cursor string) (time.Time, string, int, bool) {
 	return time.Unix(unix, 0).UTC(), parts[2], generation, true
 }
 
-// The rotation report's buckets: where each source address stands since
-// the key was last rotated.
-const (
-	// NSSRotationSwitched is an address whose latest lookup presented the
-	// current secret.
-	NSSRotationSwitched = "switched"
-	// NSSRotationNotSwitched is an address whose latest lookup presented
-	// an older secret: it stops resolving accounts when the grace ends.
-	NSSRotationNotSwitched = "not_switched"
-	// NSSRotationGone is an address seen before the rotation and not
-	// since, a host retired or one that has not booted since.
-	NSSRotationGone = "gone"
-)
-
 // NSSRotationReportRow is one source address in the rotation report.
 // FirstSeen, LastSeen and Lookups cover every retained usage row, before
 // the rotation as well as after, which is what lets a gone host be named.
@@ -102,7 +88,7 @@ type NSSRotationReportRow struct {
 	LastSeen       time.Time
 	Lookups        int64
 	LastGeneration int
-	Bucket         string
+	Bucket         model.NSSRotationBucket
 }
 
 // NSSRotationReport is where every address that used a key stands since it
@@ -155,9 +141,9 @@ func (s *NSSKeyService) rotationReport(ctx context.Context, key *model.NSSKey) (
 	for _, row := range rows {
 		row.Bucket = rotationBucket(row, key)
 		switch row.Bucket {
-		case NSSRotationSwitched:
+		case model.NSSRotationBucketSwitched:
 			report.Switched++
-		case NSSRotationNotSwitched:
+		case model.NSSRotationBucketNotSwitched:
 			report.NotSwitched++
 		default:
 			report.Gone++
@@ -233,23 +219,23 @@ func (s *NSSKeyService) usageByAddress(ctx context.Context, keyID string) (map[s
 
 // rotationBucket places one address: gone when it has not been seen since
 // the rotation, else switched or not by the generation it last presented.
-func rotationBucket(row *NSSRotationReportRow, key *model.NSSKey) string {
+func rotationBucket(row *NSSRotationReportRow, key *model.NSSKey) model.NSSRotationBucket {
 	if key.RotatedAt != nil && row.LastSeen.Before(*key.RotatedAt) {
-		return NSSRotationGone
+		return model.NSSRotationBucketGone
 	}
 	if row.LastGeneration >= key.CurrentGeneration {
-		return NSSRotationSwitched
+		return model.NSSRotationBucketSwitched
 	}
-	return NSSRotationNotSwitched
+	return model.NSSRotationBucketNotSwitched
 }
 
 // rank orders the buckets for the report: the addresses that need action
 // first.
-func rank(bucket string) int {
+func rank(bucket model.NSSRotationBucket) int {
 	switch bucket {
-	case NSSRotationNotSwitched:
+	case model.NSSRotationBucketNotSwitched:
 		return 0
-	case NSSRotationSwitched:
+	case model.NSSRotationBucketSwitched:
 		return 1
 	default:
 		return 2

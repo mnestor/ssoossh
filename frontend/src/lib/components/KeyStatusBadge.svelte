@@ -1,5 +1,10 @@
 <script lang="ts">
-	import type { KeyDisplayStatus } from '#lib/nss.js';
+	import {
+		NSSKeyStatusActive,
+		NSSKeyStatusExpired,
+		NSSKeyStatusRevoked
+	} from '#lib/api/generated/enums.js';
+	import { KeyRotating, type KeyDisplayStatus } from '#lib/nss.js';
 	import Icon from './Icon.svelte';
 
 	// A fleet key's state as a chip, shaped like StatusBadge: glyph plus word,
@@ -18,17 +23,17 @@
 	let { status, testid }: Props = $props();
 
 	const variants: Record<KeyDisplayStatus, string> = {
-		active: 'bg-granted-surface text-granted',
-		rotating: 'bg-trimmed-surface text-trimmed',
-		expired: 'bg-surface-muted text-ink-muted',
-		revoked: 'bg-danger-surface text-danger'
+		[NSSKeyStatusActive]: 'bg-granted-surface text-granted',
+		[KeyRotating]: 'bg-trimmed-surface text-trimmed',
+		[NSSKeyStatusExpired]: 'bg-surface-muted text-ink-muted',
+		[NSSKeyStatusRevoked]: 'bg-danger-surface text-danger'
 	};
 
 	const icons: Record<KeyDisplayStatus, string> = {
-		active: 'server-2',
-		rotating: 'rotate',
-		expired: 'clock-cancel',
-		revoked: 'server-off'
+		[NSSKeyStatusActive]: 'server-2',
+		[KeyRotating]: 'rotate',
+		[NSSKeyStatusExpired]: 'clock-cancel',
+		[NSSKeyStatusRevoked]: 'server-off'
 	};
 </script>
 

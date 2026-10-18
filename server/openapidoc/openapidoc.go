@@ -289,6 +289,12 @@ type NSSKeySecretEnvelope struct {
 	Error *string                       `json:"error"`
 }
 
+// NSSKeySettingsEnvelope is GET /api/nss/key-settings's body.
+type NSSKeySettingsEnvelope struct {
+	Data  webtypes.NSSKeySettingsResponse `json:"data" validate:"required"`
+	Error *string                         `json:"error"`
+}
+
 // NSSKeyUsageEnvelope is GET /api/nss/keys/{id}/usage's body.
 type NSSKeyUsageEnvelope struct {
 	Data  webtypes.NSSKeyUsageResponse `json:"data" validate:"required"`

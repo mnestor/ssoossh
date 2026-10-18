@@ -290,23 +290,23 @@ func sameNSSIDs(a, b []string) bool {
 func TestNSSKeyController_ShouldReportEachCallersPermissions(t *testing.T) {
 	t.Parallel()
 
-	full := []string{"view", "rotate", "revoke", "edit", "assign_group"}
+	full := []model.NSSKeyPermission{"view", "rotate", "revoke", "edit", "assign_group"}
 	tests := []struct {
 		caller      string
 		revoked     bool
-		wantPerms   []string
+		wantPerms   []model.NSSKeyPermission
 		wantVisible bool
 	}{
 		{caller: nssCallerAdmin, wantPerms: full, wantVisible: true},
 		{caller: nssCallerKeyAdmin, wantPerms: full, wantVisible: true},
-		{caller: nssCallerSOC, wantPerms: []string{"view", "revoke"}, wantVisible: true},
-		{caller: nssCallerAuditor, wantPerms: []string{"view"}, wantVisible: true},
-		{caller: nssCallerMember, wantPerms: []string{"view", "rotate", "revoke", "edit"}, wantVisible: true},
+		{caller: nssCallerSOC, wantPerms: []model.NSSKeyPermission{"view", "revoke"}, wantVisible: true},
+		{caller: nssCallerAuditor, wantPerms: []model.NSSKeyPermission{"view"}, wantVisible: true},
+		{caller: nssCallerMember, wantPerms: []model.NSSKeyPermission{"view", "rotate", "revoke", "edit"}, wantVisible: true},
 		{caller: nssCallerUnrelated, wantVisible: false},
-		{caller: nssCallerAdmin, revoked: true, wantPerms: []string{"view"}, wantVisible: true},
-		{caller: nssCallerKeyAdmin, revoked: true, wantPerms: []string{"view"}, wantVisible: true},
-		{caller: nssCallerSOC, revoked: true, wantPerms: []string{"view"}, wantVisible: true},
-		{caller: nssCallerMember, revoked: true, wantPerms: []string{"view"}, wantVisible: true},
+		{caller: nssCallerAdmin, revoked: true, wantPerms: []model.NSSKeyPermission{"view"}, wantVisible: true},
+		{caller: nssCallerKeyAdmin, revoked: true, wantPerms: []model.NSSKeyPermission{"view"}, wantVisible: true},
+		{caller: nssCallerSOC, revoked: true, wantPerms: []model.NSSKeyPermission{"view"}, wantVisible: true},
+		{caller: nssCallerMember, revoked: true, wantPerms: []model.NSSKeyPermission{"view"}, wantVisible: true},
 	}
 	for _, tc := range tests {
 		state := "a live key"
@@ -373,7 +373,7 @@ func TestNSSKeyController_ShouldReturnTheSecretOnlyOnCreateAndRotate(t *testing.
 	if !strings.HasPrefix(key.ID, "nss_") || len(key.ID) != len("nss_")+8 {
 		t.Errorf("id = %q, want nss_ and 8 characters", key.ID)
 	}
-	if key.CurrentGeneration != 1 || key.Status != service.NSSKeyStatusActive || key.GroupName != "team-web" {
+	if key.CurrentGeneration != 1 || key.Status != model.NSSKeyStatusActive || key.GroupName != "team-web" {
 		t.Errorf("created key = generation %d, %s, group %q; want 1, active, team-web", key.CurrentGeneration, key.Status, key.GroupName)
 	}
 	if key.CreatedByUsername != caller.Username || key.NotificationEmail != caller.Email {
@@ -459,7 +459,7 @@ func TestNSSKeyController_ShouldAnswerConflicts(t *testing.T) {
 	}
 	var key webtypes.NSSKeyResponse
 	decodeEnvelope(t, w.Body.Bytes(), &key)
-	if key.Status != service.NSSKeyStatusRevoked || key.RevokedAt == nil || key.RevokedByUsername != "nss-admin" {
+	if key.Status != model.NSSKeyStatusRevoked || key.RevokedAt == nil || key.RevokedByUsername != "nss-admin" {
 		t.Errorf("revoked key = %s at %v by %q, want revoked by nss-admin", key.Status, key.RevokedAt, key.RevokedByUsername)
 	}
 
@@ -643,6 +643,100 @@ func TestNSSKeyController_ShouldListTheAllowedShells(t *testing.T) {
 	}
 }
 
+func TestNSSKeyController_ShouldAnswerTheKeyLifetimesInSeconds(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		grace time.Duration
+		want  webtypes.NSSKeySettingsResponse
+	}{
+		{name: "should answer both lifetimes when the grace is set", grace: 720 * time.Hour,
+			want: webtypes.NSSKeySettingsResponse{DefaultLifetimeSeconds: 31536000, RotationGraceSeconds: 2592000}},
+		{name: "should answer a zero grace when a rotation ends the previous secret at once", grace: 0,
+			want: webtypes.NSSKeySettingsResponse{DefaultLifetimeSeconds: 31536000}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			env := newNSSKeyEnv(t)
+			env.cfg.NSS.KeyRotationGrace = tt.grace
+			w := serveNSSKeys(env.router(nssCallerNamed(t, nssCallerUnrelated)), http.MethodGet, "/nss/key-settings", "")
+			if w.Code != http.StatusOK {
+				t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+			}
+			var got webtypes.NSSKeySettingsResponse
+			decodeEnvelope(t, w.Body.Bytes(), &got)
+			if got != tt.want {
+				t.Errorf("key settings = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNSSKeyController_ShouldCarryEachKeysLastUseAndRecentAlerts(t *testing.T) {
+	t.Parallel()
+
+	env := newNSSKeyEnv(t)
+	used, _ := createNSSKey(t, env.keys, nssCreatorIdentity(), nssKeyGroup)
+	unused, _ := createNSSKey(t, env.keys, nssCreatorIdentity(), nssKeyGroup)
+	today := time.Now().UTC()
+	seedNSSKeyUsage(t, env.db, used, "192.0.2.41", today, 4)
+	missAt := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
+	for _, alert := range []model.NSSAlert{
+		{Kind: "miss_rate", Subject: used, LastRaisedAt: missAt},
+		{Kind: "key_source", Subject: used, LastRaisedAt: missAt.Add(-8 * 24 * time.Hour)},
+	} {
+		if err := env.db.Create(&alert).Error; err != nil {
+			t.Fatalf("seed alert: %v", err)
+		}
+	}
+	lastSeen := time.Date(today.Year(), today.Month(), today.Day(), 2, 0, 0, 0, time.UTC)
+	r := env.router(nssCallerNamed(t, nssCallerMember))
+
+	var list webtypes.NSSKeyListResponse
+	decodeEnvelope(t, serveNSSKeys(r, http.MethodGet, "/nss/keys", "").Body.Bytes(), &list)
+	listed := map[string]webtypes.NSSKeyResponse{}
+	for _, key := range list.Keys {
+		listed[key.ID] = key
+	}
+
+	tests := []struct {
+		name   string
+		id     string
+		absent []string
+		check  func(webtypes.NSSKeyResponse) bool
+	}{
+		{name: "should carry the last use and the week's miss rate alert when the key was used", id: used,
+			absent: []string{`"key_source_alert_at"`},
+			check: func(key webtypes.NSSKeyResponse) bool {
+				return key.LastUsedAt != nil && key.LastUsedAt.Equal(lastSeen) &&
+					key.MissRateAlertAt != nil && key.MissRateAlertAt.Equal(missAt) && key.KeySourceAlertAt == nil
+			}},
+		{name: "should leave every activity field out when no host has used the key", id: unused,
+			absent: []string{`"last_used_at"`, `"miss_rate_alert_at"`, `"key_source_alert_at"`},
+			check: func(key webtypes.NSSKeyResponse) bool {
+				return key.LastUsedAt == nil && key.MissRateAlertAt == nil && key.KeySourceAlertAt == nil
+			}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := serveNSSKeys(r, http.MethodGet, "/nss/keys/"+tt.id, "")
+			var got webtypes.NSSKeyResponse
+			decodeEnvelope(t, w.Body.Bytes(), &got)
+			if !tt.check(got) || !tt.check(listed[tt.id]) {
+				t.Errorf("detail = %+v, listed = %+v; want the key's activity on both", got, listed[tt.id])
+			}
+			for _, field := range tt.absent {
+				if strings.Contains(w.Body.String(), field) {
+					t.Errorf("body = %s, want no %s", w.Body.String(), field)
+				}
+			}
+		})
+	}
+}
+
 func TestNSSKeyController_ShouldAnswerDisabledOnEveryRoute(t *testing.T) {
 	t.Parallel()
 
@@ -654,6 +748,7 @@ func TestNSSKeyController_ShouldAnswerDisabledOnEveryRoute(t *testing.T) {
 
 	for _, route := range []struct{ method, path, body string }{
 		{http.MethodGet, "/nss/shells", ""},
+		{http.MethodGet, "/nss/key-settings", ""},
 		{http.MethodGet, "/nss/keys", ""},
 		{http.MethodPost, "/nss/keys", `{"name":"x"}`},
 		{http.MethodGet, "/nss/keys/nss_any", ""},
