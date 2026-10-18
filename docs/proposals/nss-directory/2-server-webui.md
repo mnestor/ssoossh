@@ -13,6 +13,9 @@ in [README.md](README.md).
    (Part 1 adds it beside `mail_enabled`; README R25).
 5. "Pending id changes" and "Collisions" panels on the existing
    `/admin/directory` page (README R38, R39).
+6. A read-only viewer of the stored accounts and groups, with what a
+   host's lookup is served for each, under `/admin/nss` (added 2026-10-18
+   at the owner's request).
 
 No new API surface beyond Part 1. All data comes from `/api/nss/keys*`,
 `/api/nss/shells` and `/api/users/me`.
@@ -28,7 +31,16 @@ No new API surface beyond Part 1. All data comes from `/api/nss/keys*`,
 | `/preferences` (existing) | every user | gains login shell field. `frontend/src/routes/preferences/` holds the notification and detail-level settings; the shell field goes there, not on `/account` |
 | `/admin/directory` (existing) | admin | gains a "Pending id changes" panel listing name, DN, stored and pending uid or gid, and how long it has been pending, from `GET /api/admin/nss/pending-id-changes`. One **Accept** button per row behind a typed confirmation (enter the name), whose copy says hosts will see the new number on their next refresh and that files owned by the old number are not moved. Empty state: "No pending changes". Beside it a "Collisions" panel from `GET /api/admin/nss/collisions`: one row per uid or name held by two entries, naming both, marking a tombstone, with a **Purge tombstone** button (typed confirmation, the name) that calls the DELETE. Live-versus-live collisions have no button, only the DNs to fix in the directory. Both panels hidden when `nss_enabled` is false |
 
+| `/admin/nss` | auditor, SOC, admin | (added 2026-10-18 at the owner's request) "NSS directory" in the admin group of the rail, not admin only, shown only when `nss_enabled` is true. Redirects to `/admin/nss/accounts` |
+| `/admin/nss/accounts`, `/admin/nss/groups` | auditor, SOC, admin | (added 2026-10-18 at the owner's request) the stored accounts and groups from `GET /api/admin/nss/users` and `/groups`: search (name, DN, or an exact uid or gid when numeric) and a state filter, both server-side and kept in the address (`?q=`, `?state=`; groups have no `disabled` state and the server answers 400 for it), cursor paging with Load more. An Accounts / Groups switch in the heading. Empty states tell "nothing stored yet" (the sync stores what `nss.user_filter` or `nss.group_filter` selects) from "nothing matches" (a host lookup that misses the stored rows still asks the directory; the Probe shows what the directory says). An info alert naming `nss.enabled` when NSS is off |
+| `/admin/nss/accounts/[uid]`, `/admin/nss/groups/[gid]` | auditor, SOC, admin | (added 2026-10-18 at the owner's request) one stored entry from `GET /api/admin/nss/users/{uid}` or `/groups/{gid}`. The identity strip carries the name, the state, the numbers and the served verdict: the server's `served`, or its `not_served` reason in words, never worked out in the browser. Sections: what hosts get (the served record; for a group the member-name count and a note naming `nss.max_group_members` when the list was cut), the stored entry, a state section when the entry is not active (missing, tombstoned, withheld with its reason, a pending uid or gid), the stored memberships (account) or the members paged from `/groups/{gid}/members` (group). Every related account, group and linked person is a link. A 404 says no stored entry has that number and that a host lookup would still ask the directory; a group 404 also links the account with that uid, since private groups are never stored. Nothing on these pages accepts, purges or edits |
+| `/admin/directory` (existing) | admin | (added 2026-10-18 at the owner's request) gains a "Stored entries" section counting the stored accounts and groups with links to the two lists; it loads and fails on its own. The pending and collision rows link each stored entry to its viewer page |
+
 Admins also get a link from the admin area to `/nss-keys`.
+
+The Directory page is admin only, so the viewer links to its Probe, Sync,
+Pending id changes and Collisions sections only for admins; SOC and auditors
+read the same sentence naming what an admin can do there.
 
 Server enforcement is authoritative; the UI only hides actions the role
 cannot perform, using the per-key `permissions` array from Part 1.
@@ -104,6 +116,12 @@ entry, or NSS disabled).
 - Revoke requires the exact id.
 - Rotation report bucketing and counts render from fixture data.
 - Shell select: null option, server error display.
+- Directory viewer (added 2026-10-18): the rail entry for auditor, SOC and
+  admin and hidden with NSS off; search and state in the address; each
+  empty, error and Load more state; the served verdict for served and each
+  `not_served` reason; links between accounts, groups and members; the
+  admin-only references as links for admins and plain sentences otherwise;
+  the Stored entries section and its failure isolation.
 
 ## Done when
 

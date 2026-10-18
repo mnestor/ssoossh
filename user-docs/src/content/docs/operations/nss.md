@@ -232,6 +232,47 @@ web UI's preferences (`PUT /api/users/me/shell`, audited as
 `nss.shell_changed`). Each host maps that name to its own path, and decides
 whether to honour it.
 
+## Looking up stored entries
+
+When a host cannot resolve someone, start at **Admin → NSS directory**. It
+is read-only and open to auditors, SOC and admins, and it appears only when
+`nss.enabled` is true.
+
+- **Stored accounts** and **Stored groups** (switch between them in the
+  heading) list every row the sync has stored, by name. Search by a part of
+  the name or DN, or by an exact uid or gid, and narrow by state: active,
+  disabled (accounts only), missing, pending, withheld or tombstone. The
+  search and the state stay in the address, so a filtered view can be
+  pasted into an incident channel.
+- **One account or group** opens with the verdict: **Served**, with the
+  record a host receives (uid, the gid after
+  [`nss.auto_private_groups`](/ssoossh/reference/config/nss/#auto_private_groups),
+  the groups primary first, home, shell and status), or **Not served** with
+  the reason: withheld by a collision, a tombstone past
+  [`nss.tombstone_retention`](/ssoossh/reference/config/nss/#tombstone_retention)
+  waiting for the purge, or a private group that clashes with a directory
+  group. The verdict comes from the server's own lookup code, not from the
+  state shown beside it.
+- Below that are the row as stored (DN, directory id, home and shell as the
+  directory gave them, the linked person), its marks when it is not active
+  (missing since, tombstoned since, withheld and why, a pending uid or gid),
+  and its memberships: an account's stored group rows, or a group's members,
+  each linking to its own page. A group's page says when
+  [`nss.max_group_members`](/ssoossh/reference/config/nss/#max_group_members)
+  cut the member list hosts receive.
+
+"No stored account has uid N" does not mean a host cannot resolve it: a
+lookup that misses the database still asks the directory on demand and
+stores what it finds, which this page never does. Use the Probe on
+Admin → Directory (admins) to see what the directory itself says. Private
+groups are never stored, so a group page that finds nothing links the
+account with the same number.
+
+Nothing on these pages changes anything. Accepting an id change and purging
+a tombstone stay in the Pending id changes and Collisions panels on
+Admin → Directory, for admins, which also counts the stored entries in its
+Stored entries section.
+
 ## Fleet keys
 
 Every lookup carries a fleet API key, in the headers `X-Ssoossh-Key-Id` and
