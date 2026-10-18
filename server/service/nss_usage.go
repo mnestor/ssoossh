@@ -160,6 +160,9 @@ type NSSUsageService struct {
 	metrics nssLookupMetrics
 	events  chan nssAlert
 
+	// flushInterval is NSSUsageFlushInterval outside tests.
+	flushInterval time.Duration
+
 	// now is the clock, time.Now outside tests.
 	now func() time.Time
 
@@ -175,6 +178,7 @@ type NSSUsageService struct {
 func NewNSSUsageService(c *config.Config, db *gorm.DB, keys *NSSKeyService, meter metric.Meter) (*NSSUsageService, error) {
 	metrics, err := newNSSLookupMetrics(meter)
 	if err != nil {
+		// not covered: see newNSSLookupMetrics.
 		return nil, err
 	}
 	return &NSSUsageService{
@@ -184,6 +188,8 @@ func NewNSSUsageService(c *config.Config, db *gorm.DB, keys *NSSKeyService, mete
 		metrics: metrics,
 		events:  make(chan nssAlert, nssEventQueue),
 		now:     time.Now,
+
+		flushInterval: NSSUsageFlushInterval,
 		counts:  map[nssUsageKey]*nssUsageCount{},
 		misses:  map[string]*nssMissCount{},
 		queued:  map[string]time.Time{},
@@ -374,7 +380,7 @@ func (s *NSSUsageService) queue(alert nssAlert, now time.Time) {
 // Shutdown does the last flush, with a context of its own, because ctx is
 // already cancelled when this returns.
 func (s *NSSUsageService) Run(ctx context.Context) error {
-	ticker := time.NewTicker(NSSUsageFlushInterval)
+	ticker := time.NewTicker(s.flushInterval)
 	defer ticker.Stop()
 	for {
 		select {

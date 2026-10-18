@@ -110,6 +110,7 @@ func NewNSSKeyService(c *config.Config, db *gorm.DB, meter metric.Meter) (*NSSKe
 	}
 	if meter != nil {
 		if err := s.registerKeyGauge(meter); err != nil {
+			// not covered: see registerKeyGauge.
 			return nil, err
 		}
 	}
@@ -782,6 +783,8 @@ func (s *NSSKeyService) registerKeyGauge(meter metric.Meter) error {
 		metric.WithDescription("NSS fleet API keys by status"),
 		metric.WithUnit("{key}"))
 	if err != nil {
+		// not covered: the SDK refuses only an invalid instrument name or
+		// unit, and both are constants that pass its check.
 		return fmt.Errorf("create the ssoossh_nss_keys gauge: %w", err)
 	}
 	_, err = meter.RegisterCallback(func(ctx context.Context, o metric.Observer) error {
@@ -795,6 +798,8 @@ func (s *NSSKeyService) registerKeyGauge(meter metric.Meter) error {
 		return nil
 	}, gauge)
 	if err != nil {
+		// not covered: registration fails only for an instrument from
+		// another meter, and the gauge was made by this one.
 		return fmt.Errorf("register the ssoossh_nss_keys callback: %w", err)
 	}
 	return nil

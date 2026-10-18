@@ -55,9 +55,11 @@ type nssLookupMetrics struct {
 // ssoossh_nss_lookup_duration on meter.
 func newNSSLookupMetrics(meter metric.Meter) (nssLookupMetrics, error) {
 	lookups, err := meter.Int64Counter("ssoossh_nss_lookups",
-		metric.WithDescription("NSS directory lookups by kind, key and outcome"),
+		metric.WithDescription("NSS directory lookups by what was looked up, how, and the outcome"),
 		metric.WithUnit("{lookup}"))
 	if err != nil {
+		// not covered: the SDK refuses only an invalid instrument name or
+		// unit, and both are constants that pass its check.
 		return nssLookupMetrics{}, fmt.Errorf("create the ssoossh_nss_lookups counter: %w", err)
 	}
 	duration, err := meter.Float64Histogram("ssoossh_nss_lookup_duration",
@@ -65,6 +67,7 @@ func newNSSLookupMetrics(meter metric.Meter) (nssLookupMetrics, error) {
 		metric.WithUnit("s"),
 		metric.WithExplicitBucketBoundaries(0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5))
 	if err != nil {
+		// not covered: as for the counter above.
 		return nssLookupMetrics{}, fmt.Errorf("create the ssoossh_nss_lookup_duration histogram: %w", err)
 	}
 	return nssLookupMetrics{lookups: lookups, duration: duration}, nil
