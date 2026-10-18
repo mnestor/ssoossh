@@ -113,6 +113,47 @@ use it.
 - start-up opens the cache and starts accepting before any upstream call,
   because socket activation queues lookups until then.
 
+**Connection limits** *(added 2026-10-18 after the threat review)*. The
+socket is world-connectable and the accept loop spawned a goroutine per
+connection with no bound, so a local user could hold connections open
+(sending a call inside each 1 s read timeout) until descriptors, threads or
+memory ran out, and a dead daemon stalls every lookup on the host. Now:
+
+- at most `socket_max_connections` (1024) connections are served at once,
+  a quarter of them kept for uid 0 peers. sshd, logind, setuid `sudo` and
+  `su`, and `systemd-userwork` all connect as uid 0, so a flood from one
+  unprivileged uid cannot stop logins or `sudo`. Peer credentials are read
+  in the accept loop (`SO_PEERCRED` does not block) to decide;
+- a connection over the cap has its call read (within 250 ms, so closing
+  does not reset the connection before the caller reads the answer),
+  answered `ServiceNotAvailable` like a lookup over the upstream cap, and
+  closed. At most 64 refusals run at once; past that a connection is
+  closed unanswered, which the caller sees as the same not-found. Refusals
+  are logged once a minute with a count;
+- `socket_idle_timeout` (10 s) is the total a connection may spend waiting
+  for calls over its life. Calls never reset it and a call in progress (an
+  upstream wait, a `GetMemberships` stream, a blocked write) never counts
+  against it, so no call is cut;
+- `EMFILE`, `ENFILE`, `ENOBUFS` and `ENOMEM` from accept are waited out
+  (5 ms doubling to 1 s), not returned, since returning stopped the daemon;
+- the service unit sets `LimitNOFILE=8192`, `MemoryMax=512M` with
+  `GOMEMLIMIT=400MiB`, and `TasksMax=4096`, above what 1024 connections
+  can use (measured: 10 KiB an idle connection, 78 KiB one holding a
+  64 KiB call that never ends).
+
+The cap's size comes from systemd's client behaviour (v257 sources).
+nss-systemd passes `USERDB_EXCLUDE_NSS` (`userdb-glue.c`), so it skips the
+multiplexer and opens one connection per service for each lookup, closing
+it after the answer. `initgroups` holds the `GetMemberships` stream open
+while it resolves each group with `groupdb_by_name` and NSS allowed, which
+goes through `io.systemd.Multiplexer` when systemd-userdbd runs, whose
+`systemd-userwork` workers (at most `USERDB_WORKERS_MAX`, 4096) each serve
+one client at a time: so two connections per thread in a lookup at most.
+Steady load is therefore a few connections; the large case is the
+listen backlog after a restart (`Backlog=` is capped by
+`net.core.somaxconn`, typically 4096), and a lookup refused then is a
+not-found once, as an upstream timeout is.
+
 ## Record mapping
 
 **User record**, built from the Part 1 user JSON after policy:

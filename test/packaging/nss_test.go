@@ -511,3 +511,63 @@ func TestNSSServiceShouldReachItsStartLimitWhenTheDaemonCannotStart(t *testing.T
 		t.Errorf("%d starts %v apart take %v, not under the %v window: a failing daemon never reaches the limit", burst, restart, took, window)
 	}
 }
+
+// should keep the service's resource limits above what the daemon admits
+// at its default connection cap: a limit the daemon reaches kills it or
+// cripples it, and while it is down every lookup on the host waits.
+func TestNSSServiceLimitsShouldExceedWhatTheDaemonAdmits(t *testing.T) {
+	t.Parallel()
+
+	service, err := os.ReadFile(filepath.Join(repoRoot(t), "deploy/ssoosshd-nss.service"))
+	if err != nil {
+		t.Fatalf("read the service unit: %v", err)
+	}
+	value := func(key string) string {
+		m := regexp.MustCompile(`(?m)^` + key + `=(\S+)$`).FindSubmatch(service)
+		if m == nil {
+			t.Fatalf("the service unit sets no %s", key)
+		}
+		return string(m[1])
+	}
+	number := func(key, s string) int64 {
+		n, err := strconv.ParseInt(s, 10, 64)
+		if err != nil {
+			t.Fatalf("%s=%s: %v", key, s, err)
+		}
+		return n
+	}
+	// bytesOf reads a size with a binary suffix, as systemd and Go both
+	// count them: "512M" and "400MiB" are both powers of 1024.
+	bytesOf := func(key, s string) int64 {
+		for _, suffix := range []struct {
+			text  string
+			scale int64
+		}{{"MiB", 1 << 20}, {"GiB", 1 << 30}, {"M", 1 << 20}, {"G", 1 << 30}} {
+			if n, ok := strings.CutSuffix(s, suffix.text); ok {
+				return number(key, n) * suffix.scale
+			}
+		}
+		t.Fatalf("%s=%s has no M, G, MiB or GiB suffix", key, s)
+		return 0
+	}
+
+	conns := int64(config.DefaultSocketMaxConnections)
+	// A descriptor per connection, one more while a peer's cgroup is read,
+	// and room for the refusals, the cache and the upstream connections.
+	if n := number("LimitNOFILE", value("LimitNOFILE")); n < 2*conns+256 {
+		t.Errorf("LimitNOFILE=%d is under twice socket_max_connections (%d) plus 256", n, conns)
+	}
+	// A thread per connection blocked in a system call, plus the CPUs.
+	if n := number("TasksMax", value("TasksMax")); n < conns+1024 {
+		t.Errorf("TasksMax=%d is under socket_max_connections (%d) plus 1024", n, conns)
+	}
+	// 80 KiB per connection at worst, measured; at least four times that.
+	memoryMax := bytesOf("MemoryMax", value("MemoryMax"))
+	if memoryMax < 4*conns*80<<10 {
+		t.Errorf("MemoryMax=%d is under four times the worst connection memory", memoryMax)
+	}
+	limit := value("Environment=GOMEMLIMIT")
+	if goLimit := bytesOf("GOMEMLIMIT", limit); goLimit >= memoryMax {
+		t.Errorf("GOMEMLIMIT=%s is not under MemoryMax: the runtime would not collect before the cgroup kills it", limit)
+	}
+}

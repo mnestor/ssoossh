@@ -146,6 +146,8 @@ func (r *RootCommand) runDaemon(ctx context.Context, flags runFlags) error {
 		Peers:          r.env.Peers,
 		SSHDUnits:      cfg.SSHDUnits,
 		AnswerDeadline: cfg.SocketAnswerDeadline,
+		MaxConnections: cfg.SocketMaxConnections,
+		IdleTimeout:    cfg.SocketIdleTimeout,
 		Log:            log,
 	})
 

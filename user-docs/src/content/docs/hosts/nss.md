@@ -297,6 +297,30 @@ deadline exists because systemd's own call timeout is 45 s, and a service
 that does not answer holds every lookup on the host that long, local users
 included.
 
+**A flood of connections cannot take lookups away from root.** The
+daemon serves at most `socket_max_connections` (1024) userdb connections at
+once and keeps a quarter of them for uid 0 callers: `sshd`, `logind`,
+`sudo` and `su` (setuid, so uid 0 when they connect) and
+`systemd-userdbd`'s workers. A local user who opens connections and holds
+them can fill only the rest; logins and `sudo` keep resolving directory
+users. A connection over the cap is answered "service not available",
+which its caller sees as not found, and the journal says so at most once a
+minute, with how many were refused since the last line and the uid of the
+latest:
+
+```json
+{"level":"WARN","msg":"userdb connections over socket_max_connections refused; their lookups were answered ServiceNotAvailable, which callers see as not found","refused":5120,"unanswered":0,"last_uid":1001,"max_connections":1024,"reserved_for_uid_0":256}
+```
+
+`unanswered` counts connections closed without an answer because 64
+refusals were already running; their callers see the same not found. A
+connection that keeps sending calls is closed once it has spent
+`socket_idle_timeout` (10 s) in all waiting for them; a call being
+answered, a slow first fetch included, is never cut. Legitimate callers
+open a connection per lookup and close it after the answer, so neither
+limit is near anything they do. The line names a uid, not a process:
+`ps -u <uid>` lists what that uid runs.
+
 **Disabled and deleted users are locked.** The server marks an account
 disabled when ssoossh disables the person (an admin, SOC, or the LDAP sync),
 when the directory's own disabled flag says so
@@ -435,6 +459,8 @@ three in step.
 | `reconnection_retries` | `3` | further attempts after a transport failure, rotating through the discovered servers, before the daemon counts the server as offline |
 | `offline_timeout` | `60s` | the first wait before probing an offline server again; it doubles after each failed probe, up to an hour |
 | `socket_answer_deadline` | `2.5s` | how long a userdb call may take to answer; must stay under 45 s, systemd's own call timeout |
+| `socket_max_connections` | `1024` | the most userdb connections served at once; a quarter of them only uid 0 callers may take, and one over the cap is answered "service not available" ([what over the cap looks like](#what-to-expect)); at least 4. The unit's `LimitNOFILE`, `MemoryMax` and `TasksMax` are sized for 1024 |
+| `socket_idle_timeout` | `10s` | the total time a userdb connection may spend waiting for calls, over its whole life; a call never resets it, and a call being answered never counts against it; at least 1 s |
 
 ### Cache
 
@@ -526,6 +552,7 @@ it. `ssoosshd-nss lookup` asks the same socket and is always there.
 | A directory user lacks a group whose gid is below `min_id` | expected: `status` lists it under `refused`; such a gid is never served |
 | A removed group still works for someone already logged in | expected: see [what to expect](#what-to-expect) |
 | Lookups hang for 45 s | the daemon is failing to start; `systemctl status ssoosshd-nss` |
+| Directory users are intermittently not found, and the journal has `userdb connections over socket_max_connections refused` | something holds many connections open: the line's `last_uid` names the uid. If it is legitimate load, raise `socket_max_connections`, and the unit's limits with it |
 
 The server side of a refused lookup (a revoked key, an address outside the
 allow list, a rate limit) is in the audit log; see

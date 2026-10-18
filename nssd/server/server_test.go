@@ -7,11 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -329,5 +331,420 @@ func TestServeShouldReturnWhenTheListenerFails(t *testing.T) {
 	_ = l.Close()
 	if err := f.srv.Serve(t.Context(), l); err == nil {
 		t.Fatal("should return the accept error when the listener is closed under it")
+	}
+}
+
+// switchPeers is a PeerInspector whose credentials the test changes
+// between connections; the accept loop reads them in accept order.
+type switchPeers struct {
+	mu   sync.Mutex
+	cred Credentials
+}
+
+// set makes later connections report uid.
+func (p *switchPeers) set(uid uint32) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.cred = Credentials{UID: uid, PID: 4242}
+}
+
+// Credentials implements PeerInspector.
+func (p *switchPeers) Credentials(net.Conn) (Credentials, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.cred, nil
+}
+
+// Cgroup implements PeerInspector: no peer is sshd.
+func (p *switchPeers) Cgroup(int32) ([]byte, error) { return nil, os.ErrPermission }
+
+// holdCalls starts n lookups of distinct names that wait on the blocked
+// upstream, each on its own connection, and returns once all n reached
+// upstream, so all n connections hold a slot. The returned wait group ends
+// when they have been answered.
+func holdCalls(t *testing.T, f *fixture, prefix string, n int) *sync.WaitGroup {
+	t.Helper()
+	before := f.nss.count()
+	var wg sync.WaitGroup
+	for i := range n {
+		wg.Go(func() {
+			c, err := varlink.Dial(context.Background(), f.socket)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			defer func() { _ = c.Close() }()
+			_ = c.Call(context.Background(), userdb.MethodGetUserRecord, params("userName", fmt.Sprintf("%s%02d", prefix, i)), nil)
+		})
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for f.nss.count() < before+n {
+		if time.Now().After(deadline) {
+			t.Fatalf("only %d of %d held lookups reached upstream", f.nss.count()-before, n)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	return &wg
+}
+
+// callRaw sends one parameterless call on a fresh raw connection and returns the error
+// name of its reply ("" for success), how long the answer took, and
+// whether the server then closed the connection within a second.
+func callRaw(t *testing.T, socket, method string) (string, time.Duration, bool) {
+	t.Helper()
+	conn, err := net.Dial("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	begin := time.Now()
+	if err := varlink.NewEncoder(conn).WriteCall(varlink.Call{Method: method}); err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	dec := varlink.NewDecoder(conn)
+	reply, err := dec.ReadReply()
+	if err != nil {
+		t.Fatalf("no reply: %v", err)
+	}
+	took := time.Since(begin)
+	if err := conn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	_, err = dec.ReadReply()
+	return reply.Error, took, errors.Is(err, io.EOF)
+}
+
+func TestServeShouldCapTheUserdbConnections(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		// held are the uids of the connections holding slots, in order.
+		held []uint32
+		// uid is the peer of the connection under test.
+		uid       uint32
+		wantError string
+	}{
+		{name: "should refuse an unprivileged peer when the unprivileged share is full", held: []uint32{1000, 1000, 1000}, uid: 1000, wantError: userdb.ErrorServiceNotAvailable},
+		{name: "should serve a uid 0 peer when only the unprivileged share is full", held: []uint32{1000, 1000, 1000}, uid: 0},
+		{name: "should refuse a uid 0 peer when every slot is taken", held: []uint32{1000, 1000, 1000, 0}, uid: 0, wantError: userdb.ErrorServiceNotAvailable},
+		{name: "should serve an unprivileged peer when uid 0 holds the reserved slot", held: []uint32{0, 0}, uid: 1000},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			peers := &switchPeers{}
+			// Four slots, one kept for uid 0.
+			f := start(t, peers, func(c *config.Config) {
+				c.SocketAnswerDeadline = 3 * time.Second
+				c.LoginRefreshTimeout = time.Second
+				c.SocketMaxConnections = 4
+			})
+			release := f.nss.blockCalls()
+			var held []*sync.WaitGroup
+			for i, uid := range tt.held {
+				peers.set(uid)
+				held = append(held, holdCalls(t, f, fmt.Sprintf("held%d-", i), 1))
+			}
+
+			peers.set(tt.uid)
+			name, took, closed := callRaw(t, f.socket, userdb.MethodGetInfo)
+			release()
+			for _, wg := range held {
+				wg.Wait()
+			}
+			if name != tt.wantError {
+				t.Fatalf("got error %q, want %q", name, tt.wantError)
+			}
+			if tt.wantError != "" && (took > time.Second || !closed) {
+				t.Fatalf("should refuse at once and close: took %v, closed %v", took, closed)
+			}
+		})
+	}
+}
+
+func TestServeShouldFreeASlotWhenAConnectionCloses(t *testing.T) {
+	t.Parallel()
+	f := start(t, fakePeers{cred: Credentials{UID: 1000}}, func(c *config.Config) {
+		c.SocketAnswerDeadline = 3 * time.Second
+		c.LoginRefreshTimeout = time.Second
+		c.SocketMaxConnections = 4
+	})
+	release := f.nss.blockCalls()
+	held := holdCalls(t, f, "held", 3)
+	if name, _, _ := callRaw(t, f.socket, userdb.MethodGetInfo); name != userdb.ErrorServiceNotAvailable {
+		t.Fatalf("should refuse while the cap is full, got %q", name)
+	}
+	release()
+	held.Wait()
+
+	// The held connections were answered and closed; their slots are free.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		name, _, _ := callRaw(t, f.socket, userdb.MethodGetInfo)
+		if name == "" {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("should serve once a slot is free, still got %q", name)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestServeShouldLogOverCapRefusalsAtMostOncePerInterval(t *testing.T) {
+	t.Parallel()
+	f := start(t, fakePeers{cred: Credentials{UID: 1000}}, func(c *config.Config) {
+		c.SocketAnswerDeadline = 3 * time.Second
+		c.LoginRefreshTimeout = time.Second
+		c.SocketMaxConnections = 4
+	})
+	release := f.nss.blockCalls()
+	held := holdCalls(t, f, "held", 3)
+	defer func() { release(); held.Wait() }()
+
+	const msg = "userdb connections over socket_max_connections refused"
+	for range 5 {
+		callRaw(t, f.socket, userdb.MethodGetInfo)
+	}
+	if n := strings.Count(f.logs.String(), msg); n != 1 {
+		t.Fatalf("should log the first of five refusals only, logged %d lines:\n%s", n, f.logs)
+	}
+	f.clock.Advance(overCapLogInterval)
+	callRaw(t, f.socket, userdb.MethodGetInfo)
+	logs := f.logs.String()
+	if n := strings.Count(logs, msg); n != 2 {
+		t.Fatalf("should log again once the interval passed, logged %d lines", n)
+	}
+	if !strings.Contains(logs, "refused=5") || !strings.Contains(logs, "last_uid=1000") {
+		t.Fatalf("should count the refusals since the last line, got:\n%s", logs)
+	}
+}
+
+func TestAdmitShouldCloseUnansweredWhenTooManyRefusalsAreRunning(t *testing.T) {
+	t.Parallel()
+	logs := &syncBuffer{}
+	s := New(Options{Peers: fakePeers{cred: Credentials{UID: 1000}}, MaxConnections: 4, AnswerDeadline: time.Second,
+		Log: slog.New(slog.NewTextHandler(logs, nil))})
+	for range 3 {
+		if !s.slots.acquire(1000) {
+			t.Fatal("cannot fill the unprivileged share")
+		}
+	}
+	for range maxRefusing {
+		s.refusing <- struct{}{}
+	}
+	server, client := net.Pipe()
+	defer func() { _ = client.Close() }()
+	if run := s.admit(t.Context(), server); run != nil {
+		t.Fatal("should not start a refusal when maxRefusing are running")
+	}
+	if _, err := client.Read(make([]byte, 1)); !errors.Is(err, io.EOF) {
+		t.Fatalf("should close the connection at once, read gave %v", err)
+	}
+	if !strings.Contains(logs.String(), "unanswered=1") {
+		t.Fatalf("should count the unanswered refusal, got %s", logs)
+	}
+}
+
+func TestConnSlots(t *testing.T) {
+	t.Parallel()
+
+	// op is acquire (+uid) or release (-uid) of one slot.
+	type op struct {
+		release bool
+		uid     uint32
+		want    bool
+	}
+	tests := []struct {
+		name  string
+		limit int
+		ops   []op
+	}{
+		{name: "should keep a quarter for uid 0 when unprivileged peers fill the rest", limit: 8, ops: []op{
+			{uid: 1, want: true}, {uid: 1, want: true}, {uid: 2, want: true}, {uid: 3, want: true},
+			{uid: 4, want: true}, {uid: 5, want: true}, {uid: 6, want: false}, {uid: 0, want: true}, {uid: 0, want: true}, {uid: 0, want: false},
+		}},
+		{name: "should let uid 0 take every slot when no one else holds one", limit: 4, ops: []op{
+			{uid: 0, want: true}, {uid: 0, want: true}, {uid: 0, want: true}, {uid: 0, want: true}, {uid: 0, want: false},
+		}},
+		{name: "should refuse an unprivileged peer when uid 0 holds every slot left", limit: 4, ops: []op{
+			{uid: 1, want: true}, {uid: 0, want: true}, {uid: 0, want: true}, {uid: 0, want: true}, {uid: 1, want: false},
+		}},
+		{name: "should free a slot when one is released", limit: 4, ops: []op{
+			{uid: 1, want: true}, {uid: 1, want: true}, {uid: 1, want: true}, {uid: 1, want: false},
+			{release: true, uid: 1}, {uid: 1, want: true},
+		}},
+		{name: "should give a released uid 0 slot to an unprivileged peer when the share allows", limit: 4, ops: []op{
+			{uid: 0, want: true}, {uid: 0, want: true}, {uid: 0, want: true}, {uid: 0, want: true}, {uid: 1, want: false},
+			{release: true, uid: 0}, {uid: 1, want: true},
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			c := newConnSlots(tt.limit)
+			for i, o := range tt.ops {
+				if o.release {
+					c.release(o.uid)
+					continue
+				}
+				if got := c.acquire(o.uid); got != o.want {
+					t.Fatalf("op %d: acquire(%d) = %v, want %v", i, o.uid, got, o.want)
+				}
+			}
+		})
+	}
+}
+
+func TestServeShouldCloseAConnectionWhenItsIdleTimeoutIsSpent(t *testing.T) {
+	t.Parallel()
+	f := start(t, nil, func(c *config.Config) { c.SocketIdleTimeout = 300 * time.Millisecond })
+	conn, err := net.Dial("unix", f.socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	enc, dec := varlink.NewEncoder(conn), varlink.NewDecoder(conn)
+
+	// A call every 50ms, inside the 100ms read timeout each time, would
+	// keep the connection open for ever without the idle budget.
+	begin := time.Now()
+	for time.Since(begin) < 5*time.Second {
+		if err := enc.WriteCall(varlink.Call{Method: userdb.MethodGetInfo}); err != nil {
+			break
+		}
+		if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := dec.ReadReply(); err != nil {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if took := time.Since(begin); took < 250*time.Millisecond || took > 3*time.Second {
+		t.Fatalf("should close once 300ms were spent waiting for calls, closed after %v", took)
+	}
+}
+
+func TestServeShouldNotCutACallInFlightWhenItOutlastsTheIdleTimeout(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		call func(ctx context.Context, c *varlink.Client) error
+	}{
+		{name: "should answer a lookup when upstream is slower than the idle timeout", call: func(ctx context.Context, c *varlink.Client) error {
+			var raw json.RawMessage
+			if err := c.Call(ctx, userdb.MethodGetUserRecord, params("userName", "alice"), &raw); err != nil {
+				return err
+			}
+			if !strings.Contains(string(raw), `"userName":"alice"`) {
+				return fmt.Errorf("got %s", raw)
+			}
+			return nil
+		}},
+		{name: "should finish a GetMemberships stream when upstream is slower than the idle timeout", call: func(ctx context.Context, c *varlink.Client) error {
+			n := 0
+			if err := c.CallMore(ctx, userdb.MethodGetMemberships, params("userName", "alice"), func(json.RawMessage) error { n++; return nil }); err != nil {
+				return err
+			}
+			if n != 1 {
+				return fmt.Errorf("got %d memberships, want 1", n)
+			}
+			return nil
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			f := start(t, nil, func(c *config.Config) {
+				c.SocketIdleTimeout = 200 * time.Millisecond
+				c.SocketAnswerDeadline = 3 * time.Second
+				c.LoginRefreshTimeout = time.Second
+			})
+			c := f.dial(t)
+			release := f.nss.blockCalls()
+			time.AfterFunc(600*time.Millisecond, release)
+			if err := tt.call(t.Context(), c); err != nil {
+				t.Fatalf("the call in flight was cut: %v", err)
+			}
+			// The call did not use up the idle budget: the next one on the
+			// same connection is answered too.
+			if err := c.Call(t.Context(), userdb.MethodGetInfo, nil, nil); err != nil {
+				t.Fatalf("should answer the next call, got %v", err)
+			}
+		})
+	}
+}
+
+// scriptedListener is a net.Listener whose Accept returns each step in
+// turn: a connection or an error.
+type scriptedListener struct {
+	mu    sync.Mutex
+	steps []any
+}
+
+// Accept implements net.Listener.
+func (l *scriptedListener) Accept() (net.Conn, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if len(l.steps) == 0 {
+		return nil, net.ErrClosed
+	}
+	step := l.steps[0]
+	l.steps = l.steps[1:]
+	if err, ok := step.(error); ok {
+		return nil, err
+	}
+	return step.(net.Conn), nil
+}
+
+// Close implements net.Listener.
+func (l *scriptedListener) Close() error { return nil }
+
+// Addr implements net.Listener.
+func (l *scriptedListener) Addr() net.Addr { return &net.UnixAddr{Name: "scripted", Net: "unix"} }
+
+func TestAcceptLoopShouldRetryWhenAcceptRunsOutOfDescriptors(t *testing.T) {
+	t.Parallel()
+
+	emfile := &net.OpError{Op: "accept", Net: "unix", Err: os.NewSyscallError("accept", syscall.EMFILE)}
+	server, client := net.Pipe()
+	defer func() { _ = client.Close() }()
+	l := &scriptedListener{steps: []any{emfile, emfile, server}}
+	logs := &syncBuffer{}
+	s := New(Options{AnswerDeadline: time.Second, Log: slog.New(slog.NewTextHandler(logs, nil))})
+
+	var dispatched int
+	err := s.acceptLoop(t.Context(), l, func(_ context.Context, conn net.Conn) func() {
+		dispatched++
+		_ = conn.Close()
+		return nil
+	})
+	if !errors.Is(err, net.ErrClosed) {
+		t.Fatalf("should return when the listener closes, got %v", err)
+	}
+	if dispatched != 1 {
+		t.Fatalf("should accept the connection after two EMFILE, dispatched %d", dispatched)
+	}
+	if n := strings.Count(logs.String(), "cannot accept a connection; retrying"); n != 2 {
+		t.Fatalf("should log each retry, logged %d:\n%s", n, logs)
+	}
+}
+
+func TestAcceptLoopShouldStopWhenShutdownBeginsDuringABackoff(t *testing.T) {
+	t.Parallel()
+
+	emfile := &net.OpError{Op: "accept", Net: "unix", Err: os.NewSyscallError("accept", syscall.ENFILE)}
+	l := &scriptedListener{steps: []any{emfile}}
+	s := New(Options{AnswerDeadline: time.Second, Log: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if err := s.acceptLoop(ctx, l, func(context.Context, net.Conn) func() { return nil }); err != nil {
+		t.Fatalf("should return nil when shutting down, got %v", err)
 	}
 }

@@ -57,6 +57,26 @@ func DefaultSSHDUnits() []string {
 	return []string{"sshd.service", "ssh.service", "sshd@.service", "ssh@.service"}
 }
 
+// Userdb connection limits, socket_max_connections and
+// socket_idle_timeout. Sized in docs/proposals/nss-directory/3-nss-daemon.md
+// ("Connection limits"): nss-systemd holds one connection per lookup in
+// flight and two during initgroups, so 1024 is far above what the busiest
+// host keeps open at once, and at about 80 KiB a connection at worst it
+// bounds the daemon's connection memory near 80 MiB.
+const (
+	// DefaultSocketMaxConnections is socket_max_connections' default.
+	DefaultSocketMaxConnections = 1024
+	// MinSocketMaxConnections keeps at least one connection for uid 0.
+	MinSocketMaxConnections = 4
+	// DefaultSocketIdleTimeout is socket_idle_timeout's default. A caller
+	// sends its call as soon as it connects and closes after the answer,
+	// so a connection is idle for milliseconds in all.
+	DefaultSocketIdleTimeout = 10 * time.Second
+	// MinSocketIdleTimeout is the read timeout each call is given to
+	// arrive: a shorter budget would cut a caller still sending its call.
+	MinSocketIdleTimeout = time.Second
+)
+
 // Cache modes.
 const (
 	// CacheModePersistent keeps the cache in SQLite across restarts.
@@ -91,6 +111,14 @@ type Config struct {
 	OfflineTimeout time.Duration `mapstructure:"offline_timeout"`
 	// SocketAnswerDeadline is how long a userdb call may take to answer.
 	SocketAnswerDeadline time.Duration `mapstructure:"socket_answer_deadline"`
+	// SocketMaxConnections caps the userdb connections served at once; a
+	// quarter of them only uid 0 peers may take. One over the cap is
+	// answered ServiceNotAvailable and closed.
+	SocketMaxConnections int `mapstructure:"socket_max_connections"`
+	// SocketIdleTimeout is the total time a userdb connection may spend
+	// with no call in progress, over its whole life. A call never resets
+	// it, and a call in progress never counts against it.
+	SocketIdleTimeout time.Duration `mapstructure:"socket_idle_timeout"`
 
 	// CacheMode is CacheModePersistent or CacheModeMemory.
 	CacheMode string `mapstructure:"cache_mode"`
@@ -168,6 +196,8 @@ func Defaults() Config {
 		ReconnectionRetries:        3,
 		OfflineTimeout:             60 * time.Second,
 		SocketAnswerDeadline:       2500 * time.Millisecond,
+		SocketMaxConnections:       DefaultSocketMaxConnections,
+		SocketIdleTimeout:          DefaultSocketIdleTimeout,
 		CacheMode:                  CacheModePersistent,
 		EntryCacheTimeout:          5400 * time.Second,
 		EntryNegativeTimeout:       15 * time.Second,
@@ -352,6 +382,12 @@ func (c *Config) validateTimings(add func(string, ...any)) {
 	}
 	if c.LoginRefreshTimeout > c.SocketAnswerDeadline {
 		add("login_refresh_timeout must not exceed socket_answer_deadline")
+	}
+	if c.SocketMaxConnections < MinSocketMaxConnections {
+		add("socket_max_connections must be at least %d, so a quarter of it is kept for uid 0 callers", MinSocketMaxConnections)
+	}
+	if c.SocketIdleTimeout < MinSocketIdleTimeout {
+		add("socket_idle_timeout must be at least %v, the time each call is given to arrive", MinSocketIdleTimeout)
 	}
 	if c.ReconnectionRetries < 0 {
 		add("reconnection_retries must not be negative")

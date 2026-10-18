@@ -65,9 +65,13 @@ func ListenAdmin(path string) (net.Listener, error) {
 	return Listen(path, 0o600)
 }
 
-// ServeAdmin accepts admin connections on l until ctx ends.
+// ServeAdmin accepts admin connections on l until ctx ends. The admin
+// socket is root-only (0600 in a 0700 directory), so it has no connection
+// cap of its own.
 func (s *Server) ServeAdmin(ctx context.Context, l net.Listener) error {
-	return s.acceptLoop(ctx, l, s.handleAdmin)
+	return s.acceptLoop(ctx, l, func(ctx context.Context, conn net.Conn) func() {
+		return func() { s.handleAdmin(ctx, conn) }
+	})
 }
 
 // handleAdmin serves one admin connection. Only root, or the uid the

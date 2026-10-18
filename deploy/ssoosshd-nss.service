@@ -41,6 +41,34 @@ RestartSec=1s
 # ever does.
 Environment=SYSTEMD_BYPASS_USERDB=com.github.mnestor.ssoossh
 
+# --- resource limits ------------------------------------------------------
+# Backstops, sized from the daemon's own bounds so that no load the daemon
+# itself admits can reach them: a limit hit kills or cripples the daemon,
+# and a dead daemon stalls every lookup on the host (see RestartSec above).
+# They assume socket_max_connections at its default, 1024; raise all three
+# with a drop-in when raising it.
+#
+# Descriptors: one per userdb connection (1024), one more while a uid 0
+# peer's /proc/<pid>/cgroup is read (1024), the 64 connections being
+# refused, the cache's SQLite files, the HTTPS connections to ssoosshd and
+# the listeners: about 2200 at most. Running out makes accept fail, which
+# the daemon waits out rather than exits on.
+LimitNOFILE=8192
+# Memory: measured at about 10 KiB per idle connection and 78 KiB for one
+# holding a 64 KiB call that never ends, the worst a peer can do within
+# the read timeout, so 1024 connections cost 80 MiB at most. The
+# persistent cache lives in SQLite, not the heap. 512M leaves room for a
+# large memory-mode cache too; GOMEMLIMIT makes the Go runtime collect
+# harder before reaching it, rather than let the cgroup kill the daemon.
+# Raise both together.
+MemoryMax=512M
+Environment=GOMEMLIMIT=400MiB
+# Threads: Go runs one per CPU plus one per goroutine blocked in a system
+# call, at most one per connection (a file read) and a few for the cache,
+# and a thread it cannot create is a fatal error, not a refused lookup.
+# 1024 connections plus a few hundred CPUs stays well under 4096.
+TasksMax=4096
+
 # /run/ssoossh-nss holds the admin socket (/run/ssoossh-nss/admin.sock) and
 # /var/lib/ssoossh-nss the persistent cache (/var/lib/ssoossh-nss/cache.db).
 # Not /run/ssoossh and /var/lib/ssoossh: ssoosshd.service and

@@ -18,6 +18,13 @@ systemctl start ssoosshd-nss.socket
 check "the service waits for its first lookup" "inactive" "$(systemctl is-active ssoosshd-nss.service)"
 lookup_asserts
 check "the first lookup started the service" "active" "$(systemctl is-active ssoosshd-nss.service)"
+# The unit's resource limits are in force on the running daemon, and the
+# lookups above passed under them.
+pid=$(systemctl show -p MainPID --value ssoosshd-nss.service)
+check "the daemon runs with LimitNOFILE" "8192" "$(awk '/^Max open files/ {print $5}' "/proc/$pid/limits")"
+check "the service has MemoryMax" "536870912" "$(systemctl show -p MemoryMax --value ssoosshd-nss.service)"
+check "the service has TasksMax" "4096" "$(systemctl show -p TasksMax --value ssoosshd-nss.service)"
+check "the daemon has GOMEMLIMIT" "GOMEMLIMIT=400MiB" "$(tr '\0' '\n' <"/proc/$pid/environ" | grep '^GOMEMLIMIT=')"
 collision_asserts "$(ssoosshd-nss status 2>&1)" "$(journalctl -u ssoosshd-nss --no-pager -o cat)"
 
 # Lookups every 20 ms while the service restarts three times: none may
