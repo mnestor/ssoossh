@@ -7,6 +7,7 @@ import (
 	"bytes"
 	_ "embed"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -78,6 +79,7 @@ func NewConfig(cmd *cobra.Command) (*Config, error) {
 	}
 
 	var c Config
+	var decoded mapstructure.Metadata
 	if err := v.Unmarshal(&c, viper.DecodeHook(mapstructure.ComposeDecodeHookFunc(
 		// viper's defaults, which Unmarshal replaces wholesale when a hook
 		// is supplied. Dropping either silently breaks every duration and
@@ -86,9 +88,18 @@ func NewConfig(cmd *cobra.Command) (*Config, error) {
 		mapstructure.StringToSliceHookFunc(","),
 		ldapFieldShorthandHook,
 		autoPrivateGroupsHook,
-	))); err != nil {
+	)), func(dc *mapstructure.DecoderConfig) { dc.Metadata = &decoded }); err != nil {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
+
+	// A key nothing declares does nothing, which is exactly how a typo, or
+	// a key from a newer version, goes unnoticed. Warn rather than fail: a
+	// file written for a newer ssoosshd must still load. defaults.yaml and
+	// the presets declare only real keys (their tests decode them
+	// exactly), so whatever is left came from the config file; the server
+	// reads no keys from the environment.
+	c.unknownKeys = findUnknownKeys(decoded.Unused)
+	warnUnknownKeys(slog.Default(), v.ConfigFileUsed(), c.unknownKeys)
 
 	// Fail at startup rather than at first login: a bad public_url does not
 	// stop anything booting, it just produces a redirect URI the identity

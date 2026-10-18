@@ -41,6 +41,9 @@ The config sample is installed as a no-replace config file, so an upgrade
 never overwrites your edits. It is generated from the server's config structs,
 which makes it the same content as `ssoosshd.yaml(5)` and the
 [configuration reference](/ssoossh/reference/config/) on this site.
+A key the server does not recognise, a typo or one from a newer release,
+does nothing, so the server logs a `config key is not recognised` warning at
+startup naming the key, the file, and the closest real key when one is close.
 
 There are also container images, `ghcr.io/mnestor/ssoossh-server:<version>`
 (the default, on `distroless/static-debian12`) and

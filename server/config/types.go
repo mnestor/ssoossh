@@ -104,6 +104,11 @@ type Config struct {
 	// Version configures what the unauthenticated /api/version endpoint
 	// discloses about the running build. See VersionConfig.
 	Version VersionConfig `mapstructure:"version"`
+
+	// unknownKeys are the keys the config file set that no field above
+	// declares, found while NewConfig decoded it. Unexported, so the
+	// decoder never fills it from a file. See UnknownKeys.
+	unknownKeys []UnknownKey
 }
 
 // BrandingSettings configures optional branding for the login page and web UI.
