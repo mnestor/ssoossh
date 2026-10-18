@@ -29,6 +29,21 @@ const ldapSyncJobName = "ldap-directory-sync"
 // expiryReminderJobName identifies the enrollment expiry reminder sweep.
 const expiryReminderJobName = "enrollment-expiry-reminder"
 
+// nssUsagePruneJobName identifies the NSS fleet key usage retention prune.
+const nssUsagePruneJobName = "nss-usage-prune"
+
+// nssKeyExpiryReminderJobName identifies the fleet key expiry reminder.
+const nssKeyExpiryReminderJobName = "nss-key-expiry-reminder"
+
+// nssRotationCleanupJobName identifies the fleet key rotation cleanup
+// digest.
+const nssRotationCleanupJobName = "nss-key-rotation-cleanup"
+
+// nssHourly is how often the NSS prune and rotation digest sweeps run. The
+// prune works in whole days and the digest repeats daily, so an hour keeps
+// either at most an hour late.
+const nssHourly = time.Hour
+
 // expiryReminderSweepDivisor sets the reminder sweep's interval as a
 // fraction of the shortest reminder cadence (the daily one, or the lead
 // itself when that is shorter), so a reminder is never systematically late
@@ -62,7 +77,46 @@ func (a *app) registerJobs(ctx context.Context) error {
 	if err := a.registerExpiryReminderJob(ctx); err != nil {
 		return err
 	}
+	if err := a.registerNSSJobs(ctx); err != nil {
+		return err
+	}
 	return a.registerLDAPSyncJob(ctx)
+}
+
+// registerNSSJobs schedules the NSS fleet key jobs: the usage prune
+// whenever NSS is on and nss.usage_retention is not zero, and the two key
+// mail sweeps only when mail is on as well, with their own settings non-zero
+// (mail.expiry_reminder_lead for the reminder, mail.rotation_quiet_period
+// for the digest). None runs inline at startup: each is about days, and a
+// restart loop would otherwise repeat them on every boot. Every instance
+// runs them; the prune is idempotent and the mail is claimed per key.
+func (a *app) registerNSSJobs(ctx context.Context) error {
+	if a.svc.nssUsage == nil || a.svc.nssKeys == nil {
+		return nil
+	}
+	if a.config.NSS.UsageRetention > 0 {
+		if err := a.scheduler.RegisterJob(ctx, nssUsagePruneJobName, gocron.DurationJob(nssHourly),
+			a.svc.nssUsage.PruneUsage, service.RegisterJobOpts{}); err != nil {
+			return fmt.Errorf("failed to register the NSS usage prune: %w", err)
+		}
+	}
+	if !a.config.Mail.Enabled {
+		slog.DebugContext(ctx, "NSS fleet key mail sweeps not registered: mail is disabled")
+		return nil
+	}
+	if lead := a.config.Mail.ExpiryReminderLead; lead > 0 {
+		if err := a.scheduler.RegisterJob(ctx, nssKeyExpiryReminderJobName, gocron.DurationJob(expiryReminderInterval(lead)),
+			a.svc.nssKeys.SweepExpiryReminders, service.RegisterJobOpts{}); err != nil {
+			return fmt.Errorf("failed to register the NSS fleet key expiry reminder: %w", err)
+		}
+	}
+	if a.config.Mail.RotationQuietPeriod > 0 {
+		if err := a.scheduler.RegisterJob(ctx, nssRotationCleanupJobName, gocron.DurationJob(nssHourly),
+			a.svc.nssKeys.SweepRotationCleanup, service.RegisterJobOpts{}); err != nil {
+			return fmt.Errorf("failed to register the NSS fleet key rotation cleanup digest: %w", err)
+		}
+	}
+	return nil
 }
 
 // registerExpiryReminderJob schedules the enrollment expiry reminder sweep,
