@@ -14,6 +14,49 @@ function ev(id: string, action: string, detail?: unknown): AuditEvent {
 	return { id, action, created_at: '2026-10-18T09:00:00Z', system: true, detail } as AuditEvent;
 }
 
+describe('accepted id change rows', () => {
+	it.each([
+		{
+			name: 'should name the admin when the accept event has an actor',
+			event: {
+				...ev('e1', 'nss.id_change_accepted', { old_uid: 9001, new_uid: 10001 }),
+				system: false,
+				actor: { username: 'mnestor' }
+			} as AuditEvent,
+			want: ['uid changed from 9001 to 10001, accepted by mnestor']
+		},
+		{
+			name: 'should name the admin when no number moved',
+			event: {
+				...ev('e1', 'nss.id_change_accepted', { old_uid: 9001, new_uid: 9001 }),
+				system: false,
+				actor: { username: 'mnestor' }
+			} as AuditEvent,
+			want: ['Accepted an id change, accepted by mnestor']
+		},
+		{
+			name: 'should leave the admin out when the actor has no username',
+			event: {
+				...ev('e1', 'nss.id_change_accepted', { old_uid: 9001, new_uid: 10001 }),
+				system: false,
+				actor: {}
+			} as AuditEvent,
+			want: ['uid changed from 9001 to 10001']
+		}
+	])('$name', ({ event, want }) => {
+		expect(words(accountHistoryRows([event], 10001))).toEqual(want);
+	});
+
+	it('should set the admin name in mono when it names one', () => {
+		const event = {
+			...ev('e1', 'nss.id_change_accepted', { old_gid: 5000, new_gid: 5100 }),
+			system: false,
+			actor: { username: 'mnestor' }
+		} as AuditEvent;
+		expect(groupHistoryRows([event])[0].parts.at(-1)).toEqual({ text: 'mnestor', mono: true });
+	});
+});
+
 /** words is each row's text, runs joined. */
 function words(rows: HistoryRow[]): string[] {
 	return rows.map((row) => row.parts.map((part) => part.text).join(''));

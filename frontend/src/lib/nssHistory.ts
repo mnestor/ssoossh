@@ -249,7 +249,11 @@ function lifecycleParts(event: AuditEvent, kind: 'account' | 'group'): HistoryPa
 				],
 				'changed'
 			);
-			return parts.length > 0 ? parts : [text('Accepted an id change')];
+			// The one line here a person caused: an admin accepted it, so
+			// the line names them. Every other line is the sync's doing.
+			const accepted = parts.length > 0 ? parts : [text('Accepted an id change')];
+			const by = event.actor?.username;
+			return by ? [...accepted, text(', accepted by '), mono(by)] : accepted;
 		}
 		case AuditNSSIDChangePending: {
 			const parts = changeParts(
