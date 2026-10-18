@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -75,8 +74,8 @@ func checkInfo(path string, info os.FileInfo, euid int, forbidden os.FileMode, w
 		return fmt.Errorf("%w: %s is %s (mode %04o)", ErrInsecureFile, path, what, perm)
 	}
 	if euid == 0 {
-		if st, ok := info.Sys().(*syscall.Stat_t); ok && st.Uid != 0 {
-			return fmt.Errorf("%w: %s is owned by uid %d, not root", ErrInsecureFile, path, st.Uid)
+		if uid, ok := fileOwnerUID(info); ok && uid != 0 {
+			return fmt.Errorf("%w: %s is owned by uid %d, not root", ErrInsecureFile, path, uid)
 		}
 	}
 	return nil
@@ -146,9 +145,8 @@ func StampOf(path string) (Stamp, error) {
 		return Stamp{}, fmt.Errorf("stat %s: %w", path, err)
 	}
 	s := Stamp{size: info.Size(), mtime: info.ModTime(), exists: true}
-	if st, ok := info.Sys().(*syscall.Stat_t); ok {
-		// Dev is uint32 on some platforms, hence the conversion.
-		s.dev, s.ino = uint64(st.Dev), st.Ino
+	if dev, ino, ok := fileDevIno(info); ok {
+		s.dev, s.ino = dev, ino
 	}
 	return s, nil
 }
