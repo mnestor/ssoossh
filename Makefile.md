@@ -60,6 +60,7 @@ the matching `lint-*`) and the internal check halves
 
 | Target | What it does |
 | --- | --- |
+| `make nss-integration` | Run the ssoosshd-nss integration jobs in docker |
 | `make test` | Unit tests per component, with coverage |
 | `make test-race` | Unit tests under -race |
 | `make cover` | Coverage HTML report at .coverage/coverage.html |

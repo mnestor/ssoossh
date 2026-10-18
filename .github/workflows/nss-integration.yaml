@@ -1,0 +1,107 @@
+name: nss-integration
+
+# ssoosshd-nss against a real nss-systemd: the daemon, a fake ssoosshd
+# (test/nss/fakeupstream) with a test CA, and glibc lookups, in Debian 12
+# containers. Job one has no systemd: the daemon binds the userdb socket
+# itself. Job two boots systemd as PID 1 and installs the shipped units, to
+# prove socket activation queues lookups across a restart. Locally:
+# `make nss-integration` runs the same scripts.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'nssd/**'
+      - 'internal/varlink/**'
+      - 'internal/api/**'
+      - 'internal/apitypes/nss.go'
+      - 'cmd/ssoosshd-nss/**'
+      - 'deploy/ssoosshd-nss.*'
+      - 'test/nss/**'
+      - 'scripts/nss-integration.sh'
+      - '.github/workflows/nss-integration.yaml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The Go toolchain lives in the build image, but the jobs below need the
+  # runner's own docker to start their containers, so the binaries are
+  # built here and handed over.
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      image: ghcr.io/mnestor/ssoossh-build:latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Cache Go modules
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-nss-it-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-nss-it-go-
+
+      # The release build's settings, as scripts/nss-integration.sh uses.
+      - name: Build the daemon and the fake upstream
+        env:
+          CGO_ENABLED: "0"
+          GOOS: linux
+          GOARCH: amd64
+          GOFLAGS: -buildvcs=false
+        run: |
+          GOFIPS140=v1.0.0 go build -trimpath -o build/nss-it/ssoosshd-nss ./cmd/ssoosshd-nss
+          go build -trimpath -o build/nss-it/nss-fakeupstream ./test/nss/fakeupstream
+
+      - name: Upload the binaries
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: nss-it-binaries
+          path: build/nss-it/
+          if-no-files-found: error
+          retention-days: 3
+
+  direct:
+    name: nss integration (self-bound socket)
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download the binaries
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: nss-it-binaries
+          path: build/nss-it
+
+      - name: Run job one
+        env:
+          NSS_IT_PREBUILT: "1"
+        run: scripts/nss-integration.sh direct
+
+  systemd:
+    name: nss integration (socket activation)
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download the binaries
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: nss-it-binaries
+          path: build/nss-it
+
+      - name: Run job two
+        env:
+          NSS_IT_PREBUILT: "1"
+        run: scripts/nss-integration.sh systemd

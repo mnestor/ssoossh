@@ -195,6 +195,14 @@ selinux-nss-check: ## Build the SELinux module and link it into the EL9 and EL10
 ##@ Test
 
 .PHONY: test test-server test-client test-internal test-nssd test-race cover cover-ci frontend-test csp-check
+
+# The ssoosshd-nss integration jobs, as the nss-integration workflow runs
+# them: the daemon against nss-systemd in Debian 12 containers, once
+# self-bound and once under systemd as PID 1. Needs docker; see
+# scripts/nss-integration.sh.
+.PHONY: nss-integration
+nss-integration: ## Run the ssoosshd-nss integration jobs in docker
+	scripts/nss-integration.sh
 # server/frontend embeds server/frontend/dist. The unit suite includes tests
 # that assert on real UI assets, so the UI has to exist first.
 test: $(FRONTEND_DIST) test-server test-client test-internal test-nssd ## Unit tests per component, with coverage
