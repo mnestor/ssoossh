@@ -335,6 +335,12 @@ http:
   # That only holds because the router passes this to SetTrustedProxies
   # unconditionally — gin's own default is to trust every proxy, so skipping
   # the call for an empty list would mean the opposite.
+  #
+  # Keep it empty or limited to the real proxies: a peer inside it picks its
+  # own client IP with X-Forwarded-For, so it passes nss.source_allow_list,
+  # forges the audited source_ip and gets a fresh nss.rate_limit bucket per
+  # address. On http.unix_socket gin trusts every peer whatever this says, so
+  # the proxy in front must set X-Forwarded-For itself.
   #trusted_proxies: []
 
   # The scheme and host browsers actually reach this deployment at, e.g.
@@ -1073,15 +1079,18 @@ nss:
   # The address is the one the server observes, honouring forwarded headers
   # only from http.trusted_proxies, the same address the audit log records as
   # source_ip; behind a load balancer listed there each host keeps its own
-  # bucket rather than all of them sharing the balancer's. Each server
-  # instance keeps its own buckets, so N instances behind a load balancer
-  # allow N times this. Must be greater than zero.
+  # bucket rather than all of them sharing the balancer's. An overbroad
+  # http.trusted_proxies lets a key holder spoof that address with
+  # X-Forwarded-For and get a fresh bucket per address; nss.key_source_alert
+  # still fires but never blocks. Each server instance keeps its own buckets,
+  # so N instances behind a load balancer allow N times this. Must be greater
+  # than zero.
   rate_limit: 20
 
-  # How many lookups one key and source address (as for rate_limit) may make
-  # back to back before rate_limit starts holding them back: a host starting
-  # up resolves many names at once. Must be greater than zero, since a zero
-  # burst refuses every lookup.
+  # How many lookups one key and source address (as for rate_limit, with the
+  # same http.trusted_proxies caveat) may make back to back before rate_limit
+  # starts holding them back: a host starting up resolves many names at once.
+  # Must be greater than zero, since a zero burst refuses every lookup.
   rate_burst: 200
 
   # The not-found lookups per second for one key above which the server raises
@@ -1111,8 +1120,9 @@ nss:
   # event that carries its address and the key id it presented. The address is
   # the one the server observes, honouring forwarded headers only from
   # http.trusted_proxies, the same address the audit log records as source_ip;
-  # a forwarded header from any other peer is ignored. Empty allows every
-  # address.
+  # a forwarded header from any other peer is ignored. An overbroad
+  # http.trusted_proxies lets a key holder pass this list, and forge the
+  # audited address, with X-Forwarded-For. Empty allows every address.
   #source_allow_list: []
 
   # Lists account names whose lookup raises an audit alert, because a

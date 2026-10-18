@@ -331,7 +331,8 @@ take effect now, `sudo ssoosshd-nss cache -u alice` marks the entry stale.
 `/etc/group` is never served and never sent to the server, and a directory
 user whose uid a local account already uses is refused. `root` is in
 `filter_users` and `filter_groups`, and `min_id` (1000, never below 1) keeps
-every system id out of reach.
+every system id out of reach. systemd's own ranges above 1000 need `max_id`
+(see [Choosing min_id and max_id](#choosing-min_id-and-max_id)).
 
 **Group memberships match on gid, never on name.** systemd hands a
 membership to glibc as a group name, and glibc looks that name up in
@@ -463,7 +464,7 @@ three in step.
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `min_id` | `1000` | every uid and gid served is at least this; it cannot be 0, so the directory can never serve root |
-| `max_id` | `0` | every uid and gid served is at most this; 0 means no upper bound |
+| `max_id` | `0` | every uid and gid served is at most this; 0 means no upper bound, which leaves systemd's reserved ranges reachable (see [Choosing min_id and max_id](#choosing-min_id-and-max_id)) |
 | `override_gid` | `0` | replaces every user's primary gid; applied after the range check, so it may name a shared group such as gid 100; 0 leaves the server's |
 | `override_homedir` | `""` | replaces every home directory |
 | `fallback_homedir` | `/home/%u` | the home when the server sends none; the homedir templates expand `%u` (name), `%U` (uid), `%d` (domain), `%h` (the server's home) and `%%` |
@@ -477,6 +478,42 @@ three in step.
 | `filter_users` | `[root]` | user names never served, however the server answers |
 | `filter_groups` | `[root]` | group names never served |
 | `require_groups` | `[]` | when set, only members of at least one of these groups are served |
+
+### Choosing min_id and max_id
+
+Set `min_id` and `max_id` to bracket the uids and gids your directory really
+allocates, for example `min_id: 10000` and `max_id: 199999`. The default
+`max_id: 0` has no upper bound, and beyond the range the only guard is the
+local short-circuit: an id that `/etc/passwd` or `/etc/group` lists is never
+served. systemd reserves ranges above 1000 for ids it creates at run time
+through its own userdb services, not `/etc/passwd`, so the short-circuit
+does not see them
+([systemd `docs/UIDS-GIDS.md`](https://github.com/systemd/systemd/blob/838528104ba79fcf99aefa0a01613cbb1a7bc44f/docs/UIDS-GIDS.md)).
+Under the default config a directory entry with an id in one of them is
+served:
+
+| Range | Owner | A directory entry there, default config |
+| --- | --- | --- |
+| 60001-60513 | `systemd-homed` home directories | served: homed users are not in `/etc/passwd` |
+| 60514-60577 | host users mapped into `systemd-nspawn` containers | served |
+| 60578-60705 | dynamic greeter users of display managers | served |
+| 61184-65519 | `DynamicUser=` services | served: dynamic users are not in `/etc/passwd` |
+| 65534 | `nobody` | refused when `/etc/passwd` and `/etc/group` list it, as Debian and Alma ship them; a directory membership with gid 65534 is listed as the local group (rule 2 above) |
+| 65535 | 16-bit `(uid_t) -1`, not usable | served |
+| 524288-1879048191 | per-container ranges of `systemd-nspawn`, whose users `systemd-machined` synthesizes | served: container uids are never in `/etc/passwd` |
+| 2147352576-2147418111 | foreign OS images | served |
+| 2147483648-4294967294 | reserved; some kernel code (`devpts`) mishandles ids from 2^31 | served |
+| 4294967295 | 32-bit `(uid_t) -1`, invalid | a lookup by that number is refused; a record carrying it, looked up by name, passes the range check |
+
+A directory id inside one of these ranges can be the same number systemd
+gives a home, a service or a container user on that host, so one uid has
+two names and each owns the other's files. The container range matters
+most: directory allocations, such as FreeIPA's and those mapped from Active
+Directory, often land inside it, and `systemd-nspawn` checks only the first
+uid of each 65536-id block it picks. If a host runs `systemd-nspawn` or
+`systemd-machined` containers, keep `max_id` below the lowest container base
+in use (`max_id: 524287` keeps the whole range out). An id outside
+`min_id..max_id` is not served; `status` lists the groups it refused.
 
 ## Commands
 

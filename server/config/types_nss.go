@@ -198,15 +198,18 @@ type NSSConfig struct {
 	// honouring forwarded headers only from http.trusted_proxies, the same
 	// address the audit log records as source_ip; behind a load balancer
 	// listed there each host keeps its own bucket rather than all of them
-	// sharing the balancer's. Each server instance keeps its own buckets,
-	// so N instances behind a load balancer allow N times this. Must be
-	// greater than zero.
+	// sharing the balancer's. An overbroad http.trusted_proxies lets a key
+	// holder spoof that address with X-Forwarded-For and get a fresh
+	// bucket per address; nss.key_source_alert still fires but never
+	// blocks. Each server instance keeps its own buckets, so N instances
+	// behind a load balancer allow N times this. Must be greater than zero.
 	RateLimit float64 `mapstructure:"rate_limit" default:"20"`
 
 	// RateBurst is how many lookups one key and source address (as for
-	// rate_limit) may make back to back before RateLimit starts holding
-	// them back: a host starting up resolves many names at once. Must be
-	// greater than zero, since a zero burst refuses every lookup.
+	// rate_limit, with the same http.trusted_proxies caveat) may make back
+	// to back before RateLimit starts holding them back: a host starting
+	// up resolves many names at once. Must be greater than zero, since a
+	// zero burst refuses every lookup.
 	RateBurst int `mapstructure:"rate_burst" default:"200"`
 
 	// MissAlertRate is the not-found lookups per second for one key above
@@ -240,7 +243,9 @@ type NSSConfig struct {
 	// key id it presented. The address is the one the server observes,
 	// honouring forwarded headers only from http.trusted_proxies, the same
 	// address the audit log records as source_ip; a forwarded header from
-	// any other peer is ignored. Empty allows every address.
+	// any other peer is ignored. An overbroad http.trusted_proxies lets a
+	// key holder pass this list, and forge the audited address, with
+	// X-Forwarded-For. Empty allows every address.
 	SourceAllowList []string `mapstructure:"source_allow_list" default:"[]"`
 
 	// PrivilegedNameAlert lists account names whose lookup raises an audit

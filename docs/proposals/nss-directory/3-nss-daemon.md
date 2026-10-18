@@ -299,6 +299,10 @@ Applied to every upstream answer before caching; a failing entry is logged
 with the reason and treated as `NoRecordFound` (and negative-cached).
 
 - uid and gid within `min_id..max_id`.
+  Operators bracket their directory's real allocation with both, since
+  the default `max_id: 0` leaves systemd's reserved ranges (homed,
+  `DynamicUser=`, container uids) servable: see `hosts/nss.md`, "Choosing
+  min_id and max_id" (added 2026-10-18 after the threat review).
 - Name absent from `/etc/passwd` / `/etc/group`.
 - `require_groups`: user must be a member of one, else `NoRecordFound`,
   checked against the memberships the gid rule keeps, by directory name.

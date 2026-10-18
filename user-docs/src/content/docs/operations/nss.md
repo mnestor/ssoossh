@@ -422,6 +422,26 @@ shares the balancer's, and the allow list sees only the balancer. See
 per-address limiter of the other routes does not apply to lookups. The
 buckets are per instance, so N instances allow N times the rate.
 
+Keep `http.trusted_proxies` empty or limited to the real proxies. When the
+TCP peer is inside it, gin takes the client address from `X-Forwarded-For`
+(or `X-Real-IP` when that is absent), reading from the right and skipping
+entries that are themselves trusted. A key holder that reaches the server
+from an address an overbroad entry covers, or through a trusted proxy that
+passes the client's header on without adding the peer it saw, therefore
+picks its own address, and with it:
+
+1. passes a restrictive `nss.source_allow_list`;
+2. forges the `source_ip` the audit log and the usage report record;
+3. gets a fresh `nss.rate_limit` bucket for each address it names, which
+   defeats the per-key throttle.
+
+`nss.key_source_alert` still fires once one key shows more addresses in a
+day than it allows, but it never blocks. On `http.unix_socket` gin trusts
+every peer whatever `trusted_proxies` says, so the proxy in front must set
+`X-Forwarded-For` from the peer it sees (nginx
+`$proxy_add_x_forwarded_for`). The admin diagnostics flag a
+`trusted_proxies` that trusts every address.
+
 A lookup for a name the database does not hold, while the directory cannot
 be read, is 503 rather than a not-found the host would remember.
 
