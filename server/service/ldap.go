@@ -55,6 +55,10 @@ type LDAPService struct {
 	// discards until bootstrap attaches the real one (see SetNotifier).
 	notifier Notifier
 
+	// nss links the NSS account a person's entry carries at login. Nil
+	// when NSS is disabled (see SetNSSDirectory).
+	nss *NSSDirectoryService
+
 	// running is the single-flight guard on Sync. One pass at a time per
 	// instance, so an operator pressing the button repeatedly cannot stack
 	// passes over the same users.
@@ -117,6 +121,14 @@ func parseLDAPFields(c *config.Config) (fields []parsedLDAPField, primaryAttrs [
 	if c.LDAP.IDAttribute != "" {
 		attrs[c.LDAP.IDAttribute] = true
 	}
+	// The NSS link reads the mapped name and uid off the same entry the
+	// login resolves, so they ride on the primary read rather than costing
+	// a second one. Only when NSS is on: without it the read requests
+	// exactly what it always did.
+	if c.NSS.Enabled {
+		attrs[c.NSS.Attributes.Name] = true
+		attrs[c.NSS.Attributes.UID] = true
+	}
 	for _, name := range sortedFieldNames(c.LDAP.Fields) {
 		field := c.LDAP.Fields[name]
 		parsed := parsedLDAPField{name: name, attribute: field.Attribute}
@@ -160,6 +172,14 @@ func parseLDAPFields(c *config.Config) (fields []parsedLDAPField, primaryAttrs [
 func (s *LDAPService) SetAuditor(a *AuditService) {
 	if s != nil {
 		s.auditor = a
+	}
+}
+
+// SetNSSDirectory attaches the NSS directory, so a login links the person
+// to the POSIX account their entry carries. Nil leaves logins unlinked.
+func (s *LDAPService) SetNSSDirectory(n *NSSDirectoryService) {
+	if s != nil {
+		s.nss = n
 	}
 }
 
@@ -275,7 +295,7 @@ func (s *LDAPService) Enrich(ctx context.Context, identity *Identity, userID str
 			"subject", identity.Subject, "error", err)
 	}
 
-	entry, err := s.lookup(ctx, identity, anchors)
+	entry, err := s.lookup(ctx, identity, userID, anchors)
 	if err != nil {
 		s.log.WarnContext(ctx, "directory lookup failed; continuing with the OIDC identity",
 			"subject", identity.Subject, "username", identity.Username, "error", err)
@@ -294,13 +314,16 @@ func (s *LDAPService) Enrich(ctx context.Context, identity *Identity, userID str
 }
 
 // lookup dials the directory and resolves identity's entry through the
-// shared anchor walk, then runs each field's searches.
+// shared anchor walk, then runs each field's searches. With NSS on, the
+// resolved entry's POSIX account is linked to userID on the same
+// connection before it closes (NSSDirectoryService.linkLogin), which never
+// fails the lookup.
 //
 // row is the caller's stored bookkeeping, or nil for a user who has never
 // been enriched — a first login, or the first pass after ldap.id_attribute
 // was configured. Nil simply means there are no anchors yet and the walk
 // starts at the filter.
-func (s *LDAPService) lookup(ctx context.Context, identity *Identity, row *model.UserLDAP) (*ldapEntry, error) {
+func (s *LDAPService) lookup(ctx context.Context, identity *Identity, userID string, row *model.UserLDAP) (*ldapEntry, error) {
 	conn, err := s.dial(&s.config.LDAP)
 	if err != nil {
 		return nil, err
@@ -314,6 +337,7 @@ func (s *LDAPService) lookup(ctx context.Context, identity *Identity, row *model
 	entry, outcome := s.resolveAnchored(ctx, conn, identity, row)
 	switch outcome {
 	case syncFound:
+		s.nss.linkLogin(ctx, conn, identity, userID, entry)
 		return entry, nil
 	case syncMissing:
 		return nil, errors.New("no directory entry matched")
