@@ -178,11 +178,16 @@ func (s *NSSDirectoryService) enumerate(ctx context.Context, conn ldapConn, resu
 // syncAccounts is the run's account half.
 func (s *NSSDirectoryService) syncAccounts(ctx context.Context, conn ldapConn, result *NSSSyncResult, since time.Time) error {
 	counts := &result.Accounts
+	importing, err := s.tableEmpty(ctx, accountTable())
+	if err != nil {
+		return err
+	}
 	entries, err := s.enumerate(ctx, conn, result, s.config.NSS.UserFilter, s.accountAttrs, since)
 	if err != nil {
 		return err
 	}
 	counts.Seen = len(entries)
+	w := runWrite(result, importing)
 
 	// One paged search for every disabled account on a full run, rather
 	// than one read per account.
@@ -211,7 +216,10 @@ func (s *NSSDirectoryService) syncAccounts(ctx context.Context, conn ldapConn, r
 	duplicates := accountDuplicates(accounts)
 
 	for _, account := range accounts {
-		s.syncAccount(ctx, conn, result, account, duplicates(account), disabledDNs)
+		s.syncAccount(ctx, conn, result, account, duplicates(account), disabledDNs, w)
+	}
+	if w.importing {
+		s.recordInitialImport(ctx, accountTable(), w.via, counts.Created)
 	}
 
 	if !result.Full || !s.completeRun(ctx, accountTable(), counts) {
@@ -222,6 +230,17 @@ func (s *NSSDirectoryService) syncAccounts(ctx context.Context, conn ldapConn, r
 		return err
 	}
 	return s.sweepCollisions(ctx, accountTable(), start)
+}
+
+// runWrite is a sync run's path for the audit events, once its search has
+// settled whether the run is full; importing is whether the table was
+// empty when the run began.
+func runWrite(result *NSSSyncResult, importing bool) nssWrite {
+	via := nssViaIncrementalSync
+	if result.Full {
+		via = nssViaFullSync
+	}
+	return nssWrite{via: via, importing: importing}
 }
 
 // completeRun reports whether a full run may draw conclusions from what it
@@ -240,7 +259,7 @@ func (s *NSSDirectoryService) completeRun(ctx context.Context, t nssTable, count
 // syncAccount stores one account a run read and counts the outcome. A
 // full run already knows the entry's duplicates and whether it is
 // disabled; an incremental run asks the directory for both.
-func (s *NSSDirectoryService) syncAccount(ctx context.Context, conn ldapConn, result *NSSSyncResult, account *nssAccount, duplicates []*nssAccount, disabledDNs map[string]bool) {
+func (s *NSSDirectoryService) syncAccount(ctx context.Context, conn ldapConn, result *NSSSyncResult, account *nssAccount, duplicates []*nssAccount, disabledDNs map[string]bool, w nssWrite) {
 	counts := &result.Accounts
 	contenders, complete := duplicates, nssAllKinds()
 	disabled := disabledDNs[normalizeDN(account.DN)]
@@ -256,7 +275,7 @@ func (s *NSSDirectoryService) syncAccount(ctx context.Context, conn ldapConn, re
 		}
 	}
 
-	stored, err := s.storeAccount(ctx, account, disabled, contenders, complete)
+	stored, err := s.storeAccount(ctx, account, disabled, contenders, complete, w)
 	switch {
 	case err != nil:
 		s.log.ErrorContext(ctx, "could not store a directory account", "dn", account.DN, "error", err)
@@ -274,11 +293,16 @@ func (s *NSSDirectoryService) syncAccount(ctx context.Context, conn ldapConn, re
 // the run stored resolves.
 func (s *NSSDirectoryService) syncGroups(ctx context.Context, conn ldapConn, result *NSSSyncResult, since time.Time) error {
 	counts := &result.Groups
+	importing, err := s.tableEmpty(ctx, groupTable())
+	if err != nil {
+		return err
+	}
 	entries, err := s.enumerate(ctx, conn, result, s.config.NSS.GroupFilter, s.groupAttrs, since)
 	if err != nil {
 		return err
 	}
 	counts.Seen = len(entries)
+	w := runWrite(result, importing)
 
 	index, err := s.loadMemberIndex(ctx)
 	if err != nil {
@@ -314,7 +338,7 @@ func (s *NSSDirectoryService) syncGroups(ctx context.Context, conn ldapConn, res
 			gone = s.probeGroupsGone(ctx, conn, []*nssGroup{group})
 		}
 
-		stored, err := s.storeGroup(ctx, group, contenders, complete, index, gone)
+		stored, err := s.storeGroup(ctx, group, contenders, complete, index, gone, w)
 		switch {
 		case err != nil:
 			s.log.ErrorContext(ctx, "could not store a directory group", "dn", group.DN, "error", err)
@@ -326,6 +350,9 @@ func (s *NSSDirectoryService) syncGroups(ctx context.Context, conn ldapConn, res
 		default:
 			counts.Updated++
 		}
+	}
+	if w.importing {
+		s.recordInitialImport(ctx, groupTable(), w.via, counts.Created)
 	}
 	if index.skipped > 0 {
 		s.log.DebugContext(ctx, "group members that are not stored accounts were left out", "members", index.skipped)
@@ -482,38 +509,49 @@ func (s *NSSDirectoryService) groupContenders(conn ldapConn, group *nssGroup) ([
 // markMissing is a full run's end for one table: every row the run did not
 // read (last_synced_at older than its start) gets missing_since if it has
 // none, and every such row missing for nss.tombstone_after is tombstoned.
-// A tombstoned group loses its membership rows, so it grants nothing.
+// A tombstoned group loses its membership rows, so it grants nothing. Each
+// row marked records nss.account_missing or nss.group_missing, each
+// tombstone nss.account_tombstoned or nss.group_tombstoned, and a group's
+// member wipe nss.group_members_changed.
 func (s *NSSDirectoryService) markMissing(ctx context.Context, t nssTable, start time.Time, counts *NSSSyncCounts) error {
 	now := s.now().UTC()
-	db := s.db.WithContext(ctx)
-
-	result := db.Table(t.table).
-		Where("last_synced_at < ? AND missing_since IS NULL", start).
-		Updates(map[string]any{"missing_since": now, "updated_at": now})
-	if result.Error != nil {
-		return fmt.Errorf("mark missing %s rows: %w", t.label, result.Error)
+	missingAction, tombstonedAction := AuditNSSGroupMissing, AuditNSSGroupTombstoned
+	if t == accountTable() {
+		missingAction, tombstonedAction = AuditNSSAccountMissing, AuditNSSAccountTombstoned
 	}
-	counts.Missing = int(result.RowsAffected)
 
-	var due []nssRowRef
-	if err := db.Table(t.table).
-		Select("id, directory_id, dn, name, "+t.numberColumn+" AS number").
-		Where("last_synced_at < ? AND deleted_at IS NULL AND missing_since <= ?", start, now.Add(-s.config.NSS.TombstoneAfter)).
-		Find(&due).Error; err != nil {
+	var batch nssAuditBatch
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		rows, err := t.lifecycleRows(tx, "last_synced_at < ? AND missing_since IS NULL", start)
+		if err != nil {
+			return err
+		}
+		for ids := range slices.Chunk(rowIDs(rows), nssBatchSize) {
+			if err := tx.Table(t.table).Where("id IN ? AND missing_since IS NULL", ids).
+				Updates(map[string]any{"missing_since": now, "updated_at": now}).Error; err != nil {
+				return err
+			}
+		}
+		for _, row := range rows {
+			if err := s.recordRowEvent(tx, &batch, t, missingAction, row.ref(), row.UserID, nssViaFullSync, nil); err != nil {
+				return err
+			}
+		}
+		counts.Missing = len(rows)
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("mark missing %s rows: %w", t.label, err)
+	}
+	s.flush(&batch)
+
+	due, err := t.lifecycleRows(s.db.WithContext(ctx),
+		"last_synced_at < ? AND deleted_at IS NULL AND missing_since <= ?", start, now.Add(-s.config.NSS.TombstoneAfter))
+	if err != nil {
 		return fmt.Errorf("find %s rows to tombstone: %w", t.label, err)
 	}
 	for _, row := range due {
-		err := db.Transaction(func(tx *gorm.DB) error {
-			if err := tx.Table(t.table).Where("id = ? AND deleted_at IS NULL", row.ID).
-				Updates(map[string]any{"deleted_at": now, "updated_at": now}).Error; err != nil {
-				return err
-			}
-			if t.numberColumn == "gid" {
-				return tx.Where("gid = ?", row.Number).Delete(&model.PosixGroupMember{}).Error
-			}
-			return nil
-		})
-		if err != nil {
+		if err := s.tombstone(ctx, t, row, tombstonedAction, now); err != nil {
 			return fmt.Errorf("tombstone the %s %s: %w", t.label, row.DN, err)
 		}
 		s.log.InfoContext(ctx, "tombstoned an NSS "+t.label+" missing from the directory",
@@ -521,6 +559,82 @@ func (s *NSSDirectoryService) markMissing(ctx context.Context, t nssTable, start
 	}
 	counts.Tombstoned = len(due)
 	return nil
+}
+
+// tombstone sets one missing row's deleted_at, wipes a group's members,
+// and records both, in one transaction.
+func (s *NSSDirectoryService) tombstone(ctx context.Context, t nssTable, row nssLifecycleRow, action AuditAction, now time.Time) error {
+	var batch nssAuditBatch
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Table(t.table).Where("id = ? AND deleted_at IS NULL", row.ID).
+			Updates(map[string]any{"deleted_at": now, "updated_at": now}).Error; err != nil {
+			return err
+		}
+		detail := map[string]any{}
+		if row.MissingSince != nil {
+			detail["missing_since"] = *row.MissingSince
+		}
+		if err := s.recordRowEvent(tx, &batch, t, action, row.ref(), row.UserID, nssViaFullSync, detail); err != nil {
+			return err
+		}
+		if t != groupTable() {
+			return nil
+		}
+		before, err := readMembers(tx, "gid = ?", row.Number)
+		if err != nil {
+			return err
+		}
+		if err := tx.Where("gid = ?", row.Number).Delete(&model.PosixGroupMember{}).Error; err != nil {
+			return err
+		}
+		return s.recordMemberChanges(tx, &batch, memberDeltas(before, nssMembers{}), nssMemberChange{
+			via: nssViaTombstoned, groupNames: map[uint32]string{row.Number: row.Name},
+		})
+	})
+	if err != nil {
+		return err
+	}
+	s.flush(&batch)
+	return nil
+}
+
+// nssLifecycleRow is a row as the missing and tombstone steps read it: the
+// shared view, the linked person of an account, and since when it has
+// been missing.
+type nssLifecycleRow struct {
+	ID           string     `gorm:"column:id"`
+	DN           string     `gorm:"column:dn"`
+	Name         string     `gorm:"column:name"`
+	Number       uint32     `gorm:"column:number"`
+	UserID       *string    `gorm:"column:user_id"`
+	MissingSince *time.Time `gorm:"column:missing_since"`
+}
+
+// ref is the row's shared view.
+func (r nssLifecycleRow) ref() nssRowRef {
+	return nssRowRef{ID: r.ID, DN: r.DN, Name: r.Name, Number: r.Number}
+}
+
+// lifecycleRows reads the rows of t matching where.
+func (t nssTable) lifecycleRows(tx *gorm.DB, where string, args ...any) ([]nssLifecycleRow, error) {
+	cols := "id, dn, name, missing_since, " + t.numberColumn + " AS number"
+	if t == accountTable() {
+		cols += ", user_id"
+	}
+	var out []nssLifecycleRow
+	if err := tx.Table(t.table).Select(cols).Where(where, args...).Order("created_at").Find(&out).Error; err != nil {
+		return nil, fmt.Errorf("read %s rows: %w", t.label, err)
+	}
+	return out, nil
+}
+
+// rowIDs is the ids of rows.
+func rowIDs(rows []nssLifecycleRow) []string {
+	out := make([]string, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, r.ID)
+	}
+	return out
 }
 
 // sweepCollisions is a full run's last step for one table: a collision the

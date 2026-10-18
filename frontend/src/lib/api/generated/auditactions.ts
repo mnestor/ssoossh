@@ -249,6 +249,64 @@ export const AuditNSSTombstonePurged: AuditAction = "nss.tombstone_purged";
  */
 export const AuditNSSGroupRenamed: AuditAction = "nss.group_renamed";
 /**
+ * AuditNSSAccountCreated is a directory account stored for the first
+ * time. A sync into an empty table records nss.initial_import instead.
+ */
+export const AuditNSSAccountCreated: AuditAction = "nss.account_created";
+/**
+ * AuditNSSGroupCreated is the same for a group; member_count is the
+ * members stored with it, so no nss.group_members_changed goes with it.
+ */
+export const AuditNSSGroupCreated: AuditAction = "nss.group_created";
+/**
+ * AuditNSSAccountRenamed is a stored account taking the new name its
+ * directory entry carries (old_name, new_name). Only an entry matched
+ * by directory_id or DN; a rename onto a held name is a collision.
+ */
+export const AuditNSSAccountRenamed: AuditAction = "nss.account_renamed";
+/**
+ * AuditNSSAccountMissing is the first full sync that did not see an
+ * account: missing_since is set, and it becomes a tombstone after
+ * nss.tombstone_after.
+ */
+export const AuditNSSAccountMissing: AuditAction = "nss.account_missing";
+/**
+ * AuditNSSGroupMissing is the same for a group.
+ */
+export const AuditNSSGroupMissing: AuditAction = "nss.group_missing";
+/**
+ * AuditNSSAccountTombstoned is a missing account tombstoned: served as
+ * disabled, still holding its uid and name.
+ */
+export const AuditNSSAccountTombstoned: AuditAction = "nss.account_tombstoned";
+/**
+ * AuditNSSGroupTombstoned is a missing group tombstoned: served with no
+ * members (the wipe is its own nss.group_members_changed).
+ */
+export const AuditNSSGroupTombstoned: AuditAction = "nss.group_tombstoned";
+/**
+ * AuditNSSAccountRevived is a missing or tombstoned account seen in the
+ * directory again (missing_since, was_tombstoned).
+ */
+export const AuditNSSAccountRevived: AuditAction = "nss.account_revived";
+/**
+ * AuditNSSGroupRevived is the same for a group.
+ */
+export const AuditNSSGroupRevived: AuditAction = "nss.group_revived";
+/**
+ * AuditNSSGroupMembersChanged is one group's membership changed by one
+ * write: added and removed as {uid, name} sorted by uid, each at most
+ * 100 long, with added_count and removed_count the totals. Recorded
+ * only when the set changed.
+ */
+export const AuditNSSGroupMembersChanged: AuditAction = "nss.group_members_changed";
+/**
+ * AuditNSSInitialImport is a sync run into an empty table, the first
+ * import, recorded once per table in place of an event per created
+ * row: created, and for groups the memberships stored.
+ */
+export const AuditNSSInitialImport: AuditAction = "nss.initial_import";
+/**
  * AuditNSSLookupForbidden is a lookup from an address outside
  * nss.source_allow_list, refused before its key was checked. The
  * detail carries the address the server observed and the key id the

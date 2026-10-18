@@ -208,7 +208,7 @@ func (s *NSSDirectoryService) RefreshUserByName(ctx context.Context, name string
 	}
 	filter := s.andFilter(s.config.NSS.UserFilter, s.config.NSS.Attributes.Name, name)
 	return s.cachedRead(ctx, "user/name/"+name, func(ctx context.Context) (bool, bool, error) {
-		return s.readAccountsOnDemand(ctx, nil, filter, nssKinds{name: true}, func(a *nssAccount) bool { return a.Name == name })
+		return s.readAccountsOnDemand(ctx, nil, filter, nssKinds{name: true}, nssViaOnDemand, func(a *nssAccount) bool { return a.Name == name })
 	})
 }
 
@@ -220,7 +220,7 @@ func (s *NSSDirectoryService) RefreshUserByUID(ctx context.Context, uid uint32) 
 	value := strconv.FormatUint(uint64(uid), 10)
 	filter := s.andFilter(s.config.NSS.UserFilter, s.config.NSS.Attributes.UID, value)
 	return s.cachedRead(ctx, "user/uid/"+value, func(ctx context.Context) (bool, bool, error) {
-		return s.readAccountsOnDemand(ctx, nil, filter, nssKinds{number: true}, func(a *nssAccount) bool { return a.UID == uid })
+		return s.readAccountsOnDemand(ctx, nil, filter, nssKinds{number: true}, nssViaOnDemand, func(a *nssAccount) bool { return a.UID == uid })
 	})
 }
 
@@ -440,7 +440,8 @@ type nssOnDemandAccount struct {
 // so a collision over it that the search no longer shows can be cleared.
 // match picks the entry the caller asked for; found reports whether one
 // did, and servable whether that entry is now stored and not withheld.
-func (s *NSSDirectoryService) readAccountsOnDemand(ctx context.Context, conn ldapConn, filter string, queried nssKinds, match func(*nssAccount) bool) (found, servable bool, err error) {
+// via is the path for the audit events: nssViaOnDemand or nssViaLogin.
+func (s *NSSDirectoryService) readAccountsOnDemand(ctx context.Context, conn ldapConn, filter string, queried nssKinds, via string, match func(*nssAccount) bool) (found, servable bool, err error) {
 	var reads []nssOnDemandAccount
 	var complete nssKinds
 	err = s.withConn(ctx, conn, func(conn ldapConn) error {
@@ -458,12 +459,12 @@ func (s *NSSDirectoryService) readAccountsOnDemand(ctx context.Context, conn lda
 				contenders = append(contenders, reads[j].account)
 			}
 		}
-		stored, err := s.storeAccount(ctx, read.account, read.disabled, contenders, complete)
+		stored, err := s.storeAccount(ctx, read.account, read.disabled, contenders, complete, nssWrite{via: via})
 		if err != nil {
 			return false, false, err
 		}
 		if stored.row != nil {
-			if err := s.storeMembershipsOf(ctx, stored.row, read.groups, read.gone); err != nil {
+			if err := s.storeMembershipsOf(ctx, stored.row, read.groups, read.gone, via); err != nil {
 				return false, false, err
 			}
 		}
@@ -574,7 +575,7 @@ func (s *NSSDirectoryService) readGroupsOnDemand(ctx context.Context, filter str
 				contenders = append(contenders, groups[j])
 			}
 		}
-		stored, err := s.storeGroup(ctx, group, contenders, complete, index, gone)
+		stored, err := s.storeGroup(ctx, group, contenders, complete, index, gone, nssWrite{via: nssViaOnDemand})
 		if err != nil {
 			return false, false, err
 		}
@@ -611,11 +612,13 @@ func (s *NSSDirectoryService) searchGroupsOnDemand(ctx context.Context, conn lda
 // storeMembershipsOf stores each group an account's membership search
 // found (its own attributes only: its members are the sync's to set) and
 // replaces the account's membership rows with exactly those groups. gone
-// is the search's evidence for re-anchoring a renamed group.
-func (s *NSSDirectoryService) storeMembershipsOf(ctx context.Context, account *model.PosixUser, groups []*nssGroup, gone *nssGroupGone) error {
+// is the search's evidence for re-anchoring a renamed group, and via the
+// path for the audit: each group the account joined or left records
+// nss.group_members_changed.
+func (s *NSSDirectoryService) storeMembershipsOf(ctx context.Context, account *model.PosixUser, groups []*nssGroup, gone *nssGroupGone, via string) error {
 	gids := make([]uint32, 0, len(groups))
 	for _, group := range groups {
-		stored, err := s.storeGroup(ctx, group, nil, nssKinds{}, nil, gone)
+		stored, err := s.storeGroup(ctx, group, nil, nssKinds{}, nil, gone, nssWrite{via: via})
 		if err != nil {
 			return err
 		}
@@ -623,7 +626,26 @@ func (s *NSSDirectoryService) storeMembershipsOf(ctx context.Context, account *m
 			gids = append(gids, stored.row.GID)
 		}
 	}
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return replaceMembershipsOfUser(tx, account.UID, gids)
+	var batch nssAuditBatch
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		before, err := readMembers(tx, "uid = ?", account.UID)
+		if err != nil {
+			return err
+		}
+		if err := replaceMembershipsOfUser(tx, account.UID, gids); err != nil {
+			return err
+		}
+		after := nssMembers{}
+		for _, gid := range gids {
+			after.add(gid, account.UID)
+		}
+		return s.recordMemberChanges(tx, &batch, memberDeltas(before, after), nssMemberChange{
+			via: via, userNames: map[uint32]string{account.UID: account.Name},
+		})
 	})
+	if err != nil {
+		return err
+	}
+	s.flush(&batch)
+	return nil
 }

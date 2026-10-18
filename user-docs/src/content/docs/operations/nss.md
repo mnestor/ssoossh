@@ -427,9 +427,35 @@ instances, and none of them blocks anything:
 Feed them to your SIEM with the rest of the [audit log](/ssoossh/operations/audit-log/).
 Changes are audited too: `nss.key_*` for key administration,
 `nss.id_change_accepted`, `nss.tombstone_purged`, `nss.shell_changed`, and
-`nss.group_renamed` (detail: `gid`, `old_name`, `new_name`, `old_dn`,
-`new_dn`, `detected_by` as `full_sync_absence` or `base_read`,
-`name_blocked`, `revived`).
+the [directory change events](#directory-change-events) below.
+
+## Directory change events
+
+Every change the server makes to what it serves is an audit event too,
+written with the change itself, so the log answers who joined or left a
+group and when an account or group appeared, went missing or came back.
+The sync's and the lookups' are the server's own; an accepted id change or
+an early purge carries the admin who did it. An account linked to a person
+has that person as the target. Each detail has `table`, `name`, `uid` or
+`gid`, `dn`, and `via`, the path that made the change: `full_sync`,
+`incremental_sync`, `on_demand` (a host's lookup), `login`, `tombstoned`,
+`id_change_accepted` or `tombstone_purged`.
+
+| Audit action | When | Also in the detail |
+| --- | --- | --- |
+| `nss.account_created`, `nss.group_created` | a new entry is stored | `gid` for an account, `member_count` for a group |
+| `nss.account_renamed` | an account takes its entry's new name | `old_name`, `new_name`, `old_dn` |
+| `nss.group_renamed` | a group is renamed or moved (above) | `old_name`, `new_name`, `old_dn`, `new_dn`, `detected_by` (`full_sync_absence`, `base_read`, or `matched` for a rename in place), `name_blocked`, `revived` |
+| `nss.account_missing`, `nss.group_missing` | the first full sync that does not see it | |
+| `nss.account_tombstoned`, `nss.group_tombstoned` | it stayed missing for `nss.tombstone_after` | `missing_since` |
+| `nss.account_revived`, `nss.group_revived` | a missing or deleted entry is seen again | `missing_since`, `was_tombstoned` |
+| `nss.group_members_changed` | one change to one group's members | `added`, `removed` (`{uid, name}` by uid, at most 100 each), `added_count`, `removed_count` |
+| `nss.initial_import` | the first sync into an empty table, once per table instead of one event per entry | `created`, and `memberships` for groups |
+
+Nothing is written when nothing changed: a sync over an unchanged directory
+adds no rows. A new group's members are in its `member_count`, not in a
+separate members event. On the Admin → Audit page they are under NSS
+directory in the action filter.
 
 ## Mail
 

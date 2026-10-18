@@ -156,19 +156,20 @@ func TestNSSGroupRename_ShouldReanchorTheGroupWhenItsOldEntryHasGone(t *testing.
 		newName     string
 		pass        nssPass
 		wantVia     string
+		wantPath    string
 		wantMembers []uint32
 		wantRevived bool
 	}{
-		{name: "should rename the group when a full sync no longer sees its old DN", newDN: "cn=ops-team,ou=groups,dc=test", newName: "ops-team", pass: nssPassFull, wantVia: nssGoneByFullSync, wantMembers: []uint32{1, 2}},
-		{name: "should move the group when a full sync sees it in another OU", newDN: "cn=ops,ou=teams,dc=test", newName: "ops", pass: nssPassFull, wantVia: nssGoneByFullSync, wantMembers: []uint32{1, 2}},
-		{name: "should rename the group when ldap.id_attribute is one groups do not carry", cfg: func(c *config.Config) { c.LDAP.IDAttribute = "sub" }, newDN: "cn=ops-team,ou=groups,dc=test", newName: "ops-team", pass: nssPassFull, wantVia: nssGoneByFullSync, wantMembers: []uint32{1, 2}},
-		{name: "should rename the group when an incremental sync's base read finds the old DN gone", newDN: "cn=ops-team,ou=groups,dc=test", newName: "ops-team", pass: nssPassIncremental, wantVia: nssGoneByBaseRead, wantMembers: []uint32{1, 2}},
-		{name: "should rename the group when an on-demand read asks for its new name", newDN: "cn=ops-team,ou=groups,dc=test", newName: "ops-team", pass: byName("ops-team"), wantVia: nssGoneByBaseRead, wantMembers: []uint32{1, 2}},
-		{name: "should rename the group when an on-demand read asks for its gid", newDN: "cn=ops-team,ou=groups,dc=test", newName: "ops-team", pass: byGID, wantVia: nssGoneByBaseRead, wantMembers: []uint32{1, 2}},
+		{name: "should rename the group when a full sync no longer sees its old DN", newDN: "cn=ops-team,ou=groups,dc=test", newName: "ops-team", pass: nssPassFull, wantPath: nssViaFullSync, wantVia: nssGoneByFullSync, wantMembers: []uint32{1, 2}},
+		{name: "should move the group when a full sync sees it in another OU", newDN: "cn=ops,ou=teams,dc=test", newName: "ops", pass: nssPassFull, wantPath: nssViaFullSync, wantVia: nssGoneByFullSync, wantMembers: []uint32{1, 2}},
+		{name: "should rename the group when ldap.id_attribute is one groups do not carry", cfg: func(c *config.Config) { c.LDAP.IDAttribute = "sub" }, newDN: "cn=ops-team,ou=groups,dc=test", newName: "ops-team", pass: nssPassFull, wantPath: nssViaFullSync, wantVia: nssGoneByFullSync, wantMembers: []uint32{1, 2}},
+		{name: "should rename the group when an incremental sync's base read finds the old DN gone", newDN: "cn=ops-team,ou=groups,dc=test", newName: "ops-team", pass: nssPassIncremental, wantPath: nssViaIncrementalSync, wantVia: nssGoneByBaseRead, wantMembers: []uint32{1, 2}},
+		{name: "should rename the group when an on-demand read asks for its new name", newDN: "cn=ops-team,ou=groups,dc=test", newName: "ops-team", pass: byName("ops-team"), wantPath: nssViaOnDemand, wantVia: nssGoneByBaseRead, wantMembers: []uint32{1, 2}},
+		{name: "should rename the group when an on-demand read asks for its gid", newDN: "cn=ops-team,ou=groups,dc=test", newName: "ops-team", pass: byGID, wantPath: nssViaOnDemand, wantVia: nssGoneByBaseRead, wantMembers: []uint32{1, 2}},
 		// The membership search reads groups without their members, which
 		// the sync sets: they carry over by gid unchanged.
-		{name: "should rename the group and keep its members when an account read's membership search finds it", newDN: "cn=ops-team,ou=groups,dc=test", newName: "ops-team", pass: byAccount, wantVia: nssGoneByBaseRead, wantMembers: []uint32{1}},
-		{name: "should revive the tombstone when its group reappears renamed", prepare: tombstone, newDN: "cn=ops-team,ou=groups,dc=test", newName: "ops-team", pass: nssPassFull, wantVia: nssGoneByFullSync, wantMembers: []uint32{1, 2}, wantRevived: true},
+		{name: "should rename the group and keep its members when an account read's membership search finds it", newDN: "cn=ops-team,ou=groups,dc=test", newName: "ops-team", pass: byAccount, wantPath: nssViaOnDemand, wantVia: nssGoneByBaseRead, wantMembers: []uint32{1}},
+		{name: "should revive the tombstone when its group reappears renamed", prepare: tombstone, newDN: "cn=ops-team,ou=groups,dc=test", newName: "ops-team", pass: nssPassFull, wantPath: nssViaFullSync, wantVia: nssGoneByFullSync, wantMembers: []uint32{1, 2}, wantRevived: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -214,7 +215,7 @@ func TestNSSGroupRename_ShouldReanchorTheGroupWhenItsOldEntryHasGone(t *testing.
 			want := map[string]any{
 				"table": "posix_groups", "gid": float64(700),
 				"old_name": "ops", "new_name": tt.newName, "old_dn": nssRenameOldDN, "new_dn": tt.newDN,
-				"detected_by": tt.wantVia, "name_blocked": false, "revived": tt.wantRevived,
+				"detected_by": tt.wantVia, "name_blocked": false, "revived": tt.wantRevived, "via": tt.wantPath,
 			}
 			if !reflect.DeepEqual(details[0], want) {
 				t.Errorf("nss.group_renamed detail = %v, want %v", details[0], want)

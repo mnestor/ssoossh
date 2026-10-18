@@ -64,21 +64,25 @@ func (s *NSSDirectoryService) AcceptUserIDChange(ctx context.Context, uid uint32
 	now := s.now().UTC()
 	var accepted model.PosixUser
 	var event AuditEvent
+	var batch nssAuditBatch
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var err error
-		event, err = s.acceptUserTx(tx, uid, actor, now, &accepted)
+		event, err = s.acceptUserTx(tx, uid, actor, now, &accepted, &batch)
 		return err
 	})
 	if err != nil {
 		return nil, err
 	}
 	s.logOnly(event)
+	s.flush(&batch)
 	return &accepted, nil
 }
 
 // acceptUserTx is AcceptUserIDChange's transaction, leaving the account as
-// accepted in out and returning the audit event it recorded.
-func (s *NSSDirectoryService) acceptUserTx(tx *gorm.DB, uid uint32, actor *AuditSubject, now time.Time, out *model.PosixUser) (AuditEvent, error) {
+// accepted in out and returning the audit event it recorded. A changed uid
+// moves the account between the member sets of its groups, which records
+// nss.group_members_changed in b for each.
+func (s *NSSDirectoryService) acceptUserTx(tx *gorm.DB, uid uint32, actor *AuditSubject, now time.Time, out *model.PosixUser, b *nssAuditBatch) (AuditEvent, error) {
 	var row model.PosixUser
 	err := tx.Where("uid = ?", uid).First(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) || (err == nil && row.PendingUID == nil && row.PendingGID == nil) {
@@ -95,7 +99,11 @@ func (s *NSSDirectoryService) acceptUserTx(tx *gorm.DB, uid uint32, actor *Audit
 	if row.PendingGID != nil {
 		newGID = *row.PendingGID
 	}
+	var before nssMembers
 	if newUID != row.UID {
+		if before, err = readMembers(tx, "uid IN ?", []uint32{row.UID, newUID}); err != nil {
+			return AuditEvent{}, err
+		}
 		if err := s.rekeyAccount(tx, &row, newUID); err != nil {
 			return AuditEvent{}, err
 		}
@@ -107,6 +115,17 @@ func (s *NSSDirectoryService) acceptUserTx(tx *gorm.DB, uid uint32, actor *Audit
 	}
 	if err := tx.First(out, "id = ?", row.ID).Error; err != nil {
 		return AuditEvent{}, err
+	}
+	if before != nil {
+		after, err := readMembers(tx, "uid IN ?", []uint32{row.UID, newUID})
+		if err != nil {
+			return AuditEvent{}, err
+		}
+		if err := s.recordMemberChanges(tx, b, memberDeltas(before, after), nssMemberChange{
+			via: nssViaIDChangeAccepted, actor: actor, userNames: map[uint32]string{row.UID: row.Name, newUID: row.Name},
+		}); err != nil {
+			return AuditEvent{}, err
+		}
 	}
 	if err := s.releaseHolds(tx, accountTable(), &nssRowRef{ID: out.ID, Name: out.Name, Number: out.UID}, now); err != nil {
 		return AuditEvent{}, err
@@ -158,6 +177,7 @@ func (s *NSSDirectoryService) AcceptGroupIDChange(ctx context.Context, gid uint3
 	now := s.now().UTC()
 	var accepted model.PosixGroup
 	var event AuditEvent
+	var batch nssAuditBatch
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var row model.PosixGroup
 		err := tx.Where("gid = ?", gid).First(&row).Error
@@ -177,7 +197,7 @@ func (s *NSSDirectoryService) AcceptGroupIDChange(ctx context.Context, gid uint3
 			return &errorresponses.ConflictError{Reason: fmt.Sprintf(
 				"gid %d is held by the NSS group %s (%s); a tombstone keeps its gid until it is purged", newGID, holder.Name, holder.DN)}
 		}
-		accounts, err := s.rekeyGroup(tx, row.GID, newGID, now)
+		accounts, err := s.rekeyGroupAudited(tx, &batch, &row, newGID, actor, now)
 		if err != nil {
 			return err
 		}
@@ -208,7 +228,30 @@ func (s *NSSDirectoryService) AcceptGroupIDChange(ctx context.Context, gid uint3
 		return nil, err
 	}
 	s.logOnly(event)
+	s.flush(&batch)
 	return &accepted, nil
+}
+
+// rekeyGroupAudited is rekeyGroup for row, recording in b the change to
+// its member set if there is one: the set moves with the group, so only
+// left-over rows under the new gid could make it differ.
+func (s *NSSDirectoryService) rekeyGroupAudited(tx *gorm.DB, b *nssAuditBatch, row *model.PosixGroup, newGID uint32, actor *AuditSubject, now time.Time) (int64, error) {
+	before, err := readMembers(tx, "gid = ?", row.GID)
+	if err != nil {
+		return 0, err
+	}
+	accounts, err := s.rekeyGroup(tx, row.GID, newGID, now)
+	if err != nil {
+		return 0, err
+	}
+	after, err := readMembers(tx, "gid = ?", newGID)
+	if err != nil {
+		return 0, err
+	}
+	moved := nssMembers{newGID: before[row.GID]}
+	return accounts, s.recordMemberChanges(tx, b, memberDeltas(moved, after), nssMemberChange{
+		via: nssViaIDChangeAccepted, actor: actor, groupNames: map[uint32]string{newGID: row.Name},
+	})
 }
 
 // rekeyGroup moves the memberships of oldGID, and every account whose

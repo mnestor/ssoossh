@@ -27,10 +27,21 @@ import {
 	AuditEnrollmentRedeemed,
 	AuditLDAPProbed,
 	AuditLDAPSyncTriggered,
+	AuditNSSAccountCreated,
+	AuditNSSAccountMissing,
+	AuditNSSAccountRenamed,
+	AuditNSSAccountRevived,
+	AuditNSSAccountTombstoned,
 	AuditNSSGIDCollision,
+	AuditNSSGroupCreated,
+	AuditNSSGroupMembersChanged,
+	AuditNSSGroupMissing,
 	AuditNSSGroupRenamed,
+	AuditNSSGroupRevived,
+	AuditNSSGroupTombstoned,
 	AuditNSSIDChangeAccepted,
 	AuditNSSIDChangePending,
+	AuditNSSInitialImport,
 	AuditNSSKeyCreated,
 	AuditNSSKeyExpiredAttempt,
 	AuditNSSKeyPreviousCleared,
@@ -156,6 +167,20 @@ export const auditPhrasing: Record<string, string> = {
 	// The group kept its gid and members; the detail has the old and new
 	// name and DN.
 	[AuditNSSGroupRenamed]: 'followed a directory group that was renamed or moved',
+	// The directory's own changes as the sync or a read stored them,
+	// system events read as "The server ...", or an admin's when an
+	// accepted id change or an early purge moved the memberships.
+	[AuditNSSAccountCreated]: 'stored a new directory account',
+	[AuditNSSGroupCreated]: 'stored a new directory group',
+	[AuditNSSAccountRenamed]: 'followed a directory account that was renamed',
+	[AuditNSSAccountMissing]: 'found a directory account missing',
+	[AuditNSSGroupMissing]: 'found a directory group missing',
+	[AuditNSSAccountTombstoned]: 'deleted a directory account that stayed missing',
+	[AuditNSSGroupTombstoned]: 'deleted a directory group that stayed missing',
+	[AuditNSSAccountRevived]: 'restored a directory account that reappeared',
+	[AuditNSSGroupRevived]: 'restored a directory group that reappeared',
+	[AuditNSSGroupMembersChanged]: "changed a directory group's members",
+	[AuditNSSInitialImport]: 'imported the directory for the first time',
 	// System events from the NSS lookup endpoints: no session, so each row
 	// reads "The server ...". The host's address is in source_ip and the
 	// fleet key it presented in key_id.
