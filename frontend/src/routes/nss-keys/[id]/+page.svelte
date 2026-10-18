@@ -530,7 +530,7 @@
 
 		{#if alerts.length > 0}
 			<Alert variant="warning" title="Unusual use in the last 7 days" testid="nss-key-alerts">
-				<div class="flex flex-col gap-1">
+				<div class="flex flex-col gap-2">
 					{#each alerts as alert (alert.kind)}
 						{#if alert.kind === 'misses'}
 							<p data-testid="nss-key-alert-misses">
