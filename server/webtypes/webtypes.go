@@ -90,6 +90,19 @@ type CurrentUserResponse struct {
 	IsAdmin   bool `json:"is_admin" validate:"required"`
 	IsSOC     bool `json:"is_soc" validate:"required"`
 	IsAuditor bool `json:"is_auditor" validate:"required"`
+	// IsNSSKeyAdmin reports the fleet key admin role (admin.nss_key_group,
+	// which admin implies): create keys and manage every one. Members of a
+	// single key's group manage that key without it. Display only, like
+	// the three above.
+	IsNSSKeyAdmin bool `json:"is_nss_key_admin" validate:"required"`
+
+	// NSSEnabled reports nss.enabled, so the UI shows the fleet keys and
+	// the login shell only where the server serves them.
+	NSSEnabled bool `json:"nss_enabled" validate:"required"`
+
+	// Posix is the caller's own POSIX account, or null when NSS is off or
+	// no directory account is linked to them yet.
+	Posix *PosixAccountResponse `json:"posix" tstype:"PosixAccountResponse | null,required" validate:"required"`
 
 	// DetailLevel is how much of the covered pages this person sees:
 	// "simplified" or "advanced". Stored on the server so it follows the

@@ -144,6 +144,98 @@ components:
       required:
       - status
       type: object
+    apitypes.NSSGroupResponse:
+      properties:
+        gid:
+          description: GID is the group id, frozen once stored like NSSUserResponse.UID.
+          type: integer
+        members:
+          description: Members are the member user names, capped at nss.max_group_members.
+          items:
+            type: string
+          type: array
+          uniqueItems: false
+        members_truncated:
+          description: |-
+            MembersTruncated is true when the cap cut Members short, so a host
+            can log that the list is incomplete rather than serve it as whole.
+          type: boolean
+        name:
+          description: Name is the group name.
+          type: string
+      required:
+      - members
+      - name
+      type: object
+    apitypes.NSSMembership:
+      properties:
+        gid:
+          description: GID is the group id.
+          type: integer
+        name:
+          description: Name is the group name, matched byte for byte like a user name.
+          type: string
+      required:
+      - name
+      type: object
+    apitypes.NSSUserResponse:
+      properties:
+        gecos:
+          description: Gecos is the rendered and sanitised nss.gecos_template output.
+          type: string
+        gid:
+          description: GID is the primary group id, after nss.auto_private_groups.
+          type: integer
+        groups:
+          description: |-
+            Groups is every membership, primary first, with the gid and the name
+            together, so one user lookup answers both "which groups" and "what is
+            group N called".
+          items:
+            $ref: '#/components/schemas/apitypes.NSSMembership'
+          type: array
+          uniqueItems: false
+        home:
+          description: |-
+            Home is the home directory: the directory attribute, else
+            nss.default_home expanded, else null.
+          type: string
+        key_id:
+          description: |-
+            KeyID is the fleet key that made the request, echoed for log
+            correlation.
+          type: string
+        name:
+          description: |-
+            Name is the login name, stored verbatim from the directory and
+            matched byte for byte.
+          type: string
+        shell:
+          description: |-
+            Shell is the login shell path: the directory attribute, else
+            nss.default_shell, else null. For a disabled or deleted account it is
+            nss.disabled_shell.
+          type: string
+        shell_pref:
+          description: |-
+            ShellPref is the shell name the user chose on the server (one of
+            nss.allowed_shells), or null. A name, not a path: the host resolves
+            it.
+          type: string
+        status:
+          description: Status is one of the NSSStatus* values.
+          type: string
+        uid:
+          description: |-
+            UID is the user id. Frozen once stored: a changed directory value is
+            held as a pending change until an admin accepts it.
+          type: integer
+      required:
+      - groups
+      - key_id
+      - name
+      - status
+      type: object
     apitypes.PAMRequestBody:
       properties:
         caller_gid:
@@ -614,10 +706,91 @@ components:
       required:
       - logged_out
       type: object
+    openapidoc.NSSGroupEnvelope:
+      properties:
+        data:
+          $ref: '#/components/schemas/apitypes.NSSGroupResponse'
+        error:
+          type: string
+      required:
+      - data
+      type: object
+    openapidoc.NSSKeyEnvelope:
+      properties:
+        data:
+          $ref: '#/components/schemas/webtypes.NSSKeyResponse'
+        error:
+          type: string
+      required:
+      - data
+      type: object
+    openapidoc.NSSKeyListEnvelope:
+      properties:
+        data:
+          $ref: '#/components/schemas/webtypes.NSSKeyListResponse'
+        error:
+          type: string
+      required:
+      - data
+      type: object
+    openapidoc.NSSKeySecretEnvelope:
+      properties:
+        data:
+          $ref: '#/components/schemas/webtypes.NSSKeySecretResponse'
+        error:
+          type: string
+      required:
+      - data
+      type: object
+    openapidoc.NSSKeyUsageEnvelope:
+      properties:
+        data:
+          $ref: '#/components/schemas/webtypes.NSSKeyUsageResponse'
+        error:
+          type: string
+      required:
+      - data
+      type: object
+    openapidoc.NSSRotationReportEnvelope:
+      properties:
+        data:
+          $ref: '#/components/schemas/webtypes.NSSRotationReportResponse'
+        error:
+          type: string
+      required:
+      - data
+      type: object
+    openapidoc.NSSShellsEnvelope:
+      properties:
+        data:
+          $ref: '#/components/schemas/webtypes.NSSShellsResponse'
+        error:
+          type: string
+      required:
+      - data
+      type: object
+    openapidoc.NSSUserEnvelope:
+      properties:
+        data:
+          $ref: '#/components/schemas/apitypes.NSSUserResponse'
+        error:
+          type: string
+      required:
+      - data
+      type: object
     openapidoc.NotificationPreferencesEnvelope:
       properties:
         data:
           $ref: '#/components/schemas/webtypes.NotificationPreferencesResponse'
+        error:
+          type: string
+      required:
+      - data
+      type: object
+    openapidoc.PosixAccountEnvelope:
+      properties:
+        data:
+          $ref: '#/components/schemas/webtypes.PosixAccountResponse'
         error:
           type: string
       required:
@@ -1675,6 +1848,21 @@ components:
       required:
       - key
       type: object
+    webtypes.CreateNSSKeyBody:
+      properties:
+        description:
+          type: string
+        expires_at:
+          type: string
+        group_name:
+          type: string
+        name:
+          type: string
+        notification_email:
+          type: string
+      required:
+      - name
+      type: object
     webtypes.CurrentUserResponse:
       properties:
         approvable_service_accounts:
@@ -1720,6 +1908,13 @@ components:
           type: boolean
         is_auditor:
           type: boolean
+        is_nss_key_admin:
+          description: |-
+            IsNSSKeyAdmin reports the fleet key admin role (admin.nss_key_group,
+            which admin implies): create keys and manage every one. Members of a
+            single key's group manage that key without it. Display only, like
+            the three above.
+          type: boolean
         is_soc:
           type: boolean
         name:
@@ -1728,6 +1923,11 @@ components:
             person rather than as an account. Display only, and empty when
             neither the identity provider nor the directory supplied one.
           type: string
+        nss_enabled:
+          description: |-
+            NSSEnabled reports nss.enabled, so the UI shows the fleet keys and
+            the login shell only where the server serves them.
+          type: boolean
         other_accounts:
           description: |-
             OtherAccounts are alternate account identifiers this identity is
@@ -1740,6 +1940,8 @@ components:
             type: string
           type: array
           uniqueItems: false
+        posix:
+          $ref: '#/components/schemas/webtypes.PosixAccountResponse'
         service_accounts:
           description: |-
             ServiceAccounts are the service accounts this identity holds (see
@@ -1774,9 +1976,12 @@ components:
       - groups
       - is_admin
       - is_auditor
+      - is_nss_key_admin
       - is_soc
       - name
+      - nss_enabled
       - other_accounts
+      - posix
       - service_accounts
       - subject
       - user_own_service_accounts
@@ -2362,6 +2567,237 @@ components:
       - started_at
       - trigger
       type: object
+    webtypes.NSSKeyListResponse:
+      properties:
+        can_create:
+          description: CanCreate is whether the caller may create keys.
+          type: boolean
+        keys:
+          items:
+            $ref: '#/components/schemas/webtypes.NSSKeyResponse'
+          type: array
+          uniqueItems: false
+      required:
+      - can_create
+      - keys
+      type: object
+    webtypes.NSSKeyResponse:
+      properties:
+        created_at:
+          type: string
+        created_by:
+          description: |-
+            CreatedBy is the creator's users.id, and CreatedByUsername their
+            username, empty when the account is gone.
+          type: string
+        created_by_username:
+          type: string
+        current_generation:
+          description: CurrentGeneration is 1 at creation and grows by one per rotation.
+          type: integer
+        description:
+          type: string
+        expires_at:
+          type: string
+        group_name:
+          description: |-
+            GroupName is the group whose members manage this key, empty for
+            none.
+          type: string
+        id:
+          description: |-
+            ID is "nss_" and 8 base32 characters, what hosts send as
+            X-Ssoossh-Key-Id. Fixed for the key's life.
+          type: string
+        name:
+          type: string
+        notification_email:
+          description: NotificationEmail is where the key's mail goes, empty for nowhere.
+          type: string
+        permissions:
+          description: |-
+            Permissions is what the caller may do with this key, decided by the
+            server so the UI never reimplements the role matrix. A revoked key
+            carries view alone.
+          items:
+            enum:
+            - view
+            - rotate
+            - revoke
+            - edit
+            - assign_group
+            type: string
+          type: array
+          uniqueItems: false
+        previous_expires_at:
+          description: |-
+            PreviousExpiresAt is when the previous secret stops being accepted,
+            absent when there is no previous secret.
+          type: string
+        revoked_at:
+          description: |-
+            RevokedAt, RevokedBy (a users.id) and RevokedByUsername record a
+            revocation, absent while the key is live.
+          type: string
+        revoked_by:
+          type: string
+        revoked_by_username:
+          type: string
+        rotated_at:
+          description: RotatedAt is the last rotation, absent for a key never rotated.
+          type: string
+        status:
+          description: Status is derived from the revocation and expiry.
+          enum:
+          - active
+          - expired
+          - revoked
+          type: string
+        updated_at:
+          type: string
+      required:
+      - created_at
+      - created_by
+      - created_by_username
+      - current_generation
+      - description
+      - expires_at
+      - group_name
+      - id
+      - name
+      - notification_email
+      - permissions
+      - status
+      - updated_at
+      type: object
+    webtypes.NSSKeySecretResponse:
+      properties:
+        key:
+          $ref: '#/components/schemas/webtypes.NSSKeyResponse'
+        secret:
+          type: string
+      required:
+      - key
+      - secret
+      type: object
+    webtypes.NSSKeyUsageResponse:
+      properties:
+        next_cursor:
+          description: NextCursor is the after for the following page, absent on the
+            last.
+          type: string
+        rows:
+          items:
+            $ref: '#/components/schemas/webtypes.NSSKeyUsageRowResponse'
+          type: array
+          uniqueItems: false
+        total:
+          description: Total counts every retained row for the key, across all pages.
+          type: integer
+      required:
+      - rows
+      - total
+      type: object
+    webtypes.NSSKeyUsageRowResponse:
+      properties:
+        day:
+          description: Day is midnight UTC of the day counted.
+          type: string
+        first_seen:
+          type: string
+        generation:
+          type: integer
+        last_seen:
+          type: string
+        lookups:
+          type: integer
+        misses:
+          type: integer
+        source_ip:
+          type: string
+      required:
+      - day
+      - first_seen
+      - generation
+      - last_seen
+      - lookups
+      - misses
+      - source_ip
+      type: object
+    webtypes.NSSRotationReportResponse:
+      properties:
+        current_generation:
+          type: integer
+        gone:
+          type: integer
+        grace_days_left:
+          description: |-
+            GraceDaysLeft is whole days, rounded up, until the previous secret
+            stops working; zero when there is none or it has ended.
+          type: integer
+        key_id:
+          type: string
+        not_switched:
+          type: integer
+        previous_expires_at:
+          type: string
+        rotated_at:
+          type: string
+        rows:
+          items:
+            $ref: '#/components/schemas/webtypes.NSSRotationReportRowResponse'
+          type: array
+          uniqueItems: false
+        switched:
+          type: integer
+      required:
+      - current_generation
+      - gone
+      - grace_days_left
+      - key_id
+      - not_switched
+      - rows
+      - switched
+      type: object
+    webtypes.NSSRotationReportRowResponse:
+      properties:
+        bucket:
+          description: |-
+            Bucket is switched (last presented the current secret), not_switched
+            (last presented an older one) or gone (not seen since the rotation).
+          enum:
+          - switched
+          - not_switched
+          - gone
+          type: string
+        first_seen:
+          type: string
+        last_generation:
+          type: integer
+        last_seen:
+          type: string
+        lookups:
+          type: integer
+        source_ip:
+          type: string
+      required:
+      - bucket
+      - first_seen
+      - last_generation
+      - last_seen
+      - lookups
+      - source_ip
+      type: object
+    webtypes.NSSShellsResponse:
+      properties:
+        allowed_shells:
+          items:
+            type: string
+          type: array
+          uniqueItems: false
+      required:
+      - allowed_shells
+      type: object
     webtypes.NotificationGroupResponse:
       properties:
         description:
@@ -2439,6 +2875,25 @@ components:
       - detail_level
       - groups
       - kinds
+      type: object
+    webtypes.PosixAccountResponse:
+      description: |-
+        Posix is the caller's own POSIX account, or null when NSS is off or
+        no directory account is linked to them yet.
+      properties:
+        name:
+          type: string
+        shell_pref:
+          description: |-
+            ShellPref is the shell name chosen from nss.allowed_shells, or null
+            when the account takes the directory's shell.
+          type: string
+        uid:
+          type: integer
+      required:
+      - name
+      - shell_pref
+      - uid
       type: object
     webtypes.ReEnableUserRequestBody:
       properties:
@@ -2806,6 +3261,17 @@ components:
       required:
       - detail_level
       type: object
+    webtypes.UpdateNSSKeyBody:
+      properties:
+        description:
+          type: string
+        expires_at:
+          type: string
+        group_name:
+          type: string
+        notification_email:
+          type: string
+      type: object
     webtypes.UpdateNotificationPreferencesBody:
       properties:
         detail_level:
@@ -2820,6 +3286,11 @@ components:
           type: object
       required:
       - kinds
+      type: object
+    webtypes.UpdateShellBody:
+      properties:
+        shell_pref:
+          type: string
       type: object
     webtypes.VersionResponse:
       properties:
@@ -2852,11 +3323,11 @@ components:
       type: object
   securitySchemes:
     sessionCookie:
-      description: The session established by /auth/callback. Sent by the browser
-        automatically; the ssoossh client never has one, and the endpoints it calls
-        do not require one.
-      in: cookie
-      name: ssoossh_session
+      description: The fleet API key's secret, shown once when the key is created
+        or rotated. Sent with the id on every NSS lookup; the server removes it from
+        the request before anything is logged.
+      in: header
+      name: X-Ssoossh-Key-Secret
       type: apiKey
 externalDocs:
   description: ssoossh documentation
@@ -4698,6 +5169,718 @@ paths:
       summary: The caller's denied certificate requests
       tags:
       - web
+  /api/nss/group/gid/{gid}:
+    get:
+      description: The same answer as the lookup by name, for a gid. Called by ssoosshd-nss
+        with a fleet key.
+      parameters:
+      - description: The gid, a decimal uint32
+        in: path
+        name: gid
+        required: true
+        schema:
+          type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.NSSGroupEnvelope'
+          description: The group
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: 'nss_bad_request: the gid is not a decimal uint32'
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: 'nss_unauthorized: the fleet key is missing, unknown, revoked,
+            expired or wrong'
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: 'nss_forbidden: the source address is outside nss.source_allow_list'
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: nss_not_found, or nss_disabled when nss.enabled is false
+        "429":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: nss_rate_limited, with Retry-After
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: 'unavailable: the gid is not in the database and the directory
+            could not be asked'
+      security:
+      - nssKeyID: []
+        nssKeySecret: []
+      summary: Look a POSIX group up by gid
+      tags:
+      - nss
+  /api/nss/group/name/{name}:
+    get:
+      description: |-
+        Resolves a group name, matched byte for byte, to its gid and member names, capped at
+        nss.max_group_members with members_truncated set when the cap applies. An account's private
+        group under nss.auto_private_groups resolves too, with no members. A tombstoned group resolves
+        with no members. Called by ssoosshd-nss with a fleet key.
+      parameters:
+      - description: The group name, by the relaxed POSIX rules nss-systemd applies
+        in: path
+        name: name
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.NSSGroupEnvelope'
+          description: The group
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: 'nss_bad_request: the name fails validation'
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: 'nss_unauthorized: the fleet key is missing, unknown, revoked,
+            expired or wrong'
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: 'nss_forbidden: the source address is outside nss.source_allow_list'
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: nss_not_found, or nss_disabled when nss.enabled is false
+        "429":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: nss_rate_limited, with Retry-After
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: 'unavailable: the name is not in the database and the directory
+            could not be asked'
+      security:
+      - nssKeyID: []
+        nssKeySecret: []
+      summary: Look a POSIX group up by name
+      tags:
+      - nss
+  /api/nss/keys:
+    get:
+      description: |-
+        Every key for the fleet key admin role, admins, SOC and auditors; for anyone else, the keys
+        whose group they are in. Each key carries what the caller may do with it.
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.NSSKeyListEnvelope'
+          description: The keys, by name
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No valid session
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: 'nss_disabled: nss.enabled is false'
+      security:
+      - sessionCookie: []
+      summary: List fleet API keys
+      tags:
+      - web
+    post:
+      description: |-
+        Fleet key admin role and admins only. Returns the key and its secret; the secret is shown
+        this once and never again, so the caller must store it now. expires_at defaults to
+        nss.key_default_lifetime from now and notification_email to the creator's address.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/webtypes.CreateNSSKeyBody'
+                description: The new key
+                summary: request
+        description: The new key
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.NSSKeySecretEnvelope'
+          description: The key and its secret
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Malformed body, a missing name, a past expiry or a bad address
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No valid session
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not the fleet key admin role, or no user record
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: 'nss_disabled: nss.enabled is false'
+      security:
+      - sessionCookie: []
+      summary: Create a fleet API key
+      tags:
+      - web
+  /api/nss/keys/{id}:
+    get:
+      description: The same view as the list, for one key. A key the caller may not
+        view is a 404.
+      parameters:
+      - description: Key id
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.NSSKeyEnvelope'
+          description: The key
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No valid session
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No such key the caller may view, or nss_disabled
+      security:
+      - sessionCookie: []
+      summary: One fleet API key
+      tags:
+      - web
+    patch:
+      description: |-
+        description, expires_at and notification_email need edit: the fleet key admin role, admins,
+        or the key's group. group_name needs assign_group: the fleet key admin role or admins. Fields
+        left out are unchanged. Moving expires_at re-arms the expiry reminder. A revoked key is a 409.
+      parameters:
+      - description: Key id
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/webtypes.UpdateNSSKeyBody'
+                description: The change
+                summary: request
+        description: The change
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.NSSKeyEnvelope'
+          description: The key after the change
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Malformed body, nothing to change, a past expiry or a bad address
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No valid session
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: The caller may view the key but not make this change
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No such key the caller may view, or nss_disabled
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: The key is revoked, or changed meanwhile
+      security:
+      - sessionCookie: []
+      summary: Change a fleet API key
+      tags:
+      - web
+  /api/nss/keys/{id}/previous:
+    delete:
+      description: |-
+        Stops accepting the previous secret before its rotation grace ends, once every host has
+        switched. Who may rotate the key may do this. A key with no previous secret is a 409.
+      parameters:
+      - description: Key id
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.NSSKeyEnvelope'
+          description: The key after the change
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No valid session
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: The caller may view the key but not rotate it
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No such key the caller may view, or nss_disabled
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: The key is revoked or has no previous secret
+      security:
+      - sessionCookie: []
+      summary: End a fleet API key's previous secret early
+      tags:
+      - web
+  /api/nss/keys/{id}/revoke:
+    post:
+      description: |-
+        Ends the key for good: neither secret is accepted again. The fleet key admin role, admins,
+        SOC, or the key's group. Already revoked is a 409.
+      parameters:
+      - description: Key id
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.NSSKeyEnvelope'
+          description: The revoked key
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No valid session
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: The caller may view the key but not revoke it
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No such key the caller may view, or nss_disabled
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: The key is already revoked
+      security:
+      - sessionCookie: []
+      summary: Revoke a fleet API key
+      tags:
+      - web
+  /api/nss/keys/{id}/rotate:
+    post:
+      description: |-
+        Issues a new secret, shown this once. The current secret becomes the previous one and stays
+        accepted for nss.key_rotation_grace, so hosts can switch over. The fleet key admin role,
+        admins, or the key's group. A revoked key is a 409.
+      parameters:
+      - description: Key id
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.NSSKeySecretEnvelope'
+          description: The key and its new secret
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No valid session
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: The caller may view the key but not rotate it
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No such key the caller may view, or nss_disabled
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: The key is revoked, or was rotated meanwhile
+      security:
+      - sessionCookie: []
+      summary: Rotate a fleet API key
+      tags:
+      - web
+  /api/nss/keys/{id}/rotation-report:
+    get:
+      description: |-
+        Per source address, whether it has switched to the current secret since the last rotation:
+        switched, not_switched (still presenting the previous secret, so it stops resolving accounts
+        when the grace ends) or gone (not seen since the rotation). With format=csv the rows come as
+        a CSV download instead. Whoever may view the key.
+      parameters:
+      - description: Key id
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      - description: csv for a CSV download
+        in: query
+        name: format
+        schema:
+          enum:
+          - csv
+          type: string
+      responses:
+        "200":
+          content:
+            text/csv:
+              schema:
+                $ref: '#/components/schemas/openapidoc.NSSRotationReportEnvelope'
+          description: The report
+        "400":
+          content:
+            text/csv:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: An unknown format
+        "401":
+          content:
+            text/csv:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No valid session
+        "404":
+          content:
+            text/csv:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No such key the caller may view, or nss_disabled
+      security:
+      - sessionCookie: []
+      summary: A fleet API key's rotation report
+      tags:
+      - web
+  /api/nss/keys/{id}/usage:
+    get:
+      description: |-
+        Lookups and misses per source address, secret generation and UTC day, newest day first,
+        kept for nss.usage_retention. Counts are written once a minute, so the newest minute is not
+        in them yet. Whoever may view the key.
+      parameters:
+      - description: Key id
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      - description: next_cursor of the previous page
+        in: query
+        name: after
+        schema:
+          type: string
+      - description: Page size, 1 to 100 (default 25)
+        in: query
+        name: limit
+        schema:
+          type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.NSSKeyUsageEnvelope'
+          description: One page of usage
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: A malformed limit or an unknown cursor
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No valid session
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No such key the caller may view, or nss_disabled
+      security:
+      - sessionCookie: []
+      summary: A fleet API key's usage
+      tags:
+      - web
+  /api/nss/shells:
+    get:
+      description: nss.allowed_shells, as bare names in configured order, for the
+        login shell field.
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.NSSShellsEnvelope'
+          description: The allowed shells
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No valid session
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: 'nss_disabled: nss.enabled is false'
+      security:
+      - sessionCookie: []
+      summary: The shells a person may choose
+      tags:
+      - web
+  /api/nss/user/name/{name}:
+    get:
+      description: |-
+        Resolves a login name, matched byte for byte, to the account a host serves: uid, primary gid
+        (after nss.auto_private_groups), every group with its name, home, shell, gecos and a status
+        derived on read. A disabled or deleted account is served with nss.disabled_shell. Called by
+        ssoosshd-nss with a fleet key. 404 nss_not_found is the one answer a host may cache as a miss.
+      parameters:
+      - description: The login name, by the relaxed POSIX rules nss-systemd applies
+        in: path
+        name: name
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.NSSUserEnvelope'
+          description: The account
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: 'nss_bad_request: the name fails validation'
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: 'nss_unauthorized: the fleet key is missing, unknown, revoked,
+            expired or wrong'
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: 'nss_forbidden: the source address is outside nss.source_allow_list'
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: nss_not_found, or nss_disabled when nss.enabled is false
+        "429":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: nss_rate_limited, with Retry-After
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: 'unavailable: the name is not in the database and the directory
+            could not be asked'
+      security:
+      - nssKeyID: []
+        nssKeySecret: []
+      summary: Look a POSIX user up by name
+      tags:
+      - nss
+  /api/nss/user/uid/{uid}:
+    get:
+      description: The same answer as the lookup by name, for a uid. Called by ssoosshd-nss
+        with a fleet key.
+      parameters:
+      - description: The uid, a decimal uint32
+        in: path
+        name: uid
+        required: true
+        schema:
+          type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.NSSUserEnvelope'
+          description: The account
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: 'nss_bad_request: the uid is not a decimal uint32'
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: 'nss_unauthorized: the fleet key is missing, unknown, revoked,
+            expired or wrong'
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: 'nss_forbidden: the source address is outside nss.source_allow_list'
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: nss_not_found, or nss_disabled when nss.enabled is false
+        "429":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: nss_rate_limited, with Retry-After
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: 'unavailable: the uid is not in the database and the directory
+            could not be asked'
+      security:
+      - nssKeyID: []
+        nssKeySecret: []
+      summary: Look a POSIX user up by uid
+      tags:
+      - nss
   /api/users/me:
     get:
       description: Sourced primarily from the session, with extra fields hydrated
@@ -4848,6 +6031,59 @@ paths:
       summary: Update the caller's own notification preferences
       tags:
       - web
+  /api/users/me/shell:
+    put:
+      description: |-
+        Sets shell_pref on the caller's POSIX account to one of nss.allowed_shells (see
+        /api/nss/shells), or clears it with null. Hosts resolve the name to their own path. A name
+        outside the list is a 400 whose message starts with shell_not_allowed. Audited.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/webtypes.UpdateShellBody'
+                description: The shell name, or null
+                summary: request
+        description: The shell name, or null
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.PosixAccountEnvelope'
+          description: The account after saving
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Malformed body, or shell_not_allowed
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No valid session
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: The session has no user record
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No POSIX account is linked to the caller, or nss_disabled
+      security:
+      - sessionCookie: []
+      summary: Choose the caller's own login shell
+      tags:
+      - web
   /api/version:
     get:
       description: |-
@@ -4983,3 +6219,6 @@ tags:
   name: web
 - description: Browser-facing OIDC redirects
   name: auth
+- description: Called by the ssoosshd-nss host daemon, authenticated by a fleet API
+    key
+  name: nss

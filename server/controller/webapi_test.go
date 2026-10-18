@@ -131,7 +131,7 @@ func TestCurrentUserHandler_ShouldReturnTheSessionIdentity(t *testing.T) {
 	}
 
 	r := gin.New()
-	NewUserController(&r.RouterGroup, &config.Config{}, identityMiddleware(identity), &mockUserDatabase{}, nil, func(g *gin.Context) { g.Next() })
+	NewUserController(&r.RouterGroup, &config.Config{}, identityMiddleware(identity), &mockUserDatabase{}, nil, func(g *gin.Context) { g.Next() }, nil)
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/users/me", nil))
@@ -214,7 +214,7 @@ func TestCurrentUserHandler_ShouldReportEveryAccessLevelHeld(t *testing.T) {
 
 			identity := &service.Identity{Subject: "sub-alice", Username: "alice", Groups: tt.groups}
 			r := gin.New()
-			NewUserController(&r.RouterGroup, &config.Config{Admin: admin}, identityMiddleware(identity), &mockUserDatabase{}, nil, func(g *gin.Context) { g.Next() })
+			NewUserController(&r.RouterGroup, &config.Config{Admin: admin}, identityMiddleware(identity), &mockUserDatabase{}, nil, func(g *gin.Context) { g.Next() }, nil)
 
 			w := httptest.NewRecorder()
 			r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/users/me", nil))
@@ -243,7 +243,7 @@ func TestCurrentUserHandler_ShouldRenderGroupsAsAnEmptyArray(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	r := gin.New()
-	NewUserController(&r.RouterGroup, &config.Config{}, identityMiddleware(&service.Identity{Subject: "sub-alice"}), &mockUserDatabase{}, nil, func(g *gin.Context) { g.Next() })
+	NewUserController(&r.RouterGroup, &config.Config{}, identityMiddleware(&service.Identity{Subject: "sub-alice"}), &mockUserDatabase{}, nil, func(g *gin.Context) { g.Next() }, nil)
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/users/me", nil))
@@ -277,7 +277,7 @@ func TestCurrentUserHandler_ShouldRejectWithoutAnIdentityOnContext(t *testing.T)
 		c.Next()
 		gotErrors = len(c.Errors)
 	})
-	NewUserController(&r.RouterGroup, &config.Config{}, passthrough, &mockUserDatabase{}, nil, func(g *gin.Context) { g.Next() })
+	NewUserController(&r.RouterGroup, &config.Config{}, passthrough, &mockUserDatabase{}, nil, func(g *gin.Context) { g.Next() }, nil)
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/users/me", nil))
@@ -313,7 +313,7 @@ func TestCurrentUserHandler_ShouldHydrateExtraFieldsFromTheUsersRow(t *testing.T
 	}
 
 	r := gin.New()
-	NewUserController(&r.RouterGroup, &config.Config{}, identityMiddleware(identity), mockUserDB, nil, func(g *gin.Context) { g.Next() })
+	NewUserController(&r.RouterGroup, &config.Config{}, identityMiddleware(identity), mockUserDB, nil, func(g *gin.Context) { g.Next() }, nil)
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/users/me", nil))
@@ -362,7 +362,7 @@ func TestCurrentUserHandler_ShouldIncludeEmptyExtraWhenNoUserRowExists(t *testin
 	mockUserDB := &mockUserDatabase{users: map[string]model.User{}}
 
 	r := gin.New()
-	NewUserController(&r.RouterGroup, &config.Config{}, identityMiddleware(identity), mockUserDB, nil, func(g *gin.Context) { g.Next() })
+	NewUserController(&r.RouterGroup, &config.Config{}, identityMiddleware(identity), mockUserDB, nil, func(g *gin.Context) { g.Next() }, nil)
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/users/me", nil))
@@ -407,7 +407,7 @@ func TestCurrentUserHandler_ShouldHandleMalformedExtraFields(t *testing.T) {
 	}
 
 	r := gin.New()
-	NewUserController(&r.RouterGroup, &config.Config{}, identityMiddleware(identity), mockUserDB, nil, func(g *gin.Context) { g.Next() })
+	NewUserController(&r.RouterGroup, &config.Config{}, identityMiddleware(identity), mockUserDB, nil, func(g *gin.Context) { g.Next() }, nil)
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/users/me", nil))
@@ -451,7 +451,7 @@ func TestCurrentUserHandler_ShouldRenderListValuedExtraFieldAsJSONArray(t *testi
 	}
 
 	r := gin.New()
-	NewUserController(&r.RouterGroup, &config.Config{}, identityMiddleware(identity), mockUserDB, nil, func(g *gin.Context) { g.Next() })
+	NewUserController(&r.RouterGroup, &config.Config{}, identityMiddleware(identity), mockUserDB, nil, func(g *gin.Context) { g.Next() }, nil)
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/users/me", nil))
@@ -882,7 +882,7 @@ func TestWebReadEndpoints_ShouldFailClosedWithoutASession(t *testing.T) {
 			// took a database for extra-field hydration, the certificate
 			// controller took a config for the detail endpoint's
 			// approver-or-auditor rule.
-			NewUserController(&r.RouterGroup, &config.Config{}, sessionAuth, &mockUserDatabase{}, nil, func(g *gin.Context) { g.Next() })
+			NewUserController(&r.RouterGroup, &config.Config{}, sessionAuth, &mockUserDatabase{}, nil, func(g *gin.Context) { g.Next() }, nil)
 			NewCertificateController(&r.RouterGroup, &fakeCertificateService{}, sessionAuth, nil)
 			NewCertRequestController(&r.RouterGroup, &fakeCertRequestService{}, sessionAuth, passthrough, nil)
 
