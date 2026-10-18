@@ -24,6 +24,7 @@ import FilterChip from './FilterChip.svelte';
 import FilterGroup from './FilterGroup.svelte';
 import Footer from './Footer.svelte';
 import Icon from './Icon.svelte';
+import KeyStatusBadge from './KeyStatusBadge.svelte';
 import ListStatus from './ListStatus.svelte';
 import LoadingBlock from './LoadingBlock.svelte';
 import LoadMoreFooter from './LoadMoreFooter.svelte';
@@ -37,6 +38,7 @@ import RailItem from './RailItem.svelte';
 import RailUserMenu from './RailUserMenu.svelte';
 import RedemptionHistory from './RedemptionHistory.svelte';
 import SearchInput from './SearchInput.svelte';
+import SecretPanel from './SecretPanel.svelte';
 import SectionLabel from './SectionLabel.svelte';
 import Switch from './Switch.svelte';
 import ServiceAccountRow from './ServiceAccountRow.svelte';
@@ -210,6 +212,21 @@ const cases: [string, any, Record<string, unknown>][] = [
 			children: text('A live pass can disable an account.')
 		}
 	],
+	[
+		'ConfirmModal (typed)',
+		ConfirmModal,
+		{
+			title: 'Revoke this key?',
+			reasonless: true,
+			confirmText: 'nss_k7m4qp2x',
+			confirmTextNoun: 'the key id',
+			confirmLabel: 'Revoke',
+			busyLabel: 'Revoking…',
+			onconfirm: vi.fn(),
+			oncancel: vi.fn(),
+			children: text('Neither secret is accepted again.')
+		}
+	],
 	['CopyableId', CopyableId, { value: 'cert-1', label: 'Request' }],
 	['DetailToggle', DetailToggle, {}],
 	['EmptyState', EmptyState, { icon: 'certificate-off', title: 'No certificates yet' }],
@@ -260,6 +277,8 @@ const cases: [string, any, Record<string, unknown>][] = [
 	['Footer', Footer, {}],
 	['Icon (decorative)', Icon, { name: 'certificate' }],
 	['Icon (labelled)', Icon, { name: 'certificate', ariaLabel: 'Certificate' }],
+	['KeyStatusBadge (rotating)', KeyStatusBadge, { status: 'rotating' }],
+	['KeyStatusBadge (revoked)', KeyStatusBadge, { status: 'revoked' }],
 	['ListStatus', ListStatus, { message: '12 certificates found.' }],
 	[
 		'LoadMoreFooter',
@@ -336,6 +355,16 @@ const cases: [string, any, Record<string, unknown>][] = [
 	['RailUserMenu', RailUserMenu, { identity: 'alice@example.com', onsignout: vi.fn() }],
 	['RedemptionHistory', RedemptionHistory, { retrievals: [], total: 0 }],
 	['SearchInput', SearchInput, { label: 'Search certificates', onsearch: vi.fn() }],
+	[
+		'SecretPanel',
+		SecretPanel,
+		{
+			keyId: 'nss_k7m4qp2x',
+			secret: 'c2VjcmV0',
+			previousExpiresAt: '2026-09-21T12:00:00Z',
+			ondismiss: vi.fn()
+		}
+	],
 	['SectionLabel', SectionLabel, { children: text('Filter') }],
 	['SectionLabel (labelling a field)', SectionLabel, { for: 'x', children: text('Filter') }],
 	[

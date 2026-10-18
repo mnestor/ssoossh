@@ -44,6 +44,11 @@
 		IconHistory,
 		IconKey,
 		IconKeyboard,
+		IconServer2,
+		IconServerOff,
+		IconRotate,
+		IconDownload,
+		IconPencil,
 		// Admin destinations.
 		IconShieldLock,
 		IconUsers,
@@ -127,6 +132,12 @@
 		history: IconHistory,
 		key: IconKey,
 		keyboard: IconKeyboard,
+		// NSS fleet keys: the fleet of hosts a key serves, and that fleet
+		// cut off once the key is revoked. `rotate` marks the window in
+		// which two secrets are accepted.
+		'server-2': IconServer2,
+		'server-off': IconServerOff,
+		rotate: IconRotate,
 		// Admin destinations
 		'shield-lock': IconShieldLock,
 		users: IconUsers,
@@ -155,6 +166,10 @@
 		search: IconSearch,
 		x: IconX,
 		copy: IconCopy,
+		// A file to save (the rotation report's CSV), and a value to change
+		// in place.
+		download: IconDownload,
+		pencil: IconPencil,
 		// Noun, then state: a copy that landed, not a choice. `check`
 		// means "chosen" and nothing else.
 		'copy-check': IconCopyCheck,

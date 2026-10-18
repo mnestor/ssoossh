@@ -8,6 +8,7 @@ import type {
 	AdminUserDetail,
 	AdminUsersListResponse,
 	ApproveResult,
+	CreateNSSKeyBody,
 	CertificateListAdminResponse,
 	CertificateListResponse,
 	DeniedRequestListResponse,
@@ -30,11 +31,24 @@ import type {
 	LDAPSyncRequestBody,
 	LDAPSyncRunResponse,
 	NotificationPreferences,
+	NSSAcceptedGroupIDChangeResponse,
+	NSSAcceptedUserIDChangeResponse,
+	NSSCollisionsResponse,
+	NSSKey,
+	NSSKeyListResponse,
+	NSSKeySecret,
+	NSSKeyUsageResponse,
+	NSSPendingIDChangesResponse,
+	NSSPurgedTombstoneResponse,
+	NSSRotationReport,
+	NSSShellsResponse,
+	PosixAccount,
 	ReEnableUserRequestBody,
 	RequestDetail,
 	ResolveCodeResult,
 	ServiceEnrollmentsResponse,
-	SetNotificationEmailRequestBody
+	SetNotificationEmailRequestBody,
+	UpdateNSSKeyBody
 } from './types';
 
 /** GET /api/users/me. */
@@ -640,4 +654,124 @@ export function runDiagnostics(): Promise<DiagnosticsResponse> {
  */
 export function startIdentityEcho(): Promise<IdentityEchoStartResponse> {
 	return request<IdentityEchoStartResponse>('/admin/identity/echo/start', { method: 'POST' });
+}
+
+/**
+ * PUT /api/users/me/shell — the caller's own login shell, by name from
+ * GET /api/nss/shells, or null for the directory's shell. A name outside the
+ * list is a 400 whose message starts with shell_not_allowed.
+ */
+export function updateShellPreference(shell: string | null): Promise<PosixAccount> {
+	return request<PosixAccount>('/users/me/shell', {
+		method: 'PUT',
+		body: { shell_pref: shell }
+	});
+}
+
+/** GET /api/nss/shells — the shell names a person may choose, in configured order. */
+export function listNSSShells(signal?: AbortSignal): Promise<NSSShellsResponse> {
+	return request<NSSShellsResponse>('/nss/shells', { signal });
+}
+
+/** GET /api/nss/keys — every fleet key the caller may view, each with what they may do to it. */
+export function listNSSKeys(signal?: AbortSignal): Promise<NSSKeyListResponse> {
+	return request<NSSKeyListResponse>('/nss/keys', { signal });
+}
+
+/** GET /api/nss/keys/:id — one fleet key; a key the caller may not view is a 404. */
+export function getNSSKey(id: string, signal?: AbortSignal): Promise<NSSKey> {
+	return request<NSSKey>(`/nss/keys/${encodeURIComponent(id)}`, { signal });
+}
+
+/** POST /api/nss/keys — creates a key and answers its secret, this once. */
+export function createNSSKey(body: CreateNSSKeyBody): Promise<NSSKeySecret> {
+	return request<NSSKeySecret>('/nss/keys', { method: 'POST', body });
+}
+
+/** PATCH /api/nss/keys/:id — changes the fields given; the rest stay. */
+export function updateNSSKey(id: string, body: UpdateNSSKeyBody): Promise<NSSKey> {
+	return request<NSSKey>(`/nss/keys/${encodeURIComponent(id)}`, { method: 'PATCH', body });
+}
+
+/** POST /api/nss/keys/:id/rotate — a new secret, answered this once; the old one stays for the grace. */
+export function rotateNSSKey(id: string): Promise<NSSKeySecret> {
+	return request<NSSKeySecret>(`/nss/keys/${encodeURIComponent(id)}/rotate`, { method: 'POST' });
+}
+
+/** DELETE /api/nss/keys/:id/previous — stops accepting the previous secret before its grace ends. */
+export function clearNSSKeyPrevious(id: string): Promise<NSSKey> {
+	return request<NSSKey>(`/nss/keys/${encodeURIComponent(id)}/previous`, { method: 'DELETE' });
+}
+
+/** POST /api/nss/keys/:id/revoke — ends the key and both its secrets for good. */
+export function revokeNSSKey(id: string): Promise<NSSKey> {
+	return request<NSSKey>(`/nss/keys/${encodeURIComponent(id)}/revoke`, { method: 'POST' });
+}
+
+/** GET /api/nss/keys/:id/usage — one page of lookups per address, generation and day, newest first. */
+export function getNSSKeyUsage(
+	id: string,
+	options: { after?: string; signal?: AbortSignal } = {}
+): Promise<NSSKeyUsageResponse> {
+	const params = new URLSearchParams();
+	if (options.after) params.set('after', options.after);
+	const query = params.toString();
+	return request<NSSKeyUsageResponse>(
+		`/nss/keys/${encodeURIComponent(id)}/usage${query ? `?${query}` : ''}`,
+		{ signal: options.signal }
+	);
+}
+
+/** GET /api/nss/keys/:id/rotation-report — which addresses switched to the current secret. */
+export function getNSSRotationReport(id: string, signal?: AbortSignal): Promise<NSSRotationReport> {
+	return request<NSSRotationReport>(`/nss/keys/${encodeURIComponent(id)}/rotation-report`, {
+		signal
+	});
+}
+
+/**
+ * nssRotationReportCSVURL is the rotation report as a CSV download. A plain
+ * URL for a link rather than a request(): the answer is a file, not the
+ * JSON envelope request() unwraps.
+ */
+export function nssRotationReportCSVURL(id: string): string {
+	return `/api/nss/keys/${encodeURIComponent(id)}/rotation-report?format=csv`;
+}
+
+/** GET /api/admin/nss/pending-id-changes — accounts and groups whose directory number moved. */
+export function getNSSPendingIDChanges(signal?: AbortSignal): Promise<NSSPendingIDChangesResponse> {
+	return request<NSSPendingIDChangesResponse>('/admin/nss/pending-id-changes', { signal });
+}
+
+/** POST /api/admin/nss/users/:uid/accept-id-change — keyed by the stored uid; 409 when the new one is held. */
+export function acceptNSSUserIDChange(uid: number): Promise<NSSAcceptedUserIDChangeResponse> {
+	return request<NSSAcceptedUserIDChangeResponse>(`/admin/nss/users/${uid}/accept-id-change`, {
+		method: 'POST'
+	});
+}
+
+/** POST /api/admin/nss/groups/:gid/accept-id-change — keyed by the stored gid; 409 when the new one is held. */
+export function acceptNSSGroupIDChange(gid: number): Promise<NSSAcceptedGroupIDChangeResponse> {
+	return request<NSSAcceptedGroupIDChangeResponse>(`/admin/nss/groups/${gid}/accept-id-change`, {
+		method: 'POST'
+	});
+}
+
+/** GET /api/admin/nss/collisions — every pair of entries contending for one uid, gid or name. */
+export function getNSSCollisions(signal?: AbortSignal): Promise<NSSCollisionsResponse> {
+	return request<NSSCollisionsResponse>('/admin/nss/collisions', { signal });
+}
+
+/** DELETE /api/admin/nss/users/:uid/tombstone — purges a tombstoned account early. */
+export function purgeNSSUserTombstone(uid: number): Promise<NSSPurgedTombstoneResponse> {
+	return request<NSSPurgedTombstoneResponse>(`/admin/nss/users/${uid}/tombstone`, {
+		method: 'DELETE'
+	});
+}
+
+/** DELETE /api/admin/nss/groups/:gid/tombstone — purges a tombstoned group early. */
+export function purgeNSSGroupTombstone(gid: number): Promise<NSSPurgedTombstoneResponse> {
+	return request<NSSPurgedTombstoneResponse>(`/admin/nss/groups/${gid}/tombstone`, {
+		method: 'DELETE'
+	});
 }

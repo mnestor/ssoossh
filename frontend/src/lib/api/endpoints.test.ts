@@ -1,7 +1,25 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+	acceptNSSGroupIDChange,
+	acceptNSSUserIDChange,
 	approveRequest,
+	clearNSSKeyPrevious,
+	createNSSKey,
+	getNSSCollisions,
+	getNSSKey,
+	getNSSKeyUsage,
+	getNSSPendingIDChanges,
+	getNSSRotationReport,
+	listNSSKeys,
+	listNSSShells,
+	nssRotationReportCSVURL,
+	purgeNSSGroupTombstone,
+	purgeNSSUserTombstone,
+	revokeNSSKey,
+	rotateNSSKey,
+	updateNSSKey,
+	updateShellPreference,
 	denyRequest,
 	getRequestDetail,
 	listServiceEnrollments,
@@ -109,5 +127,131 @@ describe('logout', () => {
 			vi.fn(() => Promise.reject(new TypeError('Failed to fetch')))
 		);
 		await expect(logout()).rejects.toMatchObject({ status: 0 });
+	});
+});
+
+describe('NSS endpoints', () => {
+	// Method and path per wrapper, pinned against the routes registered in
+	// server/controller/nss_keys.go, nssadmin.go and users.go.
+	const cases: { name: string; call: () => Promise<unknown>; method: string; url: string }[] = [
+		{ name: 'list keys', call: () => listNSSKeys(), method: 'GET', url: '/api/nss/keys' },
+		{
+			name: 'one key',
+			call: () => getNSSKey('nss_a/b'),
+			method: 'GET',
+			url: '/api/nss/keys/nss_a%2Fb'
+		},
+		{
+			name: 'create a key',
+			call: () => createNSSKey({ name: 'web' }),
+			method: 'POST',
+			url: '/api/nss/keys'
+		},
+		{
+			name: 'change a key',
+			call: () => updateNSSKey('nss_k1', { description: 'x' }),
+			method: 'PATCH',
+			url: '/api/nss/keys/nss_k1'
+		},
+		{
+			name: 'rotate a key',
+			call: () => rotateNSSKey('nss_k1'),
+			method: 'POST',
+			url: '/api/nss/keys/nss_k1/rotate'
+		},
+		{
+			name: 'clear the previous secret',
+			call: () => clearNSSKeyPrevious('nss_k1'),
+			method: 'DELETE',
+			url: '/api/nss/keys/nss_k1/previous'
+		},
+		{
+			name: 'revoke a key',
+			call: () => revokeNSSKey('nss_k1'),
+			method: 'POST',
+			url: '/api/nss/keys/nss_k1/revoke'
+		},
+		{
+			name: 'usage, first page',
+			call: () => getNSSKeyUsage('nss_k1'),
+			method: 'GET',
+			url: '/api/nss/keys/nss_k1/usage'
+		},
+		{
+			name: 'usage, a later page',
+			call: () => getNSSKeyUsage('nss_k1', { after: 'c 1' }),
+			method: 'GET',
+			url: '/api/nss/keys/nss_k1/usage?after=c+1'
+		},
+		{
+			name: 'rotation report',
+			call: () => getNSSRotationReport('nss_k1'),
+			method: 'GET',
+			url: '/api/nss/keys/nss_k1/rotation-report'
+		},
+		{ name: 'shells', call: () => listNSSShells(), method: 'GET', url: '/api/nss/shells' },
+		{
+			name: 'save the shell',
+			call: () => updateShellPreference(null),
+			method: 'PUT',
+			url: '/api/users/me/shell'
+		},
+		{
+			name: 'pending id changes',
+			call: () => getNSSPendingIDChanges(),
+			method: 'GET',
+			url: '/api/admin/nss/pending-id-changes'
+		},
+		{
+			name: 'accept a uid',
+			call: () => acceptNSSUserIDChange(10001),
+			method: 'POST',
+			url: '/api/admin/nss/users/10001/accept-id-change'
+		},
+		{
+			name: 'accept a gid',
+			call: () => acceptNSSGroupIDChange(5000),
+			method: 'POST',
+			url: '/api/admin/nss/groups/5000/accept-id-change'
+		},
+		{
+			name: 'collisions',
+			call: () => getNSSCollisions(),
+			method: 'GET',
+			url: '/api/admin/nss/collisions'
+		},
+		{
+			name: 'purge an account tombstone',
+			call: () => purgeNSSUserTombstone(10001),
+			method: 'DELETE',
+			url: '/api/admin/nss/users/10001/tombstone'
+		},
+		{
+			name: 'purge a group tombstone',
+			call: () => purgeNSSGroupTombstone(5000),
+			method: 'DELETE',
+			url: '/api/admin/nss/groups/5000/tombstone'
+		}
+	];
+
+	for (const { name, call, method, url } of cases) {
+		it(`should call ${method} ${url} when asked to ${name}`, async () => {
+			const fetchMock = okFetch();
+			await call();
+			const { url: got, init } = firstCall(fetchMock);
+			expect({ url: got, method: init.method }).toEqual({ url, method });
+		});
+	}
+
+	it('should send null to clear the shell when the directory default is chosen', async () => {
+		const fetchMock = okFetch();
+		await updateShellPreference(null);
+		expect(firstCall(fetchMock).init.body).toBe('{"shell_pref":null}');
+	});
+
+	it('should build the CSV address under the api prefix when asked for a download', () => {
+		expect(nssRotationReportCSVURL('nss_k1')).toBe(
+			'/api/nss/keys/nss_k1/rotation-report?format=csv'
+		);
 	});
 });
