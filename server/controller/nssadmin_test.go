@@ -463,3 +463,54 @@ func TestNSSSyncRunResponse_ShouldCarryTheErrorWhenTheRunFailed(t *testing.T) {
 		t.Errorf("response = %+v, want the error, no finish time and the run's start", got)
 	}
 }
+
+// TestLDAPSyncHandler_ShouldAuditTheNSSOutcomeInTheResponseShape keeps the
+// ldap.sync_triggered event's nss detail, which the service now builds,
+// identical to the nss object the endpoint returns, as it was when the
+// endpoint recorded it from the response.
+func TestLDAPSyncHandler_ShouldAuditTheNSSOutcomeInTheResponseShape(t *testing.T) {
+	t.Parallel()
+
+	finished := nssAdminTime().Add(time.Minute)
+	tests := []struct {
+		name string
+		nss  *fakeNSSSync
+	}{
+		{name: "should match when the NSS sync completed", nss: &fakeNSSSync{result: &service.NSSSyncResult{
+			Full: true, StartedAt: nssAdminTime(), FinishedAt: finished,
+			Accounts: service.NSSSyncCounts{Seen: 3, Created: 2, Tombstoned: 1}, Groups: service.NSSSyncCounts{Seen: 2, Refused: 1},
+		}}},
+		{name: "should match when the NSS sync failed", nss: &fakeNSSSync{
+			result: &service.NSSSyncResult{Full: true, StartedAt: nssAdminTime()}, err: errors.New("nss sync could not connect"),
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			db := testdb.New(t)
+			fake := &fakeLDAPDiagnostics{run: &model.LDAPSyncRun{ID: "run-1", StartedAt: time.Now()}}
+			identity := &service.Identity{Subject: "sub-alice", Username: "alice", Groups: []string{"ssh-admins"}}
+			r := ldapRouterWithNSS(t, ldapAdminTestConfig(), db, identity, fake, tt.nss)
+
+			w := doLDAPRequest(r, http.MethodPost, "/admin/ldap/sync", webtypes.LDAPSyncRequestBody{})
+			var got webtypes.LDAPSyncRunResponse
+			decodeEnvelope(t, w.Body.Bytes(), &got)
+			wantJSON, err := json.Marshal(got.NSS)
+			if err != nil {
+				t.Fatalf("encode the response's nss: %v", err)
+			}
+
+			events := auditEventsWithAction(t, db, string(service.AuditLDAPSyncTriggered))
+			var payload struct {
+				Detail map[string]json.RawMessage `json:"detail"`
+			}
+			if len(events) != 1 || json.Unmarshal([]byte(events[0].Payload), &payload) != nil {
+				t.Fatalf("sync events = %+v, want one", events)
+			}
+			if string(payload.Detail["nss"]) != string(wantJSON) {
+				t.Errorf("audit nss = %s, want the response's %s", payload.Detail["nss"], wantJSON)
+			}
+		})
+	}
+}

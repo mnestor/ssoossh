@@ -117,6 +117,10 @@
           {
             "label": "probe",
             "slug": "reference/cli/ssoosshd/ldap-probe"
+          },
+          {
+            "label": "sync",
+            "slug": "reference/cli/ssoosshd/ldap-sync"
           }
         ]
       },

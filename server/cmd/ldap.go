@@ -24,7 +24,7 @@ type ldapCommand struct {
 }
 
 func newLDAPCommand() simplecobra.Commander {
-	return &ldapCommand{commands: []simplecobra.Commander{newLDAPProbeCommand()}}
+	return &ldapCommand{commands: []simplecobra.Commander{newLDAPProbeCommand(), newLDAPSyncCommand()}}
 }
 
 // Name implements simplecobra.Commander.
@@ -36,8 +36,9 @@ func (c *ldapCommand) Commands() []simplecobra.Commander { return c.commands }
 // Init implements simplecobra.Commander.
 func (c *ldapCommand) Init(cd *simplecobra.Commandeer) error {
 	cd.CobraCommand.Short = "Directory tools."
-	cd.CobraCommand.Long = "Tools for the optional LDAP directory enrichment. " +
-		"Everything here is read-only and works against the loaded configuration file."
+	cd.CobraCommand.Long = "Tools for the optional LDAP directory enrichment, working against the " +
+		"loaded configuration file. probe is read-only and opens no database; sync runs the " +
+		"directory sync now against the server's database."
 	return nil
 }
 
