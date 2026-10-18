@@ -350,25 +350,6 @@ func TestNSSAuditRefs_ShouldReferToTheAccountWhenANameMismatchIsRaised(t *testin
 	}
 }
 
-func TestNSSAuditRefs_ShouldReferToTheAccountWhenItsShellChanges(t *testing.T) {
-	t.Parallel()
-
-	h := newNSSHarness(t, nil)
-	aliceID := seedNSSPerson(t, h.db, "sub-alice", "alice", nil)
-	row := seedPosixUser(t, h.db, model.PosixUser{Name: "alice", UID: 10001, GID: u32p(10001), UserID: &aliceID})
-	c := nssLookupTestConfig()
-	lookups := newTestNSSLookup(c, h.db, nil)
-	lookups.SetAuditor(NewAuditService(c, h.db))
-	shell := c.NSS.AllowedShells[0]
-	if _, err := lookups.SetShellPref(t.Context(), &Identity{Subject: "sub-alice", Username: "alice"}, &shell, "192.0.2.7"); err != nil {
-		t.Fatalf("SetShellPref() error = %v", err)
-	}
-
-	if got := h.actionRefs(t, AuditNSSShellChanged, map[string]nssRefName{row.ID: account("alice")}); !slices.Equal(got, []nssRefName{account("alice")}) {
-		t.Errorf("nss.shell_changed refs = %v, want alice", got)
-	}
-}
-
 // historyActions reads every page of a row's history, newest first, as
 // actions.
 func historyActions(t *testing.T, read func(params paging.Params) (*AuditPage, error)) []AuditAction {

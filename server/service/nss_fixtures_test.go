@@ -37,7 +37,6 @@ func nssLookupTestConfig() *config.Config {
 		TombstoneRetention:  2160 * time.Hour,
 		DefaultHome:         "/home/%u",
 		DisabledShell:       "/usr/sbin/nologin",
-		AllowedShells:       []string{"sh", "bash", "zsh", "fish"},
 		MaxGroupMembers:     2000,
 		RateLimit:           20,
 		RateBurst:           200,

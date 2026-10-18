@@ -367,8 +367,3 @@ export const AuditNSSKeyPreviousCleared: AuditAction = "nss.key_previous_cleared
  * never accepted again.
  */
 export const AuditNSSKeyRevoked: AuditAction = "nss.key_revoked";
-/**
- * AuditNSSShellChanged is a person choosing, or clearing, the login
- * shell their own POSIX account is served with.
- */
-export const AuditNSSShellChanged: AuditAction = "nss.shell_changed";

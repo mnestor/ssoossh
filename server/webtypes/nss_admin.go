@@ -209,9 +209,7 @@ type NSSAccountDetailResponse struct {
 	// nss.default_home and nss.default_shell fallbacks.
 	Home  *string `json:"home,omitempty"`
 	Shell *string `json:"shell,omitempty"`
-	// ShellPref is the linked person's own choice from nss.allowed_shells.
-	ShellPref *string `json:"shell_pref,omitempty"`
-	Gecos     string  `json:"gecos,omitempty"`
+	Gecos string  `json:"gecos,omitempty"`
 	// DirDisabled is the directory's own disabled flag
 	// (nss.disabled_filter).
 	DirDisabled bool `json:"dir_disabled" validate:"required"`
@@ -266,12 +264,11 @@ type NSSServedAccountResponse struct {
 	// GID is the primary gid after nss.auto_private_groups.
 	GID uint32 `json:"gid" validate:"required"`
 	// Groups is every membership served, primary first.
-	Groups    []NSSServedMembershipResponse `json:"groups" validate:"required"`
-	Home      *string                       `json:"home,omitempty"`
-	Shell     *string                       `json:"shell,omitempty"`
-	ShellPref *string                       `json:"shell_pref,omitempty"`
-	Gecos     string                        `json:"gecos,omitempty"`
-	Status    model.PosixStatus             `json:"status" validate:"required"`
+	Groups []NSSServedMembershipResponse `json:"groups" validate:"required"`
+	Home   *string                       `json:"home,omitempty"`
+	Shell  *string                       `json:"shell,omitempty"`
+	Gecos  string                        `json:"gecos,omitempty"`
+	Status model.PosixStatus             `json:"status" validate:"required"`
 }
 
 // NSSServedMembershipResponse is one group in a served account's groups.

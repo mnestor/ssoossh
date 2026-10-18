@@ -44,7 +44,6 @@ function signedInUser(isAuditor: boolean) {
 		is_auditor: isAuditor,
 		is_nss_key_admin: false,
 		nss_enabled: false,
-		posix: null,
 		detail_level: 'advanced' as const
 	};
 }

@@ -55,7 +55,6 @@ import {
 	AuditNSSNameCollision,
 	AuditNSSNameMismatch,
 	AuditNSSPrivilegedNameLookup,
-	AuditNSSShellChanged,
 	AuditNSSTombstonePurged,
 	AuditNSSUIDCollision,
 	AuditUserAutoDisabled,
@@ -194,8 +193,7 @@ export const auditPhrasing: Record<string, string> = {
 	[AuditNSSKeyUpdated]: 'changed a fleet key',
 	[AuditNSSKeyRotated]: 'rotated a fleet key',
 	[AuditNSSKeyPreviousCleared]: "ended a fleet key's previous secret early",
-	[AuditNSSKeyRevoked]: 'revoked a fleet key',
-	[AuditNSSShellChanged]: 'changed their login shell'
+	[AuditNSSKeyRevoked]: 'revoked a fleet key'
 };
 
 /**

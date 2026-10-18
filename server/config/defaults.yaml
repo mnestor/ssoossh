@@ -930,9 +930,8 @@ ldap:
 # ldap.id_attribute are the ldap block's.
 nss:
   # Turns the NSS directory on: the lookup endpoints, the fleet key
-  # administration, the directory sync of POSIX entries and the shell
-  # self-service. Requires ldap.enabled; a configuration with this on and LDAP
-  # off fails at startup.
+  # administration and the directory sync of POSIX entries. Requires
+  # ldap.enabled; a configuration with this on and LDAP off fails at startup.
   #enabled: false
 
   # The LDAP filter that selects POSIX accounts under ldap.base_dn. A plain
@@ -1083,20 +1082,14 @@ nss:
   # when nss.enabled is on.
   default_home: "/home/%u"
 
-  # The shell served for an account whose entry has no shell attribute and
-  # whose person has chosen none. Empty serves no shell, and the host applies
-  # its own default.
+  # The shell served for an account whose entry has no shell attribute. Empty
+  # serves no shell, and the host applies its own default.
   #default_shell: ""
 
   # Replaces the shell of every disabled or deleted account, so a locked
   # account cannot run a login shell even where a host ignores the lock. Must
   # be an absolute path when nss.enabled is on.
   disabled_shell: "/usr/sbin/nologin"
-
-  # Lists the shells a person may choose for their own account in the web UI,
-  # as bare names ("zsh", not "/bin/zsh"); the host resolves the name to its
-  # own path. A choice outside the list is refused.
-  allowed_shells: [sh, bash, zsh, fish]
 
   # Caps the members returned for one group. A larger group is truncated and
   # flagged as truncated in the response, and the daemon logs it. The sync

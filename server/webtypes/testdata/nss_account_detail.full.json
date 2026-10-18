@@ -7,7 +7,6 @@
   "dn": "uid=ada.lovelace,ou=people,dc=example,dc=net",
   "home": "/home/ada.lovelace",
   "shell": "/bin/bash",
-  "shell_pref": "/bin/zsh",
   "gecos": "Ada Lovelace",
   "dir_disabled": true,
   "person": {
@@ -50,7 +49,6 @@
     ],
     "home": "/home/ada.lovelace",
     "shell": "/bin/bash",
-    "shell_pref": "/bin/zsh",
     "gecos": "Ada Lovelace",
     "status": "disabled"
   },

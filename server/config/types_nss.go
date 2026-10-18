@@ -77,9 +77,9 @@ func autoPrivateGroupsHook(from, to reflect.Type, data any) (any, error) {
 // ldap.id_attribute are the ldap block's.
 type NSSConfig struct {
 	// Enabled turns the NSS directory on: the lookup endpoints, the fleet
-	// key administration, the directory sync of POSIX entries and the
-	// shell self-service. Requires ldap.enabled; a configuration with this
-	// on and LDAP off fails at startup.
+	// key administration and the directory sync of POSIX entries. Requires
+	// ldap.enabled; a configuration with this on and LDAP off fails at
+	// startup.
 	Enabled bool `mapstructure:"enabled" default:"false"`
 
 	// UserFilter is the LDAP filter that selects POSIX accounts under
@@ -191,8 +191,8 @@ type NSSConfig struct {
 	DefaultHome string `mapstructure:"default_home" default:"/home/%u"`
 
 	// DefaultShell is the shell served for an account whose entry has no
-	// shell attribute and whose person has chosen none. Empty serves no
-	// shell, and the host applies its own default.
+	// shell attribute. Empty serves no shell, and the host applies its own
+	// default.
 	DefaultShell string `mapstructure:"default_shell" default:"" example:"\"/bin/bash\""`
 
 	// DisabledShell replaces the shell of every disabled or deleted
@@ -200,12 +200,6 @@ type NSSConfig struct {
 	// host ignores the lock. Must be an absolute path when nss.enabled is
 	// on.
 	DisabledShell string `mapstructure:"disabled_shell" default:"/usr/sbin/nologin"`
-
-	// AllowedShells lists the shells a person may choose for their own
-	// account in the web UI, as bare names ("zsh", not "/bin/zsh"); the
-	// host resolves the name to its own path. A choice outside the list is
-	// refused.
-	AllowedShells []string `mapstructure:"allowed_shells" default:"[sh, bash, zsh, fish]"`
 
 	// MaxGroupMembers caps the members returned for one group. A larger
 	// group is truncated and flagged as truncated in the response, and the
@@ -447,21 +441,13 @@ func validateGecosTemplate(src string) error {
 }
 
 // validateAccountDefaults checks the values served in place of missing or
-// locked attributes, and the shells a person may choose.
+// locked attributes.
 func (c *NSSConfig) validateAccountDefaults() error {
 	if !strings.HasPrefix(c.DefaultHome, "/") {
 		return fmt.Errorf("nss.default_home %q must be an absolute path, such as /home/%%u", c.DefaultHome)
 	}
 	if !strings.HasPrefix(c.DisabledShell, "/") {
 		return fmt.Errorf("nss.disabled_shell %q must be an absolute path, such as /usr/sbin/nologin: it is what a locked account is served", c.DisabledShell)
-	}
-	for i, shell := range c.AllowedShells {
-		if strings.TrimSpace(shell) == "" {
-			return fmt.Errorf("nss.allowed_shells[%d] is empty", i)
-		}
-		if strings.Contains(shell, "/") {
-			return fmt.Errorf("nss.allowed_shells[%d] %q must be a bare name such as zsh, not a path: the host resolves it", i, shell)
-		}
 	}
 	return nil
 }

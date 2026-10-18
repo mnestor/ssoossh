@@ -37,8 +37,7 @@ type nssDirectoryRefresher interface {
 
 // NSSLookupService answers the NSS directory lookups (/api/nss/user/* and
 // /api/nss/group/*) from posix_users, posix_groups and
-// posix_group_members, and the shell self-service on a person's own POSIX
-// account. See docs/proposals/nss-directory/1-server-api.md.
+// posix_group_members. See docs/proposals/nss-directory/1-server-api.md.
 //
 // Everything a host is served is derived on read: the status from the
 // row's tombstone, the linked person's disable and the directory's own
@@ -54,7 +53,8 @@ type NSSLookupService struct {
 	// database alone.
 	refresher nssDirectoryRefresher
 
-	// auditor records nss.shell_changed. Nil until SetAuditor runs.
+	// auditor reads a row's history for the viewer and records that it was
+	// read. Nil until SetAuditor runs.
 	auditor *AuditService
 
 	// now is the clock, time.Now outside tests.
@@ -262,23 +262,15 @@ func (s *NSSLookupService) buildUser(ctx context.Context, row *posixUserRow) (*a
 		status = apitypes.NSSStatusDisabled
 	}
 
-	var shellPref *string
-	if row.UserID != nil {
-		// Only a person chooses a shell; a stray value on a shared
-		// account is not theirs to serve.
-		shellPref = row.ShellPref
-	}
-
 	return &apitypes.NSSUserResponse{
-		Name:      row.Name,
-		UID:       row.UID,
-		GID:       gid,
-		Groups:    groups,
-		Home:      s.home(ctx, row),
-		Shell:     s.shell(row, status),
-		ShellPref: shellPref,
-		Gecos:     row.Gecos,
-		Status:    status,
+		Name:   row.Name,
+		UID:    row.UID,
+		GID:    gid,
+		Groups: groups,
+		Home:   s.home(ctx, row),
+		Shell:  s.shell(row, status),
+		Gecos:  row.Gecos,
+		Status: status,
 	}, nil
 }
 

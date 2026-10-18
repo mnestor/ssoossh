@@ -203,7 +203,7 @@ func TestRateLimitMiddleware_ShouldLeaveNSSLookupPrefixesToTheirOwnLimiter(t *te
 		},
 		{
 			name:       "should still limit a session route under /api/nss when only the lookups are skipped",
-			paths:      []string{"/api/nss/keys", "/api/nss/shells"},
+			paths:      []string{"/api/nss/keys", "/api/nss/key-settings"},
 			wantStatus: []int{http.StatusOK, http.StatusTooManyRequests},
 		},
 		{

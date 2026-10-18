@@ -18,14 +18,12 @@ import {
 	listNSSGroupMembers,
 	listNSSGroups,
 	listNSSKeys,
-	listNSSShells,
 	nssRotationReportCSVURL,
 	purgeNSSGroupTombstone,
 	purgeNSSUserTombstone,
 	revokeNSSKey,
 	rotateNSSKey,
 	updateNSSKey,
-	updateShellPreference,
 	denyRequest,
 	getRequestDetail,
 	listServiceEnrollments,
@@ -201,13 +199,6 @@ describe('NSS endpoints', () => {
 			method: 'GET',
 			url: '/api/nss/keys/nss_k1/rotation-report'
 		},
-		{ name: 'shells', call: () => listNSSShells(), method: 'GET', url: '/api/nss/shells' },
-		{
-			name: 'save the shell',
-			call: () => updateShellPreference(null),
-			method: 'PUT',
-			url: '/api/users/me/shell'
-		},
 		{
 			name: 'pending id changes',
 			call: () => getNSSPendingIDChanges(),
@@ -296,12 +287,6 @@ describe('NSS endpoints', () => {
 			expect({ url: got, method: init.method }).toEqual({ url, method });
 		});
 	}
-
-	it('should send null to clear the shell when the directory default is chosen', async () => {
-		const fetchMock = okFetch();
-		await updateShellPreference(null);
-		expect(firstCall(fetchMock).init.body).toBe('{"shell_pref":null}');
-	});
 
 	it('should build the CSV address under the api prefix when asked for a download', () => {
 		expect(nssRotationReportCSVURL('nss_k1')).toBe(

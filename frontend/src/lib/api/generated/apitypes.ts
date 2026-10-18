@@ -688,12 +688,6 @@ export interface NSSUserResponse {
 	 */
 	shell?: string;
 	/**
-	 * ShellPref is the shell name the user chose on the server (one of
-	 * nss.allowed_shells), or null. A name, not a path: the host resolves
-	 * it.
-	 */
-	shell_pref?: string;
-	/**
 	 * Gecos is the rendered and sanitised nss.gecos_template output.
 	 */
 	gecos: string;

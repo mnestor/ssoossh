@@ -291,19 +291,15 @@ func TestShellPrecedence(t *testing.T) {
 	tests := []struct {
 		name   string
 		mutate func(*config.Config)
-		pref   *string
 		shell  *string
 		want   string
 	}{
-		{name: "should take override_shell when it is acceptable", mutate: func(c *config.Config) { c.OverrideShell = "/usr/bin/fish" }, pref: str("zsh"), want: "/usr/bin/fish"},
-		{name: "should skip override_shell when it is not acceptable", mutate: func(c *config.Config) { c.OverrideShell = "/opt/sh" }, pref: str("zsh"), want: "/usr/bin/zsh"},
-		{name: "should take shell_pref by basename when /etc/shells lists it", pref: str("zsh"), want: "/usr/bin/zsh"},
-		{name: "should take shell_pref through shell_map when it maps the name", mutate: func(c *config.Config) {
-			c.ShellMap = map[string]string{"zsh": "/opt/homebrew/bin/zsh"}
-			c.AllowedShells = []string{"/opt/homebrew/bin/zsh", "/bin/bash"}
-		}, pref: str("zsh"), want: "/opt/homebrew/bin/zsh"},
-		{name: "should fall to the server shell when shell_pref names no installed shell", pref: str("tcsh"), want: "/bin/bash"},
-		{name: "should fall to the server shell when shell_pref is vetoed", mutate: func(c *config.Config) { c.VetoedShells = []string{"/usr/bin/zsh"} }, pref: str("zsh"), want: "/bin/bash"},
+		{name: "should take override_shell when it is acceptable", mutate: func(c *config.Config) { c.OverrideShell = "/usr/bin/fish" }, want: "/usr/bin/fish"},
+		{name: "should skip override_shell when it is not acceptable", mutate: func(c *config.Config) { c.OverrideShell = "/opt/sh" }, want: "/bin/bash"},
+		{name: "should take the server shell when /etc/shells lists it", want: "/bin/bash"},
+		{name: "should take the server shell when allowed_shells lists it", mutate: func(c *config.Config) { c.AllowedShells = []string{"/opt/homebrew/bin/zsh"} },
+			shell: str("/opt/homebrew/bin/zsh"), want: "/opt/homebrew/bin/zsh"},
+		{name: "should fall to shell_fallback when the server shell is vetoed", mutate: func(c *config.Config) { c.VetoedShells = []string{"/bin/bash"} }, want: "/bin/sh"},
 		{name: "should fall to shell_fallback when the server shell is not in /etc/shells", shell: str("/bin/ksh"), want: "/bin/sh"},
 		{name: "should fall to shell_fallback when allowed_shells excludes the server shell", mutate: func(c *config.Config) { c.AllowedShells = []string{"/usr/bin/fish"} }, want: "/bin/sh"},
 		{name: "should fall to shell_fallback when the server sends no shell", shell: str(""), want: "/bin/sh"},
@@ -314,7 +310,6 @@ func TestShellPrecedence(t *testing.T) {
 			t.Parallel()
 			f := newFixture(t, tt.mutate)
 			resp := activeUser()
-			resp.ShellPref = tt.pref
 			if tt.shell != nil {
 				resp.Shell = tt.shell
 			}
@@ -336,9 +331,7 @@ func TestShellShouldUseAllowedShellsOnlyWhenEtcShellsIsUnreadable(t *testing.T) 
 		t.Fatal(err)
 	}
 	f.engine.Reload()
-	resp := activeUser()
-	resp.ShellPref = str("zsh")
-	u, err := f.engine.User(resp)
+	u, err := f.engine.User(activeUser())
 	if err != nil || u.Shell != "/bin/bash" {
 		t.Fatalf("got %q, %v", u.Shell, err)
 	}
@@ -391,7 +384,6 @@ func TestOverrides(t *testing.T) {
 	tests := []struct {
 		name      string
 		overrides string
-		pref      *string
 		wantErr   string
 		check     func(User) bool
 	}{
@@ -399,7 +391,7 @@ func TestOverrides(t *testing.T) {
 			check: func(u User) bool {
 				return u.UID == 6001 && u.GID == 6002 && u.Home == "/srv/alice" && u.Shell == "/usr/bin/fish"
 			}},
-		{name: "should beat shell_pref when the override sets a shell", overrides: "alice:\n  shell: /usr/bin/fish\n", pref: str("zsh"),
+		{name: "should beat the server shell when the override sets a shell", overrides: "alice:\n  shell: /usr/bin/fish\n",
 			check: func(u User) bool { return u.Shell == "/usr/bin/fish" }},
 		{name: "should still check the override shell when it is not acceptable", overrides: "alice:\n  shell: /opt/evil\n",
 			check: func(u User) bool { return u.Shell == "/bin/sh" }},
@@ -413,9 +405,7 @@ func TestOverrides(t *testing.T) {
 			t.Parallel()
 			f := newFixture(t, nil)
 			f.writeOverrides(t, tt.overrides)
-			resp := activeUser()
-			resp.ShellPref = tt.pref
-			u, err := f.engine.User(resp)
+			u, err := f.engine.User(activeUser())
 			if tt.wantErr != "" {
 				if !errors.Is(err, ErrRejected) || !strings.Contains(err.Error(), tt.wantErr) {
 					t.Fatalf("got %v, want a refusal containing %q", err, tt.wantErr)

@@ -58,16 +58,6 @@ func TestNSSServices_ShouldReturnTheErrorWhenTheDatabaseFails(t *testing.T) {
 		{name: "should fail the prune when the delete fails", call: func(ctx context.Context, f *nssUsageFixture) error {
 			return f.usage.PruneUsage(ctx)
 		}},
-		{name: "should fail the account read when the user cannot be resolved", call: func(ctx context.Context, f *nssUsageFixture) error {
-			lookups := newTestNSSLookup(nssLookupTestConfig(), f.db, nil)
-			_, err := lookups.AccountForIdentity(ctx, nssAdmin)
-			return err
-		}},
-		{name: "should fail the shell change when the user cannot be resolved", call: func(ctx context.Context, f *nssUsageFixture) error {
-			lookups := newTestNSSLookup(nssLookupTestConfig(), f.db, nil)
-			_, err := lookups.SetShellPref(ctx, nssAdmin, nil, "")
-			return err
-		}},
 	}
 
 	for _, tt := range tests {

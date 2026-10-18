@@ -169,8 +169,6 @@ type Config struct {
 	AllowedShells []string `mapstructure:"allowed_shells"`
 	// VetoedShells are never acceptable.
 	VetoedShells []string `mapstructure:"vetoed_shells"`
-	// ShellMap maps a shell name (a user's shell_pref) to a path.
-	ShellMap map[string]string `mapstructure:"shell_map"`
 	// DisabledShell is the shell of a disabled or deleted account.
 	DisabledShell string `mapstructure:"disabled_shell"`
 	// IgnoreGroupMembers drops member lists from group answers.
@@ -209,7 +207,6 @@ func Defaults() Config {
 		MinID:                      1000,
 		FallbackHomedir:            "/home/%u",
 		ShellFallback:              "/bin/sh",
-		ShellMap:                   map[string]string{},
 		DisabledShell:              "/usr/sbin/nologin",
 		FilterUsers:                []string{"root"},
 		FilterGroups:               []string{"root"},
@@ -458,11 +455,6 @@ func (c *Config) validatePaths(add func(string, ...any)) {
 			if !ValidPath(p) {
 				add("%s entry %q must be an absolute path", name, p)
 			}
-		}
-	}
-	for _, name := range slices.Sorted(maps.Keys(c.ShellMap)) {
-		if !ValidPath(c.ShellMap[name]) {
-			add("shell_map %s: %q must be an absolute path", name, c.ShellMap[name])
 		}
 	}
 	for _, unit := range c.SSHDUnits {

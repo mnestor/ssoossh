@@ -157,7 +157,7 @@ func nssAccountDetailResponse(view *service.NSSAccountView) webtypes.NSSAccountD
 	row := view.Account
 	resp := webtypes.NSSAccountDetailResponse{
 		ID: row.ID, Name: row.Name, UID: row.UID, GID: row.GID, DirectoryID: row.DirectoryID, DN: row.DN,
-		Home: row.Home, Shell: row.Shell, ShellPref: row.ShellPref, Gecos: row.Gecos, DirDisabled: row.DirDisabled,
+		Home: row.Home, Shell: row.Shell, Gecos: row.Gecos, DirDisabled: row.DirDisabled,
 		PendingUID: row.PendingUID, PendingGID: row.PendingGID, PendingSince: row.PendingSince,
 		MissingSince: row.MissingSince, DeletedAt: row.DeletedAt, WithheldAt: row.WithheldAt,
 		WithheldReason: row.WithheldReason, State: view.State,
@@ -186,7 +186,7 @@ func nssServedAccountResponse(served *apitypes.NSSUserResponse) *webtypes.NSSSer
 	resp := &webtypes.NSSServedAccountResponse{
 		Name: served.Name, UID: served.UID, GID: served.GID,
 		Groups: make([]webtypes.NSSServedMembershipResponse, 0, len(served.Groups)),
-		Home:   served.Home, Shell: served.Shell, ShellPref: served.ShellPref, Gecos: served.Gecos,
+		Home:   served.Home, Shell: served.Shell, Gecos: served.Gecos,
 		Status: model.PosixStatus(served.Status),
 	}
 	for _, m := range served.Groups {

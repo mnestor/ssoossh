@@ -1,13 +1,7 @@
 <script lang="ts">
 	import { SvelteSet } from 'svelte/reactivity';
 
-	import { ApiError } from '#lib/api/client.js';
-	import {
-		getNotificationPreferences,
-		listNSSShells,
-		updateNotificationPreferences,
-		updateShellPreference
-	} from '#lib/api/endpoints.js';
+	import { getNotificationPreferences, updateNotificationPreferences } from '#lib/api/endpoints.js';
 	import type { DetailLevel, NotificationPreferences } from '#lib/api/types.js';
 	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
 	import Alert from '#lib/components/Alert.svelte';
@@ -18,7 +12,6 @@
 	import PageShell from '#lib/components/PageShell.svelte';
 	import SectionLabel from '#lib/components/SectionLabel.svelte';
 	import Switch from '#lib/components/Switch.svelte';
-	import { session } from '#lib/session.svelte.js';
 
 	// Every setting on this page is live: it applies on the press and is
 	// saved at once, with no Save button anywhere (form-ux: one save model
@@ -79,76 +72,6 @@
 
 		return () => controller.abort();
 	});
-
-	// The login shell, for a reader with a directory account that hosts
-	// resolve (session.user.posix is null otherwise, and with NSS off). The
-	// allowed names are the server's; the choice saves on change like every
-	// other setting here, and a refused save puts the select back.
-	const posix = $derived(session.user?.posix ?? null);
-	let shells = $state<string[] | null>(null);
-	let shellsError = $state<string | null>(null);
-	let shellsAttempt = $state(0);
-	// The value shown while a save is in flight; undefined when none is.
-	let shellChoice = $state<string | null | undefined>(undefined);
-	let shellSaving = $state(false);
-	let shellError = $state<string | null>(null);
-	const storedShell = $derived(posix?.shell_pref ?? null);
-	const shownShell = $derived(shellChoice !== undefined ? shellChoice : storedShell);
-	// A stored shell the server no longer offers stays visible as chosen
-	// rather than silently reading as the directory default.
-	const retiredShell = $derived(
-		storedShell !== null && shells !== null && !shells.includes(storedShell) ? storedShell : null
-	);
-
-	$effect(() => {
-		if (!posix) return;
-		void shellsAttempt;
-		const controller = new AbortController();
-		listNSSShells(controller.signal)
-			.then((result) => {
-				shells = result.allowed_shells;
-			})
-			.catch((cause) => {
-				if (controller.signal.aborted || redirectIfUnauthenticated(cause)) return;
-				shellsError = errorMessage(cause);
-			});
-		return () => controller.abort();
-	});
-
-	function retryShells() {
-		shellsError = null;
-		shells = null;
-		shellsAttempt += 1;
-	}
-
-	/** chooseShell saves the login shell the moment it is chosen; '' is the directory default. */
-	async function chooseShell(value: string) {
-		const next = value === '' ? null : value;
-		if (shellSaving || next === storedShell) {
-			return;
-		}
-		shellChoice = next;
-		shellSaving = true;
-		shellError = null;
-		try {
-			const stored = await updateShellPreference(next);
-			if (session.user) {
-				session.user = { ...session.user, posix: stored };
-			}
-			liveMessage = next ? `Login shell ${next}. Saved.` : 'Login shell: directory default. Saved.';
-		} catch (cause) {
-			if (redirectIfUnauthenticated(cause)) return;
-			// A 400 is the server refusing the name (shell_not_allowed), and its
-			// message says which shells it allows; anything else is a retry.
-			shellError =
-				cause instanceof ApiError && cause.status === 400
-					? `Not saved. ${cause.message}`
-					: 'Not saved. Try again.';
-		} finally {
-			shellChoice = undefined;
-			shellSaving = false;
-		}
-	}
 
 	/** enabledFor is what a switch shows: its in-flight value, otherwise what the server said. */
 	function enabledFor(kind: string, stored: boolean): boolean {
@@ -220,7 +143,7 @@
 
 <PageShell width="wide">
 	<!-- "Preferences", not "Notification preferences": the page holds the
-	     display level and the login shell as well. -->
+	     display level as well. -->
 	<PageHeading title="Preferences" />
 
 	<div aria-live="polite" aria-atomic="true" class="sr-only" data-testid="preferences-status">
@@ -338,63 +261,6 @@
 
 				{#if preferences.kinds.length === 0}
 					<p class="text-dense text-ink-muted">This server offers no email notifications.</p>
-				{/if}
-			</div>
-		</PageSection>
-	{/if}
-
-	{#if posix}
-		<!-- Outside the notification load, like Display: the account arrives
-		     with the session. Hidden for a reader no host resolves. -->
-		<PageSection
-			title="Login shell"
-			description="The shell hosts start when you sign in to them. Changes save as you make them."
-			testid="login-shell"
-		>
-			<div class="flex max-w-[70ch] flex-col gap-3">
-				<p class="text-dense text-ink-muted">
-					Hosts know you as <span class="font-mono text-ink">{posix.name}</span>, uid
-					<span class="text-ink tabular-nums">{posix.uid}</span>.
-				</p>
-				{#if shellsError}
-					<Alert
-						variant="error"
-						title="Could not load the shells this server allows"
-						onretry={retryShells}
-						testid="login-shell-error">{shellsError}</Alert
-					>
-				{:else if shells === null}
-					<LoadingBlock shape="lines" count={1} testid="login-shell-loading" />
-				{:else}
-					<label class="flex max-w-[420px] flex-col gap-1">
-						<span class="text-sm font-medium text-ink">Shell</span>
-						<select
-							value={shownShell ?? ''}
-							onchange={(event) => chooseShell(event.currentTarget.value)}
-							disabled={shellSaving}
-							aria-busy={shellSaving}
-							aria-describedby="login-shell-help"
-							data-testid="login-shell-select"
-							class="min-h-target rounded-md border border-border-control bg-surface px-3 py-2 text-dense text-ink hover:bg-surface-muted disabled:opacity-50"
-						>
-							<option value="">Directory default</option>
-							{#each shells as shell (shell)}
-								<option value={shell}>{shell}</option>
-							{/each}
-							{#if retiredShell}
-								<option value={retiredShell}>{retiredShell} (no longer offered)</option>
-							{/if}
-						</select>
-					</label>
-					{#if shellError}
-						<!-- The select has already snapped back; this says why. -->
-						<span role="alert" class="text-xs text-danger" data-testid="login-shell-save-error">
-							{shellError}
-						</span>
-					{/if}
-					<p id="login-shell-help" class="text-dense text-ink-muted">
-						Hosts use this shell if installed; otherwise the directory shell.
-					</p>
 				{/if}
 			</div>
 		</PageSection>

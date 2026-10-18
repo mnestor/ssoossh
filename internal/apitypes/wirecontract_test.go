@@ -60,9 +60,8 @@ var (
 // The NSS user fixture's nullable fields, declared as variables so the
 // fixture can point at them.
 var (
-	nssHome      = "/home/mike"
-	nssShell     = "/bin/bash"
-	nssShellPref = "zsh"
+	nssHome  = "/home/mike"
+	nssShell = "/bin/bash"
 )
 
 // requestedOptions is populated for every request body that carries one, so
@@ -196,12 +195,11 @@ func fullFixtures() map[string]any {
 				{GID: 1234, Name: "mike"},
 				{GID: 27, Name: "sudo"},
 			},
-			Home:      &nssHome,
-			Shell:     &nssShell,
-			ShellPref: &nssShellPref,
-			Gecos:     "Mike Nestor",
-			Status:    apitypes.NSSStatusActive,
-			KeyID:     "nss_k7m4qp2x",
+			Home:   &nssHome,
+			Shell:  &nssShell,
+			Gecos:  "Mike Nestor",
+			Status: apitypes.NSSStatusActive,
+			KeyID:  "nss_k7m4qp2x",
 		},
 		"nss_group_response": apitypes.NSSGroupResponse{
 			Name:             "sudo",

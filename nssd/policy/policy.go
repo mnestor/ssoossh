@@ -14,7 +14,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -222,7 +221,7 @@ func (e *Engine) User(resp *apitypes.NSSUserResponse) (User, error) {
 	// The override goes first so the sanity rules below see, and can
 	// refuse, the values it sets: an override uid below min_id fails the
 	// range rule like a server uid would.
-	uid, gid, home, shell, prefOK := resp.UID, resp.GID, deref(resp.Home), deref(resp.Shell), true
+	uid, gid, home, shell := resp.UID, resp.GID, deref(resp.Home), deref(resp.Shell)
 	if o, ok := e.overrides()[name]; ok {
 		if o.UID != nil {
 			uid = *o.UID
@@ -234,10 +233,9 @@ func (e *Engine) User(resp *apitypes.NSSUserResponse) (User, error) {
 			home = o.Home
 		}
 		if o.Shell != "" {
-			// A host override is the most specific intent there is, so
-			// it beats the user's own shell_pref too; only the global
-			// override_shell still wins over it.
-			shell, prefOK = o.Shell, false
+			// A host override replaces the directory's shell; only the
+			// global override_shell still wins over it.
+			shell = o.Shell
 		}
 	}
 
@@ -273,11 +271,7 @@ func (e *Engine) User(resp *apitypes.NSSUserResponse) (User, error) {
 
 	switch resp.Status {
 	case apitypes.NSSStatusActive:
-		pref := ""
-		if prefOK {
-			pref = deref(resp.ShellPref)
-		}
-		u.Shell = e.shell(pref, shell)
+		u.Shell = e.shell(shell)
 	default:
 		// disabled, deleted, and anything this daemon does not know yet,
 		// which fails closed: locked, with the disabled shell, which is
@@ -548,41 +542,24 @@ func (e *Engine) expand(template, name string, uid uint32, serverHome string) st
 }
 
 // shell resolves an active account's shell, first acceptable wins:
-// override_shell, then shell_pref (by shell_map, then by basename in
-// /etc/shells), then the server's (or host override's) shell, then
+// override_shell, then the directory's (or host override's) shell, then
 // shell_fallback. The fallback is the operator's own last resort and is
 // used even if it is not otherwise acceptable, rather than refusing the
-// account outright.
-func (e *Engine) shell(pref, shell string) string {
+// account outright. The person never chooses: the shell comes from the
+// directory and host policy only.
+func (e *Engine) shell(shell string) string {
 	shells, err := e.shells.get()
 	if err != nil {
 		e.log.Error("cannot read /etc/shells; only allowed_shells can match", "error", err)
 		shells = nil
 	}
-	candidates := []string{e.cfg.OverrideShell, e.resolvePref(pref, shells), shell}
+	candidates := []string{e.cfg.OverrideShell, shell}
 	for _, c := range candidates {
 		if c != "" && e.acceptable(c, shells) {
 			return c
 		}
 	}
 	return e.cfg.ShellFallback
-}
-
-// resolvePref turns a shell name into a path: shell_map first, then the
-// first /etc/shells entry with that basename.
-func (e *Engine) resolvePref(pref string, shells []string) string {
-	if pref == "" {
-		return ""
-	}
-	if p, ok := e.cfg.ShellMap[pref]; ok {
-		return p
-	}
-	for _, s := range shells {
-		if path.Base(s) == pref {
-			return s
-		}
-	}
-	return ""
 }
 
 // acceptable reports whether a shell may be served: a valid path, listed

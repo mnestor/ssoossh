@@ -137,7 +137,7 @@ When someone logs in and [LDAP enrichment](/ssoossh/operations/ldap/) finds
 their entry (still a live directory read at every login), the server links
 the POSIX row for that same entry to their ssoossh account, matching by
 `directory_id` and then DN, never by uid alone. That link is what makes an
-ssoossh disable reach hosts and what lets the person choose their own shell.
+ssoossh disable reach hosts.
 When the linked row's POSIX name differs from the person's `username` claim,
 the `nss.name_mismatch` alert fires, at most daily: that person's own-name
 certificate principal can never match their host account.
@@ -268,12 +268,13 @@ members (2000), flagged as truncated beyond that.
 The server sends the directory's home (else
 [`nss.default_home`](/ssoossh/reference/config/nss/#default_home), where `%u`
 is the name) and shell (else
-[`nss.default_shell`](/ssoossh/reference/config/nss/#default_shell)), and,
-for a person, the shell *name* they chose from
-[`nss.allowed_shells`](/ssoossh/reference/config/nss/#allowed_shells) in the
-web UI's preferences (`PUT /api/users/me/shell`, audited as
-`nss.shell_changed`). Each host maps that name to its own path, and decides
-whether to honour it.
+[`nss.default_shell`](/ssoossh/reference/config/nss/#default_shell)). Nobody
+picks their own shell: it comes from the directory, and each host's
+`ssoosshd-nss` shell policy (see
+[Shells and overrides](/ssoossh/hosts/nss/#shells-and-overrides)) decides
+what it serves. The web UI's shell preference was
+removed on 2026-10-18 after the threat review: the shell comes from the
+directory and host policy only.
 
 ## Looking up stored entries
 
@@ -306,7 +307,7 @@ is read-only and open to auditors, SOC and admins, and it appears only when
 - **History**, at the bottom, is every recorded change to that account or
   group, newest first, with Load more: when it was stored, renamed, went
   missing or came back, each change to a group's members, collisions,
-  pending and accepted id changes and, for an account, shell changes. One
+  and pending and accepted id changes. One
   event shows on every page it concerns, so a group's history shows a
   member added after the group was stored and that member's history shows
   the same event, however many members the change touched. The history
@@ -483,7 +484,7 @@ instances, and none of them blocks anything:
 
 Feed them to your SIEM with the rest of the [audit log](/ssoossh/operations/audit-log/).
 Changes are audited too: `nss.key_*` for key administration,
-`nss.id_change_accepted`, `nss.tombstone_purged`, `nss.shell_changed`, and
+`nss.id_change_accepted`, `nss.tombstone_purged`, and
 the [directory change events](#directory-change-events) below.
 
 ## Directory change events

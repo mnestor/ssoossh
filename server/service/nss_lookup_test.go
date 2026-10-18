@@ -192,39 +192,6 @@ func TestNSSLookup_ShouldServeTheHomeAndShellDefaultsWhenTheEntryHasNone(t *test
 	}
 }
 
-func TestNSSLookup_ShouldServeTheShellPrefOnlyWhenTheAccountIsAPersons(t *testing.T) {
-	t.Parallel()
-
-	db := testdb.New(t)
-	personID := seedNSSPerson(t, db, "sub-alice", "alice", nil)
-	seedPosixUser(t, db, model.PosixUser{Name: "alice", UID: 10001, GID: new(uint32(10001)), UserID: &personID, ShellPref: ptr("zsh")})
-	seedPosixUser(t, db, model.PosixUser{Name: "svc-backup", UID: 20001, GID: new(uint32(20001)), ShellPref: ptr("fish")})
-	lookups := newTestNSSLookup(nssLookupTestConfig(), db, nil)
-
-	tests := []struct {
-		name string
-		user string
-		want *string
-	}{
-		{name: "should serve the chosen shell when the account is linked to a person", user: "alice", want: ptr("zsh")},
-		{name: "should serve no shell preference when a shared account has a stray one", user: "svc-backup", want: nil},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := lookups.UserByName(t.Context(), tt.user)
-			if err != nil {
-				t.Fatalf("UserByName: %v", err)
-			}
-			if !reflect.DeepEqual(got.ShellPref, tt.want) {
-				t.Errorf("shell_pref = %s, want %s", deref(got.ShellPref), deref(tt.want))
-			}
-			if got.Status != apitypes.NSSStatusActive {
-				t.Errorf("status = %q, want active for an account no person disabled", got.Status)
-			}
-		})
-	}
-}
-
 func TestNSSLookup_ShouldMatchNamesByteForByteWhenTheCaseDiffers(t *testing.T) {
 	t.Parallel()
 

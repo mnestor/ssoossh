@@ -975,7 +975,7 @@ func TestNSSLookupPathPrefixes(t *testing.T) {
 		{path: "/api/nss/group/gid/27", want: true},
 		{path: "/api/nss/keys", want: false},
 		{path: "/api/nss/keys/nss_abc/rotate", want: false},
-		{path: "/api/nss/shells", want: false},
+		{path: "/api/nss/key-settings", want: false},
 		{path: "/api/nss/user", want: false},
 		{path: "/api/users/me", want: false},
 	}

@@ -32,7 +32,6 @@ Every account and group comes from the directory, people and shared or service a
 | [`nss.default_home`](#default_home) | string | `/home/%u` |
 | [`nss.default_shell`](#default_shell) | string | `empty` |
 | [`nss.disabled_shell`](#disabled_shell) | string | `/usr/sbin/nologin` |
-| [`nss.allowed_shells`](#allowed_shells) | list | `sh, bash, zsh, fish` |
 | [`nss.max_group_members`](#max_group_members) | int | `2000` |
 | [`nss.rate_limit`](#rate_limit) | number | `20` |
 | [`nss.rate_burst`](#rate_burst) | int | `200` |
@@ -48,7 +47,7 @@ Every account and group comes from the directory, people and shared or service a
 
 `bool`, default `false`
 
-Turns the NSS directory on: the lookup endpoints, the fleet key administration, the directory sync of POSIX entries and the shell self-service. Requires ldap.enabled; a configuration with this on and LDAP off fails at startup.
+Turns the NSS directory on: the lookup endpoints, the fleet key administration and the directory sync of POSIX entries. Requires ldap.enabled; a configuration with this on and LDAP off fails at startup.
 
 ```yaml
 nss:
@@ -179,7 +178,7 @@ nss:
 
 `string`, default `empty`
 
-The shell served for an account whose entry has no shell attribute and whose person has chosen none. Empty serves no shell, and the host applies its own default.
+The shell served for an account whose entry has no shell attribute. Empty serves no shell, and the host applies its own default.
 
 ```yaml
 nss:
@@ -195,17 +194,6 @@ Replaces the shell of every disabled or deleted account, so a locked account can
 ```yaml
 nss:
   disabled_shell: "/usr/sbin/nologin"
-```
-
-## `allowed_shells`
-
-`list`, default `sh, bash, zsh, fish`
-
-Lists the shells a person may choose for their own account in the web UI, as bare names ("zsh", not "/bin/zsh"); the host resolves the name to its own path. A choice outside the list is refused.
-
-```yaml
-nss:
-  allowed_shells: [sh, bash, zsh, fish]
 ```
 
 ## `max_group_members`

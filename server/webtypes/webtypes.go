@@ -96,13 +96,9 @@ type CurrentUserResponse struct {
 	// the three above.
 	IsNSSKeyAdmin bool `json:"is_nss_key_admin" validate:"required"`
 
-	// NSSEnabled reports nss.enabled, so the UI shows the fleet keys and
-	// the login shell only where the server serves them.
+	// NSSEnabled reports nss.enabled, so the UI shows the fleet keys only
+	// where the server serves them.
 	NSSEnabled bool `json:"nss_enabled" validate:"required"`
-
-	// Posix is the caller's own POSIX account, or null when NSS is off or
-	// no directory account is linked to them yet.
-	Posix *PosixAccountResponse `json:"posix" tstype:"PosixAccountResponse | null,required" validate:"required"`
 
 	// DetailLevel is how much of the covered pages this person sees:
 	// "simplified" or "advanced". Stored on the server so it follows the

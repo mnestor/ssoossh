@@ -22,7 +22,7 @@ references drift; re-check before relying on one.
 | # | Document | Repo | Depends on |
 | --- | --- | --- | --- |
 | 1 | [Server API](1-server-api.md): `/api/nss/*`, `posix_users`, attribute mapping, gecos template, fleet keys, usage table, mail, config | `mnestor/ssoossh` | nothing |
-| 2 | [Server web UI](2-server-webui.md): key admin pages, rotation report, shell preference | `mnestor/ssoossh` (`frontend/`) | 1 |
+| 2 | [Server web UI](2-server-webui.md): key admin pages, rotation report (the shell preference was removed 2026-10-18 after the threat review: the shell comes from the directory and host policy only) | `mnestor/ssoossh` (`frontend/`) | 1 |
 | 3 | [NSS daemon](3-nss-daemon.md): `ssoosshd-nss` as a systemd userdb service, `internal/varlink`, packaging, SELinux | `mnestor/ssoossh` | 1 (wire) |
 
 Parts 1 and 3 can proceed in parallel once the wire JSON in Part 1 is
@@ -147,7 +147,7 @@ systemd's rather than ours:
 | HTTP inside the NSS module (`gate-sso/nss_gate`, Google OS Login) | The fleet key would have to be readable by every process that resolves a user. No trusted cross-process cache (unprivileged callers cannot write one), so no offline mode. Network calls from sandboxed callers (`RestrictAddressFamilies=AF_UNIX`, `PrivateNetwork=`, SELinux `nsswitch_domain`) and during early boot. OS Login gets away with it because its server is link-local plain HTTP with no secret on the host, and it still ships a cache module and refresh timer. `nss_gate` itself disables TLS verification and has memory-safety bugs. |
 | Own C module plus Go daemon (the 2026-10-10 draft) | C in every setuid caller, a private socket protocol to version, a second repo, a zig-built `.so`. Userdb removes all of it; its costs are U3 to U7. |
 | sssd `id_provider = proxy` loading an HTTP module | The proxy provider calls the module synchronously inside `sssd_be`'s event loop (`src/providers/proxy/proxy_id.c`), so one slow fetch stalls the backend. No refresh on login, so sudo-group removal waits for sync plus cache TTL. sssd on every Debian/Ubuntu host. |
-| sssd straight at the source LDAP | Zero ssoossh code, and right for hosts that can reach LDAP. This proposal exists for hosts that cannot, and for shell self-service. |
+| sssd straight at the source LDAP | Zero ssoossh code, and right for hosts that can reach LDAP. This proposal exists for hosts that cannot. |
 | nscd protocol listener | The only route that serves musl (musl queries `/var/run/nscd/socket` after `/etc/passwd`, `src/passwd/nscd_query.c`). Unsafe on glibc, which asks nscd before `nsswitch.conf` and trusts its "not found". Deferred until a musl host needs directory users (U2). |
 
 ## Transport trust
@@ -217,8 +217,8 @@ Taken 2026-10-09 and 2026-10-10:
   fixed for the key's life; rotation replaces only the secret.
 - Key ownership: optional `description` and an assigned `group` per key;
   `admin.nss_key_group` creates keys and assigns groups.
-- User self-service: shell only, by name from `nss.allowed_shells`, sent as
-  `shell_pref` beside the LDAP `shell`.
+- User self-service: none (removed 2026-10-18 after the threat review: the shell comes from the directory and host policy only). The 2026-10-10 decision let a person
+  pick a shell name, served beside the LDAP `shell`.
 
 Taken 2026-10-11:
 

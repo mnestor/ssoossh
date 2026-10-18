@@ -743,7 +743,7 @@ Serves POSIX accounts and groups from the directory to the ssoosshd\-nss daemon 
 Every account and group comes from the directory, people and shared or service accounts alike, so NSS requires ldap.enabled; there is no OIDC claim source for POSIX attributes. The directory connection, base DN and ldap.id_attribute are the ldap block's.
 .TP
 .BI nss.enabled: " bool"
-Turns the NSS directory on: the lookup endpoints, the fleet key administration, the directory sync of POSIX entries and the shell self\-service. Requires ldap.enabled; a configuration with this on and LDAP off fails at startup.
+Turns the NSS directory on: the lookup endpoints, the fleet key administration and the directory sync of POSIX entries. Requires ldap.enabled; a configuration with this on and LDAP off fails at startup.
 Default:
 .BR false .
 .TP
@@ -853,7 +853,7 @@ Default:
 .BR /home/%u .
 .TP
 .BI nss.default_shell: " string"
-The shell served for an account whose entry has no shell attribute and whose person has chosen none. Empty serves no shell, and the host applies its own default.
+The shell served for an account whose entry has no shell attribute. Empty serves no shell, and the host applies its own default.
 Default:
 .BR empty .
 .TP
@@ -861,11 +861,6 @@ Default:
 Replaces the shell of every disabled or deleted account, so a locked account cannot run a login shell even where a host ignores the lock. Must be an absolute path when nss.enabled is on.
 Default:
 .BR /usr/sbin/nologin .
-.TP
-.BI nss.allowed_shells: " list"
-Lists the shells a person may choose for their own account in the web UI, as bare names ("zsh", not "/bin/zsh"); the host resolves the name to its own path. A choice outside the list is refused.
-Default:
-.BR sh, bash, zsh, fish .
 .TP
 .BI nss.max_group_members: " int"
 Caps the members returned for one group. A larger group is truncated and flagged as truncated in the response, and the daemon logs it. The sync stores every member it can resolve to an account; this caps only what one lookup returns. Must be greater than zero.

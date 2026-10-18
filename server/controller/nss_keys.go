@@ -17,22 +17,21 @@ import (
 )
 
 // NewNSSController registers the session-authenticated NSS routes under
-// /nss on group: the allowed shells and the fleet key administration. keys
-// and lookups are nil when NSS is disabled, and every route then answers
-// 404 nss_disabled, before the session is looked at.
+// /nss on group: the fleet key administration. keys is nil when NSS is
+// disabled, and every route then answers 404 nss_disabled, before the
+// session is looked at.
 //
 // The routes are not under /admin because a key's own group manages it
 // without any admin role (README R16). Who may do what is decided in
 // service.NSSKeyService, not by middleware here, because it depends on the
 // key as well as the caller.
-func NewNSSController(group *gin.RouterGroup, keys *service.NSSKeyService, lookups *service.NSSLookupService,
+func NewNSSController(group *gin.RouterGroup, keys *service.NSSKeyService,
 	sessionAuthMiddleware gin.HandlerFunc, csrfMiddleware gin.HandlerFunc) {
-	k := &nssKeyController{keys: keys, lookups: lookups}
+	k := &nssKeyController{keys: keys}
 
 	// One group: the CSRF middleware exempts safe methods, so the reads
 	// share it with the mutations.
 	nss := group.Group("/nss", k.enabled, sessionAuthMiddleware, csrfMiddleware)
-	nss.GET("/shells", k.shellsHandler)
 	nss.GET("/key-settings", k.keySettingsHandler)
 	nss.GET("/keys", k.listHandler)
 	nss.POST("/keys", k.createHandler)
@@ -47,13 +46,12 @@ func NewNSSController(group *gin.RouterGroup, keys *service.NSSKeyService, looku
 
 // nssKeyController serves the session NSS routes.
 type nssKeyController struct {
-	keys    *service.NSSKeyService
-	lookups *service.NSSLookupService
+	keys *service.NSSKeyService
 }
 
 // enabled answers nss_disabled for every route while NSS is off.
 func (k *nssKeyController) enabled(g *gin.Context) {
-	if k.keys == nil || k.lookups == nil {
+	if k.keys == nil {
 		abortNSSDisabled(g)
 		return
 	}
@@ -75,21 +73,6 @@ func sessionIdentity(g *gin.Context) (*service.Identity, bool) {
 		handleError(g, &errorresponses.UnauthorizedError{})
 	}
 	return identity, ok
-}
-
-// shellsHandler handles GET /api/nss/shells.
-//
-// @Summary     The shells a person may choose
-// @Description nss.allowed_shells, as bare names in configured order, for the login shell field.
-// @Tags        web
-// @Produce     json
-// @Success     200 {object} openapidoc.NSSShellsEnvelope "The allowed shells"
-// @Failure     401 {object} openapidoc.ErrorEnvelope "No valid session"
-// @Failure     404 {object} openapidoc.ErrorEnvelope "nss_disabled: nss.enabled is false"
-// @Security    sessionCookie
-// @Router      /api/nss/shells [get]
-func (k *nssKeyController) shellsHandler(g *gin.Context) {
-	respondData(g, webtypes.NSSShellsResponse{AllowedShells: orEmpty(k.lookups.AllowedShells())})
 }
 
 // keySettingsHandler handles GET /api/nss/key-settings.

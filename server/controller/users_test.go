@@ -23,7 +23,7 @@ func newDisplayRouter(c *config.Config, identity *service.Identity, levels servi
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.Use(middleware.NewErrorHandlerMiddleware().Add())
-	NewUserController(&r.RouterGroup, c, identityMiddleware(identity), &mockUserDatabase{}, levels, func(g *gin.Context) { g.Next() }, nil)
+	NewUserController(&r.RouterGroup, c, identityMiddleware(identity), &mockUserDatabase{}, levels, func(g *gin.Context) { g.Next() })
 	return r
 }
 
