@@ -345,8 +345,10 @@ func TestNSSKeys_ShouldApplyTheChangeWhenTheCallerMayMakeIt(t *testing.T) {
 		},
 		{
 			name: "should change the address when the key admin edits it", caller: nssKeyAdmin,
-			in:          NSSKeyUpdate{NotificationEmail: ptr(" team@example.org ")},
-			check:       func(t *testing.T, key model.NSSKey) { wantEqual(t, "notification_email", key.NotificationEmail, "team@example.org") },
+			in: NSSKeyUpdate{NotificationEmail: ptr(" team@example.org ")},
+			check: func(t *testing.T, key model.NSSKey) {
+				wantEqual(t, "notification_email", key.NotificationEmail, "team@example.org")
+			},
 			wantChanges: []string{"notification_email"},
 		},
 		{

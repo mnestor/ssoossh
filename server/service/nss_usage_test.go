@@ -185,7 +185,7 @@ func TestNSSUsage_ShouldMergeRestoredCountsWhenTheRowHasNewOnes(t *testing.T) {
 	key := nssUsageKey{keyID: "nss_a", sourceIP: "192.0.2.1", generation: 1, day: nssDay(0)}
 	usage.counts[key] = &nssUsageCount{lookups: 1, firstSeen: nssNow, lastSeen: nssNow}
 	usage.restore(map[nssUsageKey]*nssUsageCount{
-		key: {lookups: 2, misses: 1, firstSeen: nssNow.Add(-time.Minute), lastSeen: nssNow.Add(-time.Second)},
+		key:              {lookups: 2, misses: 1, firstSeen: nssNow.Add(-time.Minute), lastSeen: nssNow.Add(-time.Second)},
 		{keyID: "nss_b"}: {lookups: 5},
 	})
 

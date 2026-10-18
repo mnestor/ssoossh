@@ -95,8 +95,10 @@ func TestNSSLookup_ShouldServeEachStatusWhenAUserIsLookedUpByName(t *testing.T) 
 			wantMiss: true,
 		},
 		{
-			name:     "should not serve the account when it is withheld by a collision",
-			row:      func(*gorm.DB) model.PosixUser { return model.PosixUser{WithheldAt: nssAt(-time.Hour), WithheldReason: "uid held twice"} },
+			name: "should not serve the account when it is withheld by a collision",
+			row: func(*gorm.DB) model.PosixUser {
+				return model.PosixUser{WithheldAt: nssAt(-time.Hour), WithheldReason: "uid held twice"}
+			},
 			wantMiss: true,
 		},
 		{
@@ -685,8 +687,10 @@ func TestNSSLookup_ShouldAskTheDirectoryOnlyWhenTheDatabaseHasNoServableRow(t *t
 			},
 		},
 		{
-			name:      "should answer unavailable rather than not found when the directory cannot be asked",
-			refresher: func(*testing.T, *gorm.DB) *fakeNSSRefresher { return &fakeNSSRefresher{err: errors.New("ldap: connection refused")} },
+			name: "should answer unavailable rather than not found when the directory cannot be asked",
+			refresher: func(*testing.T, *gorm.DB) *fakeNSSRefresher {
+				return &fakeNSSRefresher{err: errors.New("ldap: connection refused")}
+			},
 			lookup:    func(ctx context.Context, s *NSSLookupService) error { _, err := s.UserByName(ctx, "alice"); return err },
 			wantCalls: []string{"user-name:alice"},
 			wantErr: func(t *testing.T, err error) {

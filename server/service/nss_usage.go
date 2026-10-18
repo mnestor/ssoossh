@@ -190,9 +190,9 @@ func NewNSSUsageService(c *config.Config, db *gorm.DB, keys *NSSKeyService, mete
 		now:     time.Now,
 
 		flushInterval: NSSUsageFlushInterval,
-		counts:  map[nssUsageKey]*nssUsageCount{},
-		misses:  map[string]*nssMissCount{},
-		queued:  map[string]time.Time{},
+		counts:        map[nssUsageKey]*nssUsageCount{},
+		misses:        map[string]*nssMissCount{},
+		queued:        map[string]time.Time{},
 	}, nil
 }
 
