@@ -290,6 +290,8 @@ func (c *Client) do(ctx context.Context, call lookup) error {
 	parent := ctx
 	ctx, cancel := context.WithTimeout(ctx, c.cfg.Timeout)
 	defer cancel()
+	// Set by WithTimeout, so always there.
+	deadline, _ := ctx.Deadline()
 
 	servers, err := c.serverList(ctx)
 	if err != nil {
@@ -303,7 +305,10 @@ func (c *Client) do(ctx context.Context, call lookup) error {
 		if err != nil {
 			return c.fail(parent, err)
 		}
-		err = call(ctx, client)
+		last := attempt == c.cfg.ReconnectionRetries
+		attemptCtx, cancelAttempt := context.WithTimeout(ctx, attemptTimeout(time.Until(deadline), c.cfg.SocketAnswerDeadline, last))
+		err = call(attemptCtx, client)
+		cancelAttempt()
 		var nssErr *api.NSSError
 		switch {
 		case err == nil:
@@ -325,8 +330,11 @@ func (c *Client) do(ctx context.Context, call lookup) error {
 			// transport failure: trying again at once would get the same.
 			return c.fail(parent, err)
 		}
+		// No HTTP answer: the connection this attempt used may be dead,
+		// silently dropped by something on the path.
+		c.retire(url, client)
 		lastErr = err
-		if ctx.Err() != nil || attempt == c.cfg.ReconnectionRetries {
+		if ctx.Err() != nil || last {
 			break
 		}
 		if len(servers) == 1 {
@@ -336,6 +344,40 @@ func (c *Client) do(ctx context.Context, call lookup) error {
 		}
 	}
 	return c.fail(parent, lastErr)
+}
+
+// retryReserve is how much of the answer deadline the first attempt leaves
+// for a retry: retryPause, then a fresh connection's dial, TLS handshake
+// and answer, which took about 20 ms on a real path. The rest is slack for
+// a slower one.
+const retryReserve = time.Second
+
+// attemptTimeout bounds one attempt, given the time left of the lookup's
+// timeout (which stays the hard bound on the whole call) and the daemon's
+// socket_answer_deadline. The last attempt gets everything left. Every
+// other one gets
+//
+//	min(left/2, max(answerDeadline-retryReserve, answerDeadline/2))
+//
+// so an attempt hung on a dead connection gives up early enough for a
+// retry on a fresh one to answer the userdb caller inside its deadline
+// (1.5 s with the defaults: 2.5 s answer deadline, 5 s timeout), and never
+// takes more than half of what is left of the timeout, so a retry always
+// has as long as the attempt before it. A deadline too short to spare
+// retryReserve is split in half instead.
+//
+// A slow but live server loses nothing by the shorter first attempt: the
+// server singleflights its directory reads per key and finishes one whose
+// caller gave up, so the retry joins the same read rather than starting a
+// new one.
+func attemptTimeout(left, answerDeadline time.Duration, last bool) time.Duration {
+	if last || left <= 0 {
+		return left
+	}
+	if answerDeadline <= 0 {
+		return left / 2
+	}
+	return min(left/2, max(answerDeadline-retryReserve, answerDeadline/2))
 }
 
 // gate refuses a lookup the state says not to send: latched, backing off
@@ -449,6 +491,28 @@ func (c *Client) clientFor(url string) (api.NSSClient, error) {
 	}
 	c.clients[url] = client
 	return client, nil
+}
+
+// retire replaces url's client after an attempt that got no answer, so the
+// next attempt, and every lookup after it, dials a fresh connection.
+//
+// Closing the client's idle connections alone is not enough: when an
+// HTTP/2 attempt gives up, its stream is still being torn down on the
+// connection, so the connection is not idle yet, survives the close, and
+// the pool hands the same dead connection to the retry. A new client
+// cannot reuse it. Lookups still in flight on the old client finish there,
+// which a close of the connection itself would not allow. Its idle
+// connections are closed now; a dead busy one is closed by the transport's
+// ping within about 20 s, a live one when it has been idle for 90 s.
+func (c *Client) retire(url string, client api.NSSClient) {
+	c.mu.Lock()
+	if c.clients[url] == client {
+		delete(c.clients, url)
+	}
+	c.mu.Unlock()
+	if closer, ok := client.(api.IdleCloser); ok {
+		closer.CloseIdleConnections()
+	}
 }
 
 // online records an answer from url.

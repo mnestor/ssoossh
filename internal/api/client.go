@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
 	"strings"
 	"time"
@@ -222,6 +223,7 @@ func NewClient(cfg Config) (*HTTPClient, error) {
 		// connect bound changes.
 		transport.DialContext = (&net.Dialer{Timeout: cfg.DialTimeout, KeepAlive: 30 * time.Second}).DialContext
 	}
+	transport.HTTP2 = healthChecks()
 
 	return &HTTPClient{
 		// A whole-request timeout is safe here because this client serves
@@ -329,10 +331,20 @@ func (c *HTTPClient) send(ctx context.Context, method, path string, payload []by
 
 	c.traceRequest(ctx, req, payload)
 
+	// The bound a timeout here is reported against: the client's own, or
+	// the caller's deadline when that is sooner (ssoosshd-nss gives each
+	// attempt its own).
+	timeout := c.timeout
+	if deadline, ok := ctx.Deadline(); ok {
+		timeout = min(timeout, time.Until(deadline).Round(time.Millisecond))
+	}
+	var conn connTracker
+	req = req.WithContext(httptrace.WithClientTrace(req.Context(), conn.trace()))
+
 	start := time.Now()
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, c.describeTransportError(err)
+		return nil, describeTransport(c.serverURL, timeout, conn.use(), err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -341,7 +353,7 @@ func (c *HTTPClient) send(ctx context.Context, method, path string, payload []by
 	// body.
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("read response body: %w", c.describeTransportError(err))
+		return nil, fmt.Errorf("read response body: %w", describeTransport(c.serverURL, timeout, conn.use(), err))
 	}
 	c.traceResponse(ctx, resp, body, time.Since(start))
 

@@ -81,11 +81,10 @@ func TestNewClient_ShouldDefaultTheRequestTimeout(t *testing.T) {
 func TestDescribeTransportError_ShouldPassThroughAnUnrecognisedError(t *testing.T) {
 	t.Parallel()
 
-	c := &HTTPClient{serverURL: "https://ssh.example.test"}
 	original := errors.New("something else")
 
 	var transportErr *TransportError
-	if got := c.describeTransportError(original); errors.As(got, &transportErr) {
+	if got := describeTransport("https://ssh.example.test", time.Second, connFresh, original); errors.As(got, &transportErr) {
 		t.Errorf("got %v, want the original error unchanged", got)
 	}
 }
@@ -98,6 +97,8 @@ func TestClassifyTransportError(t *testing.T) {
 	tests := []struct {
 		name       string
 		err        error
+		timeout    time.Duration
+		conn       connUse
 		wantReason string
 	}{
 		{
@@ -131,6 +132,43 @@ func TestClassifyTransportError(t *testing.T) {
 			wantReason: "could not connect (network is unreachable)",
 		},
 		{
+			name:       "should call a dial that timed out a connect failure when the dialer gave up",
+			err:        &net.OpError{Op: "dial", Err: timeoutErr{}},
+			conn:       connNone,
+			wantReason: "could not connect (i/o timeout)",
+		},
+		{
+			name:       "should say it could not connect when the deadline passed before a connection",
+			err:        context.DeadlineExceeded,
+			conn:       connNone,
+			wantReason: "could not connect within 1s",
+		},
+		{
+			name:       "should name the reused connection when one went silent",
+			err:        context.DeadlineExceeded,
+			conn:       connReused,
+			wantReason: "no response within 1s on a reused connection",
+		},
+		{
+			name:       "should name the timeout when a fresh connection went silent",
+			err:        context.DeadlineExceeded,
+			conn:       connFresh,
+			wantReason: "no response within 1s",
+		},
+		{
+			name:       "should name the timeout when the call did not record its connection",
+			err:        context.DeadlineExceeded,
+			conn:       connUnknown,
+			wantReason: "no response within 1s",
+		},
+		{
+			name:       "should say only that it timed out when no bound is known",
+			err:        context.DeadlineExceeded,
+			timeout:    -1,
+			conn:       connReused,
+			wantReason: "the connection timed out",
+		},
+		{
 			name:       "should leave an unknown error alone",
 			err:        errors.New("something else"),
 			wantReason: "",
@@ -140,12 +178,23 @@ func TestClassifyTransportError(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if reason, _ := classifyTransportError(tt.err, time.Second); reason != tt.wantReason {
+			timeout := tt.timeout
+			if timeout == 0 {
+				timeout = time.Second
+			}
+			if reason, _ := classifyTransportError(tt.err, timeout, tt.conn); reason != tt.wantReason {
 				t.Errorf("reason = %q, want %q", reason, tt.wantReason)
 			}
 		})
 	}
 }
+
+// timeoutErr is a net.Error that timed out, as a dialer's i/o timeout is.
+type timeoutErr struct{}
+
+func (timeoutErr) Error() string   { return "i/o timeout" }
+func (timeoutErr) Timeout() bool   { return true }
+func (timeoutErr) Temporary() bool { return true }
 
 func TestUndecodableError(t *testing.T) {
 	t.Parallel()

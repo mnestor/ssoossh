@@ -122,7 +122,7 @@ func readOutcome(ctx context.Context, client *http.Client, eventsURL string) (*C
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("connect to the approval stream: %w", describeTransport(req.URL.Scheme+"://"+req.URL.Host, 0, err))
+		return nil, fmt.Errorf("connect to the approval stream: %w", describeTransport(req.URL.Scheme+"://"+req.URL.Host, 0, connUnknown, err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 

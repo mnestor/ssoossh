@@ -3,8 +3,12 @@ package upstream
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"errors"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +19,7 @@ import (
 
 	"github.com/mnestor/ssoossh/internal/api"
 	"github.com/mnestor/ssoossh/internal/apitypes"
+	"github.com/mnestor/ssoossh/internal/blackhole"
 	"github.com/mnestor/ssoossh/nssd/config"
 )
 
@@ -38,19 +43,29 @@ func (f *fakeClock) Advance(d time.Duration) {
 	f.now = f.now.Add(d)
 }
 
-// fakeAPI is an api.NSSClient answering from a function, recording calls.
+// fakeAPI is an api.NSSClient answering from a function, recording calls,
+// idle-connection closes and, for user lookups by name, each attempt's
+// deadline.
 type fakeAPI struct {
-	url    string
-	key    string
-	answer func(url string) (*apitypes.NSSUserResponse, error)
-	calls  *atomic.Int32
+	url      string
+	key      string
+	answer   func(url string) (*apitypes.NSSUserResponse, error)
+	calls    *atomic.Int32
+	closes   *atomic.Int32
+	deadline func(time.Duration)
 }
 
 // GetNSSUserByName implements api.NSSClient.
-func (f *fakeAPI) GetNSSUserByName(context.Context, string) (*apitypes.NSSUserResponse, error) {
+func (f *fakeAPI) GetNSSUserByName(ctx context.Context, _ string) (*apitypes.NSSUserResponse, error) {
 	f.calls.Add(1)
+	if d, ok := ctx.Deadline(); ok && f.deadline != nil {
+		f.deadline(time.Until(d))
+	}
 	return f.answer(f.url)
 }
+
+// CloseIdleConnections implements api.IdleCloser.
+func (f *fakeAPI) CloseIdleConnections() { f.closes.Add(1) }
 
 // GetNSSUserByUID implements api.NSSClient.
 func (f *fakeAPI) GetNSSUserByUID(context.Context, uint32) (*apitypes.NSSUserResponse, error) {
@@ -74,15 +89,19 @@ func (f *fakeAPI) GetNSSGroupByGID(context.Context, uint32) (*apitypes.NSSGroupR
 
 // harness is a Client over fakes.
 type harness struct {
-	client   *Client
-	clock    *fakeClock
-	calls    atomic.Int32
-	keyPath  string
-	built    []api.Config
-	builtMu  sync.Mutex
-	logs     *bytes.Buffer
-	answer   func(url string) (*apitypes.NSSUserResponse, error)
-	answerMu sync.Mutex
+	client  *Client
+	clock   *fakeClock
+	calls   atomic.Int32
+	closes  atomic.Int32
+	keyPath string
+	// deadlines is each name lookup attempt's time to its deadline.
+	deadlines   []time.Duration
+	deadlinesMu sync.Mutex
+	built       []api.Config
+	builtMu     sync.Mutex
+	logs        *bytes.Buffer
+	answer      func(url string) (*apitypes.NSSUserResponse, error)
+	answerMu    sync.Mutex
 }
 
 // setAnswer changes what the fake server answers.
@@ -125,11 +144,15 @@ func newHarness(t *testing.T, mutate func(*config.Config, *Options)) *harness {
 			h.builtMu.Lock()
 			h.built = append(h.built, c)
 			h.builtMu.Unlock()
-			return &fakeAPI{url: c.ServerURL, key: c.KeyID, calls: &h.calls, answer: func(url string) (*apitypes.NSSUserResponse, error) {
+			return &fakeAPI{url: c.ServerURL, key: c.KeyID, calls: &h.calls, closes: &h.closes, answer: func(url string) (*apitypes.NSSUserResponse, error) {
 				h.answerMu.Lock()
 				fn := h.answer
 				h.answerMu.Unlock()
 				return fn(url)
+			}, deadline: func(d time.Duration) {
+				h.deadlinesMu.Lock()
+				h.deadlines = append(h.deadlines, d)
+				h.deadlinesMu.Unlock()
 			}}, nil
 		},
 		Sleep: func(context.Context, time.Duration) error { return nil },
@@ -563,5 +586,190 @@ func TestSleepContext(t *testing.T) {
 	cancel()
 	if err := sleepContext(ctx, time.Hour); !errors.Is(err, context.Canceled) {
 		t.Fatalf("should return the context's error when it ends first, got %v", err)
+	}
+}
+
+func TestAttemptTimeout(t *testing.T) {
+	t.Parallel()
+
+	const ms = time.Millisecond
+	tests := []struct {
+		name           string
+		left           time.Duration
+		answerDeadline time.Duration
+		last           bool
+		want           time.Duration
+	}{
+		{name: "should leave a second for the retry inside the answer deadline when the defaults apply", left: 5 * time.Second, answerDeadline: 2500 * ms, want: 1500 * ms},
+		{name: "should give the last attempt everything left when it is the last", left: 5 * time.Second, answerDeadline: 2500 * ms, last: true, want: 5 * time.Second},
+		{name: "should take half of what is left when the timeout is shorter than the answer deadline", left: time.Second, answerDeadline: 2500 * ms, want: 500 * ms},
+		{name: "should halve the answer deadline when it is too short to spare the reserve", left: 5 * time.Second, answerDeadline: time.Second, want: 500 * ms},
+		{name: "should halve the answer deadline when it is barely longer than the reserve", left: 5 * time.Second, answerDeadline: 1200 * ms, want: 600 * ms},
+		{name: "should cap a long answer deadline by half of what is left", left: 5 * time.Second, answerDeadline: 20 * time.Second, want: 2500 * ms},
+		{name: "should allow up to the answer deadline less the reserve when the timeout is long", left: 30 * time.Second, answerDeadline: 10 * time.Second, want: 9 * time.Second},
+		{name: "should split what is left when there is no answer deadline", left: 4 * time.Second, answerDeadline: 0, want: 2 * time.Second},
+		{name: "should give nothing when nothing is left", left: 0, answerDeadline: 2500 * ms, want: 0},
+		{name: "should pass a past deadline through when it is already gone", left: -ms, answerDeadline: 2500 * ms, want: -ms},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := attemptTimeout(tt.left, tt.answerDeadline, tt.last); got != tt.want {
+				t.Errorf("attemptTimeout(%s, %s, %v) = %s, want %s", tt.left, tt.answerDeadline, tt.last, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestEachAttemptShouldGetItsOwnDeadlineWhenTheLookupIsRetried(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, nil)
+	h.setAnswer(func(string) (*apitypes.NSSUserResponse, error) { return nil, errTransport })
+	if _, err := h.client.UserByName(t.Context(), "alice"); !errors.Is(err, ErrOffline) {
+		t.Fatalf("got %v", err)
+	}
+	h.deadlinesMu.Lock()
+	defer h.deadlinesMu.Unlock()
+	// Defaults: 5 s timeout, 2.5 s answer deadline, 3 retries. The fake
+	// fails at once, so each attempt but the last sees about 1.5 s and the
+	// last about the whole 5 s.
+	want := []time.Duration{1500 * time.Millisecond, 1500 * time.Millisecond, 1500 * time.Millisecond, 5 * time.Second}
+	if len(h.deadlines) != len(want) {
+		t.Fatalf("got %d attempts, want %d", len(h.deadlines), len(want))
+	}
+	for i, d := range h.deadlines {
+		if d > want[i] || d < want[i]-100*time.Millisecond {
+			t.Errorf("attempt %d had %s, want about %s", i+1, d, want[i])
+		}
+	}
+}
+
+func TestClientShouldBeReplacedOnlyWhenAnAttemptGetsNoAnswer(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		answer     error
+		want       error
+		wantCalls  int32
+		wantCloses int32
+	}{
+		// wantCloses is also how many clients are retired: each retired
+		// one has its idle connections closed and a new one is built.
+		{name: "should not retry or close when the server finds the record", want: nil, wantCalls: 1},
+		{name: "should not retry or close when the server says nss_not_found", answer: &api.NSSError{StatusCode: 404, ErrorCode: apitypes.ErrorCodeNSSNotFound}, want: ErrNotFound, wantCalls: 1},
+		{name: "should not retry or close when the server says nss_bad_request", answer: &api.NSSError{StatusCode: 400, ErrorCode: apitypes.ErrorCodeNSSBadRequest}, want: ErrInvalid, wantCalls: 1},
+		{name: "should not retry or close when the server answers 401", answer: &api.NSSError{StatusCode: 401}, want: ErrUnauthorized, wantCalls: 1},
+		{name: "should not retry or close when the server answers 429", answer: &api.NSSError{StatusCode: 429, RetryAfter: time.Minute}, want: ErrRateLimited, wantCalls: 1},
+		{name: "should not retry or close when the server answers 503", answer: &api.NSSError{StatusCode: 503}, want: ErrOffline, wantCalls: 1},
+		{name: "should retry and close after every attempt when the transport fails", answer: errTransport, want: ErrOffline, wantCalls: 4, wantCloses: 4},
+		{name: "should retry and close after every attempt when each one times out", answer: context.DeadlineExceeded, want: ErrOffline, wantCalls: 4, wantCloses: 4},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			h := newHarness(t, nil)
+			h.setAnswer(func(string) (*apitypes.NSSUserResponse, error) {
+				if tt.answer != nil {
+					return nil, tt.answer
+				}
+				return &apitypes.NSSUserResponse{Name: "alice"}, nil
+			})
+			_, err := h.client.UserByName(t.Context(), "alice")
+			if !errors.Is(err, tt.want) || (tt.want == nil && err != nil) {
+				t.Fatalf("got %v, want %v", err, tt.want)
+			}
+			if got := h.calls.Load(); got != tt.wantCalls {
+				t.Errorf("got %d calls, want %d", got, tt.wantCalls)
+			}
+			if got := h.closes.Load(); got != tt.wantCloses {
+				t.Errorf("got %d idle closes, want %d", got, tt.wantCloses)
+			}
+			h.builtMu.Lock()
+			built := len(h.built)
+			h.builtMu.Unlock()
+			// One client to start, and one more for each attempt after a
+			// retired one.
+			if want := 1 + min(int(tt.wantCloses), int(tt.wantCalls)-1); built != want {
+				t.Errorf("built %d clients, want %d", built, want)
+			}
+		})
+	}
+}
+
+// TestBlackHoledConnection is the field failure end to end through the
+// real HTTPS client: an HTTP/2 server behind a proxy that, after a first
+// lookup, silently drops everything the host sends on the kept-alive
+// connection. The next lookup's first attempt is written into the dead
+// connection; it must give up in time for a retry on a fresh connection
+// to answer inside both the timeout and the userdb answer deadline.
+func TestBlackHoledConnection(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		timeout        time.Duration
+		answerDeadline time.Duration
+	}{
+		{name: "should answer from a fresh connection inside the answer deadline when the defaults apply", timeout: 5 * time.Second, answerDeadline: 2500 * time.Millisecond},
+		{name: "should answer from a fresh connection inside the timeout when both are shorter than the defaults", timeout: time.Second, answerDeadline: time.Second},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var requests atomic.Int32
+			server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"data":{"name":"alice","uid":5001,"gid":5001,"groups":[],"gecos":"","status":"active","key_id":"nss_k1"}}`))
+			}))
+			server.EnableHTTP2 = true
+			server.StartTLS()
+			t.Cleanup(server.Close)
+			proxy, err := blackhole.Start(server.Listener.Addr().String())
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = proxy.Close() })
+
+			keyPath := filepath.Join(t.TempDir(), "nss.key")
+			writeKey(t, keyPath, "nss_k1", "secret1")
+			sum := sha256.Sum256(server.Certificate().RawSubjectPublicKeyInfo)
+			cfg := config.Defaults()
+			cfg.Server = "https://" + proxy.Addr()
+			cfg.TLSSPKIPin = []string{base64.StdEncoding.EncodeToString(sum[:])}
+			cfg.APIKeyFile = keyPath
+			cfg.Timeout, cfg.SocketAnswerDeadline = tt.timeout, tt.answerDeadline
+			client, err := New(Options{Config: &cfg, Log: slog.New(slog.DiscardHandler)})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if _, err := client.UserByName(t.Context(), "alice"); err != nil {
+				t.Fatalf("first lookup: %v", err)
+			}
+			proxy.Drop(blackhole.Upstream)
+
+			start := time.Now()
+			u, err := client.UserByName(t.Context(), "alice")
+			elapsed := time.Since(start)
+
+			if err != nil || u.Name != "alice" {
+				t.Fatalf("lookup after the black hole: %+v, %v", u, err)
+			}
+			if bound := min(tt.timeout, tt.answerDeadline); elapsed >= bound {
+				t.Errorf("lookup took %s, want under %s", elapsed, bound)
+			}
+			if got := proxy.Accepted(); got != 2 {
+				t.Errorf("proxy accepted %d connections, want a second, fresh one", got)
+			}
+			if got := requests.Load(); got != 2 {
+				t.Errorf("server saw %d requests, want 2: the black-holed one never arrived", got)
+			}
+			if st := client.Status().State; st != StateOnline {
+				t.Errorf("state %q, want online", st)
+			}
+		})
 	}
 }

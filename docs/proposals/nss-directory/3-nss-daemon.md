@@ -278,6 +278,21 @@ cache as if offline until `cache_expire_offline`; latch clears on SIGHUP or
 key file change. Offline: exponential backoff from `offline_timeout`, serve
 cache.
 
+*(added 2026-10-18 after a field failure)* A middlebox on the path silently
+dropped the host-to-server half of an idle kept-alive HTTP/2 connection;
+the next lookup was written into it and spent the whole `timeout` there,
+and the retries reused the same pooled connection, so the host went
+offline for minutes. Now the ordinary-call transport pings a connection
+that has read nothing for 15 s and closes it when no answer comes within
+5 s (`http.HTTP2Config.SendPingTimeout`, `PingTimeout`; not on the events
+stream). Each attempt but the last is bounded by
+`min(left/2, max(socket_answer_deadline - 1s, socket_answer_deadline/2))`,
+1.5 s by default, so a retry still answers inside the answer deadline, and
+an attempt that got no HTTP answer retires its client so the retry dials a
+fresh connection (closing idle connections alone does not drop an HTTP/2
+connection whose cancelled stream is still being torn down). A timeout now
+says whether it was on a reused connection or before one was made.
+
 ## Policy and sanity rules
 
 Applied to every upstream answer before caching; a failing entry is logged
