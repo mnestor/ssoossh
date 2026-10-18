@@ -12,6 +12,7 @@
 	import DetailRow from '#lib/components/DetailRow.svelte';
 	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
 	import NSSDirectoryRef from '#lib/components/NSSDirectoryRef.svelte';
+	import NSSEntryHistory from '#lib/components/NSSEntryHistory.svelte';
 	import NSSEntryMarks from '#lib/components/NSSEntryMarks.svelte';
 	import NSSServedVerdict from '#lib/components/NSSServedVerdict.svelte';
 	import NSSStateBadge from '#lib/components/NSSStateBadge.svelte';
@@ -23,7 +24,8 @@
 	import { session } from '#lib/session.svelte.js';
 
 	// One stored NSS account: whether hosts are served it and what they get,
-	// then the row as stored, its state, and its stored group memberships.
+	// then the row as stored, its state, its stored group memberships, and
+	// its history.
 	// Read only. The served verdict comes from the server's served and
 	// not_served alone and sits in the identity strip ahead of the raw
 	// fields, because concluding the wrong way sends an admin to fix the
@@ -360,5 +362,7 @@
 				</div>
 			{/if}
 		</PageSection>
+
+		<NSSEntryHistory kind="account" number={account.uid} testid="nss-account-history" />
 	{/if}
 </PageShell>

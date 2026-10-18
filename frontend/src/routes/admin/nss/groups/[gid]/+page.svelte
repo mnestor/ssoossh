@@ -12,6 +12,7 @@
 	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
 	import LoadMoreFooter from '#lib/components/LoadMoreFooter.svelte';
 	import NSSDirectoryRef from '#lib/components/NSSDirectoryRef.svelte';
+	import NSSEntryHistory from '#lib/components/NSSEntryHistory.svelte';
 	import NSSEntryMarks from '#lib/components/NSSEntryMarks.svelte';
 	import NSSServedVerdict from '#lib/components/NSSServedVerdict.svelte';
 	import NSSStateBadge from '#lib/components/NSSStateBadge.svelte';
@@ -25,8 +26,8 @@
 
 	// One stored NSS group: whether hosts are served it and how many member
 	// names they receive, then the row as stored, its state, and its
-	// membership rows, paged from their own endpoint. Read only. The served
-	// verdict is the server's, as on an account's page.
+	// membership rows, paged from their own endpoint, then its history. Read
+	// only. The served verdict is the server's, as on an account's page.
 
 	const gid = $derived(parseEntryNumber(page.params.gid));
 
@@ -348,5 +349,7 @@
 				</div>
 			{/if}
 		</PageSection>
+
+		<NSSEntryHistory kind="group" number={group.gid} testid="nss-group-history" />
 	{/if}
 </PageShell>

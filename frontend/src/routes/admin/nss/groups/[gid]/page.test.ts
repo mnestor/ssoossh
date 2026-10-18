@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { NSSGroupDetail, NSSGroupMembersResponse } from '#lib/api/types.js';
 import { session } from '#lib/session.svelte.js';
+import { emptyHistory, historySuite } from '#lib/testing/history.js';
 import {
 	envelope,
 	groupFixture,
@@ -19,7 +20,8 @@ import {
 // page with Load more and link to their accounts, a member with no stored
 // account says it is never served, a members failure leaves the group
 // standing, and a gid with no stored group points at the account that
-// would own it as a private group.
+// would own it as a private group. The History section's states are the
+// shared historySuite's.
 
 vi.mock('$app/state', async () => {
 	const { fakePage } = await import('#lib/testing/page.svelte.js');
@@ -34,17 +36,19 @@ const twoMembers: NSSGroupMembersResponse = {
 	total: 2
 };
 
-/** open renders the page for gid with the group and members reads routed. */
+/** open renders the page for gid with the group, members and history reads routed. */
 async function open(
 	group: NSSGroupDetail | Response,
 	members: Response | Route = envelope(twoMembers),
-	gid = '5100'
+	gid = '5100',
+	history: Response | Route = envelope(emptyHistory)
 ) {
 	resetFakePage(`http://localhost/admin/nss/groups/${gid}`);
 	fakePage.params = { gid };
 	const calls = routeFetch({
 		[`GET /api/admin/nss/groups/${gid}`]: group instanceof Response ? group : envelope(group),
-		[`GET /api/admin/nss/groups/${gid}/members`]: members
+		[`GET /api/admin/nss/groups/${gid}/members`]: members,
+		[`GET /api/admin/nss/groups/${gid}/audit`]: history
 	});
 	render(Page);
 	await settle();
@@ -234,4 +238,10 @@ describe('stored group state section', () => {
 
 		expect(screen.getByTestId('nss-marks-meaning')).toHaveTextContent('Served with no members');
 	});
+});
+
+historySuite({
+	open: (history) => open(groupFixture(), envelope(twoMembers), '5100', history),
+	testid: 'nss-group-history',
+	path: '/api/admin/nss/groups/5100/audit'
 });

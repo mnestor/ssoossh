@@ -4,7 +4,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { NSSAccountDetail } from '#lib/api/types.js';
 import { session } from '#lib/session.svelte.js';
-import { accountFixture, envelope, routeFetch, settle, userFixture } from '#lib/testing/nss.js';
+import { emptyHistory, historySuite } from '#lib/testing/history.js';
+import {
+	accountFixture,
+	envelope,
+	routeFetch,
+	settle,
+	userFixture,
+	type Route
+} from '#lib/testing/nss.js';
 
 // Test methodology: one stored account routed to a fixture, the uid taken
 // from the fake page's params. The pinned behaviours are the ones an admin
@@ -12,6 +20,7 @@ import { accountFixture, envelope, routeFetch, settle, userFixture } from '#lib/
 // reason in words), what hosts get is hidden when nothing is served, the
 // state section appears only off active, every related entry is a link, and
 // a uid with no stored account says a host would still ask the directory.
+// The History section's states are the shared historySuite's.
 
 vi.mock('$app/state', async () => {
 	const { fakePage } = await import('#lib/testing/page.svelte.js');
@@ -21,14 +30,23 @@ vi.mock('$app/state', async () => {
 import { fakePage, resetFakePage } from '#lib/testing/page.svelte.js';
 import Page from './+page.svelte';
 
-/** open renders the page for uid with the account read answered by `account`. */
-async function open(account: NSSAccountDetail | Response, uid = '10001') {
+/**
+ * open renders the page for uid with the account read answered by
+ * `account` and its history by `history` (none recorded by default).
+ */
+async function open(
+	account: NSSAccountDetail | Response,
+	uid = '10001',
+	history: Route | Response = envelope(emptyHistory)
+) {
 	resetFakePage(`http://localhost/admin/nss/accounts/${uid}`);
 	fakePage.params = { uid };
 	const calls = routeFetch({
-		[`GET /api/admin/nss/users/${uid}`]: account instanceof Response ? account : envelope(account)
+		[`GET /api/admin/nss/users/${uid}`]: account instanceof Response ? account : envelope(account),
+		[`GET /api/admin/nss/users/${uid}/audit`]: history
 	});
 	render(Page);
+	await settle();
 	await settle();
 	return calls;
 }
@@ -362,4 +380,10 @@ describe('stored account load', () => {
 
 		expect(screen.getByTestId('nss-account-back')).toHaveAttribute('href', '/admin/nss/accounts');
 	});
+});
+
+historySuite({
+	open: (history) => open(accountFixture(), '10001', history),
+	testid: 'nss-account-history',
+	path: '/api/admin/nss/users/10001/audit'
 });
