@@ -1196,6 +1196,75 @@ func TestForgottenUserShouldMarkTheGroupsListingItStale(t *testing.T) {
 	}
 }
 
+func TestForgottenUserShouldStillMarkItsGroupsStaleWhenTheCacheCannotDropTheUser(t *testing.T) {
+	t.Parallel()
+	withStore(t, nil, func(t *testing.T, f *fixture) {
+		f.up.users["alice"].Groups = append(f.up.users["alice"].Groups, ops)
+		f.call(t, MethodGetUserRecord, p("userName", "alice"), userPeer, false)
+		putGroup(t, f, apitypes.NSSGroupResponse{Name: "ops", GID: 5103, Members: []string{"alice"}}, true)
+		delete(f.up.users, "alice")
+		f.clock.Advance(f.cfg.TTLUser())
+		f.d.store = &flakyStore{Store: f.store, failUserDelete: true}
+		if got := errorOf(t, f.call(t, MethodGetUserRecord, p("userName", "alice"), userPeer, false)); got != ErrorNoRecordFound {
+			t.Fatalf("got %q, want the removed user not found", got)
+		}
+		if !strings.Contains(f.logs.String(), `msg="cannot drop a user from the cache" user=alice`) {
+			t.Fatalf("should log the failed drop, got %s", f.logs)
+		}
+		if !groupStale(t, f, "ops") {
+			t.Fatal("should mark a group still listing the removed user stale")
+		}
+	})
+}
+
+func TestFreshGroupShouldHandleAChangedMemberWhoseCachedUserIsUnusable(t *testing.T) {
+	t.Parallel()
+
+	own := apitypes.NSSMembership{GID: 5001, Name: "alice"}
+	devs := apitypes.NSSMembership{GID: 5100, Name: "devs"}
+
+	// Each row's groups would give the opposite outcome if the entry were
+	// usable, so only the unusable entry can explain the result.
+	tests := []struct {
+		name      string
+		groups    []apitypes.NSSMembership // alice's cached groups, before any corruption
+		corrupt   bool                     // alice's cached entry does not decode
+		failRead  bool                     // the user cache cannot be read
+		wantStale bool
+		wantLog   string
+	}{
+		{name: "should mark the user stale when its cached entry does not decode",
+			groups: []apitypes.NSSMembership{own, devs}, corrupt: true, wantStale: true},
+		{name: "should log and leave the user when the user cache cannot be read",
+			groups: []apitypes.NSSMembership{own}, failRead: true, wantLog: `msg="cannot read the user cache" user=alice`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			withStore(t, nil, func(t *testing.T, f *fixture) {
+				putUser(t, f, "alice", 5001, tt.groups, false)
+				if tt.corrupt {
+					now := f.clock.Now()
+					e := cache.UserEntry{Name: "alice", UID: 5001, GID: 5001, Data: []byte("{"), FetchedAt: now, ExpiresAt: now.Add(f.cfg.TTLUser())}
+					if err := f.store.PutUser(t.Context(), e); err != nil {
+						t.Fatal(err)
+					}
+				}
+				putGroup(t, f, apitypes.NSSGroupResponse{Name: "devs", GID: 5100, Members: []string{"carol"}}, true)
+				f.up.groups["devs"] = &apitypes.NSSGroupResponse{Name: "devs", GID: 5100, Members: []string{"alice", "carol"}}
+				f.d.store = &flakyStore{Store: f.store, failUserRead: tt.failRead}
+				f.d.refresh(t.Context(), groupKey{name: "devs"}.String())
+				if got := userStale(t, f, "alice"); got != tt.wantStale {
+					t.Fatalf("got alice stale %v, want %v", got, tt.wantStale)
+				}
+				if tt.wantLog != "" && !strings.Contains(f.logs.String(), tt.wantLog) {
+					t.Fatalf("should log %q, got %s", tt.wantLog, f.logs)
+				}
+			})
+		})
+	}
+}
+
 func TestFreshGroupShouldMarkContradictedUsersStale(t *testing.T) {
 	t.Parallel()
 	devs := apitypes.NSSMembership{GID: 5100, Name: "devs"}
@@ -1492,7 +1561,23 @@ func TestConfirmedDisagreementShouldClearWhenTheGroupOrTheUserMoves(t *testing.T
 // flakyStore wraps a Store and fails the operations its flags name.
 type flakyStore struct {
 	cache.Store
-	failMarkStale, failGroupRead bool
+	failMarkStale, failGroupRead, failUserRead, failUserDelete bool
+}
+
+// UserByName fails when failUserRead is set.
+func (s *flakyStore) UserByName(ctx context.Context, name string) (*cache.UserEntry, error) {
+	if s.failUserRead {
+		return nil, errStore
+	}
+	return s.Store.UserByName(ctx, name)
+}
+
+// DeleteUser fails when failUserDelete is set.
+func (s *flakyStore) DeleteUser(ctx context.Context, name string) error {
+	if s.failUserDelete {
+		return errStore
+	}
+	return s.Store.DeleteUser(ctx, name)
 }
 
 // MarkStale fails when failMarkStale is set.

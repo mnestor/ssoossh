@@ -809,3 +809,116 @@ func TestNSSLookup_ShouldReturnTheDatabaseErrorWhenTheReadFails(t *testing.T) {
 		t.Errorf("GroupByName on a closed database = %v, want a plain database error", err)
 	}
 }
+
+func TestNSSLookup_ShouldReturnTheDatabaseErrorWhenALaterReadFails(t *testing.T) {
+	t.Parallel()
+
+	anyQuery := func(string) bool { return true }
+	holdersQuery := func(sql string) bool { return strings.Contains(sql, "gid IN") }
+	alice := model.PosixUser{Name: "alice", UID: 10001, GID: new(uint32(500))}
+	user := func(name string) func(context.Context, *NSSLookupService) error {
+		return func(ctx context.Context, s *NSSLookupService) error { _, err := s.UserByName(ctx, name); return err }
+	}
+	group := func(name string) func(context.Context, *NSSLookupService) error {
+		return func(ctx context.Context, s *NSSLookupService) error { _, err := s.GroupByName(ctx, name); return err }
+	}
+
+	tests := []struct {
+		name string
+		mode config.AutoPrivateGroupsMode
+		seed func(t *testing.T, db *gorm.DB)
+		// match picks the queries that fail from the start, and rowTable
+		// the table whose raw-row reads (Scan) fail; failAfter names the
+		// refresh after which every query fails instead.
+		match     func(sql string) bool
+		rowTable  string
+		failAfter string
+		lookup    func(ctx context.Context, s *NSSLookupService) error
+		wantErr   string
+	}{
+		{
+			name:    "should fail a user lookup when the groups holding its gid cannot be read",
+			seed:    func(t *testing.T, db *gorm.DB) { seedPosixUser(t, db, alice) },
+			match:   holdersQuery,
+			lookup:  user("alice"),
+			wantErr: "read the groups holding a posix account's gid",
+		},
+		{
+			name:    "should fail a private group lookup when the groups holding the account's gid cannot be read",
+			mode:    config.AutoPrivateGroupsOn,
+			seed:    func(t *testing.T, db *gorm.DB) { seedPosixUser(t, db, alice) },
+			match:   holdersQuery,
+			lookup:  group("alice"),
+			wantErr: "read the groups holding a posix account's gid",
+		},
+		{
+			name:     "should fail a user lookup when its memberships cannot be read",
+			seed:     func(t *testing.T, db *gorm.DB) { seedPosixUser(t, db, alice) },
+			rowTable: "posix_group_members",
+			lookup:   user("alice"),
+			wantErr:  "read posix group memberships",
+		},
+		{
+			name:    "should fail a group lookup when its members cannot be read",
+			seed:    func(t *testing.T, db *gorm.DB) { seedPosixGroup(t, db, model.PosixGroup{Name: "eng", GID: 600}) },
+			match:   func(sql string) bool { return strings.Contains(sql, "posix_group_members.gid") },
+			lookup:  group("eng"),
+			wantErr: "read posix group members",
+		},
+		{
+			name:      "should fail a user lookup when the read after the refresh fails",
+			failAfter: "user-name:alice",
+			lookup:    user("alice"),
+			wantErr:   "read posix account: ",
+		},
+		{
+			name:      "should fail a group lookup when the read after the account refresh fails",
+			mode:      config.AutoPrivateGroupsHybrid,
+			failAfter: "user-name:eng",
+			lookup:    group("eng"),
+			wantErr:   "read posix group: ",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			db := testdb.New(t)
+			if tt.seed != nil {
+				tt.seed(t, db)
+			}
+			if tt.match != nil {
+				failAuditStatement(t, db, "query", tt.match)
+			}
+			if tt.rowTable != "" {
+				// Scan reads through the row callbacks, and failing before
+				// gorm:row leaves no rows open behind the error.
+				err := db.Callback().Row().Before("gorm:row").Register("test:fail_nss_rows", func(tx *gorm.DB) {
+					if tx.Statement.Table == tt.rowTable {
+						_ = tx.AddError(errors.New("injected failure"))
+					}
+				})
+				if err != nil {
+					t.Fatalf("register the failure callback: %v", err)
+				}
+			}
+			refresher := &fakeNSSRefresher{onRefresh: func(call string) {
+				if tt.failAfter != "" && call == tt.failAfter {
+					failAuditStatement(t, db, "query", anyQuery)
+				}
+			}}
+			c := nssLookupTestConfig()
+			if tt.mode != "" {
+				c.NSS.AutoPrivateGroups = tt.mode
+			}
+			lookups := newTestNSSLookup(c, db, refresher)
+
+			err := tt.lookup(t.Context(), lookups)
+			var nssErr *errorresponses.NSSError
+			if err == nil || errors.As(err, &nssErr) || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("lookup = %v, want a plain database error from %q", err, tt.wantErr)
+			}
+		})
+	}
+}

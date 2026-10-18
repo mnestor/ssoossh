@@ -742,15 +742,191 @@ func TestAcceptLoopShouldRetryWhenAcceptRunsOutOfDescriptors(t *testing.T) {
 	}
 }
 
+// cancelOnRetry is a slog.Handler that cancels a context when the accept
+// loop logs its retry for the after-th time, so shutdown begins between
+// that log line and the backoff it announces.
+type cancelOnRetry struct {
+	mu     sync.Mutex
+	after  int
+	cancel context.CancelFunc
+}
+
+// Enabled implements slog.Handler.
+func (h *cancelOnRetry) Enabled(context.Context, slog.Level) bool { return true }
+
+// Handle implements slog.Handler.
+func (h *cancelOnRetry) Handle(_ context.Context, r slog.Record) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if r.Message == "cannot accept a connection; retrying" {
+		if h.after--; h.after == 0 {
+			h.cancel()
+		}
+	}
+	return nil
+}
+
+// WithAttrs implements slog.Handler.
+func (h *cancelOnRetry) WithAttrs([]slog.Attr) slog.Handler { return h }
+
+// WithGroup implements slog.Handler.
+func (h *cancelOnRetry) WithGroup(string) slog.Handler { return h }
+
 func TestAcceptLoopShouldStopWhenShutdownBeginsDuringABackoff(t *testing.T) {
 	t.Parallel()
 
-	emfile := &net.OpError{Op: "accept", Net: "unix", Err: os.NewSyscallError("accept", syscall.ENFILE)}
-	l := &scriptedListener{steps: []any{emfile}}
-	s := New(Options{AnswerDeadline: time.Second, Log: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	// Shutdown begins after the accept error was weighed and logged, so
+	// only the backoff can see it. The fourth retry waits 40ms, far longer
+	// than the gap between the log line and the wait, so the wait cannot
+	// end before it notices the shutdown.
+	const retries = 4
+	enfile := &net.OpError{Op: "accept", Net: "unix", Err: os.NewSyscallError("accept", syscall.ENFILE)}
+	l := &scriptedListener{}
+	for range retries + 1 {
+		l.steps = append(l.steps, enfile)
+	}
 	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
+	defer cancel()
+	s := New(Options{AnswerDeadline: time.Second, Log: slog.New(&cancelOnRetry{after: retries, cancel: cancel})})
 	if err := s.acceptLoop(ctx, l, func(context.Context, net.Conn) func() { return nil }); err != nil {
 		t.Fatalf("should return nil when shutting down, got %v", err)
+	}
+	if left := len(l.steps); left != 1 {
+		t.Fatalf("should stop in the backoff before accepting again, %d accept steps left, want 1", left)
+	}
+}
+
+func TestSleepContext(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		cancel bool
+		d      time.Duration
+		want   bool
+	}{
+		{name: "should report the wait passed when the context lives", d: time.Millisecond, want: true},
+		{name: "should report the wait cut short when the context ends", cancel: true, d: time.Hour, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			if tt.cancel {
+				cancel()
+			}
+			if got := sleepContext(ctx, tt.d); got != tt.want {
+				t.Fatalf("sleepContext = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRefuseShouldCloseUnanswered(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		send func(t *testing.T, conn net.Conn)
+	}{
+		{name: "should close unanswered when the peer sends garbage", send: func(t *testing.T, conn net.Conn) {
+			if _, err := conn.Write([]byte("not a call\x00")); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{name: "should close unanswered when the peer sends a oneway call", send: func(t *testing.T, conn net.Conn) {
+			if err := varlink.NewEncoder(conn).WriteCall(varlink.Call{Method: userdb.MethodGetUserRecord, Oneway: true}); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s := New(Options{AnswerDeadline: time.Second, Log: slog.New(slog.NewTextHandler(io.Discard, nil))})
+			server, client := net.Pipe()
+			defer func() { _ = client.Close() }()
+			done := make(chan struct{})
+			go func() { defer close(done); s.refuse(server) }()
+			// Before the send: net.Pipe refuses a deadline once the other
+			// end has closed.
+			if err := client.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+				t.Fatal(err)
+			}
+			tt.send(t, client)
+			if n, err := client.Read(make([]byte, 64)); !errors.Is(err, io.EOF) {
+				t.Fatalf("should close without a reply, read %d bytes, %v", n, err)
+			}
+			<-done
+		})
+	}
+}
+
+func TestRefuseShouldWriteNothingWhenThePeerClosesWithoutACall(t *testing.T) {
+	t.Parallel()
+	logs := &syncBuffer{}
+	s := New(Options{AnswerDeadline: time.Second, Log: slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug}))})
+	server, client := net.Pipe()
+	_ = client.Close()
+	s.refuse(server)
+	// A refusal written to the closed pipe would fail and be logged.
+	if strings.Contains(logs.String(), "cannot refuse a userdb peer") {
+		t.Fatalf("should not try to answer a peer that sent no call, got %s", logs)
+	}
+}
+
+func TestRefuseShouldLogWhenThePeerLeavesBeforeTheRefusal(t *testing.T) {
+	t.Parallel()
+	logs := &syncBuffer{}
+	s := New(Options{AnswerDeadline: time.Second, Log: slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug}))})
+	server, client := net.Pipe()
+	done := make(chan struct{})
+	go func() { defer close(done); s.refuse(server) }()
+	// net.Pipe is unbuffered: the write returns once refuse has read the
+	// call, and nothing reads the refusal, so it fails whether it starts
+	// before or after the close.
+	if err := varlink.NewEncoder(client).WriteCall(varlink.Call{Method: userdb.MethodGetUserRecord}); err != nil {
+		t.Fatal(err)
+	}
+	_ = client.Close()
+	<-done
+	if !strings.Contains(logs.String(), "cannot refuse a userdb peer") {
+		t.Fatalf("should log the refusal it could not write, got %s", logs)
+	}
+}
+
+func TestHandleShouldCloseAtTheNextCallWhenAWaitSpentTheIdleBudget(t *testing.T) {
+	t.Parallel()
+	f := start(t, nil, nil)
+	const idle = 300 * time.Millisecond
+	logs := &syncBuffer{}
+	s := New(Options{Daemon: f.daemon, AnswerDeadline: time.Second, IdleTimeout: idle,
+		Log: slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug}))})
+	// Every wait reports the whole budget spent, though the call came at
+	// once: the call read is still answered, and the connection is closed
+	// before the next read.
+	s.since = func(time.Time) time.Duration { return idle }
+
+	server, client := net.Pipe()
+	defer func() { _ = client.Close() }()
+	done := make(chan struct{})
+	go func() { defer close(done); s.handle(t.Context(), server, Credentials{UID: 1000, PID: 4242}) }()
+	if err := client.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if err := varlink.NewEncoder(client).WriteCall(varlink.Call{Method: userdb.MethodGetInfo}); err != nil {
+		t.Fatal(err)
+	}
+	dec := varlink.NewDecoder(client)
+	if r, err := dec.ReadReply(); err != nil || r.Error != "" {
+		t.Fatalf("should answer the call read, got %+v, %v", r, err)
+	}
+	if _, err := dec.ReadReply(); !errors.Is(err, io.EOF) {
+		t.Fatalf("should close the connection after the answer, got %v", err)
+	}
+	<-done
+	if !strings.Contains(logs.String(), "closing a userdb connection that spent socket_idle_timeout waiting for calls") {
+		t.Fatalf("should log why it closed, got %s", logs)
 	}
 }
