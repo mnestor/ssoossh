@@ -103,7 +103,7 @@ unchanged)
 | `directory_id` | text, indexed | the `ldap.id_attribute` value when configured, as `user_ldap.directory_id` |
 | `dn` | text, unique | entry DN from the last successful read |
 | `user_id` | FK `users.id`, nullable, unique | set at login (below); NULL for shared and service accounts |
-| `gid` | uint32 | the mapped primary gid attribute, **frozen** after the first write (R38); `auto_private_groups` is applied on read so a config change is deliberate and a directory change is caught |
+| `gid` | uint32, nullable | the mapped primary gid attribute, **frozen** after the first write (R38); `auto_private_groups` is applied on read so a config change is deliberate and a directory change is caught. NULL when the entry has no gid attribute, which only `auto_private_groups: "true"` accepts; under `true` it is a supplementary group and follows the directory, with no pending gid (decided 2026-10-18 by the owner: match sssd) |
 | `pending_uid`, `pending_gid` | uint32, nullable | a differing directory value the sync refused to apply |
 | `pending_since` | timestamp, nullable | first sync that saw the pending value |
 | `home`, `shell` | text, nullable | mapped attributes; follow the directory |
@@ -358,8 +358,35 @@ Group memberships are kept through `disabled`.
 
 **Primary gid.** `nss.auto_private_groups` (`hybrid` default; `true`,
 `false`) is resolved here against the full group table so every host gets
-the same gid (R12). In `true` mode a collision rejects the user (logged,
-404) rather than shadowing a real group.
+the same gid (R12). Each mode does what sssd does (decided 2026-10-18 by
+the owner: match sssd; read from sssd 2.14.0-beta1-37-g493e37fe,
+`sdap_save_user` in `src/providers/ldap/sdap_async_users.c`,
+`sysdb_add_user` and `sysdb_add_group` in `src/db/sysdb_ops.c`,
+`nss_get_object.c` and `nss_protocol_grent.c` in `src/responder/nss/`):
+
+| Mode | gid attribute | Served gid | Groups list | Conflict |
+| --- | --- | --- | --- | --- |
+| `false` | required; an entry without one is skipped with a warning naming `auto_private_groups: "true"` | the entry's gid, served even when no group holds it | that group when one holds it | none |
+| `hybrid` | required, as `false` | the entry's gid | the private group (the account's name and uid) when gid equals uid and no directory group holds it; otherwise the group holding the gid, if any | a directory group holding the gid is the primary group; one with the account's name leaves the gid unnamed (below) |
+| `true` | optional; absent, zero or unparseable is stored as NULL | the uid | the private group first, then the entry's gid's directory group, if it is not the uid and a servable group holds it (sssd's `origPrimaryGroupGidNumber`), in gid order with the memberships | a directory group holding the uid as its gid, or the account's name: the account is not served (logged, 404) rather than shadowing a real group |
+
+Where this differs from sssd, and why:
+
+- `true` conflicts: sssd refuses whichever of the user and the group it
+  caches second (`EEXIST`), so the winner depends on lookup order; here the
+  directory group always wins.
+- `true` with a gid no group holds: sssd's initgroups adds the bare number;
+  `NSSMembership` carries a name with every gid (the wire contract), so it
+  is left out.
+- `hybrid` with gid equal to uid and a directory group of the account's
+  name (another gid): sssd answers `getgrgid` with the private group and
+  `getgrnam` with the directory group. `ssoosshd-nss` caches a group stub
+  by name from the groups list, so a host would then answer `getgrnam`
+  with the private gid; the private group is left out and the gid stays
+  unnamed.
+- A row stored without a gid under `true` and read under `hybrid` or
+  `false` is not served (`not_served: no_gid`); sssd would never have
+  stored it, and the next sync skips the entry.
 
 ## POSIX attribute mapping
 
@@ -371,7 +398,7 @@ keep POSIX data in custom attributes (README R35). `nss.attributes`:
 | --- | --- | --- |
 | `name` | `uid` | `posix_users.name`; must equal the `username` claim for a person to log in by their own name (R23) |
 | `uid` | `uidNumber` | `posix_users.uid`; must parse as `uint32` |
-| `gid` | `gidNumber` | primary gid before `auto_private_groups` |
+| `gid` | `gidNumber` | primary gid before `auto_private_groups`; required unless it is `true` |
 | `home` | `homeDirectory` | nullable; must be absolute when present |
 | `shell` | `loginShell` | nullable |
 | `group_name` | `cn` | `posix_groups.name` |
@@ -541,8 +568,9 @@ and never reads LDAP, so a row a host's miss would refresh is shown as the
 database has it. `not_served` is `withheld`, `past_retention` (a tombstone
 past `nss.tombstone_retention` the purge has not reached) or
 `private_group_clash` (`nss.auto_private_groups: "true"` and a directory
-group holds the private group's gid or name); `served` is absent exactly
-when it is set.
+group holds the private group's gid or name) or `no_gid` (an account
+stored without a gid attribute under `true`, read under `hybrid` or
+`false`); `served` is absent exactly when it is set.
 
 ## Mail
 

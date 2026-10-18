@@ -295,7 +295,7 @@
 							</td>
 							{#if 'uid' in row}
 								<td class="text-right font-mono">{row.uid}</td>
-								<td class="text-right font-mono">{row.gid}</td>
+								<td class="text-right font-mono">{row.gid ?? 'none'}</td>
 								<td class="hidden text-ink-muted sm:table-cell">{row.gecos || '—'}</td>
 							{:else}
 								<td class="text-right font-mono">{row.gid}</td>

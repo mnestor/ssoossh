@@ -44,8 +44,12 @@ type PosixUser struct {
 	UserID *string `gorm:"column:user_id;uniqueIndex:idx_posix_users_user_id"`
 
 	// GID is the mapped primary gid, frozen like UID. auto_private_groups
-	// is applied when the row is read, never stored here.
-	GID uint32 `gorm:"column:gid"`
+	// is applied when the row is read, never stored here. Nil when the
+	// entry has no gid attribute, which only auto_private_groups "true"
+	// accepts; under "true" the directory's value is followed rather than
+	// frozen, because it is then only a supplementary group (sssd's
+	// origPrimaryGroupGidNumber).
+	GID *uint32 `gorm:"column:gid"`
 
 	// PendingUID and PendingGID hold a differing directory value the sync
 	// refused to apply, and PendingSince the first sync that saw one. The

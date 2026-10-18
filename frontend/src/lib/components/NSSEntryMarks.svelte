@@ -22,7 +22,8 @@
 		/** The stored and the directory's numbers, for a pending change. */
 		uid?: number;
 		pendingUid?: number;
-		gid: number;
+		/** The stored gid; absent when the entry has none, so none is pending. */
+		gid?: number;
 		pendingGid?: number;
 		pendingSince?: string;
 		/** An account's own disabled marks, for a disabled state. */

@@ -114,7 +114,7 @@ func TestPosixUser_ShouldRoundTripEveryColumnWhenStoredAndReadBack(t *testing.T)
 			row: func(userID string) PosixUser {
 				return PosixUser{
 					ID: "pu-1", UID: 10001, Name: "ada.lovelace", DirectoryID: "6f1c2a90-entry",
-					DN: "uid=ada.lovelace,ou=people,dc=example", UserID: &userID, GID: 10001,
+					DN: "uid=ada.lovelace,ou=people,dc=example", UserID: &userID, GID: new(uint32(10001)),
 					PendingUID: ptr(uint32(20001)), PendingGID: ptr(uint32(20002)), PendingSince: at(time.Hour),
 					Home: ptr("/home/ada.lovelace"), Shell: ptr("/bin/bash"), ShellPref: ptr("zsh"),
 					Gecos: "Ada Lovelace", DirDisabled: true, MissingSince: at(2 * time.Hour),
@@ -129,7 +129,7 @@ func TestPosixUser_ShouldRoundTripEveryColumnWhenStoredAndReadBack(t *testing.T)
 			row: func(string) PosixUser {
 				return PosixUser{
 					ID: "pu-2", UID: 10002, Name: "svc-backup", DN: "uid=svc-backup,ou=services,dc=example",
-					GID: 10002, CreatedAt: nssTestTime(), UpdatedAt: nssTestTime(), LastSyncedAt: nssTestTime(),
+					GID: new(uint32(10002)), CreatedAt: nssTestTime(), UpdatedAt: nssTestTime(), LastSyncedAt: nssTestTime(),
 				}
 			},
 		},
@@ -138,7 +138,7 @@ func TestPosixUser_ShouldRoundTripEveryColumnWhenStoredAndReadBack(t *testing.T)
 			row: func(string) PosixUser {
 				return PosixUser{
 					ID: "pu-3", UID: math.MaxUint32, Name: "nobody-max", DN: "uid=nobody-max,dc=example",
-					GID: math.MaxUint32, PendingUID: ptr(uint32(math.MaxUint32)), PendingGID: ptr(uint32(0)),
+					GID: new(uint32(math.MaxUint32)), PendingUID: ptr(uint32(math.MaxUint32)), PendingGID: ptr(uint32(0)),
 					CreatedAt: nssTestTime(), UpdatedAt: nssTestTime(), LastSyncedAt: nssTestTime(),
 				}
 			},
@@ -159,7 +159,7 @@ func TestPosixUser_ShouldRefuseASecondRowWhenAUniqueValueIsAlreadyHeld(t *testin
 	t.Parallel()
 
 	first := PosixUser{
-		ID: "pu-holder", UID: 5000, Name: "alice", DN: "uid=alice,dc=example", GID: 5000,
+		ID: "pu-holder", UID: 5000, Name: "alice", DN: "uid=alice,dc=example", GID: new(uint32(5000)),
 		CreatedAt: nssTestTime(), UpdatedAt: nssTestTime(), LastSyncedAt: nssTestTime(),
 	}
 	tests := []struct {
@@ -191,7 +191,7 @@ func TestPosixUser_ShouldRefuseASecondRowWhenAUniqueValueIsAlreadyHeld(t *testin
 			}
 
 			second := PosixUser{
-				ID: "pu-second", UID: 5001, Name: "bob", DN: "uid=bob,dc=example", GID: 5001,
+				ID: "pu-second", UID: 5001, Name: "bob", DN: "uid=bob,dc=example", GID: new(uint32(5001)),
 				CreatedAt: nssTestTime(), UpdatedAt: nssTestTime(), LastSyncedAt: nssTestTime(),
 			}
 			tt.mutate(&second, userID)

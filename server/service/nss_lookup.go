@@ -1,10 +1,12 @@
 package service
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -99,6 +101,11 @@ type posixUserRow struct {
 // number or name. Never returned to a caller: it becomes a 404.
 var errNSSPrivateGroupClash = errors.New("a directory group holds this account's private group")
 
+// errNSSNoGID marks an account stored without a gid attribute (accepted
+// only under nss.auto_private_groups "true") read under a mode that needs
+// one. Never returned to a caller: it becomes a 404.
+var errNSSNoGID = errors.New("a posix account has no gid and nss.auto_private_groups is not true")
+
 // UserByName looks a user up by name, matched byte for byte.
 func (s *NSSLookupService) UserByName(ctx context.Context, name string) (*apitypes.NSSUserResponse, error) {
 	if err := validNSSName(name); err != nil {
@@ -148,6 +155,13 @@ func (s *NSSLookupService) lookupUser(ctx context.Context, where func(*gorm.DB) 
 		// the rule; the warning is how an operator finds out.
 		slog.WarnContext(ctx, "not serving an NSS account: nss.auto_private_groups is true and a directory group already holds its private group's gid or name",
 			"name", row.Name, "uid", row.UID, "dn", row.DN)
+		return nil, errorresponses.NSSNotFound()
+	}
+	if errors.Is(err, errNSSNoGID) {
+		// sssd would never have stored it: an entry without a gid is
+		// refused in every mode but "true".
+		slog.WarnContext(ctx, "not serving an NSS account: it has no gid attribute, which nss.auto_private_groups requires unless it is true",
+			"name", row.Name, "uid", row.UID, "dn", row.DN, "auto_private_groups", s.config.NSS.AutoPrivateGroups)
 		return nil, errorresponses.NSSNotFound()
 	}
 	return response, err
@@ -225,19 +239,20 @@ func (s *NSSLookupService) retentionCutoff() time.Time {
 // primary group, the memberships, the status, home and shell. KeyID is
 // left for the caller, which knows the key.
 func (s *NSSLookupService) buildUser(ctx context.Context, row *posixUserRow) (*apitypes.NSSUserResponse, error) {
-	gid, primary, err := s.primaryGroup(ctx, &row.PosixUser)
+	primary, err := s.primaryGroup(ctx, &row.PosixUser)
 	if err != nil {
 		return nil, err
 	}
+	gid := primary.gid
 	groups := make([]apitypes.NSSMembership, 0, 4)
-	if primary != nil {
-		groups = append(groups, *primary)
+	if primary.group != nil {
+		groups = append(groups, *primary.group)
 	}
 	memberships, err := s.memberships(ctx, row.UID, gid)
 	if err != nil {
 		return nil, err
 	}
-	groups = append(groups, memberships...)
+	groups = append(groups, withOriginalGroup(memberships, primary.original)...)
 
 	status := apitypes.NSSStatusActive
 	switch {
@@ -306,58 +321,121 @@ func (s *NSSLookupService) shell(row *posixUserRow, status string) *string {
 	return nil
 }
 
-// primaryGroup applies nss.auto_private_groups to one account: the gid it
-// is served with, and the group entry that names that gid, or nil when no
-// servable group does. It returns errNSSPrivateGroupClash when the mode is
-// "true" and a directory group holds the private group's gid or name.
+// nssPrimary is what nss.auto_private_groups makes of one account.
+type nssPrimary struct {
+	// gid is the primary gid served.
+	gid uint32
+	// group names gid for the groups list, nil when no servable group does.
+	group *apitypes.NSSMembership
+	// original is, under "true" only, the directory group the entry's own
+	// gid attribute names, served as a supplementary group; nil when there
+	// is none or it is not servable.
+	original *apitypes.NSSMembership
+}
+
+// primaryGroup applies nss.auto_private_groups to one account, the way
+// sssd does (sssd 2.14.0-beta1-37-g493e37fe; decided 2026-10-18 by the
+// owner: match sssd):
+//
+//   - "true": the primary gid is the uid and the group is the private one,
+//     named after the account (sysdb_add_user sets gid = uid in an MPG
+//     domain). The entry's own gid, when it has one other than the uid,
+//     is served as a supplementary group, as sssd's initgroups adds
+//     origPrimaryGroupGidNumber (src/responder/nss/nss_protocol_grent.c
+//     sss_nss_protocol_fill_initgr). A directory group already holding the
+//     uid as its gid, or the account's name, is errNSSPrivateGroupClash:
+//     sssd refuses whichever of the two it caches second (sysdb_add_user
+//     and sysdb_add_group return EEXIST), so the outcome there depends on
+//     lookup order; here the directory group always wins and the account
+//     is not served.
+//   - "hybrid": the primary gid is the entry's gid. A private group is
+//     made only when the gid equals the uid and no directory group holds
+//     it; one that does is the primary group (getgrgid finds it first,
+//     and sss_nss_get_hybrid_gid_verify_done drops the private group it
+//     would shadow). Otherwise the gid resolves only to a directory group.
+//   - "false": the entry's gid, resolving only to a directory group. A gid
+//     no group holds is still served, as sssd serves it (manual: "the GID
+//     is simply not resolvable").
+//
+// An account stored with no gid (accepted under "true") has no primary
+// gid in the other two, which sssd would never have stored, and is
+// errNSSNoGID.
 //
 // A directory group "holds" a gid or a name whatever its state: a
 // tombstone keeps both until it is purged, and a withheld group still owns
 // them, so neither may be shadowed by a private group.
-func (s *NSSLookupService) primaryGroup(ctx context.Context, user *model.PosixUser) (uint32, *apitypes.NSSMembership, error) {
-	var holders []model.PosixGroup
-	err := s.db.WithContext(ctx).
-		Where("gid IN ? OR name = ?", []uint32{user.UID, user.GID}, user.Name).
-		Find(&holders).Error
+func (s *NSSLookupService) primaryGroup(ctx context.Context, user *model.PosixUser) (nssPrimary, error) {
+	holders, err := s.groupHolders(ctx, user)
 	if err != nil {
-		return 0, nil, fmt.Errorf("read the groups holding a posix account's gid: %w", err)
+		return nssPrimary{}, err
 	}
-	byGID := func(gid uint32) *model.PosixGroup {
-		for i := range holders {
-			if holders[i].GID == gid {
-				return &holders[i]
-			}
-		}
-		return nil
-	}
-	nameHeld := false
-	for i := range holders {
-		if holders[i].Name == user.Name {
-			nameHeld = true
-		}
-	}
+	byGID, nameHeld := holders.byGID, holders.nameHeld(user.Name)
 	private := &apitypes.NSSMembership{GID: user.UID, Name: user.Name}
 
-	switch s.config.NSS.AutoPrivateGroups {
-	case config.AutoPrivateGroupsOn:
+	if s.config.NSS.AutoPrivateGroups == config.AutoPrivateGroupsOn {
 		if byGID(user.UID) != nil || nameHeld {
-			return 0, nil, errNSSPrivateGroupClash
+			return nssPrimary{}, errNSSPrivateGroupClash
 		}
-		return user.UID, private, nil
-	case config.AutoPrivateGroupsHybrid:
-		if user.GID == user.UID && byGID(user.UID) == nil {
-			if !nameHeld {
-				return user.UID, private, nil
-			}
-			// sssd's rule says nothing about names, but two groups with one
-			// name break getgrnam, so the private group is left out and the
-			// account keeps its unnamed gid.
-			slog.WarnContext(ctx, "not giving an NSS account a private group: a directory group already has its name",
-				"name", user.Name, "uid", user.UID, "dn", user.DN)
-			return user.GID, nil, nil
+		p := nssPrimary{gid: user.UID, group: private}
+		if user.GID != nil && *user.GID != user.UID && *user.GID != 0 {
+			// sssd adds the number even when no group object has it; the
+			// groups list carries a name with every gid (the wire
+			// contract), so only a servable directory group is listed.
+			p.original = s.servableMembership(byGID(*user.GID))
+		}
+		return p, nil
+	}
+	if user.GID == nil {
+		return nssPrimary{}, errNSSNoGID
+	}
+	gid := *user.GID
+	if s.config.NSS.AutoPrivateGroups == config.AutoPrivateGroupsHybrid && gid == user.UID && byGID(gid) == nil {
+		if !nameHeld {
+			return nssPrimary{gid: gid, group: private}, nil
+		}
+		// sssd would still answer getgrgid with the private group while
+		// getgrnam finds the directory group of that name. Here the groups
+		// list carries both, and ssoosshd-nss caches a group stub by name
+		// from it, so a host would then answer getgrnam with the private
+		// gid: the private group is left out and the account keeps its
+		// unnamed gid.
+		slog.WarnContext(ctx, "not giving an NSS account a private group: a directory group already has its name",
+			"name", user.Name, "uid", user.UID, "dn", user.DN)
+		return nssPrimary{gid: gid}, nil
+	}
+	return nssPrimary{gid: gid, group: s.servableMembership(byGID(gid))}, nil
+}
+
+// nssGroupHolders are the directory groups holding an account's uid, its
+// stored gid or its name, as primaryGroup weighs them.
+type nssGroupHolders []model.PosixGroup
+
+// groupHolders reads the nssGroupHolders of user.
+func (s *NSSLookupService) groupHolders(ctx context.Context, user *model.PosixUser) (nssGroupHolders, error) {
+	gids := []uint32{user.UID}
+	if user.GID != nil {
+		gids = append(gids, *user.GID)
+	}
+	var holders []model.PosixGroup
+	if err := s.db.WithContext(ctx).Where("gid IN ? OR name = ?", gids, user.Name).Find(&holders).Error; err != nil {
+		return nil, fmt.Errorf("read the groups holding a posix account's gid: %w", err)
+	}
+	return holders, nil
+}
+
+// byGID is the holder of gid, or nil.
+func (h nssGroupHolders) byGID(gid uint32) *model.PosixGroup {
+	for i := range h {
+		if h[i].GID == gid {
+			return &h[i]
 		}
 	}
-	return user.GID, s.servableMembership(byGID(user.GID)), nil
+	return nil
+}
+
+// nameHeld reports whether a holder is named name.
+func (h nssGroupHolders) nameHeld(name string) bool {
+	return slices.ContainsFunc(h, func(g model.PosixGroup) bool { return g.Name == name })
 }
 
 // servableMembership names a directory group for a user's groups list, or
@@ -393,6 +471,22 @@ func (s *NSSLookupService) memberships(ctx context.Context, uid, primaryGID uint
 		memberships = append(memberships, apitypes.NSSMembership{GID: row.GID, Name: row.Name})
 	}
 	return memberships, nil
+}
+
+// withOriginalGroup adds original to memberships, in gid order, unless it
+// is nil or already one of them (sssd adds origPrimaryGroupGidNumber only
+// when the user is not an explicit member).
+func withOriginalGroup(memberships []apitypes.NSSMembership, original *apitypes.NSSMembership) []apitypes.NSSMembership {
+	if original == nil {
+		return memberships
+	}
+	i, found := slices.BinarySearchFunc(memberships, original.GID, func(m apitypes.NSSMembership, gid uint32) int {
+		return cmp.Compare(m.GID, gid)
+	})
+	if found {
+		return memberships
+	}
+	return slices.Insert(memberships, i, *original)
 }
 
 // GroupByName looks a group up by name, matched byte for byte: a directory
@@ -476,14 +570,14 @@ func (s *NSSLookupService) readGroup(ctx context.Context, where string, arg any,
 	if err != nil || user == nil {
 		return nil, err
 	}
-	_, primary, err := s.primaryGroup(ctx, &user.PosixUser)
-	if errors.Is(err, errNSSPrivateGroupClash) {
+	primary, err := s.primaryGroup(ctx, &user.PosixUser)
+	if errors.Is(err, errNSSPrivateGroupClash) || errors.Is(err, errNSSNoGID) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	if primary == nil || *primary != (apitypes.NSSMembership{GID: user.UID, Name: user.Name}) {
+	if primary.group == nil || *primary.group != (apitypes.NSSMembership{GID: user.UID, Name: user.Name}) {
 		// The account's primary group is a directory group or none, not a
 		// private one. A directory group matching the lookup would have
 		// been found above, so equality here means the private group.

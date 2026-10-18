@@ -87,10 +87,12 @@ export interface NSSPendingUserIDChange {
 	name: string;
 	dn: string;
 	/**
-	 * UID and GID are the stored values, still served.
+	 * UID and GID are the stored values, still served. GID is absent when
+	 * the entry has no gid attribute (accepted only under
+	 * nss.auto_private_groups "true").
 	 */
 	uid: number /* uint32 */;
-	gid: number /* uint32 */;
+	gid?: number /* uint32 */;
 	/**
 	 * PendingUID and PendingGID are the directory's values, absent when
 	 * that number has not changed.
@@ -120,7 +122,10 @@ export interface NSSAcceptedUserIDChangeResponse {
 	name: string;
 	dn: string;
 	uid: number /* uint32 */;
-	gid: number /* uint32 */;
+	/**
+	 * GID is absent when the entry has no gid attribute.
+	 */
+	gid?: number /* uint32 */;
 }
 /**
  * NSSAcceptedGroupIDChangeResponse is the group after
@@ -230,9 +235,10 @@ export interface NSSAccountSummaryResponse {
 	name: string;
 	uid: number /* uint32 */;
 	/**
-	 * GID is the stored primary gid, before nss.auto_private_groups.
+	 * GID is the stored gid attribute, before nss.auto_private_groups;
+	 * absent when the entry has none (accepted only under "true").
 	 */
-	gid: number /* uint32 */;
+	gid?: number /* uint32 */;
 	gecos?: string;
 	dn: string;
 	state: NSSEntryState;
@@ -251,9 +257,11 @@ export interface NSSAccountDetailResponse {
 	name: string;
 	uid: number /* uint32 */;
 	/**
-	 * GID is the stored primary gid, before nss.auto_private_groups.
+	 * GID is the stored gid attribute, before nss.auto_private_groups;
+	 * absent when the entry has none (accepted only under "true", where
+	 * it is followed rather than frozen).
 	 */
-	gid: number /* uint32 */;
+	gid?: number /* uint32 */;
 	/**
 	 * DirectoryID is the ldap.id_attribute value, absent when that is
 	 * unset.

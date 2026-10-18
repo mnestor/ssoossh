@@ -12,6 +12,7 @@ import {
 	NSSKeyStatusActive,
 	NSSKeyStatusExpired,
 	NSSKeyStatusRevoked,
+	NSSNotServedNoGID,
 	NSSNotServedPastRetention,
 	NSSNotServedPrivateGroupClash,
 	NSSNotServedWithheld,
@@ -348,6 +349,8 @@ export function notServedReason(reason: string, kind: EntryKind, withheldReason 
 			return 'A tombstone older than nss.tombstone_retention, waiting for the purge to remove it.';
 		case NSSNotServedPrivateGroupClash:
 			return `nss.auto_private_groups is "true" and a directory group already holds this account's private group gid or name.`;
+		case NSSNotServedNoGID:
+			return `The entry has no gid attribute, which only nss.auto_private_groups "true" accepts; this mode has no primary gid to serve it with.`;
 		case '':
 			return 'The server gave no reason.';
 		default:

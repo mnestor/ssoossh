@@ -161,6 +161,10 @@ const (
 	// "true" cannot serve, because a directory group already holds its
 	// private group's gid or name.
 	NSSNotServedPrivateGroupClash NSSNotServedReason = "private_group_clash"
+	// NSSNotServedNoGID is an account stored without a gid attribute,
+	// which only nss.auto_private_groups "true" accepts, read under
+	// "hybrid" or "false", which have no primary gid to give it.
+	NSSNotServedNoGID NSSNotServedReason = "no_gid"
 )
 
 // NSSKeyStatus is the state a fleet API key is in. Never stored: it is

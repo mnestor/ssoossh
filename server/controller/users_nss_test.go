@@ -203,7 +203,7 @@ func newNSSShellEnv(t *testing.T, shellPref *string) *nssShellEnv {
 	seedPlainUser(t, db, nssLinkedPerson)
 	seedPlainUser(t, db, nssUnlinkedPerson)
 	linked := nssLinkedPerson
-	seedNSSPosixUser(t, db, model.PosixUser{Name: "alice", UID: 1500, GID: 100, UserID: &linked, ShellPref: shellPref})
+	seedNSSPosixUser(t, db, model.PosixUser{Name: "alice", UID: 1500, GID: new(uint32(100)), UserID: &linked, ShellPref: shellPref})
 	lookups := service.NewNSSLookupService(cfg, db, nil)
 	lookups.SetAuditor(service.NewAuditService(cfg, db))
 	return &nssShellEnv{db: db, cfg: cfg, lookups: lookups}

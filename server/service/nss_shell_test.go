@@ -18,7 +18,7 @@ func TestNSSShell_ShouldReturnTheLinkedAccountWhenThePersonHasOne(t *testing.T) 
 	db := testdb.New(t)
 	aliceID := seedNSSPerson(t, db, "sub-alice", "alice", nil)
 	seedNSSPerson(t, db, "sub-bob", "bob", nil)
-	seedPosixUser(t, db, model.PosixUser{Name: "alice", UID: 10001, GID: 10001, UserID: &aliceID, ShellPref: ptr("zsh")})
+	seedPosixUser(t, db, model.PosixUser{Name: "alice", UID: 10001, GID: new(uint32(10001)), UserID: &aliceID, ShellPref: ptr("zsh")})
 	lookups := newTestNSSLookup(nssLookupTestConfig(), db, nil)
 
 	tests := []struct {
@@ -106,7 +106,7 @@ func TestNSSShell_ShouldValidateAndStoreTheChoiceWhenAPersonSetsTheirShell(t *te
 			db := testdb.New(t)
 			aliceID := seedNSSPerson(t, db, "sub-alice", "alice", nil)
 			seedNSSPerson(t, db, "sub-bob", "bob", nil)
-			seedPosixUser(t, db, model.PosixUser{Name: "alice", UID: 10001, GID: 10001, UserID: &aliceID, ShellPref: tt.stored})
+			seedPosixUser(t, db, model.PosixUser{Name: "alice", UID: 10001, GID: new(uint32(10001)), UserID: &aliceID, ShellPref: tt.stored})
 			c := nssLookupTestConfig()
 			lookups := newTestNSSLookup(c, db, nil)
 			lookups.SetAuditor(NewAuditService(c, db))

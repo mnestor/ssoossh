@@ -293,7 +293,7 @@ table posix_users
   column directory_id type=text nullable=false default=''::text
   column dn type=text nullable=false default=<none>
   column gecos type=text nullable=false default=''::text
-  column gid type=bigint nullable=false default=<none>
+  column gid type=bigint nullable=true default=<none>
   column home type=text nullable=true default=<none>
   column id type=text nullable=false default=<none>
   column last_synced_at type=timestamp with time zone nullable=false default=<none>

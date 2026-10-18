@@ -81,7 +81,8 @@
 		dn: string;
 		/** The stored number the accept route is keyed by. */
 		number: number;
-		changes: { label: string; from: number; to: number }[];
+		/** from is absent for a gid the account was stored without. */
+		changes: { label: string; from: number | undefined; to: number }[];
 		since: string;
 	}
 
@@ -373,7 +374,7 @@
 								{#each row.changes as change (change.label)}
 									<div>
 										{change.label}
-										<span class="tabular-nums">{change.from}</span>
+										<span class="tabular-nums">{change.from ?? 'none'}</span>
 										to
 										<span class="font-semibold tabular-nums">{change.to}</span>
 									</div>

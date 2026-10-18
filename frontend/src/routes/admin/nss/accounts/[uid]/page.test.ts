@@ -94,6 +94,11 @@ describe('stored account verdict', () => {
 			reason: 'private_group_clash',
 			says: `nss.auto_private_groups is "true" and a directory group already holds this account's private group`
 		},
+		{
+			reason: 'no_gid',
+			account: { gid: undefined },
+			says: 'The entry has no gid attribute, which only nss.auto_private_groups "true" accepts'
+		},
 		{ reason: 'something_new', says: "The server's reason: something_new." }
 	];
 
@@ -104,6 +109,26 @@ describe('stored account verdict', () => {
 			expect(screen.getByTestId('nss-account-verdict-reason')).toHaveTextContent(says);
 		});
 	}
+
+	it('should say the account has no gid when the server sent none', async () => {
+		await open(accountFixture({ gid: undefined }));
+
+		expect(screen.getByTestId('nss-account-numbers')).toHaveTextContent('uid 10001, no gid');
+	});
+
+	it('should explain a stored account without a gid when the server sent none', async () => {
+		await open(accountFixture({ gid: undefined }));
+
+		expect(screen.getByTestId('nss-account-no-gid')).toHaveTextContent(
+			'None: the entry has no gid attribute, which only nss.auto_private_groups true accepts'
+		);
+	});
+
+	it('should show the stored gid when the server sent one', async () => {
+		await open(accountFixture());
+
+		expect(screen.getByTestId('nss-account-numbers')).toHaveTextContent(/uid 10001, gid \d+/);
+	});
 
 	it('should say the account is not served when the server sent no served record', async () => {
 		await open(notServed('withheld'));

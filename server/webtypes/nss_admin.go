@@ -62,9 +62,11 @@ type NSSPendingIDChangesResponse struct {
 type NSSPendingUserIDChange struct {
 	Name string `json:"name" validate:"required"`
 	DN   string `json:"dn" validate:"required"`
-	// UID and GID are the stored values, still served.
-	UID uint32 `json:"uid" validate:"required"`
-	GID uint32 `json:"gid" validate:"required"`
+	// UID and GID are the stored values, still served. GID is absent when
+	// the entry has no gid attribute (accepted only under
+	// nss.auto_private_groups "true").
+	UID uint32  `json:"uid" validate:"required"`
+	GID *uint32 `json:"gid,omitempty"`
 	// PendingUID and PendingGID are the directory's values, absent when
 	// that number has not changed.
 	PendingUID *uint32 `json:"pending_uid,omitempty"`
@@ -88,7 +90,8 @@ type NSSAcceptedUserIDChangeResponse struct {
 	Name string `json:"name" validate:"required"`
 	DN   string `json:"dn" validate:"required"`
 	UID  uint32 `json:"uid" validate:"required"`
-	GID  uint32 `json:"gid" validate:"required"`
+	// GID is absent when the entry has no gid attribute.
+	GID *uint32 `json:"gid,omitempty"`
 }
 
 // NSSAcceptedGroupIDChangeResponse is the group after
@@ -175,8 +178,9 @@ type NSSAccountSummaryResponse struct {
 	ID   string `json:"id" validate:"required"`
 	Name string `json:"name" validate:"required"`
 	UID  uint32 `json:"uid" validate:"required"`
-	// GID is the stored primary gid, before nss.auto_private_groups.
-	GID   uint32              `json:"gid" validate:"required"`
+	// GID is the stored gid attribute, before nss.auto_private_groups;
+	// absent when the entry has none (accepted only under "true").
+	GID   *uint32             `json:"gid,omitempty"`
 	Gecos string              `json:"gecos,omitempty"`
 	DN    string              `json:"dn" validate:"required"`
 	State model.NSSEntryState `json:"state" validate:"required"`
@@ -191,8 +195,10 @@ type NSSAccountDetailResponse struct {
 	ID   string `json:"id" validate:"required"`
 	Name string `json:"name" validate:"required"`
 	UID  uint32 `json:"uid" validate:"required"`
-	// GID is the stored primary gid, before nss.auto_private_groups.
-	GID uint32 `json:"gid" validate:"required"`
+	// GID is the stored gid attribute, before nss.auto_private_groups;
+	// absent when the entry has none (accepted only under "true", where
+	// it is followed rather than frozen).
+	GID *uint32 `json:"gid,omitempty"`
 	// DirectoryID is the ldap.id_attribute value, absent when that is
 	// unset.
 	DirectoryID string `json:"directory_id,omitempty"`

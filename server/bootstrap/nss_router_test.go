@@ -59,7 +59,7 @@ func nssRouterApp(t *testing.T, c *config.Config) (*Server, string, string) {
 	if err := a.db.Create(&admin).Error; err != nil {
 		t.Fatalf("seed admin: %v", err)
 	}
-	account := model.PosixUser{ID: uuid.NewString(), Name: "alice", UID: 10001, GID: 10001, DN: "uid=alice,dc=example",
+	account := model.PosixUser{ID: uuid.NewString(), Name: "alice", UID: 10001, GID: new(uint32(10001)), DN: "uid=alice,dc=example",
 		CreatedAt: time.Now(), UpdatedAt: time.Now(), LastSyncedAt: time.Now()}
 	if err := a.db.Create(&account).Error; err != nil {
 		t.Fatalf("seed account: %v", err)

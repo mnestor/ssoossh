@@ -307,6 +307,9 @@ func (s *NSSLookupService) serveUser(ctx context.Context, row *posixUserRow) (*a
 	if errors.Is(err, errNSSPrivateGroupClash) {
 		return nil, model.NSSNotServedPrivateGroupClash, nil
 	}
+	if errors.Is(err, errNSSNoGID) {
+		return nil, model.NSSNotServedNoGID, nil
+	}
 	if err != nil {
 		return nil, "", err
 	}

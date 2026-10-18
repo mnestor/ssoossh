@@ -156,7 +156,10 @@ stored account's uid or primary gid, or of a group's gid:
 - An admin accepts it explicitly. Only then do hosts see the new number,
   so re-own the files on hosts first (`chown -R`).
 
-Name, home, shell and display name follow the directory on every sync.
+Name, home, shell and display name follow the directory on every sync. So
+does an account's gid attribute under `nss.auto_private_groups: true`, where
+it is only an extra group and the primary gid is the uid, as in sssd
+(decided 2026-10-18 by the owner: match sssd).
 
 The sync recognises an entry as the same row by `ldap.id_attribute` first,
 then by DN. **Set `ldap.id_attribute` to a stable attribute your accounts
@@ -238,9 +241,26 @@ Admin → Directory offers the same.
 
 [`nss.auto_private_groups`](/ssoossh/reference/config/nss/#auto_private_groups)
 decides each account's primary group on the server, so every host gets the
-same gid: `hybrid` (the default: a private group only where uid equals gid
-and no directory group holds that gid), `true` (every account gets one, and
-an account whose uid is a directory group's gid is not served) or `false`.
+same gid. It works as sssd's option of the same name (decided 2026-10-18 by
+the owner: match sssd):
+
+- `hybrid` (the default): the entry's gid. An account whose uid equals its
+  gid, where no directory group holds that gid, gets a private group named
+  after it. An entry with no gid attribute is skipped, with a warning that
+  names `auto_private_groups: true`.
+- `true`: every account gets a private group with gid equal to its uid, and
+  the gid attribute is optional, so an entry with only a uid (a service
+  account in lldap, say) is served. A gid attribute other than the uid is
+  served as an extra group, when a directory group holds it, and follows
+  the directory without an admin accepting it. An account whose uid is a
+  directory group's gid, or whose name is a directory group's name, is not
+  served, so it never shadows that group.
+- `false`: the entry's gid, no private groups. A gid no directory group
+  holds is still served; `ls -l` just shows the number. An entry with no gid
+  attribute is skipped.
+
+Changing the mode does not rewrite stored accounts: one stored without a gid
+under `true` is not served under the other two.
 Group answers list at most
 [`nss.max_group_members`](/ssoossh/reference/config/nss/#max_group_members)
 members (2000), flagged as truncated beyond that.
@@ -273,8 +293,8 @@ is read-only and open to auditors, SOC and admins, and it appears only when
   the groups primary first, home, shell and status), or **Not served** with
   the reason: withheld by a collision, a tombstone past
   [`nss.tombstone_retention`](/ssoossh/reference/config/nss/#tombstone_retention)
-  waiting for the purge, or a private group that clashes with a directory
-  group. The verdict comes from the server's own lookup code, not from the
+  waiting for the purge, a private group that clashes with a directory
+  group, or an account with no gid under a mode that needs one. The verdict comes from the server's own lookup code, not from the
   state shown beside it.
 - Below that are the row as stored (DN, directory id, home and shell as the
   directory gave them, the linked person), its marks when it is not active

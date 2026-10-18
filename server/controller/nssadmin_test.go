@@ -94,7 +94,7 @@ func nssAdminIdentity(groups ...string) *service.Identity {
 func seedNSSAccount(t *testing.T, db *gorm.DB, name string, uid, gid uint32, mutate func(*model.PosixUser)) model.PosixUser {
 	t.Helper()
 	row := model.PosixUser{
-		ID: "pu-" + name, UID: uid, Name: name, DN: "uid=" + name + ",dc=test", GID: gid,
+		ID: "pu-" + name, UID: uid, Name: name, DN: "uid=" + name + ",dc=test", GID: new(gid),
 		CreatedAt: nssAdminTime(), UpdatedAt: nssAdminTime(), LastSyncedAt: nssAdminTime(),
 	}
 	if mutate != nil {
@@ -250,7 +250,7 @@ func TestNSSAdminAcceptUser_ShouldApplyTheChangeAndAuditItWhenNothingHoldsTheUid
 	w := doNSSRequest(r, http.MethodPost, "/admin/nss/users/1001/accept-id-change")
 	var got webtypes.NSSAcceptedUserIDChangeResponse
 	decodeEnvelope(t, w.Body.Bytes(), &got)
-	if got.UID != 3001 || got.GID != 300 || got.Name != "ada" {
+	if got.UID != 3001 || got.GID == nil || *got.GID != 300 || got.Name != "ada" {
 		t.Errorf("response = %+v, want ada with uid 3001 and gid 300", got)
 	}
 	var member model.PosixGroupMember
@@ -309,7 +309,7 @@ func TestNSSAdminAcceptGroup_ShouldMoveTheGroupAndItsAccountsWhenAccepted(t *tes
 		t.Errorf("response = %+v, want gid 501", got)
 	}
 	var ada model.PosixUser
-	if err := db.First(&ada, "name = ?", "ada").Error; err != nil || ada.GID != 501 {
+	if err := db.First(&ada, "name = ?", "ada").Error; err != nil || ada.GID == nil || *ada.GID != 501 {
 		t.Errorf("ada = %+v, %v; want her primary gid moved to 501", ada, err)
 	}
 }

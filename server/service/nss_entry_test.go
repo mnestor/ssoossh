@@ -41,7 +41,7 @@ func TestNSSParseAccount_ShouldReadTheMappedAttributesWhenTheEntryIsValid(t *tes
 			name:  "should read every field when the defaults map the entry",
 			entry: nssAccountEntry("", "ada.lovelace", 10001, 20001, map[string][]string{"displayName": {"Ada Lovelace"}}),
 			want: nssAccount{
-				DN: "uid=ada.lovelace,ou=people,dc=test", Name: "ada.lovelace", UID: 10001, GID: 20001,
+				DN: "uid=ada.lovelace,ou=people,dc=test", Name: "ada.lovelace", UID: 10001, GID: new(uint32(20001)),
 				Home: strp("/home/ada.lovelace"), Shell: strp("/bin/bash"), Gecos: "Ada Lovelace",
 			},
 		},
@@ -59,23 +59,23 @@ func TestNSSParseAccount_ShouldReadTheMappedAttributesWhenTheEntryIsValid(t *tes
 				"unixHome": {"/srv/bob"}, "unixShell": {"/bin/zsh"}, "fullName": {"Bob B"},
 				"uid": {"wrong"}, "uidNumber": {"1"}, "homeDirectory": {"/wrong"},
 			}),
-			want: nssAccount{DN: "cn=x,dc=test", Name: "bob", UID: 4242, GID: 4343, Home: strp("/srv/bob"), Shell: strp("/bin/zsh"), Gecos: "Bob B"},
+			want: nssAccount{DN: "cn=x,dc=test", Name: "bob", UID: 4242, GID: new(uint32(4343)), Home: strp("/srv/bob"), Shell: strp("/bin/zsh"), Gecos: "Bob B"},
 		},
 		{
 			name:  "should leave home and shell nil when the entry has neither",
 			entry: nssAccountEntry("", "svc-backup", 900, 900, map[string][]string{"homeDirectory": nil, "loginShell": nil}),
-			want:  nssAccount{DN: "uid=svc-backup,ou=people,dc=test", Name: "svc-backup", UID: 900, GID: 900, Gecos: "svc-backup"},
+			want:  nssAccount{DN: "uid=svc-backup,ou=people,dc=test", Name: "svc-backup", UID: 900, GID: new(uint32(900)), Gecos: "svc-backup"},
 		},
 		{
 			name:  "should match attribute names without regard to case when the directory changes it",
 			entry: entry("uid=c,dc=test", map[string][]string{"UID": {"carol"}, "uidnumber": {"7"}, "GIDNUMBER": {"8"}}),
-			want:  nssAccount{DN: "uid=c,dc=test", Name: "carol", UID: 7, GID: 8, Gecos: "carol"},
+			want:  nssAccount{DN: "uid=c,dc=test", Name: "carol", UID: 7, GID: new(uint32(8)), Gecos: "carol"},
 		},
 		{
 			name:  "should accept the top of the uint32 range when uid and gid are at the boundary",
 			entry: nssAccountEntry("", "max", 4294967295, 0, nil),
 			want: nssAccount{
-				DN: "uid=max,ou=people,dc=test", Name: "max", UID: 4294967295, GID: 0,
+				DN: "uid=max,ou=people,dc=test", Name: "max", UID: 4294967295, GID: new(uint32(0)),
 				Home: strp("/home/max"), Shell: strp("/bin/bash"), Gecos: "max",
 			},
 		},
@@ -83,7 +83,7 @@ func TestNSSParseAccount_ShouldReadTheMappedAttributesWhenTheEntryIsValid(t *tes
 			name:   "should capture the directory id when ldap.id_attribute is configured",
 			mutate: func(c *config.Config) { c.LDAP.IDAttribute = "entryUUID" },
 			entry:  nssAccountEntry("", "dora", 11, 11, map[string][]string{"entryUUID": {"6f1c-entry"}, "homeDirectory": nil, "loginShell": nil}),
-			want:   nssAccount{DN: "uid=dora,ou=people,dc=test", DirectoryID: "6f1c-entry", Name: "dora", UID: 11, GID: 11, Gecos: "dora"},
+			want:   nssAccount{DN: "uid=dora,ou=people,dc=test", DirectoryID: "6f1c-entry", Name: "dora", UID: 11, GID: new(uint32(11)), Gecos: "dora"},
 		},
 	}
 
@@ -116,7 +116,6 @@ func TestNSSParseAccount_ShouldRejectTheEntryWhenAValueDoesNotParse(t *testing.T
 		{name: "should reject the entry when the uid is negative", entry: nssAccountEntry("", "a", 1, 1, map[string][]string{"uidNumber": {"-1"}}), wantErr: "uidNumber"},
 		{name: "should reject the entry when the uid is past uint32", entry: nssAccountEntry("", "a", 1, 1, map[string][]string{"uidNumber": {"4294967296"}}), wantErr: "uidNumber"},
 		{name: "should reject the entry when the uid has a space", entry: nssAccountEntry("", "a", 1, 1, map[string][]string{"uidNumber": {" 5"}}), wantErr: "uidNumber"},
-		{name: "should reject the entry when it has no gid attribute", entry: nssAccountEntry("", "a", 1, 1, map[string][]string{"gidNumber": nil}), wantErr: "no gidNumber"},
 		{name: "should reject the entry when it has no name attribute", entry: nssAccountEntry("", "a", 1, 1, map[string][]string{"uid": nil}), wantErr: "no uid attribute"},
 		{name: "should reject the entry when the name is all digits", entry: nssAccountEntry("", "1234", 1, 1, nil), wantErr: "all digits"},
 		{name: "should reject the entry when the name has a colon", entry: nssAccountEntry("uid=x,dc=test", "a:b", 1, 1, nil), wantErr: "':'"},
@@ -141,6 +140,85 @@ func TestNSSParseAccount_ShouldRejectTheEntryWhenAValueDoesNotParse(t *testing.T
 				t.Errorf("parseAccount() error = %q, want it to mention %q", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestNSSParseAccount_ShouldReadTheGIDAsSSSDDoesWhenEachAutoPrivateGroupsModeIsSet(t *testing.T) {
+	t.Parallel()
+
+	// sssd's sdap_save_user: an MPG domain ("true") takes any account and
+	// keeps a readable, non-zero gid as origPrimaryGroupGidNumber; the
+	// other modes refuse an account without one.
+	absent := map[string][]string{"gidNumber": nil}
+	tests := []struct {
+		name    string
+		mode    config.AutoPrivateGroupsMode
+		extra   map[string][]string
+		gid     uint32
+		want    *uint32
+		wantErr []string
+	}{
+		{name: "should keep a gid equal to the uid when the mode is true", mode: config.AutoPrivateGroupsOn, gid: 10001, want: new(uint32(10001))},
+		{name: "should keep a gid other than the uid when the mode is true", mode: config.AutoPrivateGroupsOn, gid: 500, want: new(uint32(500))},
+		{name: "should accept the account with no gid when the mode is true and the entry has none", mode: config.AutoPrivateGroupsOn, extra: absent},
+		{name: "should drop the gid when the mode is true and it does not parse", mode: config.AutoPrivateGroupsOn, extra: map[string][]string{"gidNumber": {"x"}}},
+		{name: "should drop the gid when the mode is true and it is zero", mode: config.AutoPrivateGroupsOn, gid: 0},
+		{name: "should keep a gid equal to the uid when the mode is hybrid", mode: config.AutoPrivateGroupsHybrid, gid: 10001, want: new(uint32(10001))},
+		{name: "should keep a gid other than the uid when the mode is hybrid", mode: config.AutoPrivateGroupsHybrid, gid: 500, want: new(uint32(500))},
+		{
+			name: "should reject the account naming the setting when the mode is hybrid and the entry has no gid",
+			mode: config.AutoPrivateGroupsHybrid, extra: absent,
+			wantErr: []string{"no gidNumber attribute", `nss.auto_private_groups "hybrid" requires`, `"true" would give the account a private group`},
+		},
+		{name: "should reject the account when the mode is hybrid and the gid does not parse", mode: config.AutoPrivateGroupsHybrid, extra: map[string][]string{"gidNumber": {"x"}}, wantErr: []string{`gidNumber "x" is not a number`}},
+		{name: "should keep a gid equal to the uid when the mode is false", mode: config.AutoPrivateGroupsOff, gid: 10001, want: new(uint32(10001))},
+		{name: "should keep a gid other than the uid when the mode is false", mode: config.AutoPrivateGroupsOff, gid: 500, want: new(uint32(500))},
+		{name: "should keep a zero gid when the mode is false", mode: config.AutoPrivateGroupsOff, gid: 0, want: new(uint32(0))},
+		{
+			name: "should reject the account naming the setting when the mode is false and the entry has no gid",
+			mode: config.AutoPrivateGroupsOff, extra: absent,
+			wantErr: []string{"no gidNumber attribute", `nss.auto_private_groups "false" requires`, `"true" would give the account a private group`},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			svc := newNSSParser(t, func(c *config.Config) { c.NSS.AutoPrivateGroups = tt.mode })
+			got, err := svc.parseAccount(nssAccountEntry("", "alice", 10001, tt.gid, tt.extra))
+			if tt.wantErr != nil {
+				if !errors.Is(err, errNSSEntry) {
+					t.Fatalf("parseAccount() error = %v, want one wrapping errNSSEntry", err)
+				}
+				for _, want := range tt.wantErr {
+					if !strings.Contains(err.Error(), want) {
+						t.Errorf("parseAccount() error = %q, want it to mention %q", err, want)
+					}
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseAccount() error = %v", err)
+			}
+			if !equalGID(got.GID, tt.want) {
+				t.Errorf("gid = %s, want %s", gidText(got.GID), gidText(tt.want))
+			}
+		})
+	}
+}
+
+func TestNSSParseAccount_ShouldRejectTheOwnersServiceAccountWhenTheModeIsHybridAndItHasNoGID(t *testing.T) {
+	t.Parallel()
+
+	// The field case of 2026-10-18: lldap's sv-ssoossh has uidNumber 9001
+	// and no gidNumber. sssd refuses it under hybrid (ERR_NO_POSIX), so
+	// this does too, and says which setting would take it.
+	svc := newNSSParser(t, nil)
+	e := nssAccountEntry("uid=sv-ssoossh,ou=people,dc=nanestor,dc=us", "sv-ssoossh", 9001, 0, map[string][]string{"gidNumber": nil})
+	_, err := svc.parseAccount(e)
+	if err == nil || !strings.Contains(err.Error(), `no gidNumber attribute, which nss.auto_private_groups "hybrid" requires ("true" would give the account a private group with gid equal to its uid)`) {
+		t.Errorf("parseAccount() error = %v, want the hybrid rejection naming auto_private_groups true", err)
 	}
 }
 

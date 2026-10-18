@@ -605,11 +605,13 @@ components:
       - withheld
       - past_retention
       - private_group_clash
+      - no_gid
       type: string
       x-enum-varnames:
       - NSSNotServedWithheld
       - NSSNotServedPastRetention
       - NSSNotServedPrivateGroupClash
+      - NSSNotServedNoGID
     model.NSSRotationBucket:
       description: |-
         Bucket is switched (last presented the current secret), not_switched
@@ -2784,6 +2786,7 @@ components:
         dn:
           type: string
         gid:
+          description: GID is absent when the entry has no gid attribute.
           type: integer
         name:
           type: string
@@ -2791,7 +2794,6 @@ components:
           type: integer
       required:
       - dn
-      - gid
       - name
       - uid
       type: object
@@ -2819,7 +2821,10 @@ components:
         gecos:
           type: string
         gid:
-          description: GID is the stored primary gid, before nss.auto_private_groups.
+          description: |-
+            GID is the stored gid attribute, before nss.auto_private_groups;
+            absent when the entry has none (accepted only under "true", where
+            it is followed rather than frozen).
           type: integer
         groups:
           description: |-
@@ -2874,7 +2879,6 @@ components:
       required:
       - created_at
       - dir_disabled
-      - gid
       - groups
       - id
       - last_synced_at
@@ -2890,7 +2894,9 @@ components:
         gecos:
           type: string
         gid:
-          description: GID is the stored primary gid, before nss.auto_private_groups.
+          description: |-
+            GID is the stored gid attribute, before nss.auto_private_groups;
+            absent when the entry has none (accepted only under "true").
           type: integer
         id:
           description: |-
@@ -2910,7 +2916,6 @@ components:
           type: integer
       required:
       - dn
-      - gid
       - id
       - last_synced_at
       - name
@@ -3396,11 +3401,13 @@ components:
             that number has not changed.
           type: integer
         uid:
-          description: UID and GID are the stored values, still served.
+          description: |-
+            UID and GID are the stored values, still served. GID is absent when
+            the entry has no gid attribute (accepted only under
+            nss.auto_private_groups "true").
           type: integer
       required:
       - dn
-      - gid
       - name
       - pending_since
       - uid

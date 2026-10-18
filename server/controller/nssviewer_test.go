@@ -150,13 +150,13 @@ func TestNSSViewerAccounts_ShouldListTheStoredAccountsWhenAsked(t *testing.T) {
 	var got webtypes.NSSAccountsResponse
 	decodeEnvelope(t, w.Body.Bytes(), &got)
 	want := webtypes.NSSAccountSummaryResponse{
-		ID: "pu-ada", Name: "ada", UID: 1001, GID: 500, Gecos: "Ada Lovelace", DN: "uid=ada,dc=test",
+		ID: "pu-ada", Name: "ada", UID: 1001, GID: new(uint32(500)), Gecos: "Ada Lovelace", DN: "uid=ada,dc=test",
 		State: model.NSSEntryStateActive, LastSyncedAt: nssAdminTime(),
 	}
 	if got.Total != 2 || len(got.Accounts) != 1 || got.NextCursor == nil || *got.NextCursor != "pu-ada" {
 		t.Fatalf("page = %+v, want ada of 2 with a cursor", got)
 	}
-	if a := got.Accounts[0]; a.ID != want.ID || a.Name != want.Name || a.UID != want.UID || a.GID != want.GID ||
+	if a := got.Accounts[0]; a.ID != want.ID || a.Name != want.Name || a.UID != want.UID || a.GID == nil || *a.GID != *want.GID ||
 		a.Gecos != want.Gecos || a.DN != want.DN || a.State != want.State || !a.LastSyncedAt.Equal(want.LastSyncedAt) {
 		t.Errorf("account = %+v, want %+v", a, want)
 	}

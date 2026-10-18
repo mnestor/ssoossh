@@ -165,8 +165,8 @@ func TestNSSFullSync_ShouldHoldAChangedNumberPendingWhenTheDirectoryChangesIt(t 
 
 		ada := h.accountByName(t, "ada")
 		staff := h.groupByName(t, "staff")
-		if ada.UID != 1001 || ada.GID != 100 || staff.GID != 100 {
-			t.Errorf("%s: stored numbers moved: ada %d/%d, staff %d", step.name, ada.UID, ada.GID, staff.GID)
+		if ada.UID != 1001 || !equalGID(ada.GID, new(uint32(100))) || staff.GID != 100 {
+			t.Errorf("%s: stored numbers moved: ada %d/%v, staff %d", step.name, ada.UID, gidText(ada.GID), staff.GID)
 		}
 		pending := ada.PendingUID != nil && ada.PendingGID != nil && staff.PendingGID != nil && ada.PendingSince != nil
 		cleared := ada.PendingUID == nil && ada.PendingGID == nil && staff.PendingGID == nil && ada.PendingSince == nil

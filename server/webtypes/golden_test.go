@@ -350,7 +350,7 @@ func fullFixtures() map[string]any {
 		"ldap_sync_run": syncRun,
 		"nss_pending_id_changes": webtypes.NSSPendingIDChangesResponse{
 			Users: []webtypes.NSSPendingUserIDChange{{
-				Name: "ada.lovelace", DN: "uid=ada.lovelace,ou=people,dc=example,dc=net", UID: 10001, GID: 10001,
+				Name: "ada.lovelace", DN: "uid=ada.lovelace,ou=people,dc=example,dc=net", UID: 10001, GID: new(uint32(10001)),
 				PendingUID: &pendingUID, PendingGID: &pendingGID, PendingSince: issuedAt,
 			}},
 			Groups: []webtypes.NSSPendingGroupIDChange{{
@@ -358,7 +358,7 @@ func fullFixtures() map[string]any {
 			}},
 		},
 		"nss_accepted_user_id_change": webtypes.NSSAcceptedUserIDChangeResponse{
-			Name: "ada.lovelace", DN: "uid=ada.lovelace,ou=people,dc=example,dc=net", UID: 20001, GID: 20002,
+			Name: "ada.lovelace", DN: "uid=ada.lovelace,ou=people,dc=example,dc=net", UID: 20001, GID: new(uint32(20002)),
 		},
 		"nss_accepted_group_id_change": webtypes.NSSAcceptedGroupIDChangeResponse{
 			Name: "engineering", DN: "cn=engineering,ou=groups,dc=example,dc=net", GID: 5001,
@@ -384,7 +384,7 @@ func fullFixtures() map[string]any {
 		},
 		"nss_accounts": webtypes.NSSAccountsResponse{
 			Accounts: []webtypes.NSSAccountSummaryResponse{{
-				ID: "8d0f3c2a-1b4e-4c6d-9a7f-0e1d2c3b4a59", Name: "ada.lovelace", UID: 10001, GID: 10001,
+				ID: "8d0f3c2a-1b4e-4c6d-9a7f-0e1d2c3b4a59", Name: "ada.lovelace", UID: 10001, GID: new(uint32(10001)),
 				Gecos: "Ada Lovelace", DN: "uid=ada.lovelace,ou=people,dc=example,dc=net",
 				State: model.NSSEntryStatePending, LastSyncedAt: issuedAt,
 			}},
@@ -392,7 +392,7 @@ func fullFixtures() map[string]any {
 			NextCursor: &viewerCursor,
 		},
 		"nss_account_detail": webtypes.NSSAccountDetailResponse{
-			ID: "8d0f3c2a-1b4e-4c6d-9a7f-0e1d2c3b4a59", Name: "ada.lovelace", UID: 10001, GID: 10001,
+			ID: "8d0f3c2a-1b4e-4c6d-9a7f-0e1d2c3b4a59", Name: "ada.lovelace", UID: 10001, GID: new(uint32(10001)),
 			DirectoryID: "5b7c9d1e-2f3a-4b5c-8d6e-7f8091a2b3c4", DN: "uid=ada.lovelace,ou=people,dc=example,dc=net",
 			Home: &viewerHome, Shell: &viewerShell, ShellPref: &viewerShellPref, Gecos: "Ada Lovelace", DirDisabled: true,
 			Person: &webtypes.NSSLinkedPersonResponse{
