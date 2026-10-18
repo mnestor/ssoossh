@@ -352,6 +352,21 @@ A value that does not parse (a non-numeric uid, a relative home) skips the
 entry with a warning naming the DN; there are no partial rows. Every key
 must be non-empty; config validation rejects an empty one.
 
+**LDAP schema presets (decided 2026-10-18 by the owner).** One key,
+`ldap.schema`, picks a preset (`rfc2307`, `rfc2307bis`, `active-directory`,
+`lldap`, `freeipa`) that supplies `ldap.id_attribute`, `nss.user_filter`,
+`nss.group_filter`, `nss.disabled_filter` and the `nss.attributes` names for
+that directory. The presets are embedded YAML (`server/config/presets/`),
+each citing its sources (sssd's attribute maps, lldap's source and PAM
+guide, FreeIPA's source, Microsoft's filter docs). They merge as a layer
+between `defaults.yaml` and the operator's file, so any key the file sets
+wins. Unset applies nothing and leaves today's behaviour unchanged,
+`ldap.id_attribute` included; an unknown value fails startup naming the
+allowed ones. There is no migration or re-anchor tool yet: on a database
+holding ids from another attribute, keep that `ldap.id_attribute` set
+explicitly or start fresh. The user-docs page "LDAP schema presets" lists
+every value, generated from the preset files.
+
 **Gecos template.** `nss.gecos_template` (default `{{.DisplayName}}`) is
 parsed and executed by the key ID template engine
 (`server/service/keyid.go`: `text/template`, `missingkey=zero`, the `join`

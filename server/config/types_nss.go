@@ -83,12 +83,12 @@ type NSSConfig struct {
 	// the sync enumerates it with paged searches, so ldap.limits does not
 	// cap it, and an on-demand lookup ANDs it with an equality on the name
 	// or uid attribute. Required when nss.enabled is on; its syntax is
-	// checked when the server starts.
+	// checked when the server starts. A preset from ldap.schema may set this.
 	UserFilter string `mapstructure:"user_filter" default:"(objectClass=posixAccount)"`
 
 	// GroupFilter is the LDAP filter that selects POSIX groups under
 	// ldap.base_dn, used the same way as UserFilter. Required when
-	// nss.enabled is on.
+	// nss.enabled is on. A preset from ldap.schema may set this.
 	GroupFilter string `mapstructure:"group_filter" default:"(objectClass=posixGroup)"`
 
 	// DisabledFilter is an LDAP filter an account's entry is tested
@@ -97,7 +97,7 @@ type NSSConfig struct {
 	// (nsAccountLock=TRUE) on 389-ds and FreeIPA, or
 	// (userAccountControl:1.2.840.113556.1.4.803:=2) on Active Directory.
 	// Empty means the directory never disables an account; a person's
-	// ssoossh disable still does.
+	// ssoossh disable still does. A preset from ldap.schema may set this.
 	DisabledFilter string `mapstructure:"disabled_filter" default:"" example:"\"(nsAccountLock=TRUE)\""`
 
 	// SyncInterval is how often the incremental sync runs: it reads only
@@ -258,34 +258,41 @@ type NSSConfig struct {
 // NSSAttributes names the directory attribute each POSIX field is read
 // from, because directories differ (RFC 2307, RFC 2307bis, Active
 // Directory with SFU or IdMU, FreeIPA) and operators sometimes keep POSIX
-// data in attributes of their own. Every key is required when nss.enabled
+// data in attributes of their own; ldap.schema picks a preset for them.
+// Every key is required when nss.enabled
 // is on. A value that does not parse (a uid that is not a number, a home
 // that is not absolute) skips the entry with a warning naming its DN;
 // there are no partial accounts.
 type NSSAttributes struct {
 	// Name is the account name, stored verbatim. A person can log in by
 	// their own name only when it equals their username claim.
+	// A preset from ldap.schema may set this.
 	Name string `mapstructure:"name" default:"uid"`
 
 	// UID is the numeric user id; it must parse as an unsigned 32-bit
 	// number. Frozen once stored: a later change waits for an admin.
+	// A preset from ldap.schema may set this.
 	UID string `mapstructure:"uid" default:"uidNumber"`
 
 	// GID is the numeric primary group id, before auto_private_groups is
 	// applied. Frozen once stored, like uid.
+	// A preset from ldap.schema may set this.
 	GID string `mapstructure:"gid" default:"gidNumber"`
 
 	// Home is the home directory; optional on the entry, absolute when
 	// present. An entry without one is served nss.default_home.
+	// A preset from ldap.schema may set this.
 	Home string `mapstructure:"home" default:"homeDirectory"`
 
 	// Shell is the login shell; optional on the entry.
+	// A preset from ldap.schema may set this.
 	Shell string `mapstructure:"shell" default:"loginShell"`
 
-	// GroupName is a group's name.
+	// GroupName is a group's name. A preset from ldap.schema may set this.
 	GroupName string `mapstructure:"group_name" default:"cn"`
 
 	// GroupGID is a group's numeric gid. Frozen once stored, like uid.
+	// A preset from ldap.schema may set this.
 	GroupGID string `mapstructure:"group_gid" default:"gidNumber"`
 
 	// GroupMember lists a group's members. Whether its values are names or
@@ -296,6 +303,7 @@ type NSSAttributes struct {
 	// #'...'B suffix is dropped); any other attribute, memberUid (RFC 2307)
 	// included, holds account names, matched byte for byte. A member that
 	// resolves to no account the sync has stored is left out.
+	// A preset from ldap.schema may set this.
 	GroupMember string `mapstructure:"group_member" default:"memberUid"`
 
 	// GecosAttributes are the only attributes nss.gecos_template may read,

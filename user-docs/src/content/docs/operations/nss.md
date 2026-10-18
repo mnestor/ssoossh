@@ -55,6 +55,12 @@ RFC 2307bis, Active Directory and FreeIPA layouts all map: the defaults are
 and `cn`, `gidNumber`, `memberUid` for groups. Set `group_member: member` (or
 `uniqueMember`) for groups that list members by DN.
 
+[`ldap.schema`](/ssoossh/reference/config/ldap/#schema) fills in the
+filters, the attribute names and `ldap.id_attribute` for a known directory
+in one line (`rfc2307`, `rfc2307bis`, `active-directory`, `lldap` or
+`freeipa`), and anything you set yourself still wins. Each preset's values
+are on [LDAP schema presets](/ssoossh/operations/ldap-schema-presets/).
+
 Every key with its default is in the
 [`nss` reference](/ssoossh/reference/config/nss/).
 

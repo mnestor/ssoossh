@@ -402,6 +402,7 @@ func (s *LDAPService) resolveAnchored(ctx context.Context, conn ldapConn, identi
 				s.log.WarnContext(ctx, "directory read by DN failed; falling back to a filter search",
 					append(logAttrs, "dn", row.DN, "error", err)...)
 			case entry != nil:
+				s.warnChangedDirectoryID(ctx, row, entry, logAttrs)
 				return s.finishResolve(ctx, conn, identity, entry, logAttrs)
 			}
 		}
@@ -425,6 +426,26 @@ func (s *LDAPService) resolveAnchored(ctx context.Context, conn ldapConn, identi
 		return nil, syncMissing
 	}
 	return s.finishResolve(ctx, conn, identity, entry, logAttrs)
+}
+
+// warnChangedDirectoryID warns when the entry found at a row's stored DN
+// carries a different unique id from the one stored for it. Either the
+// entry was deleted and re-created at the same DN, or ldap.id_attribute
+// changed (by hand or through an ldap.schema preset) on a database that
+// holds ids read from another attribute. Login enrichment recovers either
+// way, since the DN read found the person and the new id is stored with
+// the result; the warning exists for the NSS directory, which anchors on
+// the same ids and treats such an entry as a new one.
+func (s *LDAPService) warnChangedDirectoryID(ctx context.Context, row *model.UserLDAP, entry *ldap.Entry, logAttrs []any) {
+	if row.DirectoryID == "" {
+		return
+	}
+	got := directoryIDValue(entry, s.config.LDAP.IDAttribute)
+	if got == "" || got == row.DirectoryID {
+		return
+	}
+	s.log.WarnContext(ctx, "the directory entry at the stored DN has a different unique id: it was re-created, or ldap.id_attribute changed on a database holding ids from another attribute, which the NSS directory reads as a new entry; keep the old ldap.id_attribute set explicitly until a migration tool exists",
+		append(logAttrs, "dn", entry.DN, "id_attribute", s.config.LDAP.IDAttribute, "stored_id", row.DirectoryID, "entry_id", got)...)
 }
 
 // finishResolve runs the field searches over a located entry. A failure

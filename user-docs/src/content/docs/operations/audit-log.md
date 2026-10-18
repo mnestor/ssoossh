@@ -43,8 +43,8 @@ audit:
   sweep_interval: 1h      # how often the retention sweep runs
   logging:
     filename: /var/log/ssoossh/audit.log
-    max_size: 100         # rotation, same keys as logging.* everywhere else
-    max_backups: 30
+    maxsize: 100          # rotation, same keys as logging.* everywhere else
+    maxbackups: 30
     log_json: true
 ```
 
