@@ -1,0 +1,22 @@
+{
+  "users": [
+    {
+      "name": "ada.lovelace",
+      "dn": "uid=ada.lovelace,ou=people,dc=example,dc=net",
+      "uid": 10001,
+      "gid": 10001,
+      "pending_uid": 20001,
+      "pending_gid": 20002,
+      "pending_since": "2026-08-14T09:30:00+02:00"
+    }
+  ],
+  "groups": [
+    {
+      "name": "engineering",
+      "dn": "cn=engineering,ou=groups,dc=example,dc=net",
+      "gid": 5000,
+      "pending_gid": 5001,
+      "pending_since": "2026-08-14T09:30:00+02:00"
+    }
+  ]
+}

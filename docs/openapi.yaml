@@ -614,6 +614,51 @@ components:
       required:
       - logged_out
       type: object
+    openapidoc.NSSAcceptedGroupIDChangeEnvelope:
+      properties:
+        data:
+          $ref: '#/components/schemas/webtypes.NSSAcceptedGroupIDChangeResponse'
+        error:
+          type: string
+      required:
+      - data
+      type: object
+    openapidoc.NSSAcceptedUserIDChangeEnvelope:
+      properties:
+        data:
+          $ref: '#/components/schemas/webtypes.NSSAcceptedUserIDChangeResponse'
+        error:
+          type: string
+      required:
+      - data
+      type: object
+    openapidoc.NSSCollisionsEnvelope:
+      properties:
+        data:
+          $ref: '#/components/schemas/webtypes.NSSCollisionsResponse'
+        error:
+          type: string
+      required:
+      - data
+      type: object
+    openapidoc.NSSPendingIDChangesEnvelope:
+      properties:
+        data:
+          $ref: '#/components/schemas/webtypes.NSSPendingIDChangesResponse'
+        error:
+          type: string
+      required:
+      - data
+      type: object
+    openapidoc.NSSPurgedTombstoneEnvelope:
+      properties:
+        data:
+          $ref: '#/components/schemas/webtypes.NSSPurgedTombstoneResponse'
+        error:
+          type: string
+      required:
+      - data
+      type: object
     openapidoc.NotificationPreferencesEnvelope:
       properties:
         data:
@@ -2348,6 +2393,8 @@ components:
           type: string
         missing:
           type: integer
+        nss:
+          $ref: '#/components/schemas/webtypes.NSSSyncRunResponse'
         reenabled:
           type: integer
         started_at:
@@ -2361,6 +2408,258 @@ components:
       - id
       - started_at
       - trigger
+      type: object
+    webtypes.NSSAcceptedGroupIDChangeResponse:
+      properties:
+        dn:
+          type: string
+        gid:
+          type: integer
+        name:
+          type: string
+      required:
+      - dn
+      - gid
+      - name
+      type: object
+    webtypes.NSSAcceptedUserIDChangeResponse:
+      properties:
+        dn:
+          type: string
+        gid:
+          type: integer
+        name:
+          type: string
+        uid:
+          type: integer
+      required:
+      - dn
+      - gid
+      - name
+      - uid
+      type: object
+    webtypes.NSSCollisionEntryResponse:
+      description: |-
+        Holder is the stored row holding the value; Other the entry
+        contending for it.
+      properties:
+        deleted_at:
+          type: string
+        dn:
+          type: string
+        missing_since:
+          description: |-
+            MissingSince and DeletedAt are the stored row's, absent while it
+            resolves.
+          type: string
+        name:
+          type: string
+        number:
+          description: Number is the uid (accounts) or gid (groups) the entry carries.
+          type: integer
+        stored:
+          description: |-
+            Stored is false for an entry the sync refused to store because the
+            holder has its number or name; it is known only by what it carried.
+          type: boolean
+        tombstone:
+          description: |-
+            Tombstone is true for a stored row the directory no longer has and
+            that is kept, holding its number and name, until
+            nss.tombstone_retention or an admin purges it.
+          type: boolean
+      required:
+      - dn
+      - name
+      - number
+      - stored
+      - tombstone
+      type: object
+    webtypes.NSSCollisionResponse:
+      properties:
+        first_seen_at:
+          type: string
+        holder:
+          $ref: '#/components/schemas/webtypes.NSSCollisionEntryResponse'
+        kind:
+          description: |-
+            Kind is the contested value: uid or user_name between accounts, gid
+            or group_name between groups.
+          type: string
+        last_seen_at:
+          type: string
+        other:
+          $ref: '#/components/schemas/webtypes.NSSCollisionEntryResponse'
+        value:
+          description: Value is the contested uid, gid or name, as text.
+          type: string
+      required:
+      - first_seen_at
+      - holder
+      - kind
+      - last_seen_at
+      - other
+      - value
+      type: object
+    webtypes.NSSCollisionsResponse:
+      properties:
+        collisions:
+          items:
+            $ref: '#/components/schemas/webtypes.NSSCollisionResponse'
+          type: array
+          uniqueItems: false
+      required:
+      - collisions
+      type: object
+    webtypes.NSSPendingGroupIDChange:
+      properties:
+        dn:
+          type: string
+        gid:
+          type: integer
+        name:
+          type: string
+        pending_gid:
+          type: integer
+        pending_since:
+          type: string
+      required:
+      - dn
+      - gid
+      - name
+      - pending_gid
+      - pending_since
+      type: object
+    webtypes.NSSPendingIDChangesResponse:
+      properties:
+        groups:
+          items:
+            $ref: '#/components/schemas/webtypes.NSSPendingGroupIDChange'
+          type: array
+          uniqueItems: false
+        users:
+          items:
+            $ref: '#/components/schemas/webtypes.NSSPendingUserIDChange'
+          type: array
+          uniqueItems: false
+      required:
+      - groups
+      - users
+      type: object
+    webtypes.NSSPendingUserIDChange:
+      properties:
+        dn:
+          type: string
+        gid:
+          type: integer
+        name:
+          type: string
+        pending_gid:
+          type: integer
+        pending_since:
+          description: PendingSince is the first sync that saw the pending value.
+          type: string
+        pending_uid:
+          description: |-
+            PendingUID and PendingGID are the directory's values, absent when
+            that number has not changed.
+          type: integer
+        uid:
+          description: UID and GID are the stored values, still served.
+          type: integer
+      required:
+      - dn
+      - gid
+      - name
+      - pending_since
+      - uid
+      type: object
+    webtypes.NSSPurgedTombstoneResponse:
+      properties:
+        dn:
+          type: string
+        name:
+          type: string
+        number:
+          description: Number is the uid or gid the row held.
+          type: integer
+      required:
+      - dn
+      - name
+      - number
+      type: object
+    webtypes.NSSSyncCountsResponse:
+      properties:
+        created:
+          type: integer
+        failed:
+          description: Failed is the entries that could not be checked or written.
+          type: integer
+        missing:
+          description: |-
+            Missing is the rows marked missing for the first time; Tombstoned
+            the rows missing for nss.tombstone_after and now deleted.
+          type: integer
+        refused:
+          description: |-
+            Refused is the new entries not stored because another row, a
+            tombstone included, holds their number or name.
+          type: integer
+        seen:
+          description: Seen is the entries the directory returned.
+          type: integer
+        skipped:
+          description: |-
+            Skipped is the entries rejected because a value did not parse (a
+            name the POSIX rules refuse, a uid that is not a number, a relative
+            home); each is logged with its DN.
+          type: integer
+        tombstoned:
+          type: integer
+        updated:
+          type: integer
+      required:
+      - created
+      - failed
+      - missing
+      - refused
+      - seen
+      - skipped
+      - tombstoned
+      - updated
+      type: object
+    webtypes.NSSSyncRunResponse:
+      description: |-
+        NSS is what the NSS directory's full sync concluded when an admin
+        ran this pass by hand with nss.enabled on: POST /api/admin/ldap/sync
+        runs both, except on a dry run. Absent otherwise, and on every
+        scheduled pass, which the NSS sync does not ride on.
+      properties:
+        accounts:
+          $ref: '#/components/schemas/webtypes.NSSSyncCountsResponse'
+        error:
+          description: |-
+            Error is why the run stopped short: the directory could not be
+            reached or searched, or another run was in progress on this
+            instance. Nothing is marked missing by a run that stopped short.
+          type: string
+        finished_at:
+          description: FinishedAt is absent when the run stopped on an error.
+          type: string
+        full:
+          description: |-
+            Full is true for a full run, which is the only kind that marks
+            entries missing; the admin trigger always runs one.
+          type: boolean
+        groups:
+          $ref: '#/components/schemas/webtypes.NSSSyncCountsResponse'
+        started_at:
+          type: string
+      required:
+      - accounts
+      - full
+      - groups
+      - started_at
       type: object
     webtypes.NotificationGroupResponse:
       properties:
@@ -3393,6 +3692,12 @@ paths:
         directory and changes nothing, reporting the disables and
         re-enables it would have performed — which is what makes it
         safe to press during an incident.
+
+        With nss.enabled on, a pass that is not a dry run also runs
+        the NSS directory's full sync on this instance afterwards and
+        reports it under nss: the POSIX accounts and groups the
+        filters select, with each group's members limited to the
+        accounts stored. The NSS sync has no dry run.
       requestBody:
         content:
           application/json:
@@ -3443,6 +3748,302 @@ paths:
       security:
       - sessionCookie: []
       summary: Run the directory sync now (admin-only)
+      tags:
+      - admin
+  /api/admin/nss/collisions:
+    get:
+      description: |-
+        Every pair of directory entries contending for one uid, gid
+        or name, oldest first: the stored row holding the value,
+        the other entry (stored, or refused and known only by what
+        it carried), whether the holder is a tombstone, and since
+        when. Neither side is served while a pair lasts. A pair
+        goes when either entry is read again without the clash, at
+        the latest on the next full sync.
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.NSSCollisionsEnvelope'
+          description: The current collisions
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authenticated
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authorized as admin
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: NSS is disabled
+      security:
+      - sessionCookie: []
+      summary: List uid, gid and name collisions (admin only)
+      tags:
+      - admin
+  /api/admin/nss/groups/{gid}/accept-id-change:
+    post:
+      description: |-
+        Applies the pending gid of the NSS group stored with this
+        gid, in one transaction that re-keys its membership rows and
+        moves every account whose primary gid it was, and audits it
+        as nss.id_change_accepted. Refused with 409 when another
+        group, a tombstone included, holds the new gid.
+      parameters:
+      - description: The group's stored gid
+        in: path
+        name: gid
+        required: true
+        schema:
+          type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.NSSAcceptedGroupIDChangeEnvelope'
+          description: The group after the change
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: The gid is not a number
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authenticated
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authorized as admin
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No group with that gid has a pending change, or NSS is disabled
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Another group holds the new gid
+      security:
+      - sessionCookie: []
+      summary: Accept a group's pending gid (admin only)
+      tags:
+      - admin
+  /api/admin/nss/groups/{gid}/tombstone:
+    delete:
+      description: |-
+        Deletes the tombstoned NSS group with this gid before
+        nss.tombstone_retention, freeing its gid and name, and
+        audits it as nss.tombstone_purged. Only a tombstone: a live
+        group is 404.
+      parameters:
+      - description: The tombstone's gid
+        in: path
+        name: gid
+        required: true
+        schema:
+          type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.NSSPurgedTombstoneEnvelope'
+          description: The purged group
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: The gid is not a number
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authenticated
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authorized as admin
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No tombstoned group has that gid, or NSS is disabled
+      security:
+      - sessionCookie: []
+      summary: Purge a tombstoned group early (admin only)
+      tags:
+      - admin
+  /api/admin/nss/pending-id-changes:
+    get:
+      description: |-
+        Every NSS account and group whose directory entry now gives
+        a stored uid or gid a different value. Hosts keep being
+        served the stored value until an admin accepts the change
+        (after re-owning files on the hosts) or the directory
+        reverts; the server raises nss.id_change_pending daily
+        meanwhile. Oldest first.
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.NSSPendingIDChangesEnvelope'
+          description: The pending changes
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authenticated
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authorized as admin
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: NSS is disabled
+      security:
+      - sessionCookie: []
+      summary: List pending uid and gid changes (admin only)
+      tags:
+      - admin
+  /api/admin/nss/users/{uid}/accept-id-change:
+    post:
+      description: |-
+        Applies the pending uid and gid of the NSS account stored
+        with this uid, in one transaction that re-keys its group
+        memberships to the new uid, and audits it as
+        nss.id_change_accepted. Hosts see the new number from then
+        on, so re-own the account's files on them first. Refused
+        with 409 when another account, a tombstone included, holds
+        the new uid.
+      parameters:
+      - description: The account's stored uid
+        in: path
+        name: uid
+        required: true
+        schema:
+          type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.NSSAcceptedUserIDChangeEnvelope'
+          description: The account after the change
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: The uid is not a number
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authenticated
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authorized as admin
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No account with that uid has a pending change, or NSS is disabled
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Another account holds the new uid
+      security:
+      - sessionCookie: []
+      summary: Accept an account's pending uid or gid (admin only)
+      tags:
+      - admin
+  /api/admin/nss/users/{uid}/tombstone:
+    delete:
+      description: |-
+        Deletes the tombstoned NSS account with this uid before
+        nss.tombstone_retention, with its memberships and
+        collisions, freeing its uid and name for a new entry at the
+        next sync, and audits it as nss.tombstone_purged. Only a
+        tombstone: a live account is 404.
+      parameters:
+      - description: The tombstone's uid
+        in: path
+        name: uid
+        required: true
+        schema:
+          type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.NSSPurgedTombstoneEnvelope'
+          description: The purged account
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: The uid is not a number
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authenticated
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authorized as admin
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No tombstoned account has that uid, or NSS is disabled
+      security:
+      - sessionCookie: []
+      summary: Purge a tombstoned account early (admin only)
       tags:
       - admin
   /api/admin/users:

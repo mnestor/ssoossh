@@ -8,6 +8,7 @@ package bootstrap
 // rather than silently sending nothing.
 
 import (
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -314,5 +315,92 @@ func TestRegisterLDAPSyncJob_ShouldRegisterTheSync(t *testing.T) {
 
 	if err := a.registerLDAPSyncJob(t.Context()); err != nil {
 		t.Errorf("registerLDAPSyncJob() = %v, want the sync registered", err)
+	}
+}
+
+func TestRegisterNSSJobs_ShouldNotRegisterWhenNSSIsDisabled(t *testing.T) {
+	t.Parallel()
+
+	// No scheduler: the disabled gate must return before using it.
+	a := &app{config: &config.Config{}, svc: &services{}}
+	if err := a.registerNSSJobs(t.Context()); err != nil {
+		t.Errorf("registerNSSJobs() with nss disabled = %v, want nil", err)
+	}
+}
+
+// newTestNSSService builds the smallest enabled NSS directory service;
+// registration never dials, so no directory is needed.
+func newTestNSSService(t *testing.T, c *config.Config) *service.NSSDirectoryService {
+	t.Helper()
+
+	newTestLDAPService(t, c)
+	c.NSS = config.NSSConfig{
+		Enabled:     true,
+		UserFilter:  "(objectClass=posixAccount)",
+		GroupFilter: "(objectClass=posixGroup)",
+		Attributes: config.NSSAttributes{
+			Name: "uid", UID: "uidNumber", GID: "gidNumber", Home: "homeDirectory", Shell: "loginShell",
+			GroupName: "cn", GroupGID: "gidNumber", GroupMember: "memberUid", GecosAttributes: []string{"cn"},
+		},
+		GecosTemplate:    "{{.DisplayName}}",
+		SyncInterval:     15 * time.Minute,
+		FullSyncInterval: 24 * time.Hour,
+	}
+	svc, err := service.NewNSSDirectoryService(c, nil)
+	if err != nil {
+		t.Fatalf("NewNSSDirectoryService: %v", err)
+	}
+	return svc
+}
+
+func TestRegisterNSSJobs_ShouldRegisterTheJobsWhoseIntervalIsSet(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		incremental time.Duration
+		full        time.Duration
+	}{
+		{name: "should register every job when both intervals are set", incremental: 15 * time.Minute, full: 24 * time.Hour},
+		{name: "should skip the incremental sync when its interval is zero", full: 24 * time.Hour},
+		{name: "should skip the full sync when its interval is zero", incremental: 15 * time.Minute},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			c := &config.Config{}
+			svc := newTestNSSService(t, c)
+			c.NSS.SyncInterval, c.NSS.FullSyncInterval = tt.incremental, tt.full
+			a := &app{config: c, svc: &services{nss: svc}, scheduler: newTestScheduler(t)}
+
+			if err := a.registerNSSJobs(t.Context()); err != nil {
+				t.Errorf("registerNSSJobs() = %v, want the jobs registered", err)
+			}
+		})
+	}
+}
+
+func TestNSSSyncJobError_ShouldTreatAnOverlapAsRoutineWhenAnotherRunIsGoing(t *testing.T) {
+	t.Parallel()
+
+	boom := errors.New("directory unreachable")
+	tests := []struct {
+		name string
+		err  error
+		want error
+	}{
+		{name: "should report nothing when another run is still going", err: service.ErrNSSSyncInProgress, want: nil},
+		{name: "should pass a real failure through when the run failed", err: boom, want: boom},
+		{name: "should report nothing when the run succeeded", err: nil, want: nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := nssSyncJobError(t.Context(), tt.err); !errors.Is(got, tt.want) || (tt.want == nil && got != nil) {
+				t.Errorf("nssSyncJobError() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }

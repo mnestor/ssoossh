@@ -21,8 +21,8 @@ type NSSDirectoryAdmin interface {
 	AcceptUserIDChange(ctx context.Context, uid uint32, actor *AuditSubject) (*model.PosixUser, error)
 	AcceptGroupIDChange(ctx context.Context, gid uint32, actor *AuditSubject) (*model.PosixGroup, error)
 	Collisions(ctx context.Context) ([]NSSCollisionReport, error)
-	PurgeUserTombstone(ctx context.Context, uid uint32, actor *AuditSubject) error
-	PurgeGroupTombstone(ctx context.Context, gid uint32, actor *AuditSubject) error
+	PurgeUserTombstone(ctx context.Context, uid uint32, actor *AuditSubject) (*model.PosixUser, error)
+	PurgeGroupTombstone(ctx context.Context, gid uint32, actor *AuditSubject) (*model.PosixGroup, error)
 }
 
 // NSSDirectorySync is the NSS half of POST /api/admin/ldap/sync: a full

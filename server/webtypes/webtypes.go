@@ -1381,6 +1381,12 @@ type LDAPSyncRunResponse struct {
 	// failed bind. Empty for a pass that completed, whatever it concluded
 	// about individual users.
 	Error string `json:"error,omitempty"`
+
+	// NSS is what the NSS directory's full sync concluded when an admin
+	// ran this pass by hand with nss.enabled on: POST /api/admin/ldap/sync
+	// runs both, except on a dry run. Absent otherwise, and on every
+	// scheduled pass, which the NSS sync does not ride on.
+	NSS *NSSSyncRunResponse `json:"nss,omitempty"`
 }
 
 // LDAPStatusResponse answers "is the sync even running", and describes the

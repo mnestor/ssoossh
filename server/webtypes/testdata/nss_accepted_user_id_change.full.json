@@ -1,0 +1,6 @@
+{
+  "name": "ada.lovelace",
+  "dn": "uid=ada.lovelace,ou=people,dc=example,dc=net",
+  "uid": 20001,
+  "gid": 20002
+}

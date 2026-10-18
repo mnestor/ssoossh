@@ -38,18 +38,24 @@ const (
 // auditor because it makes the server open an outbound connection and read
 // an entry in full. Narrowing all three to admin keeps the role hierarchy
 // intact: admin still holds everything SOC and auditor hold.
+//
+// nss is the NSS directory's full sync, which the sync route runs after the
+// LDAP pass (nil when nss.enabled is off): the operator pressing "sync"
+// wants the directory's view everywhere, and a second route would be one
+// more thing to remember during an incident.
 func NewLDAPAdminController(
 	group *gin.RouterGroup,
 	c *config.Config,
 	db *gorm.DB,
 	ldap service.LDAPDiagnostics,
+	nss service.NSSDirectorySync,
 	sessionAuthMiddleware gin.HandlerFunc,
 	adminAuthMiddleware gin.HandlerFunc,
 	csrfMiddleware gin.HandlerFunc,
 	probeRateLimit gin.HandlerFunc,
 	auditService *service.AuditService,
 ) {
-	a := &ldapAdminController{config: c, db: db, ldap: ldap, audit: auditService}
+	a := &ldapAdminController{config: c, db: db, ldap: ldap, nss: nss, audit: auditService}
 
 	// One group: the CSRF middleware exempts safe methods, so the GET can
 	// share it with the two POSTs.
@@ -69,7 +75,10 @@ type ldapAdminController struct {
 	db     *gorm.DB
 	// ldap is nil when directory enrichment is disabled, which every
 	// handler reports as "nothing to do here" rather than 500ing.
-	ldap  service.LDAPDiagnostics
+	ldap service.LDAPDiagnostics
+	// nss is nil when the NSS directory is disabled; the sync route then
+	// runs the LDAP pass alone.
+	nss   service.NSSDirectorySync
 	audit *service.AuditService
 }
 
@@ -131,6 +140,12 @@ func (a *ldapAdminController) statusHandler(g *gin.Context) {
 // @Description directory and changes nothing, reporting the disables and
 // @Description re-enables it would have performed — which is what makes it
 // @Description safe to press during an incident.
+// @Description
+// @Description With nss.enabled on, a pass that is not a dry run also runs
+// @Description the NSS directory's full sync on this instance afterwards and
+// @Description reports it under nss: the POSIX accounts and groups the
+// @Description filters select, with each group's members limited to the
+// @Description accounts stored. The NSS sync has no dry run.
 // @Tags        admin
 // @Accept      json
 // @Produce     json
@@ -174,23 +189,65 @@ func (a *ldapAdminController) syncHandler(g *gin.Context) {
 		return
 	}
 
+	// The NSS sync runs whatever the LDAP pass concluded: it reads the
+	// directory on its own connection, and an LDAP pass that found nobody
+	// to refresh says nothing about the POSIX entries.
+	var nssRun *webtypes.NSSSyncRunResponse
+	if a.nss != nil && !req.DryRun {
+		nssRun = newNSSSyncRunResponse(a.nss.FullSync(g.Request.Context()))
+	}
+
 	// A pass that could not reach the directory still produced a run row,
 	// and that row is the answer: it says the pass ran and why it failed,
 	// which is exactly what the operator pressed the button to find out.
 	// So the error is recorded and reported in the body rather than
 	// swallowing the record behind a bare 5xx.
-	a.recordSyncAudit(g, actor, run, err)
+	a.recordSyncAudit(g, actor, run, nssRun, err)
 
 	if run == nil {
 		handleError(g, err)
 		return
 	}
-	respondData(g, a.newSyncRunResponse(g, run))
+	resp := a.newSyncRunResponse(g, run)
+	resp.NSS = nssRun
+	respondData(g, resp)
 }
 
-// recordSyncAudit records the triggered sync with what it concluded.
-func (a *ldapAdminController) recordSyncAudit(g *gin.Context, actor *service.AuditSubject, run *model.LDAPSyncRun, cause error) {
+// newNSSSyncRunResponse maps an NSS sync's outcome to the wire. A run
+// refused because another is in progress has no result, only the error.
+func newNSSSyncRunResponse(result *service.NSSSyncResult, err error) *webtypes.NSSSyncRunResponse {
+	resp := &webtypes.NSSSyncRunResponse{}
+	if result != nil {
+		resp.Full = result.Full
+		resp.StartedAt = result.StartedAt
+		if !result.FinishedAt.IsZero() {
+			finished := result.FinishedAt
+			resp.FinishedAt = &finished
+		}
+		resp.Accounts = nssCountsResponse(result.Accounts)
+		resp.Groups = nssCountsResponse(result.Groups)
+	}
+	if err != nil {
+		resp.Error = err.Error()
+	}
+	return resp
+}
+
+// nssCountsResponse maps one table's counts to the wire.
+func nssCountsResponse(c service.NSSSyncCounts) webtypes.NSSSyncCountsResponse {
+	return webtypes.NSSSyncCountsResponse{
+		Seen: c.Seen, Skipped: c.Skipped, Created: c.Created, Updated: c.Updated,
+		Refused: c.Refused, Failed: c.Failed, Missing: c.Missing, Tombstoned: c.Tombstoned,
+	}
+}
+
+// recordSyncAudit records the triggered sync with what it concluded,
+// including the NSS sync's counts when it ran.
+func (a *ldapAdminController) recordSyncAudit(g *gin.Context, actor *service.AuditSubject, run *model.LDAPSyncRun, nssRun *webtypes.NSSSyncRunResponse, cause error) {
 	detail := map[string]any{"dry_run": run != nil && run.DryRun}
+	if nssRun != nil {
+		detail["nss"] = nssRun
+	}
 	if run != nil {
 		detail["run_id"] = run.ID
 		detail["users"] = run.UsersSeen

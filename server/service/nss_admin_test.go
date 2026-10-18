@@ -98,11 +98,26 @@ func TestNSSPurgeTombstone_ShouldPurgeEarlyOnlyWhenTheRowIsATombstone(t *testing
 		purge      func(*nssHarness) error
 		wantStatus int
 	}{
-		{name: "should refuse an account that is live", purge: func(h *nssHarness) error { return h.svc.PurgeUserTombstone(t.Context(), 1, nssAdminActor()) }, wantStatus: 404},
-		{name: "should refuse an account that does not exist", purge: func(h *nssHarness) error { return h.svc.PurgeUserTombstone(t.Context(), 99, nssAdminActor()) }, wantStatus: 404},
-		{name: "should purge an account when it is a tombstone", tombstoned: true, purge: func(h *nssHarness) error { return h.svc.PurgeUserTombstone(t.Context(), 1, nssAdminActor()) }},
-		{name: "should refuse a group that is live", purge: func(h *nssHarness) error { return h.svc.PurgeGroupTombstone(t.Context(), 700, nssAdminActor()) }, wantStatus: 404},
-		{name: "should purge a group when it is a tombstone", tombstoned: true, purge: func(h *nssHarness) error { return h.svc.PurgeGroupTombstone(t.Context(), 700, nssAdminActor()) }},
+		{name: "should refuse an account that is live", purge: func(h *nssHarness) error {
+			_, err := h.svc.PurgeUserTombstone(t.Context(), 1, nssAdminActor())
+			return err
+		}, wantStatus: 404},
+		{name: "should refuse an account that does not exist", purge: func(h *nssHarness) error {
+			_, err := h.svc.PurgeUserTombstone(t.Context(), 99, nssAdminActor())
+			return err
+		}, wantStatus: 404},
+		{name: "should purge an account when it is a tombstone", tombstoned: true, purge: func(h *nssHarness) error {
+			_, err := h.svc.PurgeUserTombstone(t.Context(), 1, nssAdminActor())
+			return err
+		}},
+		{name: "should refuse a group that is live", purge: func(h *nssHarness) error {
+			_, err := h.svc.PurgeGroupTombstone(t.Context(), 700, nssAdminActor())
+			return err
+		}, wantStatus: 404},
+		{name: "should purge a group when it is a tombstone", tombstoned: true, purge: func(h *nssHarness) error {
+			_, err := h.svc.PurgeGroupTombstone(t.Context(), 700, nssAdminActor())
+			return err
+		}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -147,7 +162,7 @@ func TestNSSPurgeTombstone_ShouldServeTheOtherEntryWhenItsHolderIsPurged(t *test
 		t.Fatalf("collisions = %d, want the tombstone holding eve's uid", n)
 	}
 
-	if err := h.svc.PurgeUserTombstone(t.Context(), 3000, nssAdminActor()); err != nil {
+	if _, err := h.svc.PurgeUserTombstone(t.Context(), 3000, nssAdminActor()); err != nil {
 		t.Fatalf("PurgeUserTombstone() error = %v", err)
 	}
 	if n := h.count(t, &model.NSSCollision{}, ""); n != 0 {
@@ -358,7 +373,9 @@ func TestNSSAdmin_ShouldAnswerNotFoundWhenNSSIsDisabled(t *testing.T) {
 	_, err1 := svc.AcceptUserIDChange(ctx, 1, nil)
 	_, err2 := svc.AcceptGroupIDChange(ctx, 1, nil)
 	_, err3 := svc.Collisions(ctx)
-	for i, err := range []error{err1, err2, err3, svc.PurgeUserTombstone(ctx, 1, nil), svc.PurgeGroupTombstone(ctx, 1, nil)} {
+	_, err4 := svc.PurgeUserTombstone(ctx, 1, nil)
+	_, err5 := svc.PurgeGroupTombstone(ctx, 1, nil)
+	for i, err := range []error{err1, err2, err3, err4, err5} {
 		var nf *errorresponses.NotFoundError
 		if !errors.As(err, &nf) {
 			t.Errorf("call %d error = %v, want a NotFoundError", i, err)

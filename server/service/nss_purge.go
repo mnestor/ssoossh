@@ -61,36 +61,36 @@ func (s *NSSDirectoryService) PurgeTombstones(ctx context.Context) (int, error) 
 // PurgeUserTombstone purges the tombstoned account with uid before
 // nss.tombstone_retention, for an admin handing its number or name on
 // deliberately. A NotFoundError unless an account with that uid exists and
-// is tombstoned.
-func (s *NSSDirectoryService) PurgeUserTombstone(ctx context.Context, uid uint32, actor *AuditSubject) error {
+// is tombstoned. Returns the row as it was before the purge.
+func (s *NSSDirectoryService) PurgeUserTombstone(ctx context.Context, uid uint32, actor *AuditSubject) (*model.PosixUser, error) {
 	if s == nil {
-		return errNSSDisabled()
+		return nil, errNSSDisabled()
 	}
 	var row model.PosixUser
 	err := s.db.WithContext(ctx).Where("uid = ? AND deleted_at IS NOT NULL", uid).First(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return &errorresponses.NotFoundError{Resource: fmt.Sprintf("tombstoned NSS account with uid %d", uid)}
+		return nil, &errorresponses.NotFoundError{Resource: fmt.Sprintf("tombstoned NSS account with uid %d", uid)}
 	}
 	if err != nil {
-		return fmt.Errorf("read the NSS account with uid %d: %w", uid, err)
+		return nil, fmt.Errorf("read the NSS account with uid %d: %w", uid, err)
 	}
-	return s.purgeAccount(ctx, &row, actor)
+	return &row, s.purgeAccount(ctx, &row, actor)
 }
 
 // PurgeGroupTombstone is PurgeUserTombstone for the group with gid.
-func (s *NSSDirectoryService) PurgeGroupTombstone(ctx context.Context, gid uint32, actor *AuditSubject) error {
+func (s *NSSDirectoryService) PurgeGroupTombstone(ctx context.Context, gid uint32, actor *AuditSubject) (*model.PosixGroup, error) {
 	if s == nil {
-		return errNSSDisabled()
+		return nil, errNSSDisabled()
 	}
 	var row model.PosixGroup
 	err := s.db.WithContext(ctx).Where("gid = ? AND deleted_at IS NOT NULL", gid).First(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return &errorresponses.NotFoundError{Resource: fmt.Sprintf("tombstoned NSS group with gid %d", gid)}
+		return nil, &errorresponses.NotFoundError{Resource: fmt.Sprintf("tombstoned NSS group with gid %d", gid)}
 	}
 	if err != nil {
-		return fmt.Errorf("read the NSS group with gid %d: %w", gid, err)
+		return nil, fmt.Errorf("read the NSS group with gid %d: %w", gid, err)
 	}
-	return s.purgeGroup(ctx, &row, actor)
+	return &row, s.purgeGroup(ctx, &row, actor)
 }
 
 // errNSSDisabled is what the admin actions answer with NSS off.
