@@ -9,6 +9,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -551,5 +553,87 @@ cert_options:
 	_, err := NewConfig(cc)
 	if err == nil || !strings.Contains(err.Error(), "cert_options.service.extensions") {
 		t.Errorf("NewConfig() error = %v, want one naming cert_options.service.extensions", err)
+	}
+}
+
+// TestNewConfig_ShouldDecodeTheTLSKeyPairDirectlyUnderHTTPTLS pins the
+// documented http.tls.certificate_file and private_key_file. They live on
+// tlsutils.CertificateInfo, embedded in TLSConfig, and were dropped in
+// silence until the embed carried `mapstructure:",squash"`, leaving a server
+// configured for TLS serving plain HTTP (#207).
+func TestNewConfig_ShouldDecodeTheTLSKeyPairDirectlyUnderHTTPTLS(t *testing.T) {
+	// Changes the process's working directory via t.Chdir, so it must not
+	// run in parallel with other tests that also rely on cwd.
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	writeFile(t, filepath.Join(dir, "ssoosshd.yaml"), `
+ssh_key: "test-key-material"
+http:
+  tls:
+    certificate_file: "/etc/ssoossh/tls/server.crt"
+    private_key_file: "/etc/ssoossh/tls/server.key"
+`)
+
+	c, err := NewConfig(newTestCommand())
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	tests := []struct {
+		name string
+		got  string
+		want string
+	}{
+		{"should decode certificate_file when it is set under http.tls", c.HTTP.TLS.CertificateFile, "/etc/ssoossh/tls/server.crt"},
+		{"should decode private_key_file when it is set under http.tls", c.HTTP.TLS.PrivateKeyFile, "/etc/ssoossh/tls/server.key"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.got != tc.want {
+				t.Errorf("got %q, want %q", tc.got, tc.want)
+			}
+		})
+	}
+}
+
+// TestConfig_ShouldSquashEveryEmbeddedStruct walks every struct reachable
+// from Config and fails on an embedded struct without `mapstructure:",squash"`.
+// viper's decoder does not squash an untagged embed: it decodes it as a level
+// named after the type, so keys written where the docs (generated as if
+// squashed) put them are dropped without an error. The logging blocks and
+// http.tls (#207) both shipped that way before their tags were added.
+func TestConfig_ShouldSquashEveryEmbeddedStruct(t *testing.T) {
+	t.Parallel()
+
+	var missing []string
+	seen := map[reflect.Type]bool{}
+	var walk func(typ reflect.Type, path string)
+	walk = func(typ reflect.Type, path string) {
+		for typ.Kind() == reflect.Pointer || typ.Kind() == reflect.Slice || typ.Kind() == reflect.Map || typ.Kind() == reflect.Array {
+			typ = typ.Elem()
+		}
+		// Only this module's types: an external type's own embeds are not
+		// keys an operator writes through this config.
+		if typ.Kind() != reflect.Struct || seen[typ] || !strings.HasPrefix(typ.PkgPath(), "github.com/mnestor/ssoossh") {
+			return
+		}
+		seen[typ] = true
+		for i := range typ.NumField() {
+			field := typ.Field(i)
+			tag := field.Tag.Get("mapstructure")
+			if tag == "-" {
+				continue
+			}
+			if field.Anonymous && !slices.Contains(strings.Split(tag, ",")[1:], "squash") {
+				missing = append(missing, path+"."+field.Name)
+			}
+			walk(field.Type, path+"."+field.Name)
+		}
+	}
+	walk(reflect.TypeFor[Config](), "Config")
+
+	if len(missing) > 0 {
+		t.Errorf("embedded structs without mapstructure:\",squash\": %s", strings.Join(missing, ", "))
 	}
 }
