@@ -239,7 +239,27 @@ attribute.
   collides on uid and name with the old row, which still exists (as
   missing, then as a tombstone), so neither is served until the old row is
   purged or ages out. Fail closed, and the reason to configure
-  `ldap.id_attribute`.
+  `ldap.id_attribute`. This holds for accounts only; groups are below.
+- **Renamed or moved groups** (decided 2026-10-18 by the owner). A group
+  renamed or moved with its gid kept is the same group, not a collision.
+  When an entry matches no row by `directory_id` or `dn`, and the row
+  holding its gid sits at another DN, the sync re-anchors that row on the
+  entry if and only if the row's entry has gone: a full sync did not
+  enumerate the row's DN, or (incremental and on-demand reads, the
+  membership search of an account read included) a base-scope read of the
+  row's DN with `nss.group_filter` returns nothing and a search for the gid
+  finds no other entry. A directory error is never "gone"; the entry is
+  then stored as today, and the next read tries again. Two entries carrying
+  the gid, or a row and an entry with different non-empty `directory_id`
+  values, are a collision as before. The re-anchored row keeps its id and
+  gid (so its membership rows), takes the entry's DN, `directory_id`, name
+  and members, loses `missing_since`, the tombstone and the collisions the
+  rename resolves, and the move is audited as `nss.group_renamed` (old and
+  new name and DN, gid, and `detected_by`: `full_sync_absence` or
+  `base_read`). A new name another row holds is still a name collision:
+  the row moves but keeps its old name and is withheld. Accounts keep the
+  strict rule above, because a uid handed to a different person is what
+  the tombstone exists to catch.
 - **Duplicate name** (README R39). POSIX resolves one record per name, so
   two live entries whose mapped name attribute is equal are both withheld
   while it lasts, with `nss_name_collision` at most daily per name. A

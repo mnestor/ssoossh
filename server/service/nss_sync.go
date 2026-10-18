@@ -296,18 +296,25 @@ func (s *NSSDirectoryService) syncGroups(ctx context.Context, conn ldapConn, res
 		groups = append(groups, group)
 	}
 	duplicates := groupDuplicates(groups)
+	// A full run enumerated every entry the filter selects, the skipped
+	// ones included, so a stored group whose DN is not among them has gone.
+	var enumerated *nssGroupGone
+	if result.Full {
+		enumerated = absentFrom(entries)
+	}
 
 	for _, group := range groups {
-		contenders, complete := duplicates(group), nssAllKinds()
+		contenders, complete, gone := duplicates(group), nssAllKinds(), enumerated
 		if !result.Full {
 			if contenders, complete, err = s.groupContenders(conn, group); err != nil {
 				s.log.WarnContext(ctx, "could not check a directory group; left as it was", "dn", group.DN, "error", err)
 				counts.Failed++
 				continue
 			}
+			gone = s.probeGroupsGone(ctx, conn, []*nssGroup{group})
 		}
 
-		stored, err := s.storeGroup(ctx, group, contenders, complete, index)
+		stored, err := s.storeGroup(ctx, group, contenders, complete, index, gone)
 		switch {
 		case err != nil:
 			s.log.ErrorContext(ctx, "could not store a directory group", "dn", group.DN, "error", err)
@@ -332,6 +339,63 @@ func (s *NSSDirectoryService) syncGroups(ctx context.Context, conn ldapConn, res
 		return err
 	}
 	return s.sweepCollisions(ctx, groupTable(), start)
+}
+
+// absentFrom is a full run's evidence for re-anchoring renamed groups:
+// entries is the complete enumeration, so a DN not among them is gone.
+func absentFrom(entries []*ldap.Entry) *nssGroupGone {
+	seen := make(map[string]bool, len(entries))
+	for _, e := range entries {
+		seen[normalizeDN(e.DN)] = true
+	}
+	return &nssGroupGone{via: nssGoneByFullSync, gone: func(dn string) bool { return !seen[normalizeDN(dn)] }}
+}
+
+// probeGroupsGone is the same evidence outside a full run, gathered before
+// anything is written. For each group no stored row anchors whose gid a
+// row at another DN holds (renameCandidate), the holder's entry has gone
+// when a search of nss.group_filter for the gid finds no entry but the
+// group itself and a base-scope read of the holder's DN finds no group
+// there. A directory or database error is never evidence: that group is
+// stored as it would be without any, and the next read asks again.
+func (s *NSSDirectoryService) probeGroupsGone(ctx context.Context, conn ldapConn, groups []*nssGroup) *nssGroupGone {
+	gone := map[string]bool{}
+	for _, g := range groups {
+		holder, err := s.renameCandidate(s.db.WithContext(ctx), g)
+		if err == nil && holder != nil {
+			var absent bool
+			if absent, err = s.groupEntryGone(conn, g, holder.DN); err == nil && absent {
+				gone[normalizeDN(holder.DN)] = true
+			}
+		}
+		if err != nil {
+			s.log.WarnContext(ctx, "could not check whether a directory group was renamed; stored as a new entry",
+				"dn", g.DN, "error", err)
+		}
+	}
+	return &nssGroupGone{via: nssGoneByBaseRead, gone: func(dn string) bool { return gone[normalizeDN(dn)] }}
+}
+
+// groupEntryGone reports whether dn, a stored group's DN, no longer holds a
+// group the filter selects, with g the only entry carrying g's gid.
+func (s *NSSDirectoryService) groupEntryGone(conn ldapConn, g *nssGroup, dn string) (bool, error) {
+	attrs := s.config.NSS.Attributes
+	filter := s.andFilter(s.config.NSS.GroupFilter, attrs.GroupGID, strconv.FormatUint(uint64(g.GID), 10))
+	// 1.1 asks for no attributes: only which entries carry the gid matters.
+	carriers, err := s.search(conn, filter, []string{"1.1"}, nssLookupSizeLimit)
+	if err != nil {
+		return false, err
+	}
+	for _, e := range carriers {
+		if normalizeDN(e.DN) != normalizeDN(g.DN) {
+			return false, nil
+		}
+	}
+	entry, err := s.readDN(conn, dn, s.config.NSS.GroupFilter, []string{"1.1"})
+	if err != nil {
+		return false, err
+	}
+	return entry == nil, nil
 }
 
 // accountDuplicates indexes a full run's accounts by uid and by name, and

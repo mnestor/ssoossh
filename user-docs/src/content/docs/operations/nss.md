@@ -153,10 +153,23 @@ stored account's uid or primary gid, or of a group's gid:
 Name, home, shell and display name follow the directory on every sync.
 
 The sync recognises an entry as the same row by `ldap.id_attribute` first,
-then by DN. **Set `ldap.id_attribute`.** Without it a moved entry has a new
-DN and looks like a missing entry plus a new one, and the new one collides
-with the old row's uid and name, so neither is served until the old one is
-purged.
+then by DN. **Set `ldap.id_attribute` to a stable attribute your accounts
+carry** (`entryUUID`, `objectGUID`, `nsUniqueId`). Without it, renaming or
+moving an account gives it a new DN, so it looks like a missing entry plus
+a new one, and the new one collides with the old row's uid and name:
+neither is served. There is no admin action that accepts such a move. The
+old row becomes a tombstone after `nss.tombstone_after`, and then an admin
+can purge it early (below) so the next read stores the new entry as a new
+row; until then, rename the entry back to restore it.
+
+Renaming or moving a **group** is safe. When an entry carries the gid of a
+stored group whose DN no longer holds a group (a full sync did not see it,
+or a read of that DN finds nothing and no other entry carries the gid), the
+sync moves that group's row to the new entry: same gid and members, new
+name and DN, served without interruption, audited as `nss.group_renamed`.
+If another group already holds the new name, the row moves but keeps its
+old name, and both are withheld as a name collision. A group whose old
+entry still exists, or two entries with one gid, are a collision as before.
 
 Admin only, audit-logged as `nss.id_change_accepted`:
 
@@ -413,7 +426,10 @@ instances, and none of them blocks anything:
 
 Feed them to your SIEM with the rest of the [audit log](/ssoossh/operations/audit-log/).
 Changes are audited too: `nss.key_*` for key administration,
-`nss.id_change_accepted`, `nss.tombstone_purged`, `nss.shell_changed`.
+`nss.id_change_accepted`, `nss.tombstone_purged`, `nss.shell_changed`, and
+`nss.group_renamed` (detail: `gid`, `old_name`, `new_name`, `old_dn`,
+`new_dn`, `detected_by` as `full_sync_absence` or `base_read`,
+`name_blocked`, `revived`).
 
 ## Mail
 

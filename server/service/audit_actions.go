@@ -175,6 +175,14 @@ const (
 	// nss.tombstone_retention has passed (System), or early by an admin.
 	// One event per row, naming it.
 	AuditNSSTombstonePurged AuditAction = "nss.tombstone_purged"
+	// AuditNSSGroupRenamed is a stored group re-anchored on a directory
+	// entry at a new DN that carries its gid: the group was renamed or
+	// moved, and its old entry has gone (a full sync did not see it, or a
+	// base-scope read found nothing there). The row keeps its id, gid and
+	// members; the detail has the old and new name and DN and how the
+	// absence was established. Accounts are never re-anchored this way: a
+	// moved account without a stable ldap.id_attribute stays withheld.
+	AuditNSSGroupRenamed AuditAction = "nss.group_renamed"
 )
 
 // The NSS directory's lookup endpoints and fleet keys. The lookups

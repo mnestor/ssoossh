@@ -28,6 +28,7 @@ import {
 	AuditLDAPProbed,
 	AuditLDAPSyncTriggered,
 	AuditNSSGIDCollision,
+	AuditNSSGroupRenamed,
 	AuditNSSIDChangeAccepted,
 	AuditNSSIDChangePending,
 	AuditNSSKeyCreated,
@@ -152,6 +153,9 @@ export const auditPhrasing: Record<string, string> = {
 	// System once nss.tombstone_retention has passed, an admin when purged
 	// early.
 	[AuditNSSTombstonePurged]: 'purged a deleted directory account or group',
+	// The group kept its gid and members; the detail has the old and new
+	// name and DN.
+	[AuditNSSGroupRenamed]: 'followed a directory group that was renamed or moved',
 	// System events from the NSS lookup endpoints: no session, so each row
 	// reads "The server ...". The host's address is in source_ip and the
 	// fleet key it presented in key_id.

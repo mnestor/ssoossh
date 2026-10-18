@@ -72,6 +72,7 @@ var auditActions = []AuditAction{
 	AuditNSSNameMismatch,
 	AuditNSSIDChangeAccepted,
 	AuditNSSTombstonePurged,
+	AuditNSSGroupRenamed,
 	AuditNSSLookupForbidden,
 	AuditNSSKeyRevokedAttempt,
 	AuditNSSKeyExpiredAttempt,

@@ -239,6 +239,16 @@ export const AuditNSSIDChangeAccepted: AuditAction = "nss.id_change_accepted";
  */
 export const AuditNSSTombstonePurged: AuditAction = "nss.tombstone_purged";
 /**
+ * AuditNSSGroupRenamed is a stored group re-anchored on a directory
+ * entry at a new DN that carries its gid: the group was renamed or
+ * moved, and its old entry has gone (a full sync did not see it, or a
+ * base-scope read found nothing there). The row keeps its id, gid and
+ * members; the detail has the old and new name and DN and how the
+ * absence was established. Accounts are never re-anchored this way: a
+ * moved account without a stable ldap.id_attribute stays withheld.
+ */
+export const AuditNSSGroupRenamed: AuditAction = "nss.group_renamed";
+/**
  * AuditNSSLookupForbidden is a lookup from an address outside
  * nss.source_allow_list, refused before its key was checked. The
  * detail carries the address the server observed and the key id the
