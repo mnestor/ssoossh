@@ -349,13 +349,19 @@ background sweep refreshes ageing entries as well.
 **A user's groups and a group's members are kept in step** *(added
 2026-10-18)*. Both the user record (`id alice`) and the group record
 (`getent group devs`) say who is in a group, and each is cached on its own
-lifetime. When the daemon fetches a user and finds a membership added or
-removed that a cached group's member list does not reflect yet, it marks
-that group stale, and the next lookup of the group fetches it again; the
-same holds the other way round, for users added to or removed from a group
-fetched fresh. So after `id alice` shows a new group, `getent group` for it
-lists alice on its next lookup rather than after the group's own lifetime.
-A stale entry is still answered while the server is unreachable.
+lifetime. When the daemon fetches a user in a group whose cached member
+list lacks them, or no longer in a group whose cached list still names
+them, it marks that group stale, and the next lookup of the group fetches
+it again; the same holds the other way round, for users added to or removed
+from a group fetched fresh. So after `id alice` shows a group, `getent
+group` for it lists alice on its next lookup rather than after the group's
+own lifetime, even when the group was cached before the server knew of the
+membership. Where the server itself keeps the two apart (under
+`nss.auto_private_groups: true` it puts the directory primary group in a
+user's groups without listing the user as a member), the daemon refetches
+the group once, sees the server still says so, and stops asking until that
+group's member list changes. A stale entry is still answered while the
+server is unreachable.
 
 **`sudo` in an open session uses the host cache.** Only `sshd` triggers the
 synchronous refresh; `sudo`, `su` and everything else are answered from the

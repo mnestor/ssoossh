@@ -245,7 +245,8 @@ func (d *Daemon) forgetGroup(ctx context.Context, key groupKey) {
 
 // storeGroup caches a group answer that passed the policy. A cached user
 // whose group list the change in members contradicts is marked stale
-// (staleUsersForGroup).
+// (staleUsersForGroup), and the membership contradictions held for the
+// group are settled against the fresh list (contradictions.groupStored).
 func (d *Daemon) storeGroup(ctx context.Context, resp *apitypes.NSSGroupResponse) {
 	old, err := d.store.GroupByName(ctx, resp.Name)
 	if err != nil {
@@ -269,25 +270,54 @@ func (d *Daemon) storeGroup(ctx context.Context, resp *apitypes.NSSGroupResponse
 	}
 	d.negative.Delete(groupKey{name: resp.Name}.String())
 	d.negative.Delete(groupKey{gid: resp.GID, byGID: true}.String())
-	d.staleUsersForGroup(ctx, old, resp)
+	prev, hadPrev := entryMembers(old)
+	d.staleUsersForGroup(ctx, prev, hadPrev, resp)
+	changed := !hadPrev || !sameMembers(prev, resp.Members)
+	d.contradictions.groupStored(resp.Name, resp.Members, resp.MembersTruncated, changed)
+}
+
+// entryMembers decodes a cached group's member list. ok is false when
+// there is no entry, it is a stub, or it does not decode.
+func entryMembers(e *cache.GroupEntry) (members []string, ok bool) {
+	if e == nil || !e.Members {
+		return nil, false
+	}
+	var g apitypes.NSSGroupResponse
+	if err := json.Unmarshal(e.Data, &g); err != nil {
+		return nil, false
+	}
+	return g.Members, true
+}
+
+// sameMembers reports whether a and b name the same set of members.
+func sameMembers(a, b []string) bool {
+	in := make(map[string]bool, len(a))
+	for _, m := range a {
+		in[m] = true
+	}
+	seen := make(map[string]bool, len(b))
+	for _, m := range b {
+		if !in[m] {
+			return false
+		}
+		seen[m] = true
+	}
+	return len(seen) == len(in)
 }
 
 // staleUsersForGroup keeps cached users' group lists coherent with a fresh
 // group record, without asking the server: each user added to or removed
-// from the member list, compared with old, the cached entry it replaced,
+// from the member list, compared with prev, the cached list it replaced,
 // is marked stale when the user's cached memberships do not already say
-// the same (staleUserIf). A stub or no previous entry knows no members to
-// compare with, and members that did not change are never looked at.
-func (d *Daemon) staleUsersForGroup(ctx context.Context, old *cache.GroupEntry, resp *apitypes.NSSGroupResponse) {
-	if old == nil || !old.Members {
+// the same (staleUserIf). Without a previous list (hadPrev false: no entry,
+// a stub, or one that does not decode) there is nothing to compare with,
+// and members that did not change are never looked at.
+func (d *Daemon) staleUsersForGroup(ctx context.Context, prev []string, hadPrev bool, resp *apitypes.NSSGroupResponse) {
+	if !hadPrev {
 		return
 	}
-	var prev apitypes.NSSGroupResponse
-	if err := json.Unmarshal(old.Data, &prev); err != nil {
-		return
-	}
-	before := make(map[string]bool, len(prev.Members))
-	for _, m := range prev.Members {
+	before := make(map[string]bool, len(prev))
+	for _, m := range prev {
 		before[m] = true
 	}
 	after := make(map[string]bool, len(resp.Members))
@@ -297,7 +327,7 @@ func (d *Daemon) staleUsersForGroup(ctx context.Context, old *cache.GroupEntry, 
 			d.staleUserIf(ctx, m, resp.Name, true, "a fresh group record adds the user but the user's cached groups lack it")
 		}
 	}
-	for _, m := range prev.Members {
+	for _, m := range prev {
 		if !after[m] {
 			d.staleUserIf(ctx, m, resp.Name, false, "a fresh group record drops the user but the user's cached groups still have it")
 		}
