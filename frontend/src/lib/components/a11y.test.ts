@@ -456,7 +456,7 @@ describe('component accessibility roster', () => {
 		// drifting copy of the one in their own test files. Their own suites
 		// render them; see ApprovalView.test.ts and AdminServiceCodeDetail.test.ts.
 		//
-		// NSSDirectoryPanels — fetches both of its lists on mount, so a render
+		// NSSDirectoryPanels: fetches both of its lists on mount, so a render
 		// here would sweep a loading state; the Directory page's own suite
 		// renders it with fixtures (routes/admin/directory/page.test.ts).
 		covered.add('ConsentModal');
