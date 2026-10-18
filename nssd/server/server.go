@@ -93,6 +93,11 @@ type Server struct {
 	overCap     *overCapLog
 	log         *slog.Logger
 	euid        uint32
+	// since measures how long a connection waited for a call, for the
+	// idle budget: time.Since, which a test replaces to spend the budget
+	// in one wait (a call read only when the wait used up the budget is
+	// otherwise a matter of wall-clock luck).
+	since func(time.Time) time.Duration
 }
 
 // New returns a Server.
@@ -130,6 +135,7 @@ func New(opts Options) *Server {
 		overCap:     &overCapLog{now: now, log: opts.Log, slots: slots},
 		log:         opts.Log,
 		euid:        uint32(os.Geteuid()), //nolint:gosec // G115: a uid is never negative.
+		since:       time.Since,
 	}
 }
 
@@ -292,7 +298,7 @@ func (s *Server) handle(ctx context.Context, conn net.Conn, cred Credentials) {
 			return
 		}
 		call, err := vc.ReadCall()
-		idleLeft -= time.Since(waitStart)
+		idleLeft -= s.since(waitStart)
 		if err != nil {
 			s.logReadError(err, cred)
 			return
