@@ -382,7 +382,7 @@ func TestRunBothManpagesExist(t *testing.T) {
 		t.Fatalf("run() failed: %v", err)
 	}
 
-	files := []string{"ssoossh.1", "ssoosshd.8"}
+	files := []string{"ssoossh.1", "ssoosshd.8", "ssoosshd-nss.8", "ssoosshd-nss-run.8", "ssoosshd-nss-lookup.8"}
 	for _, file := range files {
 		path := filepath.Join(outDir, file)
 		if _, err := os.Stat(path); err != nil {
@@ -540,5 +540,48 @@ func TestGenerateClientManpage_ShouldKeepArgumentPlaceholdersInTheSynopsis(t *te
 	}
 	if !strings.Contains(string(page), "ssoossh host mapping add <account> <principal>") {
 		t.Errorf("the synopsis lost its argument placeholders:\n%s", page)
+	}
+}
+
+// TestGenerateNSSManpage_ShouldWriteSectionEightPagesWhenRun checks the
+// daemon's pages come from its real tree: a root page titled for the daemon
+// and one page per subcommand.
+func TestGenerateNSSManpage_ShouldWriteSectionEightPagesWhenRun(t *testing.T) {
+	outDir := t.TempDir()
+	if err := generateNSSManpage(outDir, testManPageDateValue()); err != nil {
+		t.Fatalf("generateNSSManpage() failed: %v", err)
+	}
+
+	tests := []struct {
+		name string
+		page string
+		want string
+	}{
+		{name: "should title the root page for the daemon", page: "ssoosshd-nss.8", want: `.TH "SSOOSSHD-NSS" "8"`},
+		{name: "should document the run command's listen flag", page: "ssoosshd-nss-run.8", want: "listen"},
+		{name: "should document the override subcommands", page: "ssoosshd-nss-override-set.8", want: "override"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			content, err := os.ReadFile(filepath.Join(outDir, tt.page))
+			if err != nil {
+				t.Fatalf("read %s: %v", tt.page, err)
+			}
+			if !strings.Contains(string(content), tt.want) {
+				t.Errorf("%s does not contain %q", tt.page, tt.want)
+			}
+		})
+	}
+}
+
+// TestGenerateNSSManpage_ShouldFailWhenThePageCannotBeWritten checks a
+// write failure is returned, not swallowed.
+func TestGenerateNSSManpage_ShouldFailWhenThePageCannotBeWritten(t *testing.T) {
+	outDir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(outDir, "ssoosshd-nss.8"), 0o755); err != nil {
+		t.Fatalf("create blocking directory: %v", err)
+	}
+	if err := generateNSSManpage(outDir, testManPageDateValue()); err == nil {
+		t.Error("expected an error when the page path is a directory, got nil")
 	}
 }

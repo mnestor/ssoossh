@@ -559,14 +559,14 @@ REDOCLY ?= $(shell command -v redocly 2>/dev/null || echo "npx @redocly/cli@2.57
 openapi-lint:
 	$(REDOCLY) lint docs/openapi.yaml --config .redoclyrc.yaml
 
-# Generate man pages (ssoossh.1 and ssoosshd.8) from cobra commands.
+# Generate man pages (ssoossh.1, ssoosshd.8 and ssoosshd-nss.8) from cobra commands.
 # Config format pages (ssoossh.yaml.5, ssoosshd.yaml.5) are hand-written and
 # not regenerated.
 # CGO_ENABLED=1 for the same reason `build` needs it: gendocs imports the
 # server command tree, which reaches the HSM key source's libpkcs11 binding.
 gendocs: ## Regenerate man pages from the cobra commands
 	CGO_ENABLED=1 go run ./internal/tools/gendocs docs/man
-	@echo "Man pages regenerated (ssoossh.1, ssoosshd.8)"
+	@echo "Man pages regenerated (ssoossh.1, ssoosshd.8, ssoosshd-nss.8)"
 
 # The pages gendocs produces: the two roots plus one per cobra subcommand.
 # The glob matters. Hashing only ssoossh.1 and ssoosshd.8 (as this did

@@ -486,3 +486,47 @@ func TestMainShouldReturnTheExitStatusWhenRun(t *testing.T) {
 		t.Fatalf("got %d for an unknown command", code)
 	}
 }
+
+// TestCommandShouldExposeTheRealTreeWhenAskedForManPages checks the tree
+// gendocs writes the man pages from is the one Execute runs, subcommands
+// and flags included, so a page cannot describe a command that is not
+// there.
+func TestCommandShouldExposeTheRealTreeWhenAskedForManPages(t *testing.T) {
+	t.Parallel()
+	c, err := NewCommand(Environment{Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}})
+	if err != nil {
+		t.Fatalf("build the tree: %v", err)
+	}
+	root := c.Command()
+	if root == nil || root.Name() != "ssoosshd-nss" {
+		t.Fatalf("got root %v, want ssoosshd-nss", root)
+	}
+	tests := []struct {
+		name string
+		path []string
+		flag string
+	}{
+		{name: "should carry the global config flag on the root", flag: "config"},
+		{name: "should carry the run command and its listen flag", path: []string{"run"}, flag: "listen"},
+		{name: "should carry the cache command", path: []string{"cache"}},
+		{name: "should carry the override command", path: []string{"override"}},
+		{name: "should carry the status command", path: []string{"status"}},
+		{name: "should carry the lookup command", path: []string{"lookup"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			want := "ssoosshd-nss"
+			if len(tt.path) > 0 {
+				want = tt.path[len(tt.path)-1]
+			}
+			cmd, _, err := root.Find(tt.path)
+			if err != nil || cmd.Name() != want {
+				t.Fatalf("find %v: got %v, %v", tt.path, cmd, err)
+			}
+			if tt.flag != "" && cmd.Flags().Lookup(tt.flag) == nil && cmd.PersistentFlags().Lookup(tt.flag) == nil {
+				t.Fatalf("%v has no --%s", tt.path, tt.flag)
+			}
+		})
+	}
+}
