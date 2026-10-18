@@ -400,6 +400,36 @@ the server only does that after an admin accepted it (README R38), but is
 logged at warning with the name and both numbers so the change is visible
 in the journal of every host it reached.
 
+*(added 2026-10-18 after a field report)* A user record and a group record
+both say who is in a group, and each is cached on its own TTL, so a host
+showed `id sonia` with `all-users` (fresh user fetch) while
+`getent group all-users` still listed only the members it had when the group
+was cached. The daemon now keeps the two coherent from what it already
+fetches, with no extra server call on the lookup path, by marking the
+contradicted entry stale (refetched on its next lookup, still served while
+the server is unreachable). It never edits a member list into a record the
+server did not send.
+
+- A user stored from the server (lookup, background refresh, the sshd login
+  refresh) is compared with the cached user entry it replaces. A group the
+  user joined (every served membership when none was cached) whose cached
+  member list lacks the user is marked stale; a group the user left whose
+  cached list still names the user is marked stale too, and so is every
+  group still naming a user the server no longer serves. Only joined and
+  left groups are weighed, so a lasting disagreement (the directory primary
+  group the server adds to a user's list under
+  `nss.auto_private_groups: true`, with no membership row behind it) costs
+  one refetch, not one per fetch. The primary group, memberships
+  the policy drops, stub entries, a truncated list lacking the user, and
+  every group under `ignore_group_members` are left alone.
+- A group stored from the server is compared with the cached group entry it
+  replaces. Each user added to or removed from the member list whose cached
+  memberships do not already say the same is marked stale, so the next
+  `initgroups` (`id`) refetches the user.
+
+Each check reads only the entries named in the change, by primary key, and
+logs at debug when it marks one.
+
 Background sweep at `refresh_expired_interval`, jittered, bounded by
 `refresh_rate`. Singleflight per `(method, key)`; use `golang.org/x/sync`
 only if already a dependency, else a small local implementation.

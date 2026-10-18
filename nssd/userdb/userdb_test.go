@@ -958,3 +958,338 @@ func TestGroupNameCollision(t *testing.T) {
 		t.Fatalf("should clear the lists on SIGHUP, got %+v", s.Groups)
 	}
 }
+
+// ops is the group the coherence tests move users in and out of.
+var ops = apitypes.NSSMembership{GID: 5103, Name: "ops"}
+
+// putGroup caches resp at the fixture's now, as a group lookup would, or
+// as a stub filled from a user's memberships when members is false.
+func putGroup(t *testing.T, f *fixture, resp apitypes.NSSGroupResponse, members bool) {
+	t.Helper()
+	now := f.clock.Now()
+	e := cache.GroupEntry{Name: resp.Name, GID: resp.GID, Members: members, FetchedAt: now, ExpiresAt: now.Add(f.cfg.TTLGroup())}
+	if members {
+		e.Data = mustJSON(t, resp)
+	}
+	if err := f.store.PutGroup(t.Context(), e); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// putUser caches a user answer with groups at the fixture's now; stale
+// makes the next lookup refetch it.
+func putUser(t *testing.T, f *fixture, name string, uid uint32, groups []apitypes.NSSMembership, stale bool) {
+	t.Helper()
+	resp := userResp(name, uid, apitypes.NSSStatusActive)
+	resp.Groups = groups
+	now := f.clock.Now()
+	e := cache.UserEntry{Name: name, UID: uid, GID: uid, Data: mustJSON(t, resp), FetchedAt: now, ExpiresAt: now.Add(f.cfg.TTLUser()), Stale: stale}
+	if err := f.store.PutUser(t.Context(), e); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// groupStale reports whether the cached group named name is marked stale.
+func groupStale(t *testing.T, f *fixture, name string) bool {
+	t.Helper()
+	e, err := f.store.GroupByName(t.Context(), name)
+	if err != nil || e == nil {
+		t.Fatalf("group %s: %+v, %v", name, e, err)
+	}
+	return e.Stale
+}
+
+// userStale reports whether the cached user named name is marked stale.
+func userStale(t *testing.T, f *fixture, name string) bool {
+	t.Helper()
+	e, err := f.store.UserByName(t.Context(), name)
+	if err != nil || e == nil {
+		t.Fatalf("user %s: %+v, %v", name, e, err)
+	}
+	return e.Stale
+}
+
+// withStore runs body over a fixture on each kind of store.
+func withStore(t *testing.T, mutate func(*config.Config), body func(t *testing.T, f *fixture)) {
+	t.Helper()
+	for _, kind := range []string{"memory", "sqlite"} {
+		t.Run(kind, func(t *testing.T) {
+			f := newFixture(t, mutate)
+			if kind == "sqlite" {
+				s, err := cache.OpenSQLite(t.Context(), t.TempDir()+"/cache.db")
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = s.Close() })
+				f.store, f.d.store = s, s
+			}
+			body(t, f)
+		})
+	}
+}
+
+func TestFreshUserShouldMarkContradictedGroupsStale(t *testing.T) {
+	t.Parallel()
+	alice := apitypes.NSSMembership{GID: 5001, Name: "alice"}
+	devs := apitypes.NSSMembership{GID: 5100, Name: "devs"}
+	// users collides with the local users group, so the policy drops it.
+	users := apitypes.NSSMembership{GID: 2005, Name: "users"}
+
+	tests := []struct {
+		name          string
+		group         apitypes.NSSGroupResponse
+		stub          bool
+		prev          []apitypes.NSSMembership // nil: alice not cached before
+		fresh         []apitypes.NSSMembership
+		ignoreMembers bool
+		wantStale     bool
+	}{
+		{name: "should mark the group when a first fetch joins it and its cached list lacks the user", group: apitypes.NSSGroupResponse{Name: "ops", GID: 5103, Members: []string{"mnestor"}}, fresh: []apitypes.NSSMembership{alice, devs, ops}, wantStale: true},
+		{name: "should mark the group when a refetch joins it and its cached list lacks the user", group: apitypes.NSSGroupResponse{Name: "ops", GID: 5103, Members: []string{"mnestor"}}, prev: []apitypes.NSSMembership{alice, devs}, fresh: []apitypes.NSSMembership{alice, devs, ops}, wantStale: true},
+		{name: "should mark the group when a refetch leaves it and its cached list still names the user", group: apitypes.NSSGroupResponse{Name: "ops", GID: 5103, Members: []string{"mnestor", "alice"}}, prev: []apitypes.NSSMembership{alice, devs, ops}, fresh: []apitypes.NSSMembership{alice, devs}, wantStale: true},
+		{name: "should not mark the group when the memberships are unchanged and agree", group: apitypes.NSSGroupResponse{Name: "ops", GID: 5103, Members: []string{"mnestor", "alice"}}, prev: []apitypes.NSSMembership{alice, devs, ops}, fresh: []apitypes.NSSMembership{alice, devs, ops}},
+		{name: "should not mark the group again when an unchanged membership still disagrees", group: apitypes.NSSGroupResponse{Name: "ops", GID: 5103, Members: []string{"mnestor"}}, prev: []apitypes.NSSMembership{alice, devs, ops}, fresh: []apitypes.NSSMembership{alice, devs, ops}},
+		{name: "should not mark the group when a joined group's cached list already names the user", group: apitypes.NSSGroupResponse{Name: "ops", GID: 5103, Members: []string{"alice"}}, fresh: []apitypes.NSSMembership{alice, ops}},
+		{name: "should not mark the group when a left group's cached list already lacks the user", group: apitypes.NSSGroupResponse{Name: "ops", GID: 5103, Members: []string{"mnestor"}}, prev: []apitypes.NSSMembership{alice, ops}, fresh: []apitypes.NSSMembership{alice}},
+		{name: "should not mark the group when the policy drops the membership", group: apitypes.NSSGroupResponse{Name: "users", GID: 2005, Members: []string{"mnestor"}}, fresh: []apitypes.NSSMembership{alice, users}},
+		{name: "should not mark the group when it is the user's primary group", group: apitypes.NSSGroupResponse{Name: "alice", GID: 5001, Members: []string{}}, fresh: []apitypes.NSSMembership{alice, devs}},
+		{name: "should not mark the group when only a stub is cached", group: apitypes.NSSGroupResponse{Name: "ops", GID: 5103}, stub: true, fresh: []apitypes.NSSMembership{alice, ops}},
+		{name: "should not mark the group when its truncated list lacks the user", group: apitypes.NSSGroupResponse{Name: "ops", GID: 5103, Members: []string{"mnestor"}, MembersTruncated: true}, fresh: []apitypes.NSSMembership{alice, ops}},
+		{name: "should mark the group when its truncated list still names a user who left", group: apitypes.NSSGroupResponse{Name: "ops", GID: 5103, Members: []string{"alice"}, MembersTruncated: true}, prev: []apitypes.NSSMembership{alice, ops}, fresh: []apitypes.NSSMembership{alice}, wantStale: true},
+		{name: "should not mark the group when ignore_group_members is set", group: apitypes.NSSGroupResponse{Name: "ops", GID: 5103, Members: []string{"mnestor"}}, fresh: []apitypes.NSSMembership{alice, ops}, ignoreMembers: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			withStore(t, func(c *config.Config) { c.IgnoreGroupMembers = tt.ignoreMembers }, func(t *testing.T, f *fixture) {
+				putGroup(t, f, tt.group, !tt.stub)
+				if tt.prev != nil {
+					putUser(t, f, "alice", 5001, tt.prev, true)
+				}
+				f.up.users["alice"].Groups = tt.fresh
+				if r := one(t, f.call(t, MethodGetUserRecord, p("userName", "alice"), userPeer, false)); r.Error != "" {
+					t.Fatalf("got %s", r.Error)
+				}
+				if got := groupStale(t, f, tt.group.Name); got != tt.wantStale {
+					t.Fatalf("group stale %v, want %v", got, tt.wantStale)
+				}
+				c, err := f.store.Counts(t.Context())
+				if want := map[bool]int{true: 1, false: 0}[tt.wantStale]; err != nil || c.StaleGroups != want || c.StaleUsers != 0 {
+					t.Fatalf("got counts %+v, %v; want %d stale groups and no stale user", c, err, want)
+				}
+			})
+		})
+	}
+}
+
+func TestFreshUserShouldMarkGroupsStaleWhenAnyPathFetchesIt(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		fetch func(t *testing.T, f *fixture)
+	}{
+		{name: "should mark the group when a lookup fetches the user", fetch: func(t *testing.T, f *fixture) {
+			f.clock.Advance(f.cfg.TTLUser())
+			f.call(t, MethodGetUserRecord, p("userName", "alice"), userPeer, false)
+		}},
+		{name: "should mark the group when a background refresh fetches the user", fetch: func(t *testing.T, f *fixture) {
+			f.d.refresh(t.Context(), userKey{name: "alice"}.String())
+		}},
+		{name: "should mark the group when an sshd login refreshes the user", fetch: func(t *testing.T, f *fixture) {
+			f.clock.Advance(2 * time.Minute)
+			f.call(t, MethodGetUserRecord, p("userName", "alice"), sshdPeer, false)
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			f := newFixture(t, nil)
+			f.call(t, MethodGetUserRecord, p("userName", "alice"), userPeer, false)
+			putGroup(t, f, apitypes.NSSGroupResponse{Name: "ops", GID: 5103, Members: []string{"mnestor"}}, true)
+			f.up.users["alice"].Groups = append(f.up.users["alice"].Groups, ops)
+			tt.fetch(t, f)
+			if !groupStale(t, f, "ops") {
+				t.Fatal("should mark the group stale")
+			}
+			if !strings.Contains(f.logs.String(), "marked a cache entry stale") {
+				t.Fatalf("should log the marking at debug, got %s", f.logs)
+			}
+		})
+	}
+}
+
+func TestStaleGroupShouldListANewMemberWhenTheUserJoinedIt(t *testing.T) {
+	t.Parallel()
+	withStore(t, nil, func(t *testing.T, f *fixture) {
+		// The owner's case: all-users cached with mnestor only, then the
+		// user is added in the directory and fetched fresh.
+		f.up.groups["ops"] = &apitypes.NSSGroupResponse{Name: "ops", GID: 5103, Members: []string{"mnestor"}}
+		f.call(t, MethodGetMemberships, p("groupName", "ops"), rootPeer, true)
+		f.up.groups["ops"] = &apitypes.NSSGroupResponse{Name: "ops", GID: 5103, Members: []string{"mnestor", "alice"}}
+		f.up.users["alice"].Groups = append(f.up.users["alice"].Groups, ops)
+		f.call(t, MethodGetUserRecord, p("userName", "alice"), userPeer, false)
+		before := f.up.callCount()
+		var got []string
+		for _, r := range f.call(t, MethodGetMemberships, p("groupName", "ops"), rootPeer, true) {
+			var m membershipReply
+			if err := json.Unmarshal(r.Parameters, &m); err != nil || r.Error != "" {
+				t.Fatalf("reply %+v, %v", r, err)
+			}
+			got = append(got, m.UserName)
+		}
+		if f.up.callCount() != before+1 || strings.Join(got, ",") != "mnestor,alice" {
+			t.Fatalf("got members %v after %d calls, want a refetch listing alice", got, f.up.callCount()-before)
+		}
+		if groupStale(t, f, "ops") {
+			t.Fatal("the refetched entry should not be stale")
+		}
+	})
+}
+
+func TestStaleGroupShouldStillBeServedWhenTheServerIsUnreachable(t *testing.T) {
+	t.Parallel()
+	withStore(t, nil, func(t *testing.T, f *fixture) {
+		putGroup(t, f, apitypes.NSSGroupResponse{Name: "ops", GID: 5103, Members: []string{"mnestor"}}, true)
+		f.up.users["alice"].Groups = append(f.up.users["alice"].Groups, ops)
+		f.call(t, MethodGetUserRecord, p("userName", "alice"), userPeer, false)
+		if !groupStale(t, f, "ops") {
+			t.Fatal("should mark the group stale")
+		}
+		f.up.setErr(upstream.ErrOffline)
+		before := f.up.callCount()
+		replies := f.call(t, MethodGetMemberships, p("groupName", "ops"), rootPeer, true)
+		if r := one(t, replies); r.Error != "" || !strings.Contains(string(r.Parameters), `"mnestor"`) {
+			t.Fatalf("got %+v, want the cached member list", r)
+		}
+		if f.up.callCount() != before+1 || !groupStale(t, f, "ops") {
+			t.Fatal("should have tried the server and kept the entry stale")
+		}
+	})
+}
+
+func TestForgottenUserShouldMarkTheGroupsListingItStale(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, nil)
+	f.up.users["alice"].Groups = append(f.up.users["alice"].Groups, ops)
+	f.call(t, MethodGetUserRecord, p("userName", "alice"), userPeer, false)
+	putGroup(t, f, apitypes.NSSGroupResponse{Name: "ops", GID: 5103, Members: []string{"alice"}}, true)
+	delete(f.up.users, "alice")
+	f.clock.Advance(f.cfg.TTLUser())
+	if got := errorOf(t, f.call(t, MethodGetUserRecord, p("userName", "alice"), userPeer, false)); got != ErrorNoRecordFound {
+		t.Fatalf("got %q", got)
+	}
+	if !groupStale(t, f, "ops") {
+		t.Fatal("should mark a group still listing a removed user stale")
+	}
+}
+
+func TestFreshGroupShouldMarkContradictedUsersStale(t *testing.T) {
+	t.Parallel()
+	devs := apitypes.NSSMembership{GID: 5100, Name: "devs"}
+	own := func(name string, uid uint32) apitypes.NSSMembership {
+		return apitypes.NSSMembership{GID: uid, Name: name}
+	}
+
+	tests := []struct {
+		name      string
+		prev      *apitypes.NSSGroupResponse // nil: no full entry before
+		stub      bool
+		fresh     []string
+		users     map[string][]apitypes.NSSMembership // cached users and their groups
+		wantStale []string
+	}{
+		{
+			name:  "should mark an added and a removed member when neither cached user agrees",
+			prev:  &apitypes.NSSGroupResponse{Name: "devs", GID: 5100, Members: []string{"alice", "carol"}},
+			fresh: []string{"carol", "erin"},
+			users: map[string][]apitypes.NSSMembership{
+				"alice": {own("alice", 5001), devs}, "carol": {own("carol", 5003), devs}, "erin": {own("erin", 5005)},
+			},
+			wantStale: []string{"alice", "erin"},
+		},
+		{
+			name:  "should not mark members whose cached groups already agree",
+			prev:  &apitypes.NSSGroupResponse{Name: "devs", GID: 5100, Members: []string{"alice", "carol"}},
+			fresh: []string{"carol", "erin"},
+			users: map[string][]apitypes.NSSMembership{
+				"alice": {own("alice", 5001)}, "carol": {own("carol", 5003), devs}, "erin": {own("erin", 5005), devs},
+			},
+		},
+		{
+			name:  "should not mark anyone when the member list is unchanged",
+			prev:  &apitypes.NSSGroupResponse{Name: "devs", GID: 5100, Members: []string{"alice", "carol"}},
+			fresh: []string{"alice", "carol"},
+			users: map[string][]apitypes.NSSMembership{"alice": {own("alice", 5001)}, "carol": {own("carol", 5003)}},
+		},
+		{
+			name:  "should not mark anyone when only a stub was cached",
+			prev:  &apitypes.NSSGroupResponse{Name: "devs", GID: 5100},
+			stub:  true,
+			fresh: []string{"carol", "erin"},
+			users: map[string][]apitypes.NSSMembership{"alice": {own("alice", 5001), devs}, "erin": {own("erin", 5005)}},
+		},
+		{
+			name:  "should not mark anyone when nothing was cached",
+			fresh: []string{"carol", "erin"},
+			users: map[string][]apitypes.NSSMembership{"erin": {own("erin", 5005)}},
+		},
+		{
+			name:  "should skip a changed member when the user is not cached",
+			prev:  &apitypes.NSSGroupResponse{Name: "devs", GID: 5100, Members: []string{"alice"}},
+			fresh: []string{"alice", "erin"},
+			users: map[string][]apitypes.NSSMembership{"alice": {own("alice", 5001), devs}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			withStore(t, nil, func(t *testing.T, f *fixture) {
+				uids := map[string]uint32{"alice": 5001, "carol": 5003, "erin": 5005}
+				for name, groups := range tt.users {
+					putUser(t, f, name, uids[name], groups, false)
+				}
+				if tt.prev != nil {
+					putGroup(t, f, *tt.prev, !tt.stub)
+				}
+				f.up.groups["devs"] = &apitypes.NSSGroupResponse{Name: "devs", GID: 5100, Members: tt.fresh}
+				f.d.refresh(t.Context(), groupKey{name: "devs"}.String())
+				var got []string
+				for _, name := range []string{"alice", "carol", "erin"} {
+					if _, cached := tt.users[name]; cached && userStale(t, f, name) {
+						got = append(got, name)
+					}
+				}
+				if strings.Join(got, ",") != strings.Join(tt.wantStale, ",") {
+					t.Fatalf("got stale users %v, want %v", got, tt.wantStale)
+				}
+				if groupStale(t, f, "devs") {
+					t.Fatal("the fetched group should not be stale")
+				}
+			})
+		})
+	}
+}
+
+func TestStaleUserShouldDropARemovedGroupWhenIDAsksNext(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, nil)
+	f.call(t, MethodGetUserRecord, p("userName", "alice"), userPeer, false)
+	f.call(t, MethodGetMemberships, p("groupName", "devs"), rootPeer, true)
+	// alice leaves devs in the directory; the group is refetched first.
+	f.up.groups["devs"] = &apitypes.NSSGroupResponse{Name: "devs", GID: 5100, Members: []string{"carol"}}
+	f.up.users["alice"].Groups = []apitypes.NSSMembership{{GID: 5001, Name: "alice"}}
+	f.d.refresh(t.Context(), groupKey{name: "devs"}.String())
+	// initgroups, as `id alice` runs it.
+	var got []string
+	for _, r := range f.call(t, MethodGetMemberships, p("userName", "alice"), rootPeer, true) {
+		var m membershipReply
+		if err := json.Unmarshal(r.Parameters, &m); err != nil || r.Error != "" {
+			t.Fatalf("reply %+v, %v", r, err)
+		}
+		got = append(got, m.GroupName)
+	}
+	if strings.Join(got, ",") != "alice" {
+		t.Fatalf("got groups %v, want the refetched list without devs", got)
+	}
+}

@@ -346,6 +346,17 @@ lifetime (`entry_cache_nowait_percentage`), refreshed in the background after
 that, and expires at `entry_cache_timeout` (90 minutes); in persistent mode a
 background sweep refreshes ageing entries as well.
 
+**A user's groups and a group's members are kept in step** *(added
+2026-10-18)*. Both the user record (`id alice`) and the group record
+(`getent group devs`) say who is in a group, and each is cached on its own
+lifetime. When the daemon fetches a user and finds a membership added or
+removed that a cached group's member list does not reflect yet, it marks
+that group stale, and the next lookup of the group fetches it again; the
+same holds the other way round, for users added to or removed from a group
+fetched fresh. So after `id alice` shows a new group, `getent group` for it
+lists alice on its next lookup rather than after the group's own lifetime.
+A stale entry is still answered while the server is unreachable.
+
 **`sudo` in an open session uses the host cache.** Only `sshd` triggers the
 synchronous refresh; `sudo`, `su` and everything else are answered from the
 cache, and the session's own group list was set at login. To make a change
