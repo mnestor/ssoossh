@@ -61,6 +61,22 @@
 # systemd's own call timeout.
 #socket_answer_deadline: 2.5s
 
+# The most userdb connections served at once. A quarter of them only uid 0
+# callers may take (sshd, logind, sudo and su, systemd-userdbd), so a local
+# user who floods the socket cannot stop logins and sudo from resolving
+# directory users. A connection over the cap is answered "service not
+# available", which callers see as "not found", and the journal says so
+# once a minute with a count. Must be at least 4. The service unit's
+# LimitNOFILE, MemoryMax and TasksMax are sized for 1024; raise them with a
+# drop-in when raising this.
+#socket_max_connections: 1024
+
+# The total time a userdb connection may spend waiting for calls, over its
+# whole life. A call never resets it and a call being answered never counts
+# against it. Callers send one call and close, so this only ends
+# connections kept open on purpose. Must be at least 1s.
+#socket_idle_timeout: 10s
+
 # --- cache ----------------------------------------------------------------
 
 # persistent keeps the cache in /var/lib/ssoossh-nss/cache.db across

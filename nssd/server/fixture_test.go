@@ -223,7 +223,11 @@ func start(t *testing.T, peers PeerInspector, mutate func(*config.Config)) *fixt
 	if peers == nil {
 		peers = ProcInspector{}
 	}
-	f.srv = New(Options{Daemon: f.daemon, Peers: peers, SSHDUnits: cfg.SSHDUnits, AnswerDeadline: cfg.SocketAnswerDeadline, ReadTimeout: 100 * time.Millisecond, Log: log})
+	f.srv = New(Options{
+		Daemon: f.daemon, Peers: peers, SSHDUnits: cfg.SSHDUnits, AnswerDeadline: cfg.SocketAnswerDeadline,
+		ReadTimeout: 100 * time.Millisecond, MaxConnections: cfg.SocketMaxConnections, IdleTimeout: cfg.SocketIdleTimeout,
+		Now: f.clock.Now, Log: log,
+	})
 
 	f.socket = filepath.Join(dir, "userdb.sock")
 	f.admin = filepath.Join(dir, "run", "admin.sock")

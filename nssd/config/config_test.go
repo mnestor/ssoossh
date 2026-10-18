@@ -40,7 +40,8 @@ func TestLoadShouldApplyDefaultsWhenTheFileSetsOnlyTheServer(t *testing.T) {
 	want := Defaults()
 	if c.Timeout != want.Timeout || c.EntryCacheTimeout != 90*time.Minute || c.MinID != 1000 ||
 		c.CacheMode != CacheModePersistent || !slices.Equal(c.FilterUsers, []string{"root"}) ||
-		c.APIKeyFile != DefaultKeyPath || c.SocketAnswerDeadline != 2500*time.Millisecond {
+		c.APIKeyFile != DefaultKeyPath || c.SocketAnswerDeadline != 2500*time.Millisecond ||
+		c.SocketMaxConnections != 1024 || c.SocketIdleTimeout != 10*time.Second {
 		t.Fatalf("defaults not applied: %+v", c)
 	}
 }
@@ -57,6 +58,8 @@ timeout: 3s
 reconnection_retries: 1
 offline_timeout: 30
 socket_answer_deadline: 2s
+socket_max_connections: 256
+socket_idle_timeout: 30
 cache_mode: memory
 entry_cache_timeout: 600
 entry_cache_user_timeout: 300s
@@ -110,6 +113,7 @@ require_groups: [staff]
 		{"group ttl", c.TTLGroup() == 1500*time.Millisecond},
 		{"explicit sweep", c.SweepInterval() == time.Minute},
 		{"sshd units", slices.Equal(c.SSHDUnits, []string{"sshd.service"})},
+		{"connection limits", c.SocketMaxConnections == 256 && c.SocketIdleTimeout == 30*time.Second},
 	}
 	for _, check := range checks {
 		if !check.ok {
@@ -217,6 +221,12 @@ func TestValidate(t *testing.T) {
 		{name: "should refuse a negative soft TTL when it must not be negative", mutate: func(c *Config) { c.LoginSoftTTL = -1 }, wantErr: "login_soft_ttl"},
 		{name: "should refuse a 45s deadline when systemd gives up then", mutate: func(c *Config) { c.SocketAnswerDeadline = 45 * time.Second }, wantErr: "under 45s"},
 		{name: "should refuse a login refresh longer than the deadline when it could never finish", mutate: func(c *Config) { c.LoginRefreshTimeout = 3 * time.Second }, wantErr: "login_refresh_timeout must not exceed"},
+		{name: "should accept the smallest cap when a slot is still kept for uid 0", mutate: func(c *Config) { c.SocketMaxConnections = 4 }},
+		{name: "should refuse a cap under 4 when no slot would be kept for uid 0", mutate: func(c *Config) { c.SocketMaxConnections = 3 }, wantErr: "socket_max_connections must be at least 4"},
+		{name: "should refuse a zero cap when no connection could be served", mutate: func(c *Config) { c.SocketMaxConnections = 0 }, wantErr: "socket_max_connections"},
+		{name: "should accept a 1s idle timeout when it equals the read timeout", mutate: func(c *Config) { c.SocketIdleTimeout = time.Second }},
+		{name: "should refuse an idle timeout under 1s when it could cut a call still arriving", mutate: func(c *Config) { c.SocketIdleTimeout = 999 * time.Millisecond }, wantErr: "socket_idle_timeout must be at least 1s"},
+		{name: "should refuse a negative idle timeout when it must be at least 1s", mutate: func(c *Config) { c.SocketIdleTimeout = -1 }, wantErr: "socket_idle_timeout"},
 		{name: "should refuse negative retries when they must not be negative", mutate: func(c *Config) { c.ReconnectionRetries = -1 }, wantErr: "reconnection_retries"},
 		{name: "should refuse a nowait over 100 when it is a percentage", mutate: func(c *Config) { c.EntryCacheNowaitPercentage = 101 }, wantErr: "nowait"},
 		{name: "should refuse a zero refresh rate when it must be positive", mutate: func(c *Config) { c.RefreshRate = 0 }, wantErr: "refresh_rate"},
