@@ -326,7 +326,7 @@ identity whose provider releases no email claim.
 
 ## Notification kinds
 
-Eight kinds. Every one ships three templates, named
+Fourteen kinds. Every one ships three templates, named
 `<kind>.subject.tmpl`, `<kind>.txt.tmpl` and `<kind>.html.tmpl`.
 
 | Kind | Trigger | Recipients | Default |
@@ -339,6 +339,12 @@ Eight kinds. Every one ships three templates, named
 | `pam_certificate_issued` | a certificate is signed for a local `sudo` or `su` on your behalf | the person the certificate is for | off |
 | `console_certificate_issued` | a certificate is signed for a console login you approved with a typed code | the person who approved | off |
 | `admin_auto_disabled` | the directory sync disables an account whose most recent login held the admin role | the admin whose account was disabled | always sent |
+| `nss_key_expiring` | an NSS fleet key is close to expiring: weekly inside the reminder window, then daily over the final week | the key's notification address | always sent |
+| `nss_key_rotation_cleanup` | after `mail.rotation_quiet_period`, daily while any host still presents a rotated key's previous secret and its grace lasts | the key's notification address | always sent |
+| `nss_key_expired_attempt` | a host presents an expired fleet key, at most once per `mail.expired_attempt_window` | the key's notification address | always sent |
+| `nss_key_revoked_attempt` | a host presents a revoked fleet key, at most once per `mail.expired_attempt_window` | the key's notification address | always sent |
+| `nss_key_rotated` | a fleet key is rotated | the key's notification address | always sent |
+| `nss_key_revoked` | a fleet key is revoked | the key's notification address | always sent |
 
 <!-- BEGIN GENERATED NOTIFICATION REFERENCE -->
 
