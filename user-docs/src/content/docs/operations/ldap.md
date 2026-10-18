@@ -30,9 +30,12 @@ which is why the configuration is validated at startup rather than left to be
 discovered.
 
 **Only known users sync.** A user must have logged in at least once to
-participate in enrichment refresh, sync, or group capture. The server never
+participate in enrichment refresh, sync, or group capture. Enrichment never
 enumerates the directory, which keeps the user set self-selecting and leaves
-fan-out building on a bounded, consented population.
+fan-out building on a bounded, consented population. The
+[NSS directory](/ssoossh/operations/nss/) is the one exception, and a
+separate sync: with `nss.enabled` it stores every POSIX entry its filters
+select, whether or not anyone has logged in.
 
 ### Switching the directory off
 
