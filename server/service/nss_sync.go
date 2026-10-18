@@ -212,7 +212,7 @@ func (s *NSSDirectoryService) syncAccounts(ctx context.Context, conn ldapConn, r
 		s.syncAccount(ctx, conn, result, account, duplicates(account), disabledDNs)
 	}
 
-	if !result.Full {
+	if !result.Full || !s.completeRun(ctx, accountTable(), counts) {
 		return nil
 	}
 	start := result.StartedAt
@@ -220,6 +220,19 @@ func (s *NSSDirectoryService) syncAccounts(ctx context.Context, conn ldapConn, r
 		return err
 	}
 	return s.sweepCollisions(ctx, accountTable(), start)
+}
+
+// completeRun reports whether a full run may draw conclusions from what it
+// did not see. An entry it read but could not write still has its old
+// last_synced_at, and would read as missing, so a run with any such entry
+// marks nothing missing and clears no collision for that table.
+func (s *NSSDirectoryService) completeRun(ctx context.Context, t nssTable, counts *NSSSyncCounts) bool {
+	if counts.Failed == 0 {
+		return true
+	}
+	s.log.WarnContext(ctx, "the full NSS sync could not write every entry it read; nothing was marked missing",
+		"table", t.table, "failed", counts.Failed)
+	return false
 }
 
 // syncAccount stores one account a run read and counts the outcome. A
@@ -309,7 +322,7 @@ func (s *NSSDirectoryService) syncGroups(ctx context.Context, conn ldapConn, res
 		s.log.DebugContext(ctx, "group members that are not stored accounts were left out", "members", index.skipped)
 	}
 
-	if !result.Full {
+	if !result.Full || !s.completeRun(ctx, groupTable(), counts) {
 		return nil
 	}
 	start := result.StartedAt

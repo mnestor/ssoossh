@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-ldap/ldap/v3"
+	"gorm.io/gorm"
 
 	"github.com/mnestor/ssoossh/server/model"
 )
@@ -361,7 +362,7 @@ func TestNSSFullSync_ShouldWithholdANewEntryWhenATombstoneHoldsItsName(t *testin
 		t.Errorf("refused = %d, want the new alice refused while the tombstone holds the name", result.Accounts.Refused)
 	}
 
-	if err := h.svc.PurgeUserTombstone(t.Context(), 1, nil); err != nil {
+	if _, err := h.svc.PurgeUserTombstone(t.Context(), 1, nil); err != nil {
 		t.Fatalf("PurgeUserTombstone() error = %v", err)
 	}
 	h.clock.advance(time.Hour)
@@ -649,5 +650,34 @@ func TestNSSDirectoryService_ShouldDoNothingWhenNSSIsDisabled(t *testing.T) {
 	var nf interface{ HTTPStatusCode() int }
 	if _, _, err := svc.PendingIDChanges(ctx); !errors.As(err, &nf) || nf.HTTPStatusCode() != 404 {
 		t.Errorf("PendingIDChanges() error = %v, want a 404", err)
+	}
+}
+
+func TestNSSFullSync_ShouldMarkNothingMissingWhenAnEntryCouldNotBeWritten(t *testing.T) {
+	t.Parallel()
+
+	h := newNSSHarness(t, nil)
+	h.dir.put(nssAccountEntry("", "ada", 1, 1, nil))
+	h.dir.put(nssAccountEntry("", "bob", 2, 2, nil))
+	h.fullSync(t)
+
+	// The next run can read ada but not write her row; bob has gone.
+	h.dir.put(nssAccountEntry("", "ada", 1, 1, map[string][]string{"displayName": {"changed"}}))
+	h.dir.remove("uid=bob,ou=people,dc=test")
+	if err := h.db.Callback().Update().Before("gorm:update").Register("test:fail-ada", func(db *gorm.DB) {
+		if updates, ok := db.Statement.Dest.(map[string]any); ok && updates["gecos"] == "changed" {
+			_ = db.AddError(errors.New("disk full"))
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	h.clock.advance(time.Hour)
+	result := h.fullSync(t)
+	if result.Accounts.Failed != 1 {
+		t.Fatalf("failed = %d, want ada's write to fail", result.Accounts.Failed)
+	}
+	if bob := h.accountByName(t, "bob"); bob.MissingSince != nil {
+		t.Errorf("bob missing_since = %v, want nothing marked missing after a failed write", bob.MissingSince)
 	}
 }
