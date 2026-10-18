@@ -7,7 +7,11 @@ userdb on 2026-10-11 and that part was removed (U1). Reviewed again on
 requirement, names stored verbatim, status derived, attribute mapping and
 a gecos template added (see [Review changes
 (2026-10-17)](#review-changes-2026-10-17)). Decisions taken 2026-10-09 to
-2026-10-17 (see [Decisions](#decisions)). Nothing built.
+2026-10-18 (see [Decisions](#decisions)). Built on 2026-10-18 under
+issue #200, all three parts; where the code and this design differ, the
+code and the user docs (`hosts/nss`, `operations/nss`) are current, and
+the differences found while building are recorded here as decisions and
+open check results.
 
 **Anchors verified at:** `bdb5b175` (2026-10-17) for this repo; systemd
 `main` (2026-10-17) for nss-systemd and userdb behaviour. `file:line`
