@@ -110,20 +110,25 @@ export function isAccountCollision(kind: string): boolean {
 	return kind === NSSCollisionKind.UID || kind === NSSCollisionKind.UserName;
 }
 
-/** collisionLabel names what two entries contend for: "uid 10001", "group name ops". */
-export function collisionLabel(kind: string, value: string): string {
+/** collisionNoun names the kind of value two entries contend for: "uid", "group name". */
+export function collisionNoun(kind: string): string {
 	switch (kind) {
 		case NSSCollisionKind.UID:
-			return `uid ${value}`;
+			return 'uid';
 		case NSSCollisionKind.GID:
-			return `gid ${value}`;
+			return 'gid';
 		case NSSCollisionKind.UserName:
-			return `account name ${value}`;
+			return 'account name';
 		case NSSCollisionKind.GroupName:
-			return `group name ${value}`;
+			return 'group name';
 		default:
-			return `${kind} ${value}`;
+			return kind;
 	}
+}
+
+/** collisionLabel names what two entries contend for: "uid 10001", "group name ops". */
+export function collisionLabel(kind: string, value: string): string {
+	return `${collisionNoun(kind)} ${value}`;
 }
 
 /**

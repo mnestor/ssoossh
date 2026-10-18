@@ -470,7 +470,7 @@
 						>{key.name}</span
 					>
 				</div>
-				<CopyableId value={key.id} label="Key id" length={8} testid="nss-key-id" />
+				<CopyableId value={key.id} label="Key id" length={key.id.length} testid="nss-key-id" />
 			</div>
 			{#if !mayRotate && !mayRevoke && !mayEdit && !revoked}
 				<p class="text-dense text-ink-muted" data-testid="nss-key-readonly">
@@ -597,8 +597,8 @@
 					{/if}
 				</DetailRow>
 				<DetailRow label="Created">
-					{formatDateTime(key.created_at)}{#if key.created_by_username}
-						by <span class="font-mono">{key.created_by_username}</span>{/if}
+					{formatDateTime(key.created_at)}{#if key.created_by_username}{' '}by
+						<span class="font-mono">{key.created_by_username}</span>{/if}
 				</DetailRow>
 			</dl>
 		</PageSection>
@@ -632,7 +632,7 @@
 									<th scope="col">Secret</th>
 									<th scope="col" class="text-right">Lookups</th>
 									<th scope="col" class="text-right">Misses</th>
-									<th scope="col">Seen</th>
+									<th scope="col" class="max-sm:hidden">Seen</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -655,7 +655,7 @@
 												>({formatPercent(missRate(row.lookups, row.misses))})</span
 											>
 										</td>
-										<td class="whitespace-nowrap text-ink-muted">
+										<td class="whitespace-nowrap text-ink-muted max-sm:hidden">
 											{timeOfDay(row.first_seen)} to {timeOfDay(row.last_seen)}
 										</td>
 									</tr>

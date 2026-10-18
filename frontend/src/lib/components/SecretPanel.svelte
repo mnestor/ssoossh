@@ -93,28 +93,30 @@
 			</p>
 		</div>
 
-		<dl class="flex flex-col divide-y divide-border-subtle">
-			{#each values as item (item.id)}
-				<div class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
-					<dt class="w-20 shrink-0 text-dense text-ink-muted">{item.label}</dt>
-					<dd class="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-2">
-						<span
-							class="min-w-0 font-mono text-dense break-all text-ink select-all"
-							data-testid="{testid}-{item.id}">{item.value}</span
-						>
-						{@render copyButton(item.id, item.label, item.value)}
-					</dd>
-				</div>
-			{/each}
-		</dl>
+		<div class="flex flex-col gap-1">
+			<dl class="flex flex-col divide-y divide-border-subtle">
+				{#each values as item (item.id)}
+					<div class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
+						<dt class="w-20 shrink-0 text-dense text-ink-muted">{item.label}</dt>
+						<dd class="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-2">
+							<span
+								class="min-w-0 font-mono text-dense break-all text-ink select-all"
+								data-testid="{testid}-{item.id}">{item.value}</span
+							>
+							{@render copyButton(item.id, item.label, item.value)}
+						</dd>
+					</div>
+				{/each}
+			</dl>
 
-		<!-- Always in the document, so the live region exists before it
-		     speaks. -->
-		<p role="status" class="text-xs text-danger" data-testid="{testid}-copy-failed">
-			{#if failed}
-				Copy failed. Select the value above and copy it by hand.
-			{/if}
-		</p>
+			<!-- Always in the document, so the live region exists before it
+			     speaks. -->
+			<p role="status" class="text-xs text-danger" data-testid="{testid}-copy-failed">
+				{#if failed}
+					Copy failed. Select the value above and copy it by hand.
+				{/if}
+			</p>
+		</div>
 
 		{#if previousExpiresAt}
 			<p class="text-dense text-ink" data-testid="{testid}-grace">

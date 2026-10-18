@@ -69,10 +69,14 @@
 		return rows
 			.filter((row) => needle === '' || row.source_ip.includes(needle))
 			.sort((a, b) => {
-				if (sort === 'address')
-					return a.source_ip.localeCompare(b.source_ip, undefined, { numeric: true });
-				if (sort === 'lookups') return b.lookups - a.lookups;
-				return new Date(b.last_seen).getTime() - new Date(a.last_seen).getTime();
+				const byAddress = a.source_ip.localeCompare(b.source_ip, undefined, { numeric: true });
+				if (sort === 'address') return byAddress;
+				const primary =
+					sort === 'lookups'
+						? b.lookups - a.lookups
+						: new Date(b.last_seen).getTime() - new Date(a.last_seen).getTime();
+				// Ties read in address order, so 10.0.0.2 sits before 10.0.0.10.
+				return primary || byAddress;
 			});
 	}
 

@@ -181,7 +181,7 @@
 		{/if}
 	{:else if list}
 		<div class="flex flex-col gap-3">
-			<div class="flex flex-wrap items-end gap-x-6 gap-y-3">
+			<div class="flex flex-wrap items-end gap-x-6 gap-y-3 sm:items-center">
 				<FilterGroup
 					label="Status"
 					options={statusOptions}
@@ -190,12 +190,16 @@
 					testid="nss-keys-status-filter"
 				/>
 				{#if groups.length > 0}
-					<label class="flex flex-col gap-1">
-						<span class="text-xs font-semibold text-ink-muted">Group</span>
+					<!-- Laid out like the status group beside it: the name inline from
+					     `sm` up, above the field below it. -->
+					<label class="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
+						<span class="text-xs font-semibold text-ink-muted"
+							>Group<span class="max-sm:hidden">:</span></span
+						>
 						<select
 							bind:value={groupFilter}
 							data-testid="nss-keys-group-filter"
-							class="min-h-target rounded-md border border-border-control bg-surface px-3 text-dense text-ink hover:bg-surface-muted"
+							class="min-h-target rounded-md border border-border-control bg-surface px-3 text-base text-ink hover:bg-surface-muted sm:text-dense"
 						>
 							<option value="">Any group</option>
 							{#each groups as group (group)}
@@ -253,7 +257,7 @@
 										{#if sort === 'expiry'}<Icon name="chevron-down" size="xs" />{/if}
 									</button>
 								</th>
-								<th scope="col">Status</th>
+								<th scope="col" class="max-sm:hidden">Status</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -267,6 +271,11 @@
 											data-testid="nss-key-link">{key.name}</a
 										>
 										<div class="font-mono text-xs text-ink-muted">{key.id}</div>
+										<!-- Below `sm` the status column folds in here, so the
+										     table fits a phone without scrolling. -->
+										<div class="mt-1 sm:hidden">
+											<KeyStatusBadge {status} testid="nss-key-status-narrow" />
+										</div>
 									</td>
 									<td
 										class="max-w-xs truncate text-ink-muted max-sm:hidden"
@@ -286,14 +295,19 @@
 											class="inline-flex items-center gap-1 {toneClass(key, status)}"
 											data-testid="nss-key-expiry"
 										>
-											{#if status !== 'revoked' && expiryTone(key.expires_at, now) === 'soon'}
-												<Icon name="alert-triangle" size="xs" />
+											{#if status === 'revoked'}
+												<!-- A revoked key's expiry no longer means anything. -->
+												no longer used
+											{:else}
+												{#if expiryTone(key.expires_at, now) === 'soon'}
+													<Icon name="alert-triangle" size="xs" />
+												{/if}
+												{remainingLabel(key.expires_at, now)}
 											{/if}
-											{remainingLabel(key.expires_at, now)}
 										</span>
 										<div class="text-xs text-ink-muted">{formatDateTime(key.expires_at)}</div>
 									</td>
-									<td><KeyStatusBadge {status} testid="nss-key-status" /></td>
+									<td class="max-sm:hidden"><KeyStatusBadge {status} testid="nss-key-status" /></td>
 								</tr>
 							{/each}
 						</tbody>

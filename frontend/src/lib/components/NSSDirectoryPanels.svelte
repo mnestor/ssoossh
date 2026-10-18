@@ -15,7 +15,7 @@
 	} from '#lib/api/types.js';
 	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
 	import { formatDateTime, formatDuration, relativeTime } from '#lib/format.js';
-	import { collisionLabel, isAccountCollision } from '#lib/nss.js';
+	import { collisionNoun, isAccountCollision } from '#lib/nss.js';
 	import Alert from './Alert.svelte';
 	import Button from './Button.svelte';
 	import ConfirmModal from './ConfirmModal.svelte';
@@ -306,7 +306,9 @@
 			No pending changes. A uid or gid that moves in the directory waits here for you.
 		</p>
 	{:else}
-		<div class="overflow-x-auto">
+		<!-- relative: the sr-only names inside are absolutely placed, and
+		     would otherwise widen the page past a phone. -->
+		<div class="relative overflow-x-auto">
 			<table class="data-table" data-testid="nss-pending-table">
 				<thead>
 					<tr>
@@ -384,7 +386,9 @@
 			No collisions. Every stored uid, gid and name belongs to one entry.
 		</p>
 	{:else}
-		<div class="overflow-x-auto">
+		<!-- relative: the sr-only names inside are absolutely placed, and
+		     would otherwise widen the page past a phone. -->
+		<div class="relative overflow-x-auto">
 			<table class="data-table" data-testid="nss-collisions-table">
 				<thead>
 					<tr>
@@ -399,7 +403,10 @@
 					{#each collisions as collision (`${collision.kind}|${collision.value}|${collision.other.dn}`)}
 						{@const tombstones = purgeable(collision)}
 						<tr data-testid="nss-collision-row">
-							<td class="whitespace-nowrap">{collisionLabel(collision.kind, collision.value)}</td>
+							<td class="whitespace-nowrap">
+								{collisionNoun(collision.kind)}
+								<span class="font-mono text-ink">{collision.value}</span>
+							</td>
 							<td>{@render entry(collision.holder, 'holder')}</td>
 							<td>{@render entry(collision.other, 'other')}</td>
 							<td class="whitespace-nowrap" title={formatDateTime(collision.first_seen_at)}>

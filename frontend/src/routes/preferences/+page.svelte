@@ -367,7 +367,7 @@
 					<LoadingBlock shape="lines" count={1} testid="login-shell-loading" />
 				{:else}
 					<label class="flex max-w-[420px] flex-col gap-1">
-						<span class="text-sm font-medium text-ink">Login shell</span>
+						<span class="text-sm font-medium text-ink">Shell</span>
 						<select
 							value={shownShell ?? ''}
 							onchange={(event) => chooseShell(event.currentTarget.value)}
