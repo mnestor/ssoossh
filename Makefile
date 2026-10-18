@@ -203,6 +203,14 @@ selinux-nss-check: ## Build the SELinux module and link it into the EL9 and EL10
 .PHONY: nss-integration
 nss-integration: ## Run the ssoosshd-nss integration jobs in docker
 	scripts/nss-integration.sh
+
+# The NSS end-to-end job, as the nss-integration workflow runs it: a
+# throwaway OpenLDAP, the real ssoosshd over HTTPS and ssoosshd-nss behind
+# nss-systemd, each in a Debian 12 container. Needs docker; see
+# scripts/nss-e2e.sh.
+.PHONY: nss-e2e
+nss-e2e: ## Run the NSS end-to-end job (OpenLDAP, ssoosshd, ssoosshd-nss) in docker
+	scripts/nss-e2e.sh
 # server/frontend embeds server/frontend/dist. The unit suite includes tests
 # that assert on real UI assets, so the UI has to exist first.
 test: $(FRONTEND_DIST) test-server test-client test-internal test-nssd ## Unit tests per component, with coverage
