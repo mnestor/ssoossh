@@ -194,6 +194,22 @@ http:
 `address` and `port` are ignored when this is set, and `proxy_protocol` must
 be empty.
 
+A Unix socket has no peer address, so the server trusts whoever connects to
+it to name the client, whatever `trusted_proxies` says. It takes the
+rightmost `X-Forwarded-For` entry, or `X-Real-IP` when that is absent. That
+puts two requirements on the proxy and the socket:
+
+- The proxy must append the address it saw, as the nginx example above does
+  with `$proxy_add_x_forwarded_for`. A proxy that passes the client's own
+  header on untouched lets the client pick the address that `source_policy`,
+  console `allowed_networks`, the rate limits and the audit log all use. One
+  that sends neither header leaves every request with no client address.
+- Only the proxy may reach the socket. `ssoosshd` creates it with the
+  process umask and never changes its mode, so restrict it through the
+  directory that holds it: for example mode `0750`, with a group that only
+  `ssoosshd` and the proxy share. Any other local user who can connect can
+  name an address of their own.
+
 ## Load balancers
 
 Several `ssoosshd serve api` instances can sit behind haproxy, nginx, or a

@@ -29,9 +29,18 @@ type HTTPSettings struct {
 	Port int `mapstructure:"port" default:"8080"`
 
 	// UnixSocket, when set, is a filesystem path to listen on a Unix domain
-	// socket instead of TCP — Address and Port are ignored. Mutually
+	// socket instead of TCP: Address and Port are ignored. Mutually
 	// exclusive with ProxyProtocol (PROXY protocol is a TCP-connection
 	// concept; it has nothing to prefix on a Unix socket).
+	//
+	// Every peer on the socket is trusted to name the client, whatever
+	// TrustedProxies says, and the client IP is the rightmost
+	// X-Forwarded-For entry (or X-Real-IP). The proxy in front must append
+	// the address it saw (nginx $proxy_add_x_forwarded_for): one that passes
+	// the client's own header on untouched lets the client choose the
+	// address that source_policy, allowed_networks, rate limits and the
+	// audit log use, and one that sends neither header leaves every request
+	// with no client address. Keep the socket writable only by the proxy.
 	UnixSocket string `mapstructure:"unix_socket" default:""`
 
 	// ProxyProtocol lists the CIDR ranges of reverse proxies trusted to
