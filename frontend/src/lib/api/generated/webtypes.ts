@@ -339,6 +339,13 @@ export interface NSSStoredMembershipResponse {
 	 */
 	name?: string;
 	state?: NSSEntryState;
+	/**
+	 * AddedAt is when ssoosshd first stored the membership, which is not
+	 * the date of the add in the directory (it does not timestamp member
+	 * values). Absent for a membership the first full import stored:
+	 * present before that import.
+	 */
+	added_at?: string;
 }
 /**
  * NSSServedAccountResponse is the record a host's user lookup receives,
@@ -484,6 +491,13 @@ export interface NSSGroupMemberResponse {
 	 */
 	name?: string;
 	state?: NSSEntryState;
+	/**
+	 * AddedAt is when ssoosshd first stored the membership, which is not
+	 * the date of the add in the directory (it does not timestamp member
+	 * values). Absent for a membership the first full import stored:
+	 * present before that import.
+	 */
+	added_at?: string;
 }
 
 //////////

@@ -11,6 +11,7 @@ package controller
 import (
 	"net/http"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,13 +24,13 @@ import (
 )
 
 // seedNSSViewerRows writes the rows the viewer route tests read: ada
-// (1001) in staff (500), and a membership of staff for a uid no account
-// has.
+// (1001) in staff (500) since nssAdminTime, and a membership of staff for
+// a uid no account has, stored by the first import (no added time).
 func seedNSSViewerRows(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	seedNSSAccount(t, db, "ada", 1001, 500, func(r *model.PosixUser) { r.Gecos = "Ada Lovelace" })
 	seedNSSGroup(t, db, "staff", 500, nil)
-	for _, m := range []model.PosixGroupMember{{GID: 500, UID: 1001}, {GID: 500, UID: 4242}} {
+	for _, m := range []model.PosixGroupMember{{GID: 500, UID: 1001, AddedAt: ptrTime(nssAdminTime())}, {GID: 500, UID: 4242}} {
 		if err := db.Create(&m).Error; err != nil {
 			t.Fatal(err)
 		}
@@ -181,7 +182,7 @@ func TestNSSViewerAccount_ShouldMapTheAccountAndWhatIsServedWhenAsked(t *testing
 		r.DirectoryID, r.Gecos, r.PendingGID, r.PendingSince = "dir-ada", "Ada Lovelace", u32(501), ptrTime(nssAdminTime())
 	})
 	seedNSSGroup(t, db, "staff", 500, nil)
-	if err := db.Create(&model.PosixGroupMember{GID: 700, UID: 1001}).Error; err != nil {
+	if err := db.Create(&model.PosixGroupMember{GID: 700, UID: 1001, AddedAt: ptrTime(nssAdminTime())}).Error; err != nil {
 		t.Fatal(err)
 	}
 	r := nssAdminRouter(t, db, nssAdminIdentity("soc"), true)
@@ -196,8 +197,9 @@ func TestNSSViewerAccount_ShouldMapTheAccountAndWhatIsServedWhenAsked(t *testing
 	if got.Person == nil || got.Person.UserID != "u-ada" || got.Person.Username != "u-ada" {
 		t.Errorf("person = %+v, want the linked u-ada", got.Person)
 	}
-	if len(got.Groups) != 1 || got.Groups[0].GID != 700 || got.Groups[0].Name != "" || got.Groups[0].State != "" {
-		t.Errorf("groups = %+v, want the one membership of an unstored gid 700", got.Groups)
+	if len(got.Groups) != 1 || got.Groups[0].GID != 700 || got.Groups[0].Name != "" || got.Groups[0].State != "" ||
+		got.Groups[0].AddedAt == nil || !got.Groups[0].AddedAt.Equal(nssAdminTime()) {
+		t.Errorf("groups = %+v, want the one membership of an unstored gid 700, added at %v", got.Groups, nssAdminTime())
 	}
 	s := got.Served
 	if s == nil || got.NotServed != "" || s.GID != 500 || len(s.Groups) != 1 || s.Groups[0].Name != "staff" ||
@@ -272,9 +274,12 @@ func TestNSSViewerMembers_ShouldPageTheMembershipRowsWhenAsked(t *testing.T) {
 	w := doNSSRequest(r, http.MethodGet, "/admin/nss/groups/500/members?limit=1")
 	var got webtypes.NSSGroupMembersResponse
 	decodeEnvelope(t, w.Body.Bytes(), &got)
-	if got.Total != 2 || len(got.Members) != 1 || got.Members[0] != (webtypes.NSSGroupMemberResponse{UID: 1001, Name: "ada", State: model.NSSEntryStateActive}) ||
-		got.NextCursor == nil || *got.NextCursor != "1001" {
+	if got.Total != 2 || len(got.Members) != 1 || got.NextCursor == nil || *got.NextCursor != "1001" {
 		t.Fatalf("page = %+v, want ada of 2 with cursor 1001", got)
+	}
+	ada := got.Members[0]
+	if ada.UID != 1001 || ada.Name != "ada" || ada.State != model.NSSEntryStateActive || ada.AddedAt == nil || !ada.AddedAt.Equal(nssAdminTime()) {
+		t.Errorf("member = %+v, want ada active, added at %v", ada, nssAdminTime())
 	}
 
 	w = doNSSRequest(r, http.MethodGet, "/admin/nss/groups/500/members?after=1001")
@@ -282,6 +287,10 @@ func TestNSSViewerMembers_ShouldPageTheMembershipRowsWhenAsked(t *testing.T) {
 	decodeEnvelope(t, w.Body.Bytes(), &got)
 	if len(got.Members) != 1 || got.Members[0] != (webtypes.NSSGroupMemberResponse{UID: 4242}) || got.NextCursor != nil {
 		t.Errorf("page = %+v, want only the unstored 4242 and no cursor", got)
+	}
+	// A membership the first import stored has no added time on the wire.
+	if strings.Contains(w.Body.String(), "added_at") {
+		t.Errorf("body = %s, want no added_at for a membership the first import stored", w.Body.String())
 	}
 }
 

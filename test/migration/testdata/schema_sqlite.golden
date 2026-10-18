@@ -260,6 +260,7 @@ table nss_keys
   fk revoked_by -> users.id on_delete=NO ACTION on_update=NO ACTION
   index sqlite_autoindex_nss_keys_1 unique=true columns=id
 table posix_group_members
+  column added_at type=DATETIME nullable=true pk=false default=<none>
   column gid type=INTEGER nullable=false pk=true default=<none>
   column uid type=INTEGER nullable=false pk=true default=<none>
   index idx_posix_group_members_uid unique=false columns=uid

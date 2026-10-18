@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { NSSGroupDetail, NSSGroupMembersResponse } from '#lib/api/types.js';
+import { formatDateTime } from '#lib/format.js';
 import { session } from '#lib/session.svelte.js';
 import { emptyHistory, historyLines, historySuite, nssEvent } from '#lib/testing/history.js';
 import {
@@ -32,7 +33,10 @@ import { fakePage, resetFakePage } from '#lib/testing/page.svelte.js';
 import Page from './+page.svelte';
 
 const twoMembers: NSSGroupMembersResponse = {
-	members: [{ uid: 10001, name: 'bob', state: 'active' }, { uid: 10077 }],
+	members: [
+		{ uid: 10001, name: 'bob', state: 'active', added_at: '2026-10-17T12:00:00Z' },
+		{ uid: 10077 }
+	],
 	total: 2
 };
 
@@ -131,6 +135,23 @@ describe('stored group members', () => {
 			'href',
 			'/admin/nss/accounts/10001'
 		);
+	});
+
+	it.each([
+		{
+			name: 'should show the added time when the member was stored after the first import',
+			index: 0,
+			want: formatDateTime('2026-10-17T12:00:00Z')
+		},
+		{
+			name: 'should say Before first import when the member has no added time',
+			index: 1,
+			want: 'Before first import'
+		}
+	])('$name', async ({ index, want }) => {
+		await open(groupFixture());
+
+		expect(screen.getAllByTestId('nss-group-member-added')[index]).toHaveTextContent(want);
 	});
 
 	it('should say a member with no stored account is never served', async () => {
@@ -248,8 +269,9 @@ historySuite({
 
 // The group's history lines. The page is gid 5100 (ops); each case is the
 // events the history read answers with and the lines it should draw,
-// newest first: one line per member added or removed, "and N more" for a
-// capped list, one line per lifecycle event.
+// newest first: one line per member removed or renumbered, "and N more
+// removed" for a capped removed list, no line for an addition, one line
+// per lifecycle event.
 describe('group history lines', () => {
 	/** change is an nss.group_members_changed event for this group. */
 	function change(
@@ -270,9 +292,9 @@ describe('group history lines', () => {
 
 	it.each([
 		{
-			name: 'should say the member was added when one was added',
+			name: 'should draw no line when the change only added a member',
 			events: [change('e1', [{ uid: 10002, name: 'sonia' }], [])],
-			want: ['sonia added']
+			want: []
 		},
 		{
 			name: 'should say the member was removed when one was removed',
@@ -280,7 +302,7 @@ describe('group history lines', () => {
 			want: ['mnestor removed']
 		},
 		{
-			name: 'should draw one line per member when one change added three and removed one',
+			name: 'should draw only the removal when one change added three and removed one',
 			events: [
 				change(
 					'e1',
@@ -292,10 +314,10 @@ describe('group history lines', () => {
 					[{ uid: 10003, name: 'mnestor' }]
 				)
 			],
-			want: ['sonia added', 'ann added', 'raj added', 'mnestor removed']
+			want: ['mnestor removed']
 		},
 		{
-			name: 'should add an and N more line when the added list was capped',
+			name: 'should draw no line when the change only added past a capped list',
 			events: [
 				change(
 					'e1',
@@ -307,7 +329,7 @@ describe('group history lines', () => {
 					{ added: 414 }
 				)
 			],
-			want: ['sonia added', 'ann added', 'and 412 more added']
+			want: []
 		},
 		{
 			name: 'should add an and N more line when the removed list was capped',
@@ -316,8 +338,8 @@ describe('group history lines', () => {
 		},
 		{
 			name: 'should name a member by its uid when it had no stored account',
-			events: [change('e1', [{ uid: 10077 }], [])],
-			want: ['uid 10077 added']
+			events: [change('e1', [], [{ uid: 10077 }])],
+			want: ['uid 10077 removed']
 		},
 		{
 			name: 'should say a member was renumbered when an accepted uid change re-keyed it',
@@ -416,10 +438,10 @@ describe('group history lines', () => {
 		{
 			name: 'should keep the newest first when a change follows the creation',
 			events: [
-				change('e2', [{ uid: 10002, name: 'sonia' }], []),
+				change('e2', [], [{ uid: 10002, name: 'sonia' }]),
 				nssEvent('e1', 'nss.group_created', { member_count: 2 }, '2026-10-01T09:00:00Z')
 			],
-			want: ['sonia added', 'Created with 2 members']
+			want: ['sonia removed', 'Created with 2 members']
 		}
 	])('$name', async ({ events, want }) => {
 		await open(groupFixture(), envelope(twoMembers), '5100', envelope({ events, total: 1 }));
@@ -431,11 +453,11 @@ describe('group history lines', () => {
 		const events = [
 			change(
 				'e1',
+				[],
 				[
 					{ uid: 10002, name: 'sonia' },
 					{ uid: 10004, name: 'ann' }
-				],
-				[{ uid: 10003, name: 'mnestor' }]
+				]
 			)
 		];
 		await open(groupFixture(), envelope(twoMembers), '5100', envelope({ events, total: 1 }));
@@ -444,6 +466,15 @@ describe('group history lines', () => {
 			.getAllByTestId('nss-group-history-row')
 			.map((row) => row.querySelector('time')?.getAttribute('datetime'));
 		expect(new Set(times)).toEqual(new Set(['2026-10-18T09:00:00Z']));
+	});
+
+	it('should say none is listed when the loaded events only added members', async () => {
+		const events = [change('e1', [{ uid: 10002, name: 'sonia' }], [])];
+		await open(groupFixture(), envelope(twoMembers), '5100', envelope({ events, total: 1 }));
+
+		expect(screen.getByTestId('nss-group-history-none-shown')).toHaveTextContent(
+			'None of the events loaded so far is listed here. Additions show in the Added column of Members above.'
+		);
 	});
 
 	it('should never render an object as text when the detail is not an object', async () => {

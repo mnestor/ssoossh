@@ -68,12 +68,46 @@ describe('groupHistoryRows', () => {
 			name: 'should skip list items that are not members when the lists are malformed',
 			events: [
 				ev('e1', 'nss.group_members_changed', {
-					added: [null, 'x', { name: 'nouid' }, { uid: 7, name: 'ok' }],
-					removed: 'not a list',
-					added_count: 4
+					added: 'not a list',
+					removed: [null, 'x', { name: 'nouid' }, { uid: 7, name: 'ok' }],
+					removed_count: 4
 				})
 			],
-			want: ['ok added', 'and 3 more added']
+			want: ['ok removed', 'and 3 more removed']
+		},
+		{
+			name: 'should draw no line when the change only added members',
+			events: [
+				ev('e1', 'nss.group_members_changed', {
+					added: [{ uid: 7, name: 'ok' }],
+					removed: [],
+					added_count: 1,
+					removed_count: 0
+				})
+			],
+			want: []
+		},
+		{
+			name: 'should draw no line when the change only added past a capped list',
+			events: [ev('e1', 'nss.group_members_changed', { added: [], removed: [], added_count: 300 })],
+			want: []
+		},
+		{
+			name: 'should keep only the removals when the change added and removed members',
+			events: [
+				ev('e1', 'nss.group_members_changed', {
+					added: [{ uid: 7, name: 'ok' }],
+					removed: [{ uid: 8, name: 'gone' }],
+					added_count: 1,
+					removed_count: 1
+				})
+			],
+			want: ['gone removed']
+		},
+		{
+			name: 'should say Members changed when the change lists nothing at all',
+			events: [ev('e1', 'nss.group_members_changed', {})],
+			want: ['Members changed']
 		},
 		{
 			name: 'should drop the hidden audit actions when they are in the history',
@@ -129,11 +163,11 @@ describe('groupHistoryRows', () => {
 	it('should key every line apart when one event draws several', () => {
 		const rows = groupHistoryRows([
 			ev('e1', 'nss.group_members_changed', {
-				added: [
+				added: [],
+				removed: [
 					{ uid: 1, name: 'a' },
 					{ uid: 2, name: 'b' }
-				],
-				removed: []
+				]
 			})
 		]);
 
@@ -142,10 +176,10 @@ describe('groupHistoryRows', () => {
 
 	it('should set names in the mono when a line names a member', () => {
 		const rows = groupHistoryRows([
-			ev('e1', 'nss.group_members_changed', { added: [{ uid: 1, name: 'a' }], removed: [] })
+			ev('e1', 'nss.group_members_changed', { added: [], removed: [{ uid: 1, name: 'a' }] })
 		]);
 
-		expect(rows[0].parts).toEqual([{ text: 'a', mono: true }, { text: ' added' }]);
+		expect(rows[0].parts).toEqual([{ text: 'a', mono: true }, { text: ' removed' }]);
 	});
 });
 
@@ -169,14 +203,14 @@ describe('accountHistoryRows', () => {
 				ev('e2', 'nss.account_created', { uid: 9001 }),
 				ev('e1', 'nss.group_members_changed', {
 					name: 'ops',
-					added: [{ uid: 9001, name: 'bob' }],
-					removed: []
+					added: [],
+					removed: [{ uid: 9001, name: 'bob' }]
 				})
 			],
-			want: ['Created', 'Added to ops']
+			want: ['Created', 'Removed from ops']
 		},
 		{
-			name: 'should say both when one change added and removed the account under different names',
+			name: 'should say only the removal when one change added and removed the account under different names',
 			events: [
 				ev('e1', 'nss.group_members_changed', {
 					name: 'ops',
@@ -185,7 +219,7 @@ describe('accountHistoryRows', () => {
 				}),
 				ev('e0', 'nss.id_change_accepted', { old_uid: 9001, new_uid: 10001 })
 			],
-			want: ['Added to ops', 'Removed from ops', 'uid changed from 9001 to 10001']
+			want: ['Removed from ops', 'uid changed from 9001 to 10001']
 		},
 		{
 			name: 'should draw nothing when another account changed and no list was capped',
@@ -202,8 +236,45 @@ describe('accountHistoryRows', () => {
 		},
 		{
 			name: 'should name the group as a group when the detail has neither name nor gid',
-			events: [ev('e1', 'nss.group_members_changed', { added: [{ uid: 10001 }], removed: [] })],
-			want: ['Added to a group']
+			events: [ev('e1', 'nss.group_members_changed', { added: [], removed: [{ uid: 10001 }] })],
+			want: ['Removed from a group']
+		},
+		{
+			name: 'should draw nothing when the account was only added',
+			events: [
+				ev('e1', 'nss.group_members_changed', {
+					name: 'ops',
+					added: [{ uid: 10001, name: 'bob' }],
+					removed: []
+				})
+			],
+			want: []
+		},
+		{
+			name: 'should keep the ambiguous line when both capped lists left the account out',
+			events: [
+				ev('e1', 'nss.group_members_changed', {
+					name: 'ops',
+					added: [],
+					removed: [],
+					added_count: 300,
+					removed_count: 300
+				})
+			],
+			want: ['Added to or removed from ops']
+		},
+		{
+			name: 'should say Removed when only the capped removed list left the account out',
+			events: [
+				ev('e1', 'nss.group_members_changed', {
+					name: 'ops',
+					added: [],
+					removed: [],
+					added_count: 0,
+					removed_count: 300
+				})
+			],
+			want: ['Removed from ops']
 		}
 	])('$name', ({ events, want }) => {
 		expect(words(accountHistoryRows(events, 10001))).toEqual(want);

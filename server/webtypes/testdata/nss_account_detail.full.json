@@ -30,7 +30,8 @@
     {
       "gid": 5000,
       "name": "engineering",
-      "state": "active"
+      "state": "active",
+      "added_at": "2026-08-12T09:30:00+02:00"
     }
   ],
   "served": {

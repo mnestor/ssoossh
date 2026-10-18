@@ -262,6 +262,7 @@ table nss_keys
   fk revoked_by -> users.id on_delete=NO ACTION on_update=NO ACTION
   index nss_keys_pkey CREATE UNIQUE INDEX nss_keys_pkey ON public.nss_keys USING btree (id)
 table posix_group_members
+  column added_at type=timestamp with time zone nullable=true default=<none>
   column gid type=bigint nullable=false default=<none>
   column uid type=bigint nullable=false default=<none>
   index idx_posix_group_members_uid CREATE INDEX idx_posix_group_members_uid ON public.posix_group_members USING btree (uid)

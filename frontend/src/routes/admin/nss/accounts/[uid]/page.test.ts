@@ -179,6 +179,35 @@ describe('stored account sections', () => {
 		);
 	});
 
+	it.each([
+		{
+			name: 'should show the added time when the membership was stored after the first import',
+			addedAt: '2026-10-17T12:00:00Z',
+			want: formatDateTime('2026-10-17T12:00:00Z')
+		},
+		{
+			name: 'should say Before first import when the membership has no added time',
+			addedAt: undefined,
+			want: 'Before first import'
+		}
+	])('$name', async ({ addedAt, want }) => {
+		await open(
+			accountFixture({ groups: [{ gid: 5100, name: 'ops', state: 'active', added_at: addedAt }] })
+		);
+
+		expect(screen.getByTestId('nss-account-membership-added')).toHaveTextContent(want);
+	});
+
+	it('should head the added column Added when memberships are listed', async () => {
+		await open(accountFixture());
+
+		expect(
+			within(screen.getByTestId('nss-account-memberships-table')).getByRole('columnheader', {
+				name: 'Added'
+			})
+		).toBeInTheDocument();
+	});
+
 	it('should say no stored group has the gid when a membership names none', async () => {
 		await open(accountFixture({ groups: [{ gid: 7777 }] }));
 
@@ -444,9 +473,14 @@ describe('account history lines', () => {
 
 	it.each([
 		{
-			name: 'should say Added to the group when the account was added',
+			name: 'should draw no line when the account was added',
 			events: [change('e1', 'all-users', [{ uid: 10001, name: 'bob' }], [])],
-			want: ['Added to all-users']
+			want: []
+		},
+		{
+			name: 'should draw no line when the account was added and another member removed',
+			events: [change('e1', 'ops', [{ uid: 10001, name: 'bob' }], [{ uid: 10003, name: 'mike' }])],
+			want: []
 		},
 		{
 			name: 'should say Removed from the group when the account was removed',
@@ -459,24 +493,24 @@ describe('account history lines', () => {
 				change(
 					'e1',
 					'ops',
+					[{ uid: 10002, name: 'sonia' }],
 					[
-						{ uid: 10002, name: 'sonia' },
+						{ uid: 10003, name: 'mike' },
 						{ uid: 10001, name: 'bob' }
-					],
-					[{ uid: 10003, name: 'mike' }]
+					]
 				)
 			],
-			want: ['Added to ops']
+			want: ['Removed from ops']
 		},
 		{
 			name: 'should name the group by its gid when the event has no group name',
-			events: [change('e1', '', [{ uid: 10001 }], [])],
-			want: ['Added to gid 5100']
+			events: [change('e1', '', [], [{ uid: 10001 }])],
+			want: ['Removed from gid 5100']
 		},
 		{
-			name: 'should say Added when the account is past the capped added list',
+			name: 'should draw no line when the account is past only the capped added list',
 			events: [change('e1', 'all-users', others(100), [], { added: 500 })],
-			want: ['Added to all-users']
+			want: []
 		},
 		{
 			name: 'should say Removed when the account is past the capped removed list',
@@ -497,9 +531,9 @@ describe('account history lines', () => {
 					old_gid: 5000,
 					new_gid: 5000
 				}),
-				change('e1', 'wheel', [{ uid: 9001, name: 'bob' }], [])
+				change('e1', 'wheel', [], [{ uid: 9001, name: 'bob' }])
 			],
-			want: ['uid changed from 9001 to 10001', 'Added to wheel']
+			want: ['uid changed from 9001 to 10001', 'Removed from wheel']
 		},
 		{
 			name: 'should draw no line for the re-key when an accepted uid change moved the memberships',
@@ -612,12 +646,20 @@ describe('account history lines', () => {
 		expect(historyLines('nss-account-history')).toEqual(want);
 	});
 
-	it('should say none changed this account when no loaded event drew a line', async () => {
-		const events = [change('e1', 'ops', [{ uid: 10002, name: 'sonia' }], [])];
+	it('should say none is listed when no loaded event drew a line', async () => {
+		const events = [change('e1', 'ops', [{ uid: 10001, name: 'bob' }], [])];
 		await open(accountFixture(), '10001', envelope({ events, total: 1 }));
 
 		expect(screen.getByTestId('nss-account-history-none-shown')).toHaveTextContent(
-			'None of the events loaded so far changed this account.'
+			'None of the events loaded so far is listed here. Additions show in the Added column of Stored memberships above.'
+		);
+	});
+
+	it('should say additions are not listed when the history describes itself', async () => {
+		await open(accountFixture());
+
+		expect(screen.getByTestId('nss-account-history')).toHaveTextContent(
+			'Additions are not listed; the Added column of Stored memberships dates each current one.'
 		);
 	});
 

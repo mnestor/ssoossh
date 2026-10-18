@@ -837,3 +837,42 @@ func nssTableSnapshot(t *testing.T, db *gorm.DB) map[string]int64 {
 	}
 	return out
 }
+
+func TestNSSViewer_ShouldCarryAddedAtWhenAMembershipIsRead(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		addedAt *time.Time
+	}{
+		{name: "should report no added time when the first import stored the membership", addedAt: nil},
+		{name: "should report the added time when a later write stored the membership", addedAt: nssAt(-time.Hour)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			db := testdb.New(t)
+			seedPosixUser(t, db, model.PosixUser{Name: "ada", UID: 1000, GID: new(uint32(100))})
+			seedPosixGroup(t, db, model.PosixGroup{Name: "staff", GID: 500})
+			if err := db.Create(&model.PosixGroupMember{GID: 500, UID: 1000, AddedAt: tt.addedAt}).Error; err != nil {
+				t.Fatalf("seed membership: %v", err)
+			}
+			s := newTestNSSViewer(t, nssLookupTestConfig(), db)
+
+			view, err := s.Account(t.Context(), 1000)
+			if err != nil || len(view.Groups) != 1 {
+				t.Fatalf("Account() = %+v, %v; want one membership", view, err)
+			}
+			page, err := s.GroupMembers(t.Context(), 500, paging.Params{Limit: 10})
+			if err != nil || len(page.Members) != 1 {
+				t.Fatalf("GroupMembers() = %+v, %v; want one member", page, err)
+			}
+			for what, got := range map[string]*time.Time{"account membership": view.Groups[0].AddedAt, "group member": page.Members[0].AddedAt} {
+				if (got == nil) != (tt.addedAt == nil) || (got != nil && !got.Equal(*tt.addedAt)) {
+					t.Errorf("%s added_at = %v, want %v", what, got, tt.addedAt)
+				}
+			}
+		})
+	}
+}

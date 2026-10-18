@@ -14,8 +14,10 @@
 
 	// The History section at the foot of a stored NSS account's or group's
 	// page: the row's audit events, newest first, as one short line per
-	// thing that happened and its time ("Added to wheel", "sonia added"),
-	// built by #lib/nssHistory from each event's detail. Pages by event
+	// thing that happened and its time ("Removed from wheel", "sonia
+	// removed"), built by #lib/nssHistory from each event's detail.
+	// Additions draw no line: the memberships and members tables above date
+	// each current membership in their Added column. Pages by event
 	// through the same LoadMoreFooter as a user's audit timeline, so one
 	// page can draw many lines. Its own read, so a failure here leaves the
 	// facts above standing. The history belongs to the stored row, so it
@@ -47,10 +49,14 @@
 	let latest = 0;
 
 	// The lines: on an account's page only what happened to it, on a
-	// group's one per member added or removed.
+	// group's one per member removed or renumbered; never an addition.
 	const rows = $derived(
 		kind === 'account' ? accountHistoryRows(events, number) : groupHistoryRows(events)
 	);
+
+	// The section above that dates each current membership, where the
+	// additions this history leaves out are told.
+	const tableName = $derived(kind === 'account' ? 'Stored memberships' : 'Members');
 
 	/** read is the endpoint for this kind of row. */
 	function read(after?: string) {
@@ -111,8 +117,8 @@
 <PageSection
 	title="History"
 	description={kind === 'account'
-		? 'Every recorded change to this stored account, newest first: its lifecycle, the groups it was added to or removed from, collisions and id changes. It follows the row through a rename or an accepted uid change.'
-		: 'Every recorded change to this stored group, newest first: its lifecycle, each member added or removed, collisions and id changes. It follows the row through a rename or an accepted gid change.'}
+		? 'Recorded changes to this stored account, newest first: its lifecycle, the groups it was removed from, collisions and id changes. Additions are not listed; the Added column of Stored memberships dates each current one. It follows the row through a rename or an accepted uid change.'
+		: 'Recorded changes to this stored group, newest first: its lifecycle, each member removed, collisions and id changes. Additions are not listed; the Added column of Members dates each current one. It follows the row through a rename or an accepted gid change.'}
 	{testid}
 >
 	{#if error}
@@ -129,11 +135,13 @@
 	{:else}
 		<div class="flex flex-col gap-3">
 			{#if rows.length === 0}
-				<!-- Events came, but none drew a line: on an account's page,
-				     member changes that were another account's, or a re-key
-				     its uid change already says. -->
+				<!-- Events came, but none drew a line: additions, which the
+				     table above dates instead, and on an account's page member
+				     changes that were another account's, or a re-key its uid
+				     change already says. -->
 				<p class="text-dense text-ink-muted" data-testid="{testid}-none-shown">
-					None of the events loaded so far changed this {kind}.
+					None of the events loaded so far is listed here. Additions show in the Added column of {tableName}
+					above.
 				</p>
 			{:else}
 				<!-- A ruled list of one-line rows (DESIGN.md, Rhythm): the
@@ -158,7 +166,8 @@
 				</ol>
 			{/if}
 			<!-- Counted in events, as the server pages them: one event can
-			     draw several lines, or none on an account's page. -->
+			     draw several lines, or none (an addition, or on an account's
+			     page another account's change). -->
 			<LoadMoreFooter
 				summary={describeLoaded(
 					visibleAuditEvents(events).length,

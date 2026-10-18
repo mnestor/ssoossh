@@ -614,7 +614,9 @@ func (s *NSSDirectoryService) searchGroupsOnDemand(ctx context.Context, conn lda
 // replaces the account's membership rows with exactly those groups. gone
 // is the search's evidence for re-anchoring a renamed group, and via the
 // path for the audit: each group the account joined or left records
-// nss.group_members_changed.
+// nss.group_members_changed. Only the difference is written, so a
+// membership that stays keeps its added_at and a new one gets the current
+// time.
 func (s *NSSDirectoryService) storeMembershipsOf(ctx context.Context, account *model.PosixUser, groups []*nssGroup, gone *nssGroupGone, via string) error {
 	gids := make([]uint32, 0, len(groups))
 	for _, group := range groups {
@@ -632,14 +634,15 @@ func (s *NSSDirectoryService) storeMembershipsOf(ctx context.Context, account *m
 		if err != nil {
 			return err
 		}
-		if err := replaceMembershipsOfUser(tx, account.UID, gids); err != nil {
-			return err
-		}
 		after := nssMembers{}
 		for _, gid := range gids {
 			after.add(gid, account.UID)
 		}
-		return s.recordMemberChanges(tx, &batch, memberDeltas(before, after), nssMemberChange{
+		deltas := memberDeltas(before, after)
+		if err := applyMemberDeltas(tx, deltas, memberAddedAt(nssWrite{via: via}, s.now().UTC())); err != nil {
+			return err
+		}
+		return s.recordMemberChanges(tx, &batch, deltas, nssMemberChange{
 			via: via, userNames: map[uint32]string{account.UID: account.Name}, userIDs: map[uint32]string{account.UID: account.ID},
 		})
 	})

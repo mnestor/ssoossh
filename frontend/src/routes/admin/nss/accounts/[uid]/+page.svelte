@@ -14,6 +14,7 @@
 	import NSSDirectoryRef from '#lib/components/NSSDirectoryRef.svelte';
 	import NSSEntryHistory from '#lib/components/NSSEntryHistory.svelte';
 	import NSSEntryMarks from '#lib/components/NSSEntryMarks.svelte';
+	import NSSMembershipAdded from '#lib/components/NSSMembershipAdded.svelte';
 	import NSSServedVerdict from '#lib/components/NSSServedVerdict.svelte';
 	import NSSStateBadge from '#lib/components/NSSStateBadge.svelte';
 	import PageHeading from '#lib/components/PageHeading.svelte';
@@ -323,7 +324,7 @@
 
 		<PageSection
 			title="Stored memberships"
-			description="Every membership row stored for this uid, whether or not the group is served. The primary group is listed only when a membership row names it."
+			description="Every membership row stored for this uid, whether or not the group is served. The primary group is listed only when a membership row names it. Added is when the server first stored the membership; the directory does not date member values."
 			testid="nss-account-memberships"
 		>
 			{#if account.groups.length === 0}
@@ -338,6 +339,7 @@
 								<th scope="col" class="text-right">GID</th>
 								<th scope="col">Group</th>
 								<th scope="col">State</th>
+								<th scope="col">Added</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -361,6 +363,9 @@
 										{#if membership.state}<NSSStateBadge state={membership.state} />{:else}<span
 												class="text-ink-muted">—</span
 											>{/if}
+									</td>
+									<td class="whitespace-nowrap" data-testid="nss-account-membership-added">
+										<NSSMembershipAdded at={membership.added_at} />
 									</td>
 								</tr>
 							{/each}

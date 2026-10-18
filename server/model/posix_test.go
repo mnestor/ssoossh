@@ -251,23 +251,15 @@ func TestPosixGroupMember_ShouldRoundTripWhenStoredAndReadBack(t *testing.T) {
 		{name: "should keep the pair when both numbers are ordinary", row: PosixGroupMember{GID: 20000, UID: 10001}},
 		{name: "should keep the pair when both numbers are zero", row: PosixGroupMember{GID: 0, UID: 0}},
 		{name: "should keep the pair when both numbers are at the top of the range", row: PosixGroupMember{GID: math.MaxUint32, UID: math.MaxUint32}},
+		{name: "should keep the added time when one is set", row: PosixGroupMember{GID: 20000, UID: 10001, AddedAt: at(time.Hour)}},
+		{name: "should keep a nil added time nil when the membership predates the import", row: PosixGroupMember{GID: 20000, UID: 10001, AddedAt: nil}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			db := testdb.New(t)
-			if err := db.Create(&tt.row).Error; err != nil {
-				t.Fatalf("create: %v", err)
-			}
-			var got []PosixGroupMember
-			if err := db.Find(&got).Error; err != nil {
-				t.Fatalf("read back: %v", err)
-			}
-			if len(got) != 1 || got[0] != tt.row {
-				t.Errorf("rows = %+v, want exactly %+v", got, tt.row)
-			}
+			assertRoundTrip(t, testdb.New(t), tt.row)
 		})
 	}
 }

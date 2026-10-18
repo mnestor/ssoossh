@@ -397,7 +397,7 @@ func fullFixtures() map[string]any {
 			WithheldReason: "uid 10001 is also carried by uid=ada,ou=contractors,dc=example,dc=net",
 			State:          model.NSSEntryStateWithheld,
 			CreatedAt:      issuedAt.Add(-720 * time.Hour), UpdatedAt: issuedAt, LastSyncedAt: issuedAt,
-			Groups: []webtypes.NSSStoredMembershipResponse{{GID: 5000, Name: "engineering", State: model.NSSEntryStateActive}},
+			Groups: []webtypes.NSSStoredMembershipResponse{{GID: 5000, Name: "engineering", State: model.NSSEntryStateActive, AddedAt: &missingSince}},
 			Served: &webtypes.NSSServedAccountResponse{
 				Name: "ada.lovelace", UID: 10001, GID: 10001,
 				Groups: []webtypes.NSSServedMembershipResponse{{GID: 10001, Name: "ada.lovelace"}, {GID: 5000, Name: "engineering"}},
@@ -427,7 +427,7 @@ func fullFixtures() map[string]any {
 			NotServed: model.NSSNotServedPastRetention,
 		},
 		"nss_group_members": webtypes.NSSGroupMembersResponse{
-			Members:    []webtypes.NSSGroupMemberResponse{{UID: 10001, Name: "ada.lovelace", State: model.NSSEntryStateDisabled}},
+			Members:    []webtypes.NSSGroupMemberResponse{{UID: 10001, Name: "ada.lovelace", State: model.NSSEntryStateDisabled, AddedAt: &missingSince}},
 			Total:      12,
 			NextCursor: &viewerMemberCursor,
 		},

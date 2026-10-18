@@ -81,12 +81,14 @@ type NSSLinkedPerson struct {
 }
 
 // NSSStoredMembership is one membership row of an account. Name and State
-// are the stored group's, set only when Stored.
+// are the stored group's, set only when Stored. AddedAt is the row's
+// added_at: nil when the first full import stored it.
 type NSSStoredMembership struct {
-	GID    uint32
-	Stored bool
-	Name   string
-	State  model.NSSEntryState
+	GID     uint32
+	Stored  bool
+	Name    string
+	State   model.NSSEntryState
+	AddedAt *time.Time
 }
 
 // NSSGroupPage is one page of stored groups, by name then id.
@@ -126,12 +128,14 @@ type NSSGroupMemberPage struct {
 }
 
 // NSSGroupMember is one membership row of a group. Name and State are the
-// stored account's, set only when Stored.
+// stored account's, set only when Stored. AddedAt is the row's added_at:
+// nil when the first full import stored it.
 type NSSGroupMember struct {
-	UID    uint32
-	Stored bool
-	Name   string
-	State  model.NSSEntryState
+	UID     uint32
+	Stored  bool
+	Name    string
+	State   model.NSSEntryState
+	AddedAt *time.Time
 }
 
 // nssAccountState is the one state the viewer shows for an account, from
@@ -340,6 +344,7 @@ func (s *NSSLookupService) linkedPerson(ctx context.Context, userID *string) (*N
 func (s *NSSLookupService) storedMemberships(ctx context.Context, uid uint32) ([]NSSStoredMembership, error) {
 	var rows []struct {
 		GID          uint32     `gorm:"column:gid"`
+		AddedAt      *time.Time `gorm:"column:added_at"`
 		GroupID      *string    `gorm:"column:group_id"`
 		Name         *string    `gorm:"column:name"`
 		WithheldAt   *time.Time `gorm:"column:withheld_at"`
@@ -348,7 +353,8 @@ func (s *NSSLookupService) storedMemberships(ctx context.Context, uid uint32) ([
 		PendingGID   *uint32    `gorm:"column:pending_gid"`
 	}
 	err := s.db.WithContext(ctx).Table("posix_group_members").
-		Select("posix_group_members.gid AS gid, posix_groups.id AS group_id, posix_groups.name AS name, "+
+		Select("posix_group_members.gid AS gid, posix_group_members.added_at AS added_at, "+
+			"posix_groups.id AS group_id, posix_groups.name AS name, "+
 			"posix_groups.withheld_at AS withheld_at, posix_groups.deleted_at AS deleted_at, "+
 			"posix_groups.missing_since AS missing_since, posix_groups.pending_gid AS pending_gid").
 		Joins("LEFT JOIN posix_groups ON posix_groups.gid = posix_group_members.gid").
@@ -360,7 +366,7 @@ func (s *NSSLookupService) storedMemberships(ctx context.Context, uid uint32) ([
 	}
 	out := make([]NSSStoredMembership, 0, len(rows))
 	for _, r := range rows {
-		m := NSSStoredMembership{GID: r.GID}
+		m := NSSStoredMembership{GID: r.GID, AddedAt: r.AddedAt}
 		if r.GroupID != nil {
 			m.Stored, m.Name = true, stringValue(r.Name)
 			m.State = nssGroupState(&model.PosixGroup{
@@ -498,7 +504,8 @@ func (s *NSSLookupService) GroupMembers(ctx context.Context, gid uint32, params 
 	}
 
 	var rows []nssMemberRow
-	if err := q.Select("posix_group_members.uid AS uid, posix_users.id AS account_id, posix_users.name AS name, " +
+	if err := q.Select("posix_group_members.uid AS uid, posix_group_members.added_at AS added_at, " +
+		"posix_users.id AS account_id, posix_users.name AS name, " +
 		"posix_users.withheld_at AS withheld_at, posix_users.deleted_at AS deleted_at, " +
 		"posix_users.dir_disabled AS dir_disabled, posix_users.missing_since AS missing_since, " +
 		"posix_users.pending_uid AS pending_uid, posix_users.pending_gid AS pending_gid, " +
@@ -522,6 +529,7 @@ func (s *NSSLookupService) GroupMembers(ctx context.Context, gid uint32, params 
 // uid; every account column is nil when there is none.
 type nssMemberRow struct {
 	UID            uint32     `gorm:"column:uid"`
+	AddedAt        *time.Time `gorm:"column:added_at"`
 	AccountID      *string    `gorm:"column:account_id"`
 	Name           *string    `gorm:"column:name"`
 	WithheldAt     *time.Time `gorm:"column:withheld_at"`
@@ -536,7 +544,7 @@ type nssMemberRow struct {
 // member describes the row for the members page, with the account's state
 // when it is stored.
 func (r nssMemberRow) member() NSSGroupMember {
-	m := NSSGroupMember{UID: r.UID}
+	m := NSSGroupMember{UID: r.UID, AddedAt: r.AddedAt}
 	if r.AccountID == nil {
 		return m
 	}
