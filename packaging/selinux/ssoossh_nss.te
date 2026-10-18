@@ -31,8 +31,12 @@ policy_module(ssoossh_nss, 1.0.0)
 # on only one of them sits in an optional_policy block, which is enabled
 # where its types exist and skipped where they do not.
 #
-# SCOPE. Only access the daemon was seen to need is granted: every rule in
-# the local policy below names the measurement that called for it.
+# SCOPE. The local policy grants what the daemon's design needs (its own
+# files, the host files it reads, HTTPS and DNS to ssoosshd, the callers'
+# cgroup files) and otherwise only what it was denied in the AlmaLinux 9.8
+# and 10.2 test, each such rule naming that denial. With all of it, both
+# hosts logged no denial involving ssoosshd_nss_t through lookups,
+# userdbctl, restarts and certificate logins to a confined sshd.
 
 ########################################
 #
