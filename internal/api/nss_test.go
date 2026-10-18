@@ -95,7 +95,7 @@ func nssClient(t *testing.T, s *nssServer, mutate func(*Config)) *HTTPClient {
 }
 
 const (
-	userBody  = `{"data":{"name":"Mike.N","uid":1234,"gid":1234,"groups":[{"gid":1234,"name":"Mike.N"},{"gid":27,"name":"sudo"}],"home":"/home/mike","shell":"/bin/bash","shell_pref":null,"gecos":"Mike Nestor","status":"active","key_id":"nss_k7m4qp2x"}}`
+	userBody  = `{"data":{"name":"Mike.N","uid":1234,"gid":1234,"groups":[{"gid":1234,"name":"Mike.N"},{"gid":27,"name":"sudo"}],"home":"/home/mike","shell":"/bin/bash","gecos":"Mike Nestor","status":"active","key_id":"nss_k7m4qp2x"}}`
 	groupBody = `{"data":{"name":"sudo","gid":27,"members":["Mike.N","alice"],"members_truncated":false}}`
 )
 

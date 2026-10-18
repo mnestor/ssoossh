@@ -116,7 +116,7 @@ func TestPosixUser_ShouldRoundTripEveryColumnWhenStoredAndReadBack(t *testing.T)
 					ID: "pu-1", UID: 10001, Name: "ada.lovelace", DirectoryID: "6f1c2a90-entry",
 					DN: "uid=ada.lovelace,ou=people,dc=example", UserID: &userID, GID: new(uint32(10001)),
 					PendingUID: ptr(uint32(20001)), PendingGID: ptr(uint32(20002)), PendingSince: at(time.Hour),
-					Home: ptr("/home/ada.lovelace"), Shell: ptr("/bin/bash"), ShellPref: ptr("zsh"),
+					Home: ptr("/home/ada.lovelace"), Shell: ptr("/bin/bash"),
 					Gecos: "Ada Lovelace", DirDisabled: true, MissingSince: at(2 * time.Hour),
 					DeletedAt: at(3 * time.Hour), WithheldAt: at(4 * time.Hour),
 					WithheldReason: "uid 10001 is also carried by uid=bob,ou=people,dc=example",

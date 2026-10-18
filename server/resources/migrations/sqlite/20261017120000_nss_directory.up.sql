@@ -64,9 +64,6 @@ CREATE TABLE posix_users (
     -- none.
     home            TEXT NULL,
     shell           TEXT NULL,
-    -- The person's own choice from nss.allowed_shells. Only meaningful on a
-    -- row with a user_id.
-    shell_pref      TEXT NULL,
     -- The rendered and sanitised nss.gecos_template.
     gecos           TEXT NOT NULL DEFAULT '',
     -- The directory's own disabled flag, from nss.disabled_filter.
@@ -102,9 +99,8 @@ CREATE UNIQUE INDEX idx_posix_users_name ON posix_users (name);
 -- The sync's DN anchor, and where a group's member DNs are resolved.
 -- Partial so the empty string of a released DN (above) can repeat.
 CREATE UNIQUE INDEX idx_posix_users_dn ON posix_users (dn) WHERE dn <> '';
--- The login link and the shell self-service read: at most one account per
--- person. NULLs are distinct in both dialects, so unlinked rows never
--- collide.
+-- The login link: at most one account per person. NULLs are distinct in
+-- both dialects, so unlinked rows never collide.
 CREATE UNIQUE INDEX idx_posix_users_user_id ON posix_users (user_id);
 -- Partial, as idx_user_ldap_directory_id: the empty string means "no ID"
 -- and is not worth indexing.

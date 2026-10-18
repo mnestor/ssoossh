@@ -146,21 +146,14 @@
 #fallback_homedir: /home/%u
 
 # Shell of an active account, first acceptable one wins: override_shell, then
-# the user's own shell choice (shell_pref) resolved through shell_map and
-# then by name in /etc/shells, then the server's shell, then shell_fallback,
-# which is used even when it is not otherwise acceptable. Acceptable means
-# listed in allowed_shells (or in /etc/shells when that is empty) and not in
-# vetoed_shells.
+# the server's shell (the directory's), then shell_fallback, which is used
+# even when it is not otherwise acceptable. Acceptable means listed in
+# allowed_shells (or in /etc/shells when that is empty) and not in
+# vetoed_shells. Users do not choose their shell.
 #override_shell: ""
 #shell_fallback: /bin/sh
 #allowed_shells: []
 #vetoed_shells: []
-
-# Maps a shell name a user may choose on the server to a path on this host,
-# e.g.
-#   shell_map:
-#     zsh: /opt/homebrew/bin/zsh
-#shell_map: {}
 
 # The shell of a disabled or deleted account, which is also served locked.
 # Exempt from the shells checks, since Debian does not list nologin in

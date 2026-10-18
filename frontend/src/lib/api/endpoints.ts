@@ -47,8 +47,6 @@ import type {
 	NSSPendingIDChangesResponse,
 	NSSPurgedTombstoneResponse,
 	NSSRotationReport,
-	NSSShellsResponse,
-	PosixAccount,
 	ReEnableUserRequestBody,
 	RequestDetail,
 	ResolveCodeResult,
@@ -661,23 +659,6 @@ export function runDiagnostics(): Promise<DiagnosticsResponse> {
  */
 export function startIdentityEcho(): Promise<IdentityEchoStartResponse> {
 	return request<IdentityEchoStartResponse>('/admin/identity/echo/start', { method: 'POST' });
-}
-
-/**
- * PUT /api/users/me/shell: the caller's own login shell, by name from
- * GET /api/nss/shells, or null for the directory's shell. A name outside the
- * list is a 400 whose message starts with shell_not_allowed.
- */
-export function updateShellPreference(shell: string | null): Promise<PosixAccount> {
-	return request<PosixAccount>('/users/me/shell', {
-		method: 'PUT',
-		body: { shell_pref: shell }
-	});
-}
-
-/** GET /api/nss/shells: the shell names a person may choose, in configured order. */
-export function listNSSShells(signal?: AbortSignal): Promise<NSSShellsResponse> {
-	return request<NSSShellsResponse>('/nss/shells', { signal });
 }
 
 /** GET /api/nss/key-settings: a new key's default lifetime and a rotation's grace, in seconds. */

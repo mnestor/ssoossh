@@ -1,8 +1,0 @@
-{
-  "allowed_shells": [
-    "sh",
-    "bash",
-    "zsh",
-    "fish"
-  ]
-}

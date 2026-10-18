@@ -498,7 +498,7 @@ func (a *app) registerRoutes(r *gin.Engine) error {
 	}
 	controller.NewCertRequestController(apiGroup, a.svc.certRequest, sessionAuth, csrf, certRequestRateLimit)
 
-	controller.NewUserController(apiGroup, a.config, sessionAuth, a.db, a.svc.detailLevels, csrf, a.posixAccounts())
+	controller.NewUserController(apiGroup, a.config, sessionAuth, a.db, a.svc.detailLevels, csrf)
 	controller.NewNotificationController(apiGroup, a.svc.notification, a.svc.detailLevels, sessionAuth, csrf)
 	controller.NewCertificateController(apiGroup, a.svc.certificate, sessionAuth, a.config)
 
@@ -574,18 +574,8 @@ func (a *app) registerNSSRoutes(apiGroup *gin.RouterGroup, sessionAuth, csrf gin
 		return err
 	}
 	controller.NewNSSLookupController(apiGroup, a.svc.nssLookup, gate)
-	controller.NewNSSController(apiGroup, a.svc.nssKeys, a.svc.nssLookup, sessionAuth, csrf)
+	controller.NewNSSController(apiGroup, a.svc.nssKeys, sessionAuth, csrf)
 	return nil
-}
-
-// posixAccounts is the user controller's POSIX account source: explicitly
-// nil rather than a typed nil in the interface when NSS is off, for the
-// reason ldapDiagnostics is in registerRoutes.
-func (a *app) posixAccounts() service.PosixAccountProvider {
-	if a.svc.nssLookup == nil {
-		return nil
-	}
-	return a.svc.nssLookup
 }
 
 // nssViewer is the NSS admin controller's directory viewer, the lookups:

@@ -44,7 +44,6 @@ func newNSSTestConfig(t *testing.T) *config.Config {
 		TombstoneRetention: 2160 * time.Hour,
 		DefaultHome:        "/home/%u",
 		DisabledShell:      "/usr/sbin/nologin",
-		AllowedShells:      []string{"sh", "bash", "zsh", "fish"},
 		MaxGroupMembers:    2000,
 		RateLimit:          20,
 		RateBurst:          200,
@@ -142,7 +141,7 @@ func newNSSLookupEnv(t *testing.T) *nssLookupEnv {
 	aliceUser := "nss-alice"
 	seedNSSPosixUser(t, db, model.PosixUser{
 		Name: "alice", UID: 1500, GID: new(uint32(100)), UserID: &aliceUser,
-		Home: ptrTo("/home/alice"), Shell: ptrTo("/bin/bash"), ShellPref: ptrTo("zsh"), Gecos: "Alice Example",
+		Home: ptrTo("/home/alice"), Shell: ptrTo("/bin/bash"), Gecos: "Alice Example",
 	})
 	seedNSSPosixUser(t, db, model.PosixUser{Name: "first.last", UID: 1501, GID: new(uint32(100))})
 	seedNSSPosixUser(t, db, model.PosixUser{Name: "MixedCase", UID: 1502, GID: new(uint32(100))})
@@ -244,7 +243,7 @@ func TestNSSLookupController_ShouldServeTheUser(t *testing.T) {
 	alice := apitypes.NSSUserResponse{
 		Name: "alice", UID: 1500, GID: 100,
 		Groups: []apitypes.NSSMembership{{GID: 100, Name: "staff"}, {GID: 2000, Name: "devs"}, {GID: 2001, Name: "ops.team"}},
-		Home:   ptrTo("/home/alice"), Shell: ptrTo("/bin/bash"), ShellPref: ptrTo("zsh"), Gecos: "Alice Example",
+		Home:   ptrTo("/home/alice"), Shell: ptrTo("/bin/bash"), Gecos: "Alice Example",
 		Status: apitypes.NSSStatusActive, KeyID: env.keyID,
 	}
 	firstLast := apitypes.NSSUserResponse{

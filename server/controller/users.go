@@ -25,27 +25,21 @@ import (
 // levels serves the web UI detail level on /users/me and its update on
 // /users/me/display, which carries CSRF like every other state-changing
 // browser route.
-//
-// posix serves the caller's own POSIX account on /users/me and the shell
-// self-service on /users/me/shell. Nil when NSS is disabled: /users/me then
-// reports no account and the shell route answers nss_disabled.
 func NewUserController(group *gin.RouterGroup, c *config.Config, sessionAuthMiddleware gin.HandlerFunc, db any,
-	levels service.DetailLevelProvider, csrfMiddleware gin.HandlerFunc, posix service.PosixAccountProvider) {
-	uc := &userController{config: c, db: db, levels: levels, posix: posix}
+	levels service.DetailLevelProvider, csrfMiddleware gin.HandlerFunc) {
+	uc := &userController{config: c, db: db, levels: levels}
 
 	group.GET("/users/me", sessionAuthMiddleware, uc.currentUserHandler)
 	group.PUT("/users/me/display", sessionAuthMiddleware, csrfMiddleware, uc.updateDisplayHandler)
-	group.PUT("/users/me/shell", uc.nssEnabled, sessionAuthMiddleware, csrfMiddleware, uc.updateShellHandler)
 }
 
 // userController handles the user-facing identity routes. It holds config
-// to derive the session's roles, db to hydrate extra fields, levels for
-// the stored detail level, and posix for the caller's POSIX account.
+// to derive the session's roles, db to hydrate extra fields, and levels for
+// the stored detail level.
 type userController struct {
 	config *config.Config
 	db     any
 	levels service.DetailLevelProvider
-	posix  service.PosixAccountProvider
 }
 
 // currentUserHandler returns the caller's own identity, so the UI can show
@@ -78,79 +72,7 @@ func (uc *userController) currentUserHandler(g *gin.Context) {
 
 	response := newCurrentUserResponse(identity, uc.config, uc.db, identity.Subject)
 	response.DetailLevel = uc.webDetailLevel(g, identity)
-	response.Posix = uc.posixAccount(g, identity)
 	respondData(g, response)
-}
-
-// posixAccount reads the caller's own POSIX account, or nil when NSS is off
-// or none is linked. A failed read degrades to nil rather than failing
-// /users/me, which every page loads.
-func (uc *userController) posixAccount(g *gin.Context, identity *service.Identity) *webtypes.PosixAccountResponse {
-	if uc.posix == nil || !uc.config.NSS.Enabled {
-		return nil
-	}
-	account, err := uc.posix.AccountForIdentity(g.Request.Context(), identity)
-	if err != nil {
-		slog.WarnContext(g.Request.Context(), "failed to read the caller's POSIX account; reporting none",
-			slog.Any("error", err))
-		return nil
-	}
-	return newPosixAccountResponse(account)
-}
-
-// newPosixAccountResponse converts an account to its wire shape, nil for
-// none.
-func newPosixAccountResponse(account *service.PosixAccount) *webtypes.PosixAccountResponse {
-	if account == nil {
-		return nil
-	}
-	return &webtypes.PosixAccountResponse{UID: account.UID, Name: account.Name, ShellPref: account.ShellPref}
-}
-
-// nssEnabled answers nss_disabled for the shell route while NSS is off.
-func (uc *userController) nssEnabled(g *gin.Context) {
-	if uc.posix == nil || !uc.config.NSS.Enabled {
-		abortNSSDisabled(g)
-		return
-	}
-	g.Next()
-}
-
-// updateShellHandler handles PUT /api/users/me/shell: the caller chooses
-// the shell their own POSIX account is served with, by name, or clears it.
-//
-// @Summary     Choose the caller's own login shell
-// @Description Sets shell_pref on the caller's POSIX account to one of nss.allowed_shells (see
-// @Description /api/nss/shells), or clears it with null. Hosts resolve the name to their own path. A name
-// @Description outside the list is a 400 whose message starts with shell_not_allowed. Audited.
-// @Tags        web
-// @Accept      json
-// @Produce     json
-// @Param       request body webtypes.UpdateShellBody true "The shell name, or null"
-// @Success     200 {object} openapidoc.PosixAccountEnvelope "The account after saving"
-// @Failure     400 {object} openapidoc.ErrorEnvelope "Malformed body, or shell_not_allowed"
-// @Failure     401 {object} openapidoc.ErrorEnvelope "No valid session"
-// @Failure     403 {object} openapidoc.ErrorEnvelope "The session has no user record"
-// @Failure     404 {object} openapidoc.ErrorEnvelope "No POSIX account is linked to the caller, or nss_disabled"
-// @Security    sessionCookie
-// @Router      /api/users/me/shell [put]
-func (uc *userController) updateShellHandler(g *gin.Context) {
-	identity, ok := middleware.Identity(g)
-	if !ok {
-		handleError(g, &errorresponses.UnauthorizedError{})
-		return
-	}
-	var body webtypes.UpdateShellBody
-	if err := g.ShouldBindJSON(&body); err != nil {
-		handleError(g, &errorresponses.InvalidRequestError{Reason: "shell body was malformed"})
-		return
-	}
-	account, err := uc.posix.SetShellPref(g.Request.Context(), identity, body.ShellPref, g.ClientIP())
-	if err != nil {
-		handleError(g, err)
-		return
-	}
-	respondData(g, newPosixAccountResponse(account))
 }
 
 // webDetailLevel reads the caller's stored web UI detail level. A failed

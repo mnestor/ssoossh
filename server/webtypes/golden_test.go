@@ -81,14 +81,12 @@ func fullFixtures() map[string]any {
 	pendingUID, pendingGID := uint32(20001), uint32(20002)
 	missingSince, deletedAt := issuedAt.Add(-48*time.Hour), issuedAt.Add(-24*time.Hour)
 	viewerCursor, viewerMemberCursor := "8d0f3c2a-1b4e-4c6d-9a7f-0e1d2c3b4a59", "10001"
-	viewerHome, viewerShell, viewerShellPref := "/home/ada.lovelace", "/bin/bash", "/bin/zsh"
+	viewerHome, viewerShell := "/home/ada.lovelace", "/bin/bash"
 	callerUID, callerGID, callerPID, callerPPID := int64(1000), int64(1000), int64(4242), int64(4200)
 
-	// The NSS fixtures: one account, one rotated and revoked key, and the
-	// key's usage and rotation report, sharing timestamps so the shapes
-	// cannot describe different moments.
-	shellPref := "zsh"
-	posixAccount := webtypes.PosixAccountResponse{UID: 10001, Name: "alice", ShellPref: &shellPref}
+	// The NSS fixtures: one rotated and revoked key, and the key's usage
+	// and rotation report, sharing timestamps so the shapes cannot describe
+	// different moments.
 	keyRotatedAt := issuedAt.Add(24 * time.Hour)
 	keyExpiresAt := issuedAt.Add(8760 * time.Hour)
 	keyPreviousExpires := keyRotatedAt.Add(720 * time.Hour)
@@ -127,9 +125,6 @@ func fullFixtures() map[string]any {
 	nssGroup := "web-admins"
 
 	return map[string]any{
-		"posix_account":    posixAccount,
-		"update_shell":     webtypes.UpdateShellBody{ShellPref: &shellPref},
-		"nss_shells":       webtypes.NSSShellsResponse{AllowedShells: []string{"sh", "bash", "zsh", "fish"}},
 		"nss_key_settings": webtypes.NSSKeySettingsResponse{MaxLifetimeSeconds: 31536000, RotationGraceSeconds: 604800},
 		"nss_key":          nssKey,
 		"nss_key_list":     webtypes.NSSKeyListResponse{Keys: []webtypes.NSSKeyResponse{nssKey}, CanCreate: true},
@@ -166,7 +161,6 @@ func fullFixtures() map[string]any {
 			IsAuditor:     true,
 			IsNSSKeyAdmin: true,
 			NSSEnabled:    true,
-			Posix:         &posixAccount,
 
 			DetailLevel: model.DetailLevelAdvanced,
 		},
@@ -394,7 +388,7 @@ func fullFixtures() map[string]any {
 		"nss_account_detail": webtypes.NSSAccountDetailResponse{
 			ID: "8d0f3c2a-1b4e-4c6d-9a7f-0e1d2c3b4a59", Name: "ada.lovelace", UID: 10001, GID: new(uint32(10001)),
 			DirectoryID: "5b7c9d1e-2f3a-4b5c-8d6e-7f8091a2b3c4", DN: "uid=ada.lovelace,ou=people,dc=example,dc=net",
-			Home: &viewerHome, Shell: &viewerShell, ShellPref: &viewerShellPref, Gecos: "Ada Lovelace", DirDisabled: true,
+			Home: &viewerHome, Shell: &viewerShell, Gecos: "Ada Lovelace", DirDisabled: true,
 			Person: &webtypes.NSSLinkedPersonResponse{
 				UserID: "3c2b1a09-8f7e-4d6c-b5a4-938271605f4e", Username: "ada", DisplayName: "Ada Lovelace", DisabledAt: &deletedAt,
 			},
@@ -407,7 +401,7 @@ func fullFixtures() map[string]any {
 			Served: &webtypes.NSSServedAccountResponse{
 				Name: "ada.lovelace", UID: 10001, GID: 10001,
 				Groups: []webtypes.NSSServedMembershipResponse{{GID: 10001, Name: "ada.lovelace"}, {GID: 5000, Name: "engineering"}},
-				Home:   &viewerHome, Shell: &viewerShell, ShellPref: &viewerShellPref, Gecos: "Ada Lovelace",
+				Home:   &viewerHome, Shell: &viewerShell, Gecos: "Ada Lovelace",
 				Status: model.PosixStatusDisabled,
 			},
 			NotServed: model.NSSNotServedWithheld,
@@ -518,9 +512,6 @@ func zeroFixtures() map[string]any {
 		"nss_groups":                   webtypes.NSSGroupsResponse{},
 		"nss_group_detail":             webtypes.NSSGroupDetailResponse{},
 		"nss_group_members":            webtypes.NSSGroupMembersResponse{},
-		"posix_account":                webtypes.PosixAccountResponse{},
-		"update_shell":                 webtypes.UpdateShellBody{},
-		"nss_shells":                   webtypes.NSSShellsResponse{},
 		"nss_key":                      webtypes.NSSKeyResponse{},
 		"nss_key_settings":             webtypes.NSSKeySettingsResponse{},
 		"nss_key_list":                 webtypes.NSSKeyListResponse{},

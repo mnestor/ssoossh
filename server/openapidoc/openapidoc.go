@@ -264,12 +264,6 @@ type NSSGroupEnvelope struct {
 	Error *string                   `json:"error"`
 }
 
-// NSSShellsEnvelope is GET /api/nss/shells's body.
-type NSSShellsEnvelope struct {
-	Data  webtypes.NSSShellsResponse `json:"data" validate:"required"`
-	Error *string                    `json:"error"`
-}
-
 // NSSKeyListEnvelope is GET /api/nss/keys's body.
 type NSSKeyListEnvelope struct {
 	Data  webtypes.NSSKeyListResponse `json:"data" validate:"required"`
@@ -306,10 +300,4 @@ type NSSKeyUsageEnvelope struct {
 type NSSRotationReportEnvelope struct {
 	Data  webtypes.NSSRotationReportResponse `json:"data" validate:"required"`
 	Error *string                            `json:"error"`
-}
-
-// PosixAccountEnvelope is PUT /api/users/me/shell's body.
-type PosixAccountEnvelope struct {
-	Data  webtypes.PosixAccountResponse `json:"data" validate:"required"`
-	Error *string                       `json:"error"`
 }

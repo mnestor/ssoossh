@@ -204,7 +204,6 @@
 					</DetailRow>
 					<DetailRow label="Home" mono>{optional(served.home)}</DetailRow>
 					<DetailRow label="Shell" mono>{optional(served.shell)}</DetailRow>
-					<DetailRow label="Shell preference" mono>{optional(served.shell_pref)}</DetailRow>
 					<DetailRow label="Gecos">{optional(served.gecos)}</DetailRow>
 					<DetailRow label="Status">
 						<span class="capitalize" data-testid="nss-account-served-status">{served.status}</span>

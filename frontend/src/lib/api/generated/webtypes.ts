@@ -278,10 +278,6 @@ export interface NSSAccountDetailResponse {
 	 */
 	home?: string;
 	shell?: string;
-	/**
-	 * ShellPref is the linked person's own choice from nss.allowed_shells.
-	 */
-	shell_pref?: string;
 	gecos?: string;
 	/**
 	 * DirDisabled is the directory's own disabled flag
@@ -361,7 +357,6 @@ export interface NSSServedAccountResponse {
 	groups: NSSServedMembershipResponse[];
 	home?: string;
 	shell?: string;
-	shell_pref?: string;
 	gecos?: string;
 	status: PosixStatus;
 }
@@ -494,33 +489,6 @@ export interface NSSGroupMemberResponse {
 //////////
 // source: nss_fleet.go
 
-/**
- * PosixAccountResponse is the caller's own POSIX account: the uid and name
- * every host resolves them as, and the shell they chose.
- */
-export interface PosixAccountResponse {
-	uid: number /* uint32 */;
-	name: string;
-	/**
-	 * ShellPref is the shell name chosen from nss.allowed_shells, or null
-	 * when the account takes the directory's shell.
-	 */
-	shell_pref: string | null;
-}
-/**
- * UpdateShellBody sets or clears the caller's shell. Null, or the field
- * left out, clears it.
- */
-export interface UpdateShellBody {
-	shell_pref?: string;
-}
-/**
- * NSSShellsResponse is GET /api/nss/shells: the shell names a person may
- * choose, in configured order.
- */
-export interface NSSShellsResponse {
-	allowed_shells: string[];
-}
 /**
  * NSSKeyResponse is one fleet API key. The secret is never part of it:
  * only NSSKeySecretResponse carries one, once.
@@ -841,15 +809,10 @@ export interface CurrentUserResponse {
 	 */
 	is_nss_key_admin: boolean;
 	/**
-	 * NSSEnabled reports nss.enabled, so the UI shows the fleet keys and
-	 * the login shell only where the server serves them.
+	 * NSSEnabled reports nss.enabled, so the UI shows the fleet keys only
+	 * where the server serves them.
 	 */
 	nss_enabled: boolean;
-	/**
-	 * Posix is the caller's own POSIX account, or null when NSS is off or
-	 * no directory account is linked to them yet.
-	 */
-	posix: PosixAccountResponse | null;
 	/**
 	 * DetailLevel is how much of the covered pages this person sees:
 	 * "simplified" or "advanced". Stored on the server so it follows the

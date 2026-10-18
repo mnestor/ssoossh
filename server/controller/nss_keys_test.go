@@ -86,10 +86,9 @@ func nssCallerNamed(t *testing.T, name string) *service.Identity {
 // nssKeyEnv is a database with every caller's users row, and the services
 // the key routes run on, audited as in production.
 type nssKeyEnv struct {
-	db      *gorm.DB
-	cfg     *config.Config
-	keys    *service.NSSKeyService
-	lookups *service.NSSLookupService
+	db   *gorm.DB
+	cfg  *config.Config
+	keys *service.NSSKeyService
 }
 
 // newNSSKeyEnv builds the environment on a fresh database.
@@ -106,22 +105,22 @@ func newNSSKeyEnv(t *testing.T) *nssKeyEnv {
 		t.Fatalf("NewNSSKeyService: %v", err)
 	}
 	keys.SetAuditor(service.NewAuditService(cfg, db))
-	return &nssKeyEnv{db: db, cfg: cfg, keys: keys, lookups: service.NewNSSLookupService(cfg, db, nil)}
+	return &nssKeyEnv{db: db, cfg: cfg, keys: keys}
 }
 
 // router mounts the session NSS routes for identity.
 func (e *nssKeyEnv) router(identity *service.Identity) *gin.Engine {
-	return newNSSKeyRouter(e.keys, e.lookups, identityMiddleware(identity))
+	return newNSSKeyRouter(e.keys, identityMiddleware(identity))
 }
 
 // newNSSKeyRouter mounts NewNSSController at the root behind the error
 // middleware, with sessionAuth in the session middleware's place and CSRF
 // passing through.
-func newNSSKeyRouter(keys *service.NSSKeyService, lookups *service.NSSLookupService, sessionAuth gin.HandlerFunc) *gin.Engine {
+func newNSSKeyRouter(keys *service.NSSKeyService, sessionAuth gin.HandlerFunc) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.Use(middleware.NewErrorHandlerMiddleware().Add())
-	NewNSSController(&r.RouterGroup, keys, lookups, sessionAuth, func(g *gin.Context) { g.Next() })
+	NewNSSController(&r.RouterGroup, keys, sessionAuth, func(g *gin.Context) { g.Next() })
 	return r
 }
 
@@ -195,7 +194,6 @@ func TestNSSKeyController_RoleMatrix(t *testing.T) {
 		{name: "read a key's usage", method: http.MethodGet, path: "/nss/keys/{id}/usage", want: view},
 		{name: "read a key's rotation report", method: http.MethodGet, path: "/nss/keys/{id}/rotation-report", want: view},
 		{name: "download a key's rotation report", method: http.MethodGet, path: "/nss/keys/{id}/rotation-report?format=csv", want: view},
-		{name: "list the allowed shells", method: http.MethodGet, path: "/nss/shells", want: everyone},
 	}
 	for _, route := range routes {
 		for _, caller := range nssCallers() {
@@ -628,22 +626,6 @@ func TestNSSKeyController_ShouldPageTheUsage(t *testing.T) {
 	}
 }
 
-func TestNSSKeyController_ShouldListTheAllowedShells(t *testing.T) {
-	t.Parallel()
-
-	env := newNSSKeyEnv(t)
-	w := serveNSSKeys(env.router(nssCallerNamed(t, nssCallerUnrelated)), http.MethodGet, "/nss/shells", "")
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
-	}
-	var got webtypes.NSSShellsResponse
-	decodeEnvelope(t, w.Body.Bytes(), &got)
-	if !reflect.DeepEqual(got.AllowedShells, env.cfg.NSS.AllowedShells) {
-		t.Errorf("allowed_shells = %v, want %v", got.AllowedShells, env.cfg.NSS.AllowedShells)
-	}
-}
-
 func TestNSSKeyController_ShouldAnswerTheKeyLifetimesInSeconds(t *testing.T) {
 	t.Parallel()
 
@@ -745,10 +727,9 @@ func TestNSSKeyController_ShouldAnswerDisabledOnEveryRoute(t *testing.T) {
 	refuse := func(g *gin.Context) {
 		g.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"data": nil, "error": "no session", "error_code": apitypes.ErrorCodeUnauthenticated})
 	}
-	r := newNSSKeyRouter(nil, nil, refuse)
+	r := newNSSKeyRouter(nil, refuse)
 
 	for _, route := range []struct{ method, path, body string }{
-		{http.MethodGet, "/nss/shells", ""},
 		{http.MethodGet, "/nss/key-settings", ""},
 		{http.MethodGet, "/nss/keys", ""},
 		{http.MethodPost, "/nss/keys", `{"name":"x"}`},

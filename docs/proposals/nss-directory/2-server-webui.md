@@ -8,7 +8,7 @@ in [README.md](README.md).
 
 1. Fleet key list, detail, create, rotate, revoke, edit.
 2. Rotation report.
-3. Shell preference on the user's own settings page.
+3. Shell preference on the user's own settings page (removed 2026-10-18 after the threat review: the shell comes from the directory and host policy only).
 4. Hidden entirely when `nss_enabled` in the settings payload is false
    (Part 1 adds it beside `mail_enabled`; README R25).
 5. "Pending id changes" and "Collisions" panels on the existing
@@ -17,8 +17,8 @@ in [README.md](README.md).
    host's lookup is served for each, under `/admin/nss` (added 2026-10-18
    at the owner's request).
 
-No new API surface beyond Part 1. All data comes from `/api/nss/keys*`,
-`/api/nss/shells` and `/api/users/me`.
+No new API surface beyond Part 1. All data comes from `/api/nss/keys*`
+and `/api/users/me`.
 
 ## Routes
 
@@ -28,7 +28,6 @@ No new API surface beyond Part 1. All data comes from `/api/nss/keys*`,
 | `/nss-keys/new` | `is_nss_key_admin` (admins inherit it) | |
 | `/nss-keys/[id]` | read roles for that key | detail + usage |
 | `/nss-keys/[id]/rotation` | read roles | rotation report |
-| `/preferences` (existing) | every user | gains login shell field. `frontend/src/routes/preferences/` holds the notification and detail-level settings; the shell field goes there, not on `/account` |
 | `/admin/directory` (existing) | admin | gains a "Pending id changes" panel listing name, DN, stored and pending uid or gid, and how long it has been pending, from `GET /api/admin/nss/pending-id-changes`. One **Accept** button per row behind a typed confirmation (enter the name), whose copy says hosts will see the new number on their next refresh and that files owned by the old number are not moved. Empty state: "No pending changes". Beside it a "Collisions" panel from `GET /api/admin/nss/collisions`: one row per uid or name held by two entries, naming both, marking a tombstone, with a **Purge tombstone** button (typed confirmation, the name) that calls the DELETE. Live-versus-live collisions have no button, only the DNs to fix in the directory. Both panels hidden when `nss_enabled` is false |
 
 | `/admin/nss` | auditor, SOC, admin | (added 2026-10-18 at the owner's request) "NSS directory" in the admin group of the rail, not admin only, shown only when `nss_enabled` is true. Redirects to `/admin/nss/accounts` |
@@ -95,12 +94,8 @@ the header. Empty state before any rotation: "No rotation yet".
 
 ## Shell preference
 
-On the user's settings page: a "Login shell" select populated from
-`/api/nss/shells`, with a "Directory default" option that sends `null`.
-Help text: "Hosts use this shell if installed; otherwise the directory
-shell." Saves via `PATCH /api/users/me`; shows server validation errors.
-Hidden when `/api/users/me` returns `posix: null` (no linked directory
-entry, or NSS disabled).
+None (removed 2026-10-18 after the threat review: the shell comes from the directory and host policy only). The settings page has no login shell field, and
+`/preferences` keeps only the notification and detail-level settings.
 
 ## Tests (vitest, colocated `page.test.ts`)
 
@@ -115,7 +110,6 @@ entry, or NSS disabled).
   retained in component state after dismissal.
 - Revoke requires the exact id.
 - Rotation report bucketing and counts render from fixture data.
-- Shell select: null option, server error display.
 - Directory viewer (added 2026-10-18): the rail entry for auditor, SOC and
   admin and hidden with NSS off; search and state in the address; each
   empty, error and Load more state; the served verdict for served and each

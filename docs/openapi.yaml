@@ -216,12 +216,6 @@ components:
             nss.default_shell, else null. For a disabled or deleted account it is
             nss.disabled_shell.
           type: string
-        shell_pref:
-          description: |-
-            ShellPref is the shell name the user chose on the server (one of
-            nss.allowed_shells), or null. A name, not a path: the host resolves
-            it.
-          type: string
         status:
           description: Status is one of the NSSStatus* values.
           type: string
@@ -959,15 +953,6 @@ components:
       required:
       - data
       type: object
-    openapidoc.NSSShellsEnvelope:
-      properties:
-        data:
-          $ref: '#/components/schemas/webtypes.NSSShellsResponse'
-        error:
-          type: string
-      required:
-      - data
-      type: object
     openapidoc.NSSUserEnvelope:
       properties:
         data:
@@ -981,15 +966,6 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/webtypes.NotificationPreferencesResponse'
-        error:
-          type: string
-      required:
-      - data
-      type: object
-    openapidoc.PosixAccountEnvelope:
-      properties:
-        data:
-          $ref: '#/components/schemas/webtypes.PosixAccountResponse'
         error:
           type: string
       required:
@@ -2124,8 +2100,8 @@ components:
           type: string
         nss_enabled:
           description: |-
-            NSSEnabled reports nss.enabled, so the UI shows the fleet keys and
-            the login shell only where the server serves them.
+            NSSEnabled reports nss.enabled, so the UI shows the fleet keys only
+            where the server serves them.
           type: boolean
         other_accounts:
           description: |-
@@ -2139,8 +2115,6 @@ components:
             type: string
           type: array
           uniqueItems: false
-        posix:
-          $ref: '#/components/schemas/webtypes.PosixAccountResponse'
         service_accounts:
           description: |-
             ServiceAccounts are the service accounts this identity holds (see
@@ -2180,7 +2154,6 @@ components:
       - name
       - nss_enabled
       - other_accounts
-      - posix
       - service_accounts
       - subject
       - user_own_service_accounts
@@ -2862,9 +2835,6 @@ components:
           $ref: '#/components/schemas/webtypes.NSSServedAccountResponse'
         shell:
           type: string
-        shell_pref:
-          description: ShellPref is the linked person's own choice from nss.allowed_shells.
-          type: string
         state:
           $ref: '#/components/schemas/model.NSSEntryState'
         uid:
@@ -3505,8 +3475,6 @@ components:
           type: string
         shell:
           type: string
-        shell_pref:
-          type: string
         status:
           $ref: '#/components/schemas/model.PosixStatus'
         uid:
@@ -3551,16 +3519,6 @@ components:
       required:
       - gid
       - name
-      type: object
-    webtypes.NSSShellsResponse:
-      properties:
-        allowed_shells:
-          items:
-            type: string
-          type: array
-          uniqueItems: false
-      required:
-      - allowed_shells
       type: object
     webtypes.NSSStoredMembershipResponse:
       properties:
@@ -3726,25 +3684,6 @@ components:
       - detail_level
       - groups
       - kinds
-      type: object
-    webtypes.PosixAccountResponse:
-      description: |-
-        Posix is the caller's own POSIX account, or null when NSS is off or
-        no directory account is linked to them yet.
-      properties:
-        name:
-          type: string
-        shell_pref:
-          description: |-
-            ShellPref is the shell name chosen from nss.allowed_shells, or null
-            when the account takes the directory's shell.
-          type: string
-        uid:
-          type: integer
-      required:
-      - name
-      - shell_pref
-      - uid
       type: object
     webtypes.ReEnableUserRequestBody:
       properties:
@@ -4135,11 +4074,6 @@ components:
           type: object
       required:
       - kinds
-      type: object
-    webtypes.UpdateShellBody:
-      properties:
-        shell_pref:
-          type: string
       type: object
     webtypes.VersionResponse:
       properties:
@@ -7348,34 +7282,6 @@ paths:
       summary: A fleet API key's usage
       tags:
       - web
-  /api/nss/shells:
-    get:
-      description: nss.allowed_shells, as bare names in configured order, for the
-        login shell field.
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/openapidoc.NSSShellsEnvelope'
-          description: The allowed shells
-        "401":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
-          description: No valid session
-        "404":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
-          description: 'nss_disabled: nss.enabled is false'
-      security:
-      - sessionCookie: []
-      summary: The shells a person may choose
-      tags:
-      - web
   /api/nss/user/name/{name}:
     get:
       description: |-
@@ -7651,59 +7557,6 @@ paths:
       security:
       - sessionCookie: []
       summary: Update the caller's own notification preferences
-      tags:
-      - web
-  /api/users/me/shell:
-    put:
-      description: |-
-        Sets shell_pref on the caller's POSIX account to one of nss.allowed_shells (see
-        /api/nss/shells), or clears it with null. Hosts resolve the name to their own path. A name
-        outside the list is a 400 whose message starts with shell_not_allowed. Audited.
-      requestBody:
-        content:
-          application/json:
-            schema:
-              oneOf:
-              - type: object
-              - $ref: '#/components/schemas/webtypes.UpdateShellBody'
-                description: The shell name, or null
-                summary: request
-        description: The shell name, or null
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/openapidoc.PosixAccountEnvelope'
-          description: The account after saving
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
-          description: Malformed body, or shell_not_allowed
-        "401":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
-          description: No valid session
-        "403":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
-          description: The session has no user record
-        "404":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
-          description: No POSIX account is linked to the caller, or nss_disabled
-      security:
-      - sessionCookie: []
-      summary: Choose the caller's own login shell
       tags:
       - web
   /api/version:

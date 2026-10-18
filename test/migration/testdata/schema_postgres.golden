@@ -303,7 +303,6 @@ table posix_users
   column pending_since type=timestamp with time zone nullable=true default=<none>
   column pending_uid type=bigint nullable=true default=<none>
   column shell type=text nullable=true default=<none>
-  column shell_pref type=text nullable=true default=<none>
   column uid type=bigint nullable=false default=<none>
   column updated_at type=timestamp with time zone nullable=false default=<none>
   column user_id type=text nullable=true default=<none>

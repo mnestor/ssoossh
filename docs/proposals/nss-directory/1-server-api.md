@@ -14,7 +14,7 @@ and decisions are in [README.md](README.md).
   `/api/users/me` for Part 2 (README R25).
 - Fleet API key model, admin endpoints, role `admin.nss_key_group`.
 - `nss_key_usage` aggregate, rotation report data, mail events.
-- Shell self-service on `/api/users/me`.
+- Shell self-service on `/api/users/me` (removed 2026-10-18 after the threat review: the shell comes from the directory and host policy only).
 - `nss.*` configuration, `make confdocs`, `make wire-contract`, swag.
 
 Out of scope: any HTML or Svelte (Part 2), anything on the host (Part 3).
@@ -54,7 +54,6 @@ unresolvable account is visible in the log rather than silently absent.
   "groups": [{"gid": 1234, "name": "mike"}, {"gid": 27, "name": "sudo"}],
   "home": "/home/mike",
   "shell": "/bin/bash",
-  "shell_pref": "zsh",
   "gecos": "Mike Nestor",
   "status": "active",
   "key_id": "nss_k7m4qp2x"
@@ -66,8 +65,8 @@ unresolvable account is visible in the log rather than silently absent.
   gid from one call. Group members (`GetMemberships` by group) still need
   the group endpoint.
 - `home`: `homeDirectory`, else `nss.default_home` expanded, else null.
-- `shell`: `loginShell` path, else `nss.default_shell`, else null.
-- `shell_pref`: user's chosen shell **name** or null.
+- `shell`: `loginShell` path, else `nss.default_shell`, else null. There is
+  no user-chosen shell beside it (removed 2026-10-18 after the threat review: the shell comes from the directory and host policy only).
 - `gecos`: the rendered and sanitised `nss.gecos_template` output (see
   [POSIX attribute mapping](#posix-attribute-mapping)).
 - `status`: `active` | `disabled` | `deleted`, derived as described under
@@ -107,7 +106,6 @@ unchanged)
 | `pending_uid`, `pending_gid` | uint32, nullable | a differing directory value the sync refused to apply |
 | `pending_since` | timestamp, nullable | first sync that saw the pending value |
 | `home`, `shell` | text, nullable | mapped attributes; follow the directory |
-| `shell_pref` | text, nullable | user-set name; only meaningful with a `user_id` |
 | `gecos` | text | rendered, sanitised template output (R35) |
 | `dir_disabled` | bool | the directory's own disabled flag (`nss.disabled_filter`) |
 | `missing_since` | timestamp, nullable | first sync that could not find the entry by id, DN or filter |
@@ -321,7 +319,7 @@ for the newest-first cursor read. What each event refers to:
 | `nss.group_members_changed` | the group, and every added and removed account that is stored, including those past the 100 the detail lists |
 | `nss.uid_collision`, `nss.gid_collision`, `nss.name_collision` | the holder, and the other entry when it is stored too |
 | `nss.id_change_pending`, `nss.id_change_accepted`, `nss.tombstone_purged` | the row |
-| `nss.shell_changed`, `nss.name_mismatch` | the account |
+| `nss.name_mismatch` | the account |
 | `nss.initial_import` | none: it is a summary |
 
 The fleet key and lookup events (`nss.key_*`, `nss.lookup_forbidden`,
@@ -463,14 +461,11 @@ and an attribute outside the allow list (renders empty, never the value).
 
 ## Shell self-service
 
-`GET/PATCH /api/users/me` gains `posix` (`{uid, name, shell_pref}` or null
-when no `posix_users` row is linked to the user or NSS is disabled); PATCH
-accepts
-`shell_pref` (string or null). The server
-validates against `nss.allowed_shells` (names, default `[sh, bash, zsh,
-fish]`), audit-logs changes, and returns 400 `shell_not_allowed` otherwise.
-`GET /api/nss/shells` (session auth) returns the allowed list for the UI.
-Home directory is not user-settable.
+None (removed 2026-10-18 after the threat review: the shell comes from the directory and host policy only). The design that stood here let a person pick a shell name
+from a server list in the web UI, served beside the directory's shell for
+the host to resolve. A person must not be able to pick the shell a host
+serves them, so neither the shell nor the home directory is user-settable,
+and `/api/users/me` carries no POSIX account.
 
 ## Session flags for the web UI
 
@@ -613,7 +608,6 @@ nss:
   default_home: /home/%u
   default_shell: ""            # empty: null in responses
   disabled_shell: /usr/sbin/nologin
-  allowed_shells: [sh, bash, zsh, fish]
   max_group_members: 2000
   rate_limit: 20
   rate_burst: 200

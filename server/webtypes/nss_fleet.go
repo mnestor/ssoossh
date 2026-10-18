@@ -7,31 +7,8 @@ import (
 )
 
 // The NSS directory's session-authenticated shapes: the fleet API key
-// administration under /api/nss/keys, the allowed shells, and a person's
-// own POSIX account on /api/users/me. The host-facing lookups are in
+// administration under /api/nss/keys. The host-facing lookups are in
 // internal/apitypes, because the ssoosshd-nss daemon decodes them in Go.
-
-// PosixAccountResponse is the caller's own POSIX account: the uid and name
-// every host resolves them as, and the shell they chose.
-type PosixAccountResponse struct {
-	UID  uint32 `json:"uid" validate:"required"`
-	Name string `json:"name" validate:"required"`
-	// ShellPref is the shell name chosen from nss.allowed_shells, or null
-	// when the account takes the directory's shell.
-	ShellPref *string `json:"shell_pref" tstype:"string | null,required" validate:"required"`
-}
-
-// UpdateShellBody sets or clears the caller's shell. Null, or the field
-// left out, clears it.
-type UpdateShellBody struct {
-	ShellPref *string `json:"shell_pref"`
-}
-
-// NSSShellsResponse is GET /api/nss/shells: the shell names a person may
-// choose, in configured order.
-type NSSShellsResponse struct {
-	AllowedShells []string `json:"allowed_shells" validate:"required"`
-}
 
 // NSSKeyResponse is one fleet API key. The secret is never part of it:
 // only NSSKeySecretResponse carries one, once.

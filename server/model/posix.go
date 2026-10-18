@@ -63,10 +63,6 @@ type PosixUser struct {
 	Home  *string `gorm:"column:home"`
 	Shell *string `gorm:"column:shell"`
 
-	// ShellPref is the person's own choice from nss.allowed_shells. Only
-	// meaningful on a row with a UserID.
-	ShellPref *string `gorm:"column:shell_pref"`
-
 	// Gecos is the rendered and sanitised nss.gecos_template.
 	Gecos string `gorm:"column:gecos"`
 

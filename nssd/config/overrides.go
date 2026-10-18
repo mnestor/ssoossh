@@ -22,7 +22,7 @@ type Override struct {
 	GID *uint32 `yaml:"gid,omitempty"`
 	// Home replaces the home directory.
 	Home string `yaml:"home,omitempty"`
-	// Shell replaces the shell, and wins over the user's shell_pref.
+	// Shell replaces the directory's shell.
 	Shell string `yaml:"shell,omitempty"`
 }
 

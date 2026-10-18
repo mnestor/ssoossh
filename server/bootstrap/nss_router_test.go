@@ -32,7 +32,7 @@ func nssRouterConfig(rateLimit int) *config.Config {
 	c.Admin.RequireGroup = "admins"
 	c.NSS = config.NSSConfig{
 		Enabled: true, AutoPrivateGroups: config.AutoPrivateGroupsHybrid, TombstoneRetention: time.Hour,
-		DefaultHome: "/home/%u", DisabledShell: "/usr/sbin/nologin", AllowedShells: []string{"bash"},
+		DefaultHome: "/home/%u", DisabledShell: "/usr/sbin/nologin",
 		MaxGroupMembers: 10, RateLimit: 20, RateBurst: 200, KeyMaxLifetime: time.Hour, KeyRotationGrace: time.Hour,
 	}
 	return c
@@ -152,13 +152,13 @@ func TestNSSRouter_ShouldLeaveLookupsToTheirOwnLimiterWhenTheGlobalOneIsTight(t 
 	codes := []int{}
 	for range 2 {
 		w := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/api/nss/shells", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/nss/key-settings", nil)
 		req.RemoteAddr = addr
 		srv.router.ServeHTTP(w, req)
 		codes = append(codes, w.Code)
 	}
 	if codes[1] != http.StatusTooManyRequests {
-		t.Errorf("shells codes = %v, want the second refused by the global limit", codes)
+		t.Errorf("key-settings codes = %v, want the second refused by the global limit", codes)
 	}
 }
 
@@ -176,8 +176,6 @@ func TestNSSRouter_ShouldAnswerNSSDisabledOnEveryNSSRouteWhenNSSIsOff(t *testing
 		{http.MethodGet, "/api/nss/group/name/eng"},
 		{http.MethodGet, "/api/nss/group/gid/1"},
 		{http.MethodGet, "/api/nss/keys"},
-		{http.MethodGet, "/api/nss/shells"},
-		{http.MethodPut, "/api/users/me/shell"},
 	} {
 		w := httptest.NewRecorder()
 		srv.router.ServeHTTP(w, httptest.NewRequest(route.method, route.path, nil))

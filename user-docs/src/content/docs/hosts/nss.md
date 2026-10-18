@@ -411,14 +411,19 @@ numbers, so the change is visible in the journal of every host it reached.
 
 ## Shells and overrides
 
-A user's shell is the first acceptable one of: `override_shell`, the shell
-the user chose for themselves on the server (a name such as `zsh`, mapped
-through `shell_map` and then by name in `/etc/shells`), the directory's
-shell, and finally `shell_fallback`, which is used even when nothing else
-is acceptable. Acceptable means listed in `allowed_shells` (or in
-`/etc/shells` when that is empty) and not in `vetoed_shells`. The home is the
+A user's shell is the first acceptable one of: `override_shell`, the
+directory's shell (or a host override's, below), and finally
+`shell_fallback`, which is used even when nothing else is acceptable.
+Acceptable means listed in `allowed_shells` (or in `/etc/shells` when that
+is empty) and not in `vetoed_shells`. Users do not choose their own shell:
+it comes from the directory and this host's policy only. The home is the
 first absolute path of `override_homedir`, the directory's home and
 `fallback_homedir`.
+
+The per-user shell choice and its `shell_map` option were removed on
+2026-10-18 after the threat review: the shell comes from the directory and
+host policy only. `nss.yaml` refuses unknown keys, so a file that still sets
+`shell_map` no longer loads; delete the line.
 
 One user can be given a different uid, gid, home or shell on this host only:
 
@@ -432,8 +437,8 @@ The overrides live in `/etc/ssoossh/nss-overrides.yaml`, keyed by account
 name like `principals.yaml`. The command rewrites the file atomically and
 tells the running daemon to re-read it; no cache flush is needed, because
 overrides apply as entries are read. An override uid or gid outside
-`min_id..max_id` is refused, and a host override shell beats the user's own
-choice. The file must not be group- or world-writable. A broken file refuses
+`min_id..max_id` is refused, and a host override shell replaces the
+directory's. The file must not be group- or world-writable. A broken file refuses
 the daemon's start; once it is running, a later broken edit keeps the last
 good overrides.
 
@@ -498,7 +503,6 @@ three in step.
 | `shell_fallback` | `/bin/sh` | the shell when no other candidate is acceptable, used even when it is not |
 | `allowed_shells` | `[]` | the acceptable shells; empty means `/etc/shells` |
 | `vetoed_shells` | `[]` | shells never acceptable |
-| `shell_map` | `{}` | maps a shell name a user may choose on the server to a path on this host, such as `zsh: /opt/homebrew/bin/zsh` |
 | `disabled_shell` | `/usr/sbin/nologin` | the shell of a disabled or deleted account, which is also served locked; exempt from the shells checks, since Debian does not list `nologin` in `/etc/shells` |
 | `ignore_group_members` | `false` | drops member lists from group answers; a user's own groups still resolve |
 | `filter_users` | `[root]` | user names never served, however the server answers |

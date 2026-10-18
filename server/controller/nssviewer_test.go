@@ -177,7 +177,7 @@ func TestNSSViewerAccount_ShouldMapTheAccountAndWhatIsServedWhenAsked(t *testing
 	seedPlainUser(t, db, "u-ada")
 	userID := "u-ada"
 	seedNSSAccount(t, db, "ada", 1001, 500, func(r *model.PosixUser) {
-		r.UserID, r.Home, r.Shell, r.ShellPref = &userID, ptrTo("/home/ada"), ptrTo("/bin/bash"), ptrTo("/bin/zsh")
+		r.UserID, r.Home, r.Shell = &userID, ptrTo("/home/ada"), ptrTo("/bin/bash")
 		r.DirectoryID, r.Gecos, r.PendingGID, r.PendingSince = "dir-ada", "Ada Lovelace", u32(501), ptrTime(nssAdminTime())
 	})
 	seedNSSGroup(t, db, "staff", 500, nil)
@@ -201,8 +201,8 @@ func TestNSSViewerAccount_ShouldMapTheAccountAndWhatIsServedWhenAsked(t *testing
 	}
 	s := got.Served
 	if s == nil || got.NotServed != "" || s.GID != 500 || len(s.Groups) != 1 || s.Groups[0].Name != "staff" ||
-		s.Status != model.PosixStatusActive || s.ShellPref == nil || *s.ShellPref != "/bin/zsh" {
-		t.Errorf("served = %+v (not served %q), want ada active in staff with her shell pref", s, got.NotServed)
+		s.Status != model.PosixStatusActive || s.Shell == nil || *s.Shell != "/bin/bash" {
+		t.Errorf("served = %+v (not served %q), want ada active in staff with her directory shell", s, got.NotServed)
 	}
 }
 

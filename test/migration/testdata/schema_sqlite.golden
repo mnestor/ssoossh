@@ -301,7 +301,6 @@ table posix_users
   column pending_since type=DATETIME nullable=true pk=false default=<none>
   column pending_uid type=INTEGER nullable=true pk=false default=<none>
   column shell type=TEXT nullable=true pk=false default=<none>
-  column shell_pref type=TEXT nullable=true pk=false default=<none>
   column uid type=INTEGER nullable=false pk=false default=<none>
   column updated_at type=DATETIME nullable=false pk=false default=<none>
   column user_id type=TEXT nullable=true pk=false default=<none>

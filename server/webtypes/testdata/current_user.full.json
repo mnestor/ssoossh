@@ -31,10 +31,5 @@
   "is_auditor": true,
   "is_nss_key_admin": true,
   "nss_enabled": true,
-  "posix": {
-    "uid": 10001,
-    "name": "alice",
-    "shell_pref": "zsh"
-  },
   "detail_level": "advanced"
 }

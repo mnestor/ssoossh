@@ -180,7 +180,6 @@ nss.tombstone_retention = 2160h0m0s
 nss.default_home = /home/%u
 nss.default_shell = 
 nss.disabled_shell = /usr/sbin/nologin
-nss.allowed_shells = sh, bash, zsh, fish
 nss.max_group_members = 2000
 nss.rate_limit = 20
 nss.rate_burst = 200

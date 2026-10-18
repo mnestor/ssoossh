@@ -606,7 +606,7 @@ func TestNSSViewerAccount_ShouldMatchTheLookupWhenTheAccountIsServed(t *testing.
 
 	db := testdb.New(t)
 	id := seedNSSPerson(t, db, "sub-alice", "alice", nil)
-	seedPosixUser(t, db, model.PosixUser{Name: "alice", UID: 10001, GID: new(uint32(500)), UserID: &id, ShellPref: ptr("/bin/zsh"), Gecos: "Alice"})
+	seedPosixUser(t, db, model.PosixUser{Name: "alice", UID: 10001, GID: new(uint32(500)), UserID: &id, Shell: ptr("/bin/zsh"), Gecos: "Alice"})
 	seedPosixGroup(t, db, model.PosixGroup{Name: "staff", GID: 500})
 	seedPosixGroup(t, db, model.PosixGroup{Name: "ops", GID: 600})
 	seedPosixMembers(t, db, 600, 10001)

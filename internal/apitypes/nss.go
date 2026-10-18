@@ -80,10 +80,6 @@ type NSSUserResponse struct {
 	// nss.default_shell, else null. For a disabled or deleted account it is
 	// nss.disabled_shell.
 	Shell *string `json:"shell"`
-	// ShellPref is the shell name the user chose on the server (one of
-	// nss.allowed_shells), or null. A name, not a path: the host resolves
-	// it.
-	ShellPref *string `json:"shell_pref"`
 	// Gecos is the rendered and sanitised nss.gecos_template output.
 	Gecos string `json:"gecos"`
 	// Status is one of the NSSStatus* values.

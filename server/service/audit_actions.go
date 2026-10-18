@@ -233,10 +233,10 @@ const (
 // The NSS directory's lookup endpoints and fleet keys. The lookups
 // themselves are never audited, one row per getpwnam would bury everything
 // else; what is recorded is what an operator acts on: a refused source
-// address, a dead key still being presented, the usage alerts, every change
-// to a key, and a person choosing their login shell. The alerts are each
-// raised at most once per window across every instance (see
-// claimNSSAlert), so a flood records one row, not thousands.
+// address, a dead key still being presented, the usage alerts and every
+// change to a key. The alerts are each raised at most once per window
+// across every instance (see claimNSSAlert), so a flood records one row,
+// not thousands.
 const (
 	// AuditNSSLookupForbidden is a lookup from an address outside
 	// nss.source_allow_list, refused before its key was checked. The
@@ -278,7 +278,4 @@ const (
 	// AuditNSSKeyRevoked is a key revoked. Terminal: a revoked key is
 	// never accepted again.
 	AuditNSSKeyRevoked AuditAction = "nss.key_revoked"
-	// AuditNSSShellChanged is a person choosing, or clearing, the login
-	// shell their own POSIX account is served with.
-	AuditNSSShellChanged AuditAction = "nss.shell_changed"
 )

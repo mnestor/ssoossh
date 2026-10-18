@@ -81,7 +81,6 @@ override_shell: /bin/bash
 shell_fallback: /bin/bash
 allowed_shells: [/bin/bash, /bin/zsh]
 vetoed_shells: [/bin/csh]
-shell_map: {zsh: /opt/homebrew/bin/zsh}
 disabled_shell: /bin/false
 ignore_group_members: true
 filter_users: [root, admin]
@@ -106,7 +105,7 @@ require_groups: [staff]
 		{"duration strings", c.Timeout == 3*time.Second && c.LoginRefreshTimeout == 500*time.Millisecond},
 		{"float rate", c.RefreshRate == 0.5},
 		{"ids", c.MinID == 2000 && c.MaxID == 60000 && c.OverrideGID == 100},
-		{"shell map", c.ShellMap["zsh"] == "/opt/homebrew/bin/zsh"},
+		{"shell lists", slices.Equal(c.AllowedShells, []string{"/bin/bash", "/bin/zsh"}) && slices.Equal(c.VetoedShells, []string{"/bin/csh"})},
 		{"lists", slices.Equal(c.FilterUsers, []string{"root", "admin"}) && slices.Equal(c.RequireGroups, []string{"staff"})},
 		{"bools", c.IgnoreGroupMembers},
 		{"user ttl", c.TTLUser() == 5*time.Minute},
@@ -237,7 +236,6 @@ func TestValidate(t *testing.T) {
 		{name: "should refuse an empty fallback shell when it is required", mutate: func(c *Config) { c.ShellFallback = "" }, wantErr: "shell_fallback is required"},
 		{name: "should refuse a relative disabled shell when it must be absolute", mutate: func(c *Config) { c.DisabledShell = "nologin" }, wantErr: "disabled_shell"},
 		{name: "should refuse a relative allowed shell when it must be absolute", mutate: func(c *Config) { c.AllowedShells = []string{"bash"} }, wantErr: "allowed_shells"},
-		{name: "should refuse a relative shell map path when it must be absolute", mutate: func(c *Config) { c.ShellMap = map[string]string{"zsh": "zsh"} }, wantErr: "shell_map"},
 		{name: "should accept a template unit when it ends in @.service", mutate: func(c *Config) { c.SSHDUnits = []string{"sshd@.service"} }},
 		{name: "should refuse a unit that is not a service when it ends otherwise", mutate: func(c *Config) { c.SSHDUnits = []string{"sshd.socket"} }, wantErr: "sshd_units"},
 		{name: "should refuse a bare template when it has no name", mutate: func(c *Config) { c.SSHDUnits = []string{"@.service"} }, wantErr: "sshd_units"},

@@ -114,7 +114,7 @@ for anyone whose admin group also appears in a policy rule.
 | Approve or deny your own requests; your own certificates and history | no |
 | Your own service codes (create, notify, expire your own) | no |
 | NSS keys you manage as a key-group member or NSS key admin (`admin.nss_key_group`) | no |
-| Your own preferences, login shell | no |
+| Your own preferences | no |
 | Anything under `/api/admin/*`, reads included (users, certificates, audit, config, directory, diagnostics, claims echo) | yes |
 | SOC containment: expire someone else's service code, disable or enable a user, revoke an NSS key outside your groups | yes |
 | Auditor reads of anything that is not yours, NSS keys included | yes |

@@ -255,7 +255,6 @@ override_shell: ""
 shell_fallback: /bin/sh
 allowed_shells: []                # empty -> /etc/shells
 vetoed_shells: []
-shell_map: {}                     # zsh: /opt/homebrew/bin/zsh
 disabled_shell: /usr/sbin/nologin
 ignore_group_members: false
 filter_users: [root]
@@ -369,10 +368,11 @@ with the reason and treated as `NoRecordFound` (and negative-cached).
 - Home: `override_homedir` -> server `home` -> `fallback_homedir`;
   must be absolute after expansion.
 - Shell, first acceptable wins:
-  `override_shell` -> `shell_pref` resolved by `shell_map` then basename
-  match in `/etc/shells` -> server `shell` -> `shell_fallback`.
-  Acceptable = in `allowed_shells` (or `/etc/shells` when empty) and not in
-  `vetoed_shells`.
+  `override_shell` -> server `shell` (or a host override's) ->
+  `shell_fallback`. Acceptable = in `allowed_shells` (or `/etc/shells` when
+  empty) and not in `vetoed_shells`. The user's own shell choice and the
+  `shell_map` that resolved it are gone (removed 2026-10-18 after the threat review: the shell comes from the directory and host policy only); a host config that still
+  sets `shell_map` fails to load, because unknown keys are refused.
 - `status` `disabled`/`deleted`: shell = `disabled_shell`, **exempt from the
   shells check** (README R4); `locked: true` (README U6); log warning when
   served to sshd.

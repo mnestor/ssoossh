@@ -95,7 +95,6 @@ var auditActions = []AuditAction{
 	AuditNSSKeyRotated,
 	AuditNSSKeyPreviousCleared,
 	AuditNSSKeyRevoked,
-	AuditNSSShellChanged,
 }
 
 // IsAuditAction reports whether action is in the taxonomy, including the
@@ -423,7 +422,6 @@ func (s *AuditService) emit(event AuditEvent) {
 //   - nss.lookup_forbidden, nss.key_revoked_attempt and
 //     nss.key_expired_attempt: the host that made the lookup, as ClientIP
 //     sees it through http.trusted_proxies.
-//   - nss.shell_changed: the caller's browser.
 //   - every other action: none, so "".
 //
 // approver_ip on cert.approved and cert.denied is deliberately not used: it
