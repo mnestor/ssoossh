@@ -181,3 +181,74 @@ func TestRateLimitMiddleware_ShouldAdvertiseTheRemainingBudget(t *testing.T) {
 		t.Errorf("got RateLimit-Reset %q, want a positive retry hint once the budget is exhausted", got)
 	}
 }
+
+// TestRateLimitMiddleware_ShouldLeaveNSSLookupPrefixesToTheirOwnLimiter
+// covers SkipPathPrefixes as the router uses it: the NSS lookups are never
+// counted against the per-IP bucket, which still limits every other path,
+// the session routes under /api/nss included.
+func TestRateLimitMiddleware_ShouldLeaveNSSLookupPrefixesToTheirOwnLimiter(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name       string
+		paths      []string
+		wantStatus []int
+	}{
+		{
+			name:       "should never limit a lookup path when its prefix is skipped",
+			paths:      []string{"/api/nss/user/name/alice", "/api/nss/user/uid/1", "/api/nss/group/name/devs", "/api/nss/group/gid/27", "/api/nss/user/name/bob"},
+			wantStatus: []int{http.StatusOK, http.StatusOK, http.StatusOK, http.StatusOK, http.StatusOK},
+		},
+		{
+			name:       "should still limit a session route under /api/nss when only the lookups are skipped",
+			paths:      []string{"/api/nss/keys", "/api/nss/shells"},
+			wantStatus: []int{http.StatusOK, http.StatusTooManyRequests},
+		},
+		{
+			name:       "should not spend the shared bucket when a skipped path is served",
+			paths:      []string{"/api/nss/user/name/alice", "/api/nss/group/gid/27", "/api/users/me", "/api/users/me"},
+			wantStatus: []int{http.StatusOK, http.StatusOK, http.StatusOK, http.StatusTooManyRequests},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			r := gin.New()
+			r.Use(NewErrorHandlerMiddleware().Add())
+			r.Use(NewRateLimitMiddleware().Add(rate.Every(time.Minute), 1, SkipPathPrefixes(NSSLookupPathPrefixes()...)))
+			r.NoRoute(func(c *gin.Context) { c.Status(http.StatusOK) })
+
+			for i, path := range tc.paths {
+				w := httptest.NewRecorder()
+				req := httptest.NewRequest(http.MethodGet, path, nil)
+				req.RemoteAddr = "203.0.113.90:1234"
+				r.ServeHTTP(w, req)
+				if w.Code != tc.wantStatus[i] {
+					t.Errorf("request %d to %s: status = %d, want %d", i, path, w.Code, tc.wantStatus[i])
+				}
+			}
+		})
+	}
+}
+
+// TestRateLimitMiddleware_ShouldNotAdvertiseABudgetOnASkippedNSSPath keeps
+// the per-IP headers off the lookups, which carry their own bucket's.
+func TestRateLimitMiddleware_ShouldNotAdvertiseABudgetOnASkippedNSSPath(t *testing.T) {
+	t.Parallel()
+
+	handler := NewRateLimitMiddleware().Add(rate.Every(time.Minute), 1, SkipPathPrefixes(NSSLookupPathPrefixes()...))
+
+	c, w := newTestRequest("203.0.113.91:1234")
+	c.Request.URL.Path = "/api/nss/user/name/alice"
+	handler(c)
+
+	if c.IsAborted() {
+		t.Fatal("expected the skipped lookup to pass")
+	}
+	if got := w.Header().Get("RateLimit-Limit"); got != "" {
+		t.Errorf("RateLimit-Limit = %q, want none from the per-IP limiter", got)
+	}
+}

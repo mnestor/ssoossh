@@ -4,8 +4,10 @@ import (
 	"context"
 	"time"
 
+	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/mnestor/ssoossh/internal/version"
 	"github.com/mnestor/ssoossh/server/service"
 )
 
@@ -42,6 +44,15 @@ type services struct {
 	identity *service.IdentityService
 	// detailLevels holds each person's web and email detail levels.
 	detailLevels *service.DetailLevelService
+
+	// nssLookup answers the NSS directory lookups and the shell
+	// self-service, nssKeys administers and verifies the fleet keys, and
+	// nssUsage aggregates their use and raises the usage alerts. All three
+	// are nil when nss.enabled is false, which the routes answer with
+	// nss_disabled.
+	nssLookup *service.NSSLookupService
+	nssKeys   *service.NSSKeyService
+	nssUsage  *service.NSSUsageService
 }
 
 // initServices constructs the services using a.config and a.httpClient,
@@ -135,9 +146,53 @@ func (a *app) initServices() (*services, error) {
 	svc.identity = service.NewIdentityService(a.db, svc.ldap)
 	svc.detailLevels = service.NewDetailLevelService(a.db, &a.config.Admin)
 
+	if err := a.initNSSServices(svc); err != nil {
+		return nil, err
+	}
+
 	// Validate lifetime policy configuration against reverse-proxy settings.
 	// This is a startup check with logging only; bad config here is not an error.
 	svc.certRequest.ValidateStartupConfig()
 
 	return svc, nil
+}
+
+// initNSSServices builds the NSS directory's lookup, fleet key and usage
+// services when nss.enabled is on, leaving all three nil otherwise. The
+// metrics resolve from the global meter provider, which
+// initObservability has installed by now (a no-op one when metrics are
+// off).
+func (a *app) initNSSServices(svc *services) error {
+	if !a.config.NSS.Enabled {
+		return nil
+	}
+	meter := otel.GetMeterProvider().Meter(version.TracerName)
+
+	keys, err := service.NewNSSKeyService(a.config, a.db, meter)
+	if err != nil {
+		return err
+	}
+	keys.SetAuditor(svc.audit)
+	keys.SetNotifier(svc.notification)
+	svc.nssKeys = keys
+
+	// The third argument is the directory refresher: the lookups ask it
+	// for a name or id the database does not hold yet, an entry created
+	// since the last sync. Without the NSS directory they answer from the
+	// database alone; passed as an untyped nil then, so the lookups see no
+	// refresher rather than a nil pointer behind an interface.
+	if svc.nss != nil {
+		svc.nssLookup = service.NewNSSLookupService(a.config, a.db, svc.nss)
+	} else {
+		svc.nssLookup = service.NewNSSLookupService(a.config, a.db, nil)
+	}
+	svc.nssLookup.SetAuditor(svc.audit)
+
+	usage, err := service.NewNSSUsageService(a.config, a.db, keys, meter)
+	if err != nil {
+		return err
+	}
+	usage.SetAuditor(svc.audit)
+	svc.nssUsage = usage
+	return nil
 }

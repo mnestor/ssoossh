@@ -338,3 +338,156 @@ type AdminAutoDisabled struct {
 	SupportEmail string `json:"support_email,omitempty"`
 	ServerURL    string `json:"server_url"`
 }
+
+// The NSS fleet key payloads below describe one fleet key from
+// nss_keys (see model.NSSKey). None of them carries a key secret, current
+// or previous, and none may: mail is stored, forwarded and read on devices
+// the server knows nothing about, and a secret is shown exactly once, when
+// the key is created or rotated.
+
+// NSSKeyExpiring is the payload for KindNSSKeyExpiring: the reminder that a
+// fleet key is about to stop being accepted, and hosts presenting it will
+// stop resolving accounts through it.
+type NSSKeyExpiring struct {
+	Reader
+
+	KeyID   string `json:"key_id"`
+	KeyName string `json:"key_name"`
+
+	// Description and GroupName are the key's own descriptive fields, empty
+	// when unset. GroupName is the group whose members manage the key.
+	Description string `json:"description,omitempty"`
+	GroupName   string `json:"group_name,omitempty"`
+
+	// ExpiresAt is when the key stops being accepted. Extending it, or
+	// creating a replacement, has to happen before this.
+	ExpiresAt time.Time `json:"expires_at"`
+
+	// Daily is true once the key is inside its final week and reminders have
+	// moved from weekly to daily, so the message can say when the next one
+	// comes.
+	Daily bool `json:"daily"`
+
+	ServerURL string `json:"server_url"`
+}
+
+// NSSKeyRotationCleanup is the payload for KindNSSKeyRotationCleanup: the
+// digest sent after a rotation while some hosts still present the previous
+// secret. Each address is classified by its most recent lookup.
+type NSSKeyRotationCleanup struct {
+	Reader
+
+	KeyID   string `json:"key_id"`
+	KeyName string `json:"key_name"`
+
+	// Generation is the current generation, the one hosts should present.
+	Generation int `json:"generation"`
+
+	// RotatedAt is when the rotation happened. PreviousExpiresAt is when the
+	// previous secret stops working, equal to RotatedAt when
+	// nss.key_rotation_grace is zero.
+	RotatedAt         time.Time `json:"rotated_at"`
+	PreviousExpiresAt time.Time `json:"previous_expires_at"`
+
+	// Switched counts addresses whose last lookup presented the current
+	// secret. NotSwitched counts those whose last lookup presented the
+	// previous one. Gone counts addresses seen before the rotation and not
+	// since, which are often hosts that have been retired.
+	Switched    int `json:"switched"`
+	NotSwitched int `json:"not_switched"`
+	Gone        int `json:"gone"`
+
+	// NotSwitchedAddresses lists up to 50 not_switched addresses, most
+	// recently seen first. MoreNotSwitched is how many more there are beyond
+	// that list, and is omitted when there are none.
+	NotSwitchedAddresses []string `json:"not_switched_addresses"`
+	MoreNotSwitched      int      `json:"more_not_switched,omitempty"`
+
+	ServerURL string `json:"server_url"`
+}
+
+// NSSKeyExpiredAttempt is the payload for KindNSSKeyExpiredAttempt: a host
+// presented a key after it expired. The request was refused, and the
+// attempt is attributable to the key and to the address it came from.
+type NSSKeyExpiredAttempt struct {
+	Reader
+
+	KeyID   string `json:"key_id"`
+	KeyName string `json:"key_name"`
+
+	// SourceIP is the connection's address as the server observed it.
+	SourceIP    string    `json:"source_ip"`
+	AttemptedAt time.Time `json:"attempted_at"`
+
+	// ExpiredAt is when the key stopped being accepted, which with
+	// AttemptedAt separates a host that has been failing for a while from
+	// one that only just started.
+	ExpiredAt time.Time `json:"expired_at"`
+
+	ServerURL string `json:"server_url"`
+}
+
+// NSSKeyRevokedAttempt is the payload for KindNSSKeyRevokedAttempt: a host
+// presented a key after it was revoked. Otherwise the same as
+// NSSKeyExpiredAttempt.
+type NSSKeyRevokedAttempt struct {
+	Reader
+
+	KeyID   string `json:"key_id"`
+	KeyName string `json:"key_name"`
+
+	// SourceIP is the connection's address as the server observed it.
+	SourceIP    string    `json:"source_ip"`
+	AttemptedAt time.Time `json:"attempted_at"`
+
+	// RevokedAt is when the key was revoked, which with AttemptedAt says
+	// whether a host is still using a key that has been dead for a while.
+	RevokedAt time.Time `json:"revoked_at"`
+
+	ServerURL string `json:"server_url"`
+}
+
+// NSSKeyRotated is the payload for KindNSSKeyRotated, sent at once when a
+// key is rotated: who did it, when, and until when the previous secret
+// keeps working.
+type NSSKeyRotated struct {
+	Reader
+
+	KeyID   string `json:"key_id"`
+	KeyName string `json:"key_name"`
+
+	// Generation is the new current generation.
+	Generation int       `json:"generation"`
+	RotatedAt  time.Time `json:"rotated_at"`
+
+	// RotatedByUsername is the account that rotated the key. RotatedByName
+	// is its human-readable name, display only, and empty when none was
+	// captured.
+	RotatedByUsername string `json:"rotated_by_username"`
+	RotatedByName     string `json:"rotated_by_name,omitempty"`
+
+	// PreviousExpiresAt is when the previous secret stops working. Equal to
+	// RotatedAt when nss.key_rotation_grace is zero.
+	PreviousExpiresAt time.Time `json:"previous_expires_at"`
+
+	ServerURL string `json:"server_url"`
+}
+
+// NSSKeyRevoked is the payload for KindNSSKeyRevoked, sent at once when a
+// key is revoked: who did it and when.
+type NSSKeyRevoked struct {
+	Reader
+
+	KeyID   string `json:"key_id"`
+	KeyName string `json:"key_name"`
+
+	RevokedAt time.Time `json:"revoked_at"`
+
+	// RevokedByUsername is the account that revoked the key. RevokedByName
+	// is its human-readable name, display only, and empty when none was
+	// captured.
+	RevokedByUsername string `json:"revoked_by_username"`
+	RevokedByName     string `json:"revoked_by_name,omitempty"`
+
+	ServerURL string `json:"server_url"`
+}

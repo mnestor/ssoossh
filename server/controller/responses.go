@@ -89,6 +89,8 @@ func newCurrentUserResponse(identity *service.Identity, c *config.Config, db any
 		IsAdmin:                   c.Admin.GrantsAdmin(identity.Groups),
 		IsSOC:                     c.Admin.GrantsSOC(identity.Groups),
 		IsAuditor:                 c.Admin.GrantsAuditor(identity.Groups),
+		IsNSSKeyAdmin:             c.Admin.GrantsNSSKeyAdmin(identity.Groups),
+		NSSEnabled:                c.NSS.Enabled,
 	}
 }
 

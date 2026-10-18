@@ -194,6 +194,207 @@ export interface NSSPurgedTombstoneResponse {
 }
 
 //////////
+// source: nss_fleet.go
+
+/**
+ * PosixAccountResponse is the caller's own POSIX account: the uid and name
+ * every host resolves them as, and the shell they chose.
+ */
+export interface PosixAccountResponse {
+	uid: number /* uint32 */;
+	name: string;
+	/**
+	 * ShellPref is the shell name chosen from nss.allowed_shells, or null
+	 * when the account takes the directory's shell.
+	 */
+	shell_pref: string | null;
+}
+/**
+ * UpdateShellBody sets or clears the caller's shell. Null, or the field
+ * left out, clears it.
+ */
+export interface UpdateShellBody {
+	shell_pref?: string;
+}
+/**
+ * NSSShellsResponse is GET /api/nss/shells: the shell names a person may
+ * choose, in configured order.
+ */
+export interface NSSShellsResponse {
+	allowed_shells: string[];
+}
+/**
+ * NSSKeyResponse is one fleet API key. The secret is never part of it:
+ * only NSSKeySecretResponse carries one, once.
+ */
+export interface NSSKeyResponse {
+	/**
+	 * ID is "nss_" and 8 base32 characters, what hosts send as
+	 * X-Ssoossh-Key-Id. Fixed for the key's life.
+	 */
+	id: string;
+	name: string;
+	description: string;
+	/**
+	 * GroupName is the group whose members manage this key, empty for
+	 * none.
+	 */
+	group_name: string;
+	/**
+	 * Status is derived from the revocation and expiry.
+	 */
+	status: string;
+	/**
+	 * CurrentGeneration is 1 at creation and grows by one per rotation.
+	 */
+	current_generation: number /* int */;
+	/**
+	 * CreatedBy is the creator's users.id, and CreatedByUsername their
+	 * username, empty when the account is gone.
+	 */
+	created_by: string;
+	created_by_username: string;
+	created_at: string;
+	updated_at: string;
+	expires_at: string;
+	/**
+	 * NotificationEmail is where the key's mail goes, empty for nowhere.
+	 */
+	notification_email: string;
+	/**
+	 * RotatedAt is the last rotation, absent for a key never rotated.
+	 */
+	rotated_at?: string;
+	/**
+	 * PreviousExpiresAt is when the previous secret stops being accepted,
+	 * absent when there is no previous secret.
+	 */
+	previous_expires_at?: string;
+	/**
+	 * RevokedAt, RevokedBy (a users.id) and RevokedByUsername record a
+	 * revocation, absent while the key is live.
+	 */
+	revoked_at?: string;
+	revoked_by?: string;
+	revoked_by_username?: string;
+	/**
+	 * Permissions is what the caller may do with this key, decided by the
+	 * server so the UI never reimplements the role matrix. A revoked key
+	 * carries view alone.
+	 */
+	permissions: string[];
+}
+/**
+ * NSSKeyListResponse is GET /api/nss/keys: every key the caller may view,
+ * by name. Keys are fleet-sized, so the list is not paged.
+ */
+export interface NSSKeyListResponse {
+	keys: NSSKeyResponse[];
+	/**
+	 * CanCreate is whether the caller may create keys.
+	 */
+	can_create: boolean;
+}
+/**
+ * NSSKeySecretResponse is the answer to creating or rotating a key: the
+ * key, and its new secret, shown this once and never again. The field is
+ * named secret so the client trace redacts it.
+ */
+export interface NSSKeySecretResponse {
+	key: NSSKeyResponse;
+	secret: string;
+}
+/**
+ * CreateNSSKeyBody creates a key. ExpiresAt defaults to now plus
+ * nss.key_default_lifetime and NotificationEmail to the creator's address;
+ * an empty NotificationEmail sends the key's mail nowhere.
+ */
+export interface CreateNSSKeyBody {
+	name: string;
+	description?: string;
+	group_name?: string;
+	expires_at?: string;
+	notification_email?: string;
+}
+/**
+ * UpdateNSSKeyBody changes a key; fields left out are unchanged.
+ * GroupName needs the fleet key admin role, the rest the key's own group.
+ */
+export interface UpdateNSSKeyBody {
+	description?: string;
+	expires_at?: string;
+	notification_email?: string;
+	group_name?: string;
+}
+/**
+ * NSSKeyUsageRowResponse is one key's lookups from one address with one
+ * generation of its secret on one day.
+ */
+export interface NSSKeyUsageRowResponse {
+	source_ip: string;
+	generation: number /* int */;
+	/**
+	 * Day is midnight UTC of the day counted.
+	 */
+	day: string;
+	lookups: number /* int64 */;
+	misses: number /* int64 */;
+	first_seen: string;
+	last_seen: string;
+}
+/**
+ * NSSKeyUsageResponse is one page of GET /api/nss/keys/{id}/usage, newest
+ * day first.
+ */
+export interface NSSKeyUsageResponse {
+	rows: NSSKeyUsageRowResponse[];
+	/**
+	 * Total counts every retained row for the key, across all pages.
+	 */
+	total: number /* int64 */;
+	/**
+	 * NextCursor is the after for the following page, absent on the last.
+	 */
+	next_cursor?: string;
+}
+/**
+ * NSSRotationReportRowResponse is one source address in the rotation
+ * report. FirstSeen, LastSeen and Lookups cover every retained usage row.
+ */
+export interface NSSRotationReportRowResponse {
+	source_ip: string;
+	first_seen: string;
+	last_seen: string;
+	lookups: number /* int64 */;
+	last_generation: number /* int */;
+	/**
+	 * Bucket is switched (last presented the current secret), not_switched
+	 * (last presented an older one) or gone (not seen since the rotation).
+	 */
+	bucket: string;
+}
+/**
+ * NSSRotationReportResponse is GET /api/nss/keys/{id}/rotation-report:
+ * which addresses have switched to the current secret since the last
+ * rotation, not_switched first.
+ */
+export interface NSSRotationReportResponse {
+	key_id: string;
+	current_generation: number /* int */;
+	rotated_at?: string;
+	previous_expires_at?: string;
+	/**
+	 * GraceDaysLeft is whole days, rounded up, until the previous secret
+	 * stops working; zero when there is none or it has ended.
+	 */
+	grace_days_left: number /* int */;
+	switched: number /* int */;
+	not_switched: number /* int */;
+	gone: number /* int */;
+	rows: NSSRotationReportRowResponse[];
+}
+
+//////////
 // source: webtypes.go
 /*
 Package webtypes holds the JSON response shapes the web UI consumes.
@@ -290,6 +491,23 @@ export interface CurrentUserResponse {
 	is_admin: boolean;
 	is_soc: boolean;
 	is_auditor: boolean;
+	/**
+	 * IsNSSKeyAdmin reports the fleet key admin role (admin.nss_key_group,
+	 * which admin implies): create keys and manage every one. Members of a
+	 * single key's group manage that key without it. Display only, like
+	 * the three above.
+	 */
+	is_nss_key_admin: boolean;
+	/**
+	 * NSSEnabled reports nss.enabled, so the UI shows the fleet keys and
+	 * the login shell only where the server serves them.
+	 */
+	nss_enabled: boolean;
+	/**
+	 * Posix is the caller's own POSIX account, or null when NSS is off or
+	 * no directory account is linked to them yet.
+	 */
+	posix: PosixAccountResponse | null;
 	/**
 	 * DetailLevel is how much of the covered pages this person sees:
 	 * "simplified" or "advanced". Stored on the server so it follows the

@@ -318,13 +318,13 @@ func TestRegisterLDAPSyncJob_ShouldRegisterTheSync(t *testing.T) {
 	}
 }
 
-func TestRegisterNSSJobs_ShouldNotRegisterWhenNSSIsDisabled(t *testing.T) {
+func TestRegisterNSSDirectoryJobs_ShouldNotRegisterWhenNSSIsDisabled(t *testing.T) {
 	t.Parallel()
 
 	// No scheduler: the disabled gate must return before using it.
 	a := &app{config: &config.Config{}, svc: &services{}}
-	if err := a.registerNSSJobs(t.Context()); err != nil {
-		t.Errorf("registerNSSJobs() with nss disabled = %v, want nil", err)
+	if err := a.registerNSSDirectoryJobs(t.Context()); err != nil {
+		t.Errorf("registerNSSDirectoryJobs() with nss disabled = %v, want nil", err)
 	}
 }
 
@@ -353,7 +353,7 @@ func newTestNSSService(t *testing.T, c *config.Config) *service.NSSDirectoryServ
 	return svc
 }
 
-func TestRegisterNSSJobs_ShouldRegisterTheJobsWhoseIntervalIsSet(t *testing.T) {
+func TestRegisterNSSDirectoryJobs_ShouldRegisterTheJobsWhoseIntervalIsSet(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -374,8 +374,8 @@ func TestRegisterNSSJobs_ShouldRegisterTheJobsWhoseIntervalIsSet(t *testing.T) {
 			c.NSS.SyncInterval, c.NSS.FullSyncInterval = tt.incremental, tt.full
 			a := &app{config: c, svc: &services{nss: svc}, scheduler: newTestScheduler(t)}
 
-			if err := a.registerNSSJobs(t.Context()); err != nil {
-				t.Errorf("registerNSSJobs() = %v, want the jobs registered", err)
+			if err := a.registerNSSDirectoryJobs(t.Context()); err != nil {
+				t.Errorf("registerNSSDirectoryJobs() = %v, want the jobs registered", err)
 			}
 		})
 	}

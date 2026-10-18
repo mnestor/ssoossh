@@ -1,0 +1,7 @@
+{
+  "name": "web fleet",
+  "description": "every host in the web tier",
+  "group_name": "web-admins",
+  "expires_at": "2027-08-14T09:30:00+02:00",
+  "notification_email": "web-admins@example.org"
+}

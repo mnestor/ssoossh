@@ -30,8 +30,20 @@ import {
 	AuditNSSGIDCollision,
 	AuditNSSIDChangeAccepted,
 	AuditNSSIDChangePending,
+	AuditNSSKeyCreated,
+	AuditNSSKeyExpiredAttempt,
+	AuditNSSKeyPreviousCleared,
+	AuditNSSKeyRevoked,
+	AuditNSSKeyRevokedAttempt,
+	AuditNSSKeyRotated,
+	AuditNSSKeySourceAlert,
+	AuditNSSKeyUpdated,
+	AuditNSSLookupForbidden,
+	AuditNSSMissRateAlert,
 	AuditNSSNameCollision,
 	AuditNSSNameMismatch,
+	AuditNSSPrivilegedNameLookup,
+	AuditNSSShellChanged,
 	AuditNSSTombstonePurged,
 	AuditNSSUIDCollision,
 	AuditUserAutoDisabled,
@@ -139,7 +151,22 @@ export const auditPhrasing: Record<string, string> = {
 	[AuditNSSIDChangeAccepted]: 'accepted a uid or gid change from the directory',
 	// System once nss.tombstone_retention has passed, an admin when purged
 	// early.
-	[AuditNSSTombstonePurged]: 'purged a deleted directory account or group'
+	[AuditNSSTombstonePurged]: 'purged a deleted directory account or group',
+	// System events from the NSS lookup endpoints: no session, so each row
+	// reads "The server ...". The host's address is in source_ip and the
+	// fleet key it presented in key_id.
+	[AuditNSSLookupForbidden]: 'refused a directory lookup from outside the allowed networks',
+	[AuditNSSKeyRevokedAttempt]: 'refused a directory lookup with a revoked fleet key',
+	[AuditNSSKeyExpiredAttempt]: 'refused a directory lookup with an expired fleet key',
+	[AuditNSSKeySourceAlert]: 'saw a fleet key used from more addresses than expected',
+	[AuditNSSMissRateAlert]: 'saw a fleet key looking up many unknown names',
+	[AuditNSSPrivilegedNameLookup]: 'saw a directory lookup for a privileged name',
+	[AuditNSSKeyCreated]: 'created a fleet key',
+	[AuditNSSKeyUpdated]: 'changed a fleet key',
+	[AuditNSSKeyRotated]: 'rotated a fleet key',
+	[AuditNSSKeyPreviousCleared]: "ended a fleet key's previous secret early",
+	[AuditNSSKeyRevoked]: 'revoked a fleet key',
+	[AuditNSSShellChanged]: 'changed their login shell'
 };
 
 /**

@@ -1,0 +1,32 @@
+Hosts still present the previous secret of NSS key {{ .KeyName }} ({{ .KeyID }}),
+which was rotated at {{ datetime .RotatedAt }}.
+{{ if .PreviousExpiresAt.Equal .RotatedAt }}
+The previous secret stopped working when the key was rotated, so those hosts
+are refused until they present the new one.
+{{ else }}
+The previous secret keeps working until {{ datetime .PreviousExpiresAt }}
+({{ until .PreviousExpiresAt }}). After that, the hosts listed below stop
+resolving accounts through this key.
+{{ end }}
+Redeploy the secret issued by the rotation to the hosts listed below before
+that time. Hosts that already present the new secret are not listed.
+
+  Switched to the new secret    {{ .Switched }}
+  Still on the previous secret  {{ .NotSwitched }}
+  Not seen since the rotation   {{ .Gone }}
+{{ if .NotSwitchedAddresses }}
+Still presenting the previous secret, most recently seen first:
+
+{{ range .NotSwitchedAddresses }}  {{ . }}
+{{ end }}{{ if .MoreNotSwitched }}  and {{ .MoreNotSwitched }} more. The full list is in the key's rotation report.
+{{ end }}{{ end }}{{ if .Advanced }}
+DETAILS
+
+  Key ID            {{ .KeyID }}
+  Generation        {{ .Generation }}
+  Rotated at        {{ datetime .RotatedAt }}
+  Previous expires  {{ datetime .PreviousExpiresAt }}
+{{ end }}
+Sent to the notification address of NSS key {{ .KeyName }}, which defaults to
+its creator. This message is always sent: it is not a notification preference
+and cannot be turned off.

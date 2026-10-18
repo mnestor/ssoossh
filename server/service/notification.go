@@ -41,6 +41,13 @@ type Notifier interface {
 	// setting an address on an enrollment redirects all of them and not
 	// some.
 	NotifyEnrollment(ctx context.Context, kind notify.Kind, enrollmentID, serviceAccount string, payload any)
+
+	// NotifyNSSKey addresses one NSS fleet key: its notification_email,
+	// read at delivery. A fleet key has no owning user, so no preference
+	// gates the mail, and an empty keyID is skipped. It is the only
+	// recipient a fleet key event has. See the NSS directory proposal's
+	// Mail section for which events use it.
+	NotifyNSSKey(ctx context.Context, kind notify.Kind, keyID string, payload any)
 }
 
 // KindPreference is one notification kind as the preferences page sees it:
@@ -179,6 +186,22 @@ func (s *NotificationService) NotifyEnrollment(ctx context.Context, kind notify.
 	}
 	s.publish(ctx, kind, func() (notify.Event, error) {
 		return notify.NewEnrollmentEvent(kind, enrollmentID, serviceAccount, payload)
+	})
+}
+
+// NotifyNSSKey queues one notification about an NSS fleet key. Same
+// non-blocking, never-failing contract as Notify, and the key's address is
+// deliberately not resolved here: the address in force when the event is
+// delivered is the one that counts.
+func (s *NotificationService) NotifyNSSKey(ctx context.Context, kind notify.Kind, keyID string, payload any) {
+	if keyID == "" {
+		// A key with no id has no address to read, so there is nothing to
+		// reach. The caller thought there was a key, which is worth saying.
+		s.log.WarnContext(ctx, "skipping a notification for an NSS key with no id", "kind", kind)
+		return
+	}
+	s.publish(ctx, kind, func() (notify.Event, error) {
+		return notify.NewNSSKeyEvent(kind, keyID, payload)
 	})
 }
 
@@ -432,8 +455,9 @@ func (h *NotificationHandler) Register(r *message.Router, subscriber message.Sub
 	r.AddConsumerHandler("notification-send", notify.Topic, subscriber, h.handle)
 }
 
-// handle delivers one notification, to the one user it names or to every
-// holder of the service account it names.
+// handle delivers one notification: to the one user it names, to every
+// holder of the service account it names, or to the one notification
+// address an enrollment or a fleet key names.
 //
 // The distinction that matters here is permanent versus temporary. A
 // message that cannot be parsed, a kind this build does not know, a
@@ -473,10 +497,11 @@ func (h *NotificationHandler) handle(msg *message.Message) error {
 	wanted := make([]delivery, 0, len(recipients))
 	for _, send := range recipients {
 		if send.UserID == "" {
-			// An enrollment's own notification address. There is no single
-			// owning user whose preference could gate it, and the address
-			// is the account's deliberate subscription — see
-			// model.Enrollment.NotificationEmail.
+			// An enrollment's or a fleet key's own notification address.
+			// There is no single owning user whose preference could gate
+			// it, and the address is the deliberate subscription of the
+			// enrollment or key it belongs to. See
+			// model.Enrollment.NotificationEmail and model.NSSKey.
 			wanted = append(wanted, send)
 			continue
 		}
@@ -501,12 +526,16 @@ func (h *NotificationHandler) handle(msg *message.Message) error {
 		if err := h.sender.Send(ctx, mail.Outgoing{To: send.Address, Rendered: rendered[send.Advanced]}); err != nil {
 			return fmt.Errorf("failed to send the %s notification: %w", event.Kind, err)
 		}
-		// The address itself is never logged: a send to an enrollment's
-		// address is identified by the enrollment instead, which is what an
-		// operator would look it up by anyway.
-		if send.UserID != "" {
+		// The address itself is never logged: a send to an enrollment's or a
+		// fleet key's address is identified by the enrollment or key instead,
+		// which is what an operator would look it up by anyway.
+		switch {
+		case send.UserID != "":
 			h.log.InfoContext(ctx, "notification sent", "kind", event.Kind, "user_id", send.UserID)
-		} else {
+		case event.NSSKeyID != "":
+			h.log.InfoContext(ctx, "notification sent to an NSS key's notification address",
+				"kind", event.Kind, "key_id", event.NSSKeyID)
+		default:
 			h.log.InfoContext(ctx, "notification sent to an enrollment's notification address",
 				"kind", event.Kind, "enrollment_id", event.EnrollmentID)
 		}
@@ -543,10 +572,10 @@ func (h *NotificationHandler) renderByLevel(ctx context.Context, kind notify.Kin
 // delivery is one resolved send: the address it goes to, the user whose
 // per-kind preference gates it, and the detail level it is rendered at.
 //
-// UserID empty means ungated — an enrollment's own notification address,
-// which has no owning user to hold a preference. Splitting this out of
-// model.User is what lets the two recipient shapes (a users row, a bare
-// configured address) travel through one delivery loop.
+// UserID empty means ungated: the send is an enrollment's or a fleet key's
+// own notification address, which has no owning user to hold a preference.
+// Splitting this out of model.User is what lets the two recipient shapes (a
+// users row, a bare configured address) travel through one delivery loop.
 //
 // Advanced is the user's email detail level. A bare address has no person
 // behind it to have chosen, so it reads simplified, as does a user who has
@@ -566,15 +595,21 @@ func deliveryFor(user model.User) delivery {
 	}
 }
 
-// recipients resolves where an event should go: the enrollment's own
-// notification address, every holder of the service account it names, or
-// the one user it names.
+// recipients resolves where an event should go: a fleet key's own
+// notification address, the enrollment's own notification address, every
+// holder of the service account it names, or the one user it names.
 //
 // An empty result is a normal outcome, not an error — a user who has since
 // been deleted, an identity provider that releases no email claim, a
 // service account nobody who has logged in holds — so it is logged and the
 // message acknowledged rather than retried.
 func (h *NotificationHandler) recipients(ctx context.Context, event notify.Event) ([]delivery, error) {
+	// A fleet key event is about the key alone, so its address is the only
+	// recipient and is checked before the enrollment and user forms.
+	if event.NSSKeyID != "" {
+		return h.nssKeyRecipients(ctx, event)
+	}
+
 	// EnrollmentID as well as ServiceAccount, because an enrollment whose
 	// principals never parsed has no account but may still carry an
 	// address — and an event with neither is user-addressed.
@@ -627,6 +662,34 @@ func (h *NotificationHandler) recipients(ctx context.Context, event notify.Event
 	return []delivery{deliveryFor(user)}, nil
 }
 
+// nssKeyRecipients resolves a fleet key event to the key's notification
+// address, read from nss_keys at delivery. The result is one bare delivery:
+// no owning user, so ungated, and simplified.
+//
+// A key that no longer exists, or one with no address set, yields nobody and
+// is logged by key id, never by address. A database failure is returned, so
+// the message is redelivered rather than lost.
+func (h *NotificationHandler) nssKeyRecipients(ctx context.Context, event notify.Event) ([]delivery, error) {
+	var key model.NSSKey
+	err := h.db.WithContext(ctx).
+		Select("notification_email").
+		First(&key, "id = ?", event.NSSKeyID).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			h.log.InfoContext(ctx, "dropping a notification for an NSS key that no longer exists",
+				"kind", event.Kind, "key_id", event.NSSKeyID)
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to look up the notification address of NSS key %q: %w", event.NSSKeyID, err)
+	}
+	if key.NotificationEmail == "" {
+		h.log.DebugContext(ctx, "skipping a notification for an NSS key with no notification address",
+			"kind", event.Kind, "key_id", event.NSSKeyID)
+		return nil, nil
+	}
+	return []delivery{{Address: key.NotificationEmail}}, nil
+}
+
 // enrollmentAddress reads the notification address of the enrollment an
 // event is about, or "" when the event names no enrollment, the row is
 // gone, or no address is set.
@@ -668,6 +731,9 @@ func (discardNotifications) NotifyServiceAccount(context.Context, notify.Kind, s
 
 // NotifyEnrollment discards the notification.
 func (discardNotifications) NotifyEnrollment(context.Context, notify.Kind, string, string, any) {}
+
+// NotifyNSSKey discards the notification.
+func (discardNotifications) NotifyNSSKey(context.Context, notify.Kind, string, any) {}
 
 // NotificationPreferenceProvider is the preferences controller's view of
 // NotificationService: read and write the caller's own answers, nothing

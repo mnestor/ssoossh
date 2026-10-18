@@ -326,7 +326,7 @@ identity whose provider releases no email claim.
 
 ## Notification kinds
 
-Eight kinds. Every one ships three templates, named
+Fourteen kinds. Every one ships three templates, named
 `<kind>.subject.tmpl`, `<kind>.txt.tmpl` and `<kind>.html.tmpl`.
 
 | Kind | Trigger | Recipients | Default |
@@ -339,6 +339,12 @@ Eight kinds. Every one ships three templates, named
 | `pam_certificate_issued` | a certificate is signed for a local `sudo` or `su` on your behalf | the person the certificate is for | off |
 | `console_certificate_issued` | a certificate is signed for a console login you approved with a typed code | the person who approved | off |
 | `admin_auto_disabled` | the directory sync disables an account whose most recent login held the admin role | the admin whose account was disabled | always sent |
+| `nss_key_expiring` | an NSS fleet key is close to expiring: weekly inside the reminder window, then daily over the final week | the key's notification address | always sent |
+| `nss_key_rotation_cleanup` | after `mail.rotation_quiet_period`, daily while any host still presents a rotated key's previous secret and its grace lasts | the key's notification address | always sent |
+| `nss_key_expired_attempt` | a host presents an expired fleet key, at most once per `mail.expired_attempt_window` | the key's notification address | always sent |
+| `nss_key_revoked_attempt` | a host presents a revoked fleet key, at most once per `mail.expired_attempt_window` | the key's notification address | always sent |
+| `nss_key_rotated` | a fleet key is rotated | the key's notification address | always sent |
+| `nss_key_revoked` | a fleet key is revoked | the key's notification address | always sent |
 
 <!-- BEGIN GENERATED NOTIFICATION REFERENCE -->
 
@@ -665,6 +671,164 @@ Templates:
 | `.Reenable` | `bool` | Whether ldap.sync.reenable is on, in which case the sync clears this disable by itself once the entry is found again. |
 | `.SupportEmail` | `string` | Who to ask about this deployment (branding.support_email), or empty if none is configured. |
 | `.ServerURL` | `string` | The server's public origin, naming the deployment the account belongs to. |
+| `.Advanced` | `bool` | True when the recipient chose the advanced email detail level, false for simplified. Set per recipient at delivery; a template that ignores it sends the same message at both levels. |
+
+
+### NSS fleet key expiring
+
+`nss_key_expiring`
+
+Sent to the key's notification address (nss_keys.notification_email, which defaults to the creator's address) while a fleet key nears expiry: weekly inside mail.expiry_reminder_lead, then daily over the final week. Always sent, and not a preference: it cannot be turned off.
+
+Always sent: it is not a preference and cannot be turned off.
+
+Templates:
+
+- `nss_key_expiring.subject.tmpl`
+- `nss_key_expiring.txt.tmpl`
+- `nss_key_expiring.html.tmpl`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `.KeyID` | `string` | The fleet key's id, "nss_" followed by 8 characters. |
+| `.KeyName` | `string` | The fleet key's name. |
+| `.Description` | `string` | The key's description, or empty if none was set. |
+| `.GroupName` | `string` | The group whose members manage the key, or empty for none. |
+| `.ExpiresAt` | `time.Time` | When the key stops being accepted. Extend it, or create a replacement, before this. |
+| `.Daily` | `bool` | True once the key is inside its final week and reminders come daily; false while they are still weekly. |
+| `.ServerURL` | `string` | The server's public origin, naming the deployment the key belongs to. |
+| `.Advanced` | `bool` | True when the recipient chose the advanced email detail level, false for simplified. Set per recipient at delivery; a template that ignores it sends the same message at both levels. |
+
+
+### NSS fleet key rotation cleanup
+
+`nss_key_rotation_cleanup`
+
+Sent to the key's notification address (nss_keys.notification_email, which defaults to the creator's address) after a rotation, once mail.rotation_quiet_period has passed, and daily while any host still presents the previous secret, until the grace period ends. It lists the addresses that have not switched. Always sent, and not a preference: it cannot be turned off.
+
+Always sent: it is not a preference and cannot be turned off.
+
+Templates:
+
+- `nss_key_rotation_cleanup.subject.tmpl`
+- `nss_key_rotation_cleanup.txt.tmpl`
+- `nss_key_rotation_cleanup.html.tmpl`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `.KeyID` | `string` | The fleet key's id, "nss_" followed by 8 characters. |
+| `.KeyName` | `string` | The fleet key's name. |
+| `.Generation` | `int` | The key's current generation, the one hosts should present. |
+| `.RotatedAt` | `time.Time` | When the key was last rotated. |
+| `.PreviousExpiresAt` | `time.Time` | When the previous secret stops working. Equal to RotatedAt when no grace period is set. |
+| `.Switched` | `int` | Addresses whose last lookup presented the current secret. |
+| `.NotSwitched` | `int` | Addresses whose last lookup presented the previous secret. |
+| `.Gone` | `int` | Addresses seen before the rotation and not since. |
+| `.NotSwitchedAddresses` | `[]string` | Up to 50 addresses that have not switched, most recently seen first. |
+| `.MoreNotSwitched` | `int` | How many more not-switched addresses there are beyond the listed ones, or zero. |
+| `.ServerURL` | `string` | The server's public origin, naming the deployment the key belongs to. |
+| `.Advanced` | `bool` | True when the recipient chose the advanced email detail level, false for simplified. Set per recipient at delivery; a template that ignores it sends the same message at both levels. |
+
+
+### Expired NSS fleet key used
+
+`nss_key_expired_attempt`
+
+Sent to the key's notification address (nss_keys.notification_email, which defaults to the creator's address) when a host presents an expired fleet key, at most once per mail.expired_attempt_window. The attempt is refused. Always sent, and not a preference: it cannot be turned off.
+
+Always sent: it is not a preference and cannot be turned off.
+
+Templates:
+
+- `nss_key_expired_attempt.subject.tmpl`
+- `nss_key_expired_attempt.txt.tmpl`
+- `nss_key_expired_attempt.html.tmpl`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `.KeyID` | `string` | The fleet key's id, "nss_" followed by 8 characters. |
+| `.KeyName` | `string` | The fleet key's name. |
+| `.SourceIP` | `string` | The address the attempt came from, as the server observed it. |
+| `.AttemptedAt` | `time.Time` | When the expired key was presented. |
+| `.ExpiredAt` | `time.Time` | When the key stopped being accepted. |
+| `.ServerURL` | `string` | The server's public origin, naming the deployment the key belongs to. |
+| `.Advanced` | `bool` | True when the recipient chose the advanced email detail level, false for simplified. Set per recipient at delivery; a template that ignores it sends the same message at both levels. |
+
+
+### Revoked NSS fleet key used
+
+`nss_key_revoked_attempt`
+
+Sent to the key's notification address (nss_keys.notification_email, which defaults to the creator's address) when a host presents a revoked fleet key, at most once per mail.expired_attempt_window. The attempt is refused. Always sent, and not a preference: it cannot be turned off.
+
+Always sent: it is not a preference and cannot be turned off.
+
+Templates:
+
+- `nss_key_revoked_attempt.subject.tmpl`
+- `nss_key_revoked_attempt.txt.tmpl`
+- `nss_key_revoked_attempt.html.tmpl`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `.KeyID` | `string` | The fleet key's id, "nss_" followed by 8 characters. |
+| `.KeyName` | `string` | The fleet key's name. |
+| `.SourceIP` | `string` | The address the attempt came from, as the server observed it. |
+| `.AttemptedAt` | `time.Time` | When the revoked key was presented. |
+| `.RevokedAt` | `time.Time` | When the key was revoked. |
+| `.ServerURL` | `string` | The server's public origin, naming the deployment the key belongs to. |
+| `.Advanced` | `bool` | True when the recipient chose the advanced email detail level, false for simplified. Set per recipient at delivery; a template that ignores it sends the same message at both levels. |
+
+
+### NSS fleet key rotated
+
+`nss_key_rotated`
+
+Sent to the key's notification address (nss_keys.notification_email, which defaults to the creator's address) at once when a fleet key is rotated. Always sent, and not a preference: it cannot be turned off.
+
+Always sent: it is not a preference and cannot be turned off.
+
+Templates:
+
+- `nss_key_rotated.subject.tmpl`
+- `nss_key_rotated.txt.tmpl`
+- `nss_key_rotated.html.tmpl`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `.KeyID` | `string` | The fleet key's id, "nss_" followed by 8 characters. |
+| `.KeyName` | `string` | The fleet key's name. |
+| `.Generation` | `int` | The new current generation. |
+| `.RotatedAt` | `time.Time` | When the key was rotated. |
+| `.RotatedByUsername` | `string` | The account that rotated the key. |
+| `.RotatedByName` | `string` | That account's human-readable name, or empty if none was captured. |
+| `.PreviousExpiresAt` | `time.Time` | When the previous secret stops working. Equal to RotatedAt when no grace period is set. |
+| `.ServerURL` | `string` | The server's public origin, naming the deployment the key belongs to. |
+| `.Advanced` | `bool` | True when the recipient chose the advanced email detail level, false for simplified. Set per recipient at delivery; a template that ignores it sends the same message at both levels. |
+
+
+### NSS fleet key revoked
+
+`nss_key_revoked`
+
+Sent to the key's notification address (nss_keys.notification_email, which defaults to the creator's address) at once when a fleet key is revoked. Always sent, and not a preference: it cannot be turned off.
+
+Always sent: it is not a preference and cannot be turned off.
+
+Templates:
+
+- `nss_key_revoked.subject.tmpl`
+- `nss_key_revoked.txt.tmpl`
+- `nss_key_revoked.html.tmpl`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `.KeyID` | `string` | The fleet key's id, "nss_" followed by 8 characters. |
+| `.KeyName` | `string` | The fleet key's name. |
+| `.RevokedAt` | `time.Time` | When the key was revoked. |
+| `.RevokedByUsername` | `string` | The account that revoked the key. |
+| `.RevokedByName` | `string` | That account's human-readable name, or empty if none was captured. |
+| `.ServerURL` | `string` | The server's public origin, naming the deployment the key belongs to. |
 | `.Advanced` | `bool` | True when the recipient chose the advanced email detail level, false for simplified. Set per recipient at delivery; a template that ignores it sends the same message at both levels. |
 
 <!-- END GENERATED NOTIFICATION REFERENCE -->

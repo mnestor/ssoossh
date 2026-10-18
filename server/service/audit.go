@@ -72,6 +72,18 @@ var auditActions = []AuditAction{
 	AuditNSSNameMismatch,
 	AuditNSSIDChangeAccepted,
 	AuditNSSTombstonePurged,
+	AuditNSSLookupForbidden,
+	AuditNSSKeyRevokedAttempt,
+	AuditNSSKeyExpiredAttempt,
+	AuditNSSKeySourceAlert,
+	AuditNSSMissRateAlert,
+	AuditNSSPrivilegedNameLookup,
+	AuditNSSKeyCreated,
+	AuditNSSKeyUpdated,
+	AuditNSSKeyRotated,
+	AuditNSSKeyPreviousCleared,
+	AuditNSSKeyRevoked,
+	AuditNSSShellChanged,
 }
 
 // IsAuditAction reports whether action is in the taxonomy, including the
@@ -345,6 +357,10 @@ func (s *AuditService) emit(event AuditEvent) {
 //   - cert.request_refused_network: the refused caller.
 //   - enrollment.redeemed: the client that retrieved the certificate.
 //   - user.disable_refused: the caller's browser.
+//   - nss.lookup_forbidden, nss.key_revoked_attempt and
+//     nss.key_expired_attempt: the host that made the lookup, as ClientIP
+//     sees it through http.trusted_proxies.
+//   - nss.shell_changed: the caller's browser.
 //   - every other action: none, so "".
 //
 // approver_ip on cert.approved and cert.denied is deliberately not used: it
