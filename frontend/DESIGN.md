@@ -820,7 +820,9 @@ off, and confirms through a reasonless `ConfirmModal`.
   `LoadMoreFooter`: the count line above
   that button, worded once by `describeLoaded` in `#lib/listStatus`:
   `48 shown`, then `, 120 older not loaded` while the server holds more
-  (history has no server total, so it says only `48 shown`). "older" where
+  (history has no server total, so it says only `48 shown`). A list whose
+  lines are not one per counted thing names the noun: an NSS entry's
+  history says `3 events shown`. "older" where
   the list runs newest first, "more" on the user directory, which is sorted
   by name. A failed "Load more" is an error `Alert` in the button's place
   that retries that page; the rows above stay. A cursor names a page, not
@@ -1083,11 +1085,22 @@ beneath it.
     an admin concluding the wrong way and fixing the wrong layer. Then
     "What hosts get" (replaced by "Nothing" when not served), "Stored
     entry", "Entry state" (only off active, every mark the row carries) and
-    the memberships or the paged members, then History at the bottom: the
-    row's audit events through `AuditTimeline` and `LoadMoreFooter`, as a
-    user's audit timeline (its own loading, "No recorded changes", error
-    with Try again, Load more), following the row across a rename or an
-    accepted id change. Related accounts, groups and the linked person are
+    the memberships or the paged members, then History at the bottom
+    (`NSSEntryHistory`): the row's audit events as one ruled line each
+    per thing that happened, words left and `formatDateTime` right, names
+    and numbers in the mono, built by `#lib/nssHistory` from each event's
+    detail (what was true then, never a fresh lookup). An account's page
+    says only what happened to it ("Added to wheel", "Removed from ops",
+    "Renamed from a to b"); a group's page draws one line per member added
+    or removed ("sonia added"), with "and 412 more added" when the event
+    capped its list, so one event can draw several lines. A re-key by an
+    accepted uid change is "bob renumbered from uid 9001 to 10001" on the
+    group and no line on the account, whose own uid change says it. An
+    action with no wording falls back to its audit phrase, or its raw name.
+    No actor and no detail list: those are in the audit log. Its own
+    loading, "No recorded changes", error with Try again, and Load more by
+    event, counted "3 events shown", following the row across a rename or
+    an accepted id change. Related accounts, groups and the linked person are
     links. The back chip returns to the list with the
     filters it was opened from (`?back=`, a query string only). A 404 says
     no stored entry has that number and that a host lookup would still ask

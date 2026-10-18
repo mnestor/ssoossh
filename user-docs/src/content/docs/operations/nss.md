@@ -305,12 +305,17 @@ is read-only and open to auditors, SOC and admins, and it appears only when
   [`nss.max_group_members`](/ssoossh/reference/config/nss/#max_group_members)
   cut the member list hosts receive.
 - **History**, at the bottom, is every recorded change to that account or
-  group, newest first, with Load more: when it was stored, renamed, went
-  missing or came back, each change to a group's members, collisions,
-  and pending and accepted id changes. One
-  event shows on every page it concerns, so a group's history shows a
-  member added after the group was stored and that member's history shows
-  the same event, however many members the change touched. The history
+  group, newest first, one line each with its time, with Load more: when
+  it was stored, renamed, went missing or came back, collisions, pending
+  and accepted id changes, and membership. An account's page says only
+  what happened to that account ("Added to wheel", "Removed from ops"); a
+  group's page has a line per member added or removed ("sonia added"),
+  and "and 412 more added" when one change touched more members than the
+  audit event lists. One event shows on every page it concerns, so a
+  group's history shows a member added after the group was stored and
+  that member's history shows the same change, however many members it
+  touched. Who made a change and its full detail are in the
+  [audit log](/ssoossh/operations/audit-log/). The history
   belongs to the stored row, so it carries on across a rename or an
   accepted uid or gid change. It holds only what the
   [audit log](/ssoossh/operations/audit-log/)'s table still holds: events

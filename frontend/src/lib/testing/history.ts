@@ -8,16 +8,36 @@ import { envelope, type Route } from '#lib/testing/nss.js';
 
 // The History section's cases, shared by the stored account's and the
 // stored group's page tests so both pages are held to the same states:
-// loading, empty, the events, a failed read with Try again, and Load more
+// loading, empty, the lines, a failed read with Try again, and Load more
 // with its focus and its failure. The section is also where its axe pass
 // lives: it fetches on mount, so the component sweep (a11y.test.ts) leaves
-// it to these.
+// it to these. What each page's lines say is in that page's own test.
 
 expect.extend(toHaveNoViolations);
 
 /** historyEvent is one audit event as a history page carries it. */
 export function historyEvent(id: string, action: string, createdAt: string): AuditEvent {
 	return { id, action, created_at: createdAt, system: true, detail: { via: 'full_sync' } };
+}
+
+/**
+ * nssEvent is one audit event on an NSS row's history with the given
+ * detail, recorded by the server.
+ */
+export function nssEvent(
+	id: string,
+	action: string,
+	detail: Record<string, unknown> = {},
+	createdAt = '2026-10-18T09:00:00Z'
+): AuditEvent {
+	return { id, action, created_at: createdAt, system: true, detail };
+}
+
+/** historyLines is the words of each history line on screen, without the time. */
+export function historyLines(testid: string): string[] {
+	return screen
+		.queryAllByTestId(`${testid}-row`)
+		.map((row) => row.querySelector('p')?.textContent?.trim() ?? '');
 }
 
 /** emptyHistory is a history with no events. */
@@ -31,8 +51,19 @@ export function pagedHistory(second: Response = envelope(olderPage)): Route {
 	return (call) => (call.url.includes('after=ev-new') ? second.clone() : envelope(newerPage));
 }
 
+// The newer event adds the account with uid 10001 to the group with gid
+// 5100, the two rows the pages open, so it draws one line on either page.
 const newerPage: AuditEventsResponse = {
-	events: [historyEvent('ev-new', 'nss.group_members_changed', '2026-10-18T09:00:00Z')],
+	events: [
+		nssEvent('ev-new', 'nss.group_members_changed', {
+			name: 'ops',
+			gid: 5100,
+			added: [{ uid: 10001, name: 'bob' }],
+			removed: [],
+			added_count: 1,
+			removed_count: 0
+		})
+	],
 	total: 2,
 	next_cursor: 'ev-new'
 };
@@ -75,10 +106,19 @@ export function historySuite(options: {
 			expect(screen.getByTestId(`${testid}-empty`)).toHaveTextContent('No recorded changes.');
 		});
 
-		it('should render each event through the audit timeline when there are events', async () => {
+		it('should render a line with its time when there is an event', async () => {
 			await open(envelope({ events: newerPage.events, total: 1 }));
 
-			expect(screen.getByTestId('audit-event')).toHaveTextContent('nss.group_members_changed');
+			expect(screen.getByTestId(`${testid}-row`).querySelector('time')).toHaveAttribute(
+				'datetime',
+				'2026-10-18T09:00:00Z'
+			);
+		});
+
+		it('should not render the generic audit timeline when there are events', async () => {
+			await open(envelope({ events: newerPage.events, total: 1 }));
+
+			expect(screen.queryByTestId('audit-timeline')).not.toBeInTheDocument();
 		});
 
 		it('should have no axe violations when events and Load more are shown', async () => {
@@ -90,7 +130,7 @@ export function historySuite(options: {
 		it('should count the events shown when the last page is in', async () => {
 			await open(envelope({ events: newerPage.events, total: 1 }));
 
-			expect(screen.getByTestId(`${testid}-count`)).toHaveTextContent('1 shown');
+			expect(screen.getByTestId(`${testid}-count`)).toHaveTextContent('1 event shown');
 		});
 
 		it('should say the history could not load when the read fails', async () => {
@@ -114,7 +154,7 @@ export function historySuite(options: {
 			await open(pagedHistory());
 			await userEvent.click(screen.getByTestId(`${testid}-load-more`));
 
-			await waitFor(() => expect(screen.getAllByTestId('audit-event')).toHaveLength(2));
+			await waitFor(() => expect(screen.getAllByTestId(`${testid}-row`)).toHaveLength(2));
 		});
 
 		it('should move focus to the count line when Load more brings the last page in', async () => {
@@ -129,7 +169,7 @@ export function historySuite(options: {
 			await userEvent.click(screen.getByTestId(`${testid}-load-more`));
 			await screen.findByTestId(`${testid}-more-error`);
 
-			expect(screen.getAllByTestId('audit-event')).toHaveLength(1);
+			expect(screen.getAllByTestId(`${testid}-row`)).toHaveLength(1);
 		});
 	});
 }

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { NSSGroupDetail, NSSGroupMembersResponse } from '#lib/api/types.js';
 import { session } from '#lib/session.svelte.js';
-import { emptyHistory, historySuite } from '#lib/testing/history.js';
+import { emptyHistory, historyLines, historySuite, nssEvent } from '#lib/testing/history.js';
 import {
 	envelope,
 	groupFixture,
@@ -244,4 +244,212 @@ historySuite({
 	open: (history) => open(groupFixture(), envelope(twoMembers), '5100', history),
 	testid: 'nss-group-history',
 	path: '/api/admin/nss/groups/5100/audit'
+});
+
+// The group's history lines. The page is gid 5100 (ops); each case is the
+// events the history read answers with and the lines it should draw,
+// newest first: one line per member added or removed, "and N more" for a
+// capped list, one line per lifecycle event.
+describe('group history lines', () => {
+	/** change is an nss.group_members_changed event for this group. */
+	function change(
+		id: string,
+		added: { uid: number; name?: string }[],
+		removed: { uid: number; name?: string }[],
+		counts: { added?: number; removed?: number } = {}
+	) {
+		return nssEvent(id, 'nss.group_members_changed', {
+			name: 'ops',
+			gid: 5100,
+			added,
+			removed,
+			added_count: counts.added ?? added.length,
+			removed_count: counts.removed ?? removed.length
+		});
+	}
+
+	it.each([
+		{
+			name: 'should say the member was added when one was added',
+			events: [change('e1', [{ uid: 10002, name: 'sonia' }], [])],
+			want: ['sonia added']
+		},
+		{
+			name: 'should say the member was removed when one was removed',
+			events: [change('e1', [], [{ uid: 10003, name: 'mnestor' }])],
+			want: ['mnestor removed']
+		},
+		{
+			name: 'should draw one line per member when one change added three and removed one',
+			events: [
+				change(
+					'e1',
+					[
+						{ uid: 10002, name: 'sonia' },
+						{ uid: 10004, name: 'ann' },
+						{ uid: 10005, name: 'raj' }
+					],
+					[{ uid: 10003, name: 'mnestor' }]
+				)
+			],
+			want: ['sonia added', 'ann added', 'raj added', 'mnestor removed']
+		},
+		{
+			name: 'should add an and N more line when the added list was capped',
+			events: [
+				change(
+					'e1',
+					[
+						{ uid: 10002, name: 'sonia' },
+						{ uid: 10004, name: 'ann' }
+					],
+					[],
+					{ added: 414 }
+				)
+			],
+			want: ['sonia added', 'ann added', 'and 412 more added']
+		},
+		{
+			name: 'should add an and N more line when the removed list was capped',
+			events: [change('e1', [], [{ uid: 10003, name: 'mnestor' }], { removed: 4 })],
+			want: ['mnestor removed', 'and 3 more removed']
+		},
+		{
+			name: 'should name a member by its uid when it had no stored account',
+			events: [change('e1', [{ uid: 10077 }], [])],
+			want: ['uid 10077 added']
+		},
+		{
+			name: 'should say a member was renumbered when an accepted uid change re-keyed it',
+			events: [change('e1', [{ uid: 10001, name: 'bob' }], [{ uid: 9001, name: 'bob' }])],
+			want: ['bob renumbered from uid 9001 to 10001']
+		},
+		{
+			name: 'should say Members changed when the change lists nobody',
+			events: [nssEvent('e1', 'nss.group_members_changed', { name: 'ops' })],
+			want: ['Members changed']
+		},
+		{
+			name: 'should count the members when the group was stored',
+			events: [nssEvent('e1', 'nss.group_created', { gid: 5100, member_count: 3 })],
+			want: ['Created with 3 members']
+		},
+		{
+			name: 'should say one member when the group was stored with one',
+			events: [nssEvent('e1', 'nss.group_created', { gid: 5100, member_count: 1 })],
+			want: ['Created with 1 member']
+		},
+		{
+			name: 'should name both names when the group was renamed',
+			events: [nssEvent('e1', 'nss.group_renamed', { old_name: 'operators', new_name: 'ops' })],
+			want: ['Renamed from operators to ops']
+		},
+		{
+			name: 'should say the old name was kept when another group holds the new one',
+			events: [
+				nssEvent('e1', 'nss.group_renamed', {
+					old_name: 'ops',
+					new_name: 'staff',
+					name_blocked: true
+				})
+			],
+			want: ['Renamed to staff in the directory, but kept ops: another group holds that name']
+		},
+		{
+			name: 'should name the new DN when the group moved without a rename',
+			events: [
+				nssEvent('e1', 'nss.group_renamed', {
+					old_name: 'ops',
+					new_name: 'ops',
+					new_dn: 'cn=ops,ou=Teams,dc=corp,dc=example'
+				})
+			],
+			want: ['Moved in the directory to cn=ops,ou=Teams,dc=corp,dc=example']
+		},
+		{
+			name: 'should say it went missing when a full sync did not see it',
+			events: [nssEvent('e1', 'nss.group_missing', { gid: 5100 })],
+			want: ['Missing from the directory']
+		},
+		{
+			name: 'should say Tombstoned when the missing group was tombstoned',
+			events: [nssEvent('e1', 'nss.group_tombstoned', { gid: 5100 })],
+			want: ['Tombstoned']
+		},
+		{
+			name: 'should say Revived when a missing group came back',
+			events: [nssEvent('e1', 'nss.group_revived', { was_tombstoned: false })],
+			want: ['Revived']
+		},
+		{
+			name: 'should name both gids when the gid change was accepted',
+			events: [nssEvent('e1', 'nss.id_change_accepted', { old_gid: 5000, new_gid: 5100 })],
+			want: ['gid changed from 5000 to 5100']
+		},
+		{
+			name: 'should say the change waits when a gid change is pending',
+			events: [nssEvent('e1', 'nss.id_change_pending', { stored: 5100, pending: 5200 })],
+			want: ['gid change from 5100 to 5200 waiting to be accepted']
+		},
+		{
+			name: 'should name both groups when a gid collision was raised',
+			events: [
+				nssEvent('e1', 'nss.gid_collision', {
+					kind: 'gid',
+					value: '5100',
+					holder_name: 'ops',
+					other_name: 'operations'
+				})
+			],
+			want: ['gid 5100 claimed by both ops and operations']
+		},
+		{
+			name: 'should fall back to the raw action when the action is unknown',
+			events: [nssEvent('e1', 'nss.something_new', { nested: { a: 1 } })],
+			want: ['nss.something_new']
+		},
+		{
+			name: 'should fall back to the audit phrase when the action has no line of its own',
+			events: [nssEvent('e1', 'nss.initial_import', { created: 12 })],
+			want: ['Imported the directory for the first time']
+		},
+		{
+			name: 'should keep the newest first when a change follows the creation',
+			events: [
+				change('e2', [{ uid: 10002, name: 'sonia' }], []),
+				nssEvent('e1', 'nss.group_created', { member_count: 2 }, '2026-10-01T09:00:00Z')
+			],
+			want: ['sonia added', 'Created with 2 members']
+		}
+	])('$name', async ({ events, want }) => {
+		await open(groupFixture(), envelope(twoMembers), '5100', envelope({ events, total: 1 }));
+
+		expect(historyLines('nss-group-history')).toEqual(want);
+	});
+
+	it('should give every line of one change the same time when it is expanded', async () => {
+		const events = [
+			change(
+				'e1',
+				[
+					{ uid: 10002, name: 'sonia' },
+					{ uid: 10004, name: 'ann' }
+				],
+				[{ uid: 10003, name: 'mnestor' }]
+			)
+		];
+		await open(groupFixture(), envelope(twoMembers), '5100', envelope({ events, total: 1 }));
+
+		const times = screen
+			.getAllByTestId('nss-group-history-row')
+			.map((row) => row.querySelector('time')?.getAttribute('datetime'));
+		expect(new Set(times)).toEqual(new Set(['2026-10-18T09:00:00Z']));
+	});
+
+	it('should never render an object as text when the detail is not an object', async () => {
+		const events = [{ ...nssEvent('e1', 'nss.group_members_changed'), detail: 'x' as never }];
+		await open(groupFixture(), envelope(twoMembers), '5100', envelope({ events, total: 1 }));
+
+		expect(screen.getByTestId('nss-group-history')).not.toHaveTextContent('[object Object]');
+	});
 });

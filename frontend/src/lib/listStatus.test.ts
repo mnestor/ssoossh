@@ -94,3 +94,28 @@ describe('describeLoaded', () => {
 		expect(describeLoaded(shown, notLoaded, remaining)).toBe(want);
 	});
 });
+
+describe('describeLoaded with a noun', () => {
+	it.each([
+		{
+			name: 'should name one counted thing in the singular when one is shown',
+			shown: 1,
+			notLoaded: 0,
+			want: '1 event shown'
+		},
+		{
+			name: 'should name the counted things in the plural when several are shown',
+			shown: 25,
+			notLoaded: 4,
+			want: '25 events shown, 4 older not loaded'
+		},
+		{
+			name: 'should use the plural when none are shown',
+			shown: 0,
+			notLoaded: 0,
+			want: '0 events shown'
+		}
+	])('$name', ({ shown, notLoaded, want }) => {
+		expect(describeLoaded(shown, notLoaded, 'older', 'event')).toBe(want);
+	});
+});
