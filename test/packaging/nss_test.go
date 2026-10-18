@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/mnestor/ssoossh/nssd/config"
+	"github.com/mnestor/ssoossh/nssd/userdb"
 )
 
 // nssExample is the example configuration the ssoosshd-nss package ships as
@@ -443,5 +444,32 @@ func TestNSSSELinuxSourceShouldDeclareTheModuleItIsNamedFor(t *testing.T) {
 	}
 	if filepath.Base(nssSELinuxPP) != "ssoossh_nss.pp" {
 		t.Errorf("the package takes %s, not ssoossh_nss.pp", nssSELinuxPP)
+	}
+}
+
+// should keep the client's copy of the RefreshUser contract equal to the
+// daemon's. The client may not import nssd, so it spells the socket and
+// the method out, and this is what stops the two drifting apart.
+func TestNSSClientRefreshShouldNameTheDaemonsSocketAndMethod(t *testing.T) {
+	t.Parallel()
+
+	src, err := os.ReadFile(filepath.Join(repoRoot(t), "client/cmd/host_refresh.go"))
+	if err != nil {
+		t.Fatalf("read the client's refresh: %v", err)
+	}
+	tests := []struct {
+		name string
+		want string
+	}{
+		{name: "should dial the daemon's userdb socket", want: `nssUserdbSocket = "` + config.UserdbSocket + `"`},
+		{name: "should call the daemon's RefreshUser method", want: `nssRefreshMethod = "` + userdb.MethodRefreshUser + `"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if !strings.Contains(string(src), tt.want) {
+				t.Errorf("client/cmd/host_refresh.go lacks %s", tt.want)
+			}
+		})
 	}
 }
