@@ -183,7 +183,7 @@ table ldap_sync_runs
   column started_at type=DATETIME nullable=false pk=false default=<none>
   column trigger_source type=TEXT nullable=false pk=false default=<none>
   column users_seen type=INTEGER nullable=false pk=false default=0
-  fk actor_user_id -> users.id on_delete=NO ACTION on_update=SET NULL
+  fk actor_user_id -> users.id on_delete=SET NULL on_update=NO ACTION
   index idx_ldap_sync_runs_started unique=false columns=started_at
   index sqlite_autoindex_ldap_sync_runs_1 unique=true columns=id
 table notification_preferences
@@ -206,7 +206,7 @@ table nss_audit_refs
   column event_id type=TEXT nullable=false pk=true default=<none>
   column kind type=TEXT nullable=false pk=true default=<none>
   column row_id type=TEXT nullable=false pk=true default=<none>
-  fk event_id -> audit_events.id on_delete=NO ACTION on_update=CASCADE
+  fk event_id -> audit_events.id on_delete=CASCADE on_update=NO ACTION
   index idx_nss_audit_refs_row unique=false columns=kind,row_id,created_at,event_id
   index sqlite_autoindex_nss_audit_refs_1 unique=true columns=event_id,kind,row_id
 table nss_collisions
@@ -307,7 +307,7 @@ table posix_users
   column user_id type=TEXT nullable=true pk=false default=<none>
   column withheld_at type=DATETIME nullable=true pk=false default=<none>
   column withheld_reason type=TEXT nullable=false pk=false default=''
-  fk user_id -> users.id on_delete=NO ACTION on_update=SET NULL
+  fk user_id -> users.id on_delete=SET NULL on_update=NO ACTION
   index idx_posix_users_directory_id unique=false columns=directory_id
   index idx_posix_users_dn unique=true columns=dn
   index idx_posix_users_name unique=true columns=name
@@ -326,7 +326,7 @@ table user_groups
   column last_seen_at type=DATETIME nullable=false pk=false default=<none>
   column source type=TEXT nullable=false pk=false default=<none>
   column user_id type=TEXT nullable=false pk=false default=<none>
-  fk user_id -> users.id on_delete=NO ACTION on_update=CASCADE
+  fk user_id -> users.id on_delete=CASCADE on_update=NO ACTION
   index idx_user_groups_name unique=false columns=group_name
   index idx_user_groups_unique unique=true columns=user_id,group_name,source
   index idx_user_groups_user unique=false columns=user_id
@@ -342,7 +342,7 @@ table user_ldap
   column last_synced_at type=DATETIME nullable=true pk=false default=<none>
   column updated_at type=DATETIME nullable=false pk=false default=<none>
   column user_id type=TEXT nullable=false pk=true default=<none>
-  fk user_id -> users.id on_delete=NO ACTION on_update=CASCADE
+  fk user_id -> users.id on_delete=CASCADE on_update=NO ACTION
   index idx_user_ldap_directory_id unique=false columns=directory_id
   index sqlite_autoindex_user_ldap_1 unique=true columns=user_id
 table users

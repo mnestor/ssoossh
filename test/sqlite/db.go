@@ -285,11 +285,13 @@ func ForeignKeys(t *testing.T, db *gorm.DB, tableName string) []ForeignKeyInfo {
 	}
 	defer func() { _ = rows.Close() }()
 
+	// PRAGMA foreign_key_list's columns are id, seq, table, from, to,
+	// on_update, on_delete, match: on_update comes before on_delete.
 	var fks []ForeignKeyInfo
 	for rows.Next() {
 		var fk ForeignKeyInfo
 		if err := rows.Scan(&fk.ID, &fk.Sequence, &fk.ReferencedTable, &fk.ColumnName,
-			&fk.ReferencedColumn, &fk.OnDelete, &fk.OnUpdate, &fk.Match); err != nil {
+			&fk.ReferencedColumn, &fk.OnUpdate, &fk.OnDelete, &fk.Match); err != nil {
 			t.Fatalf("failed to scan foreign key row: %v", err)
 		}
 		fks = append(fks, fk)
