@@ -355,7 +355,7 @@ func TestNSSAuditRefs_ShouldReferToTheAccountWhenItsShellChanges(t *testing.T) {
 
 	h := newNSSHarness(t, nil)
 	aliceID := seedNSSPerson(t, h.db, "sub-alice", "alice", nil)
-	row := seedPosixUser(t, h.db, model.PosixUser{Name: "alice", UID: 10001, GID: 10001, UserID: &aliceID})
+	row := seedPosixUser(t, h.db, model.PosixUser{Name: "alice", UID: 10001, GID: u32p(10001), UserID: &aliceID})
 	c := nssLookupTestConfig()
 	lookups := newTestNSSLookup(c, h.db, nil)
 	lookups.SetAuditor(NewAuditService(c, h.db))
