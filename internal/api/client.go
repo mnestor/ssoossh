@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -116,6 +117,18 @@ type Config struct {
 	// sends no headers there until the request is decided.
 	RequestTimeout time.Duration
 
+	// DialTimeout bounds the TCP connect of each ordinary call, so an
+	// unreachable server fails fast while a slow answer still gets all of
+	// RequestTimeout. Zero keeps the standard library's 30 seconds. Like
+	// RequestTimeout it does not apply to the events stream. ssoosshd-nss
+	// sets it to 2 seconds.
+	DialTimeout time.Duration
+
+	// UserAgent replaces the User-Agent header this client sends, for a
+	// program other than the ssoossh client (ssoosshd-nss sends
+	// "ssoosshd-nss/<version>"). Empty keeps "ssoossh/<version> (<repo>)".
+	UserAgent string
+
 	// Logger receives per-request tracing. Nil means none, and the caller
 	// that wants tracing has to say so: defaulting to slog.Default() would
 	// put this package's tracing on the host process's stderr by accident,
@@ -198,17 +211,29 @@ func NewClient(cfg Config) (*HTTPClient, error) {
 		timeout = DefaultRequestTimeout
 	}
 
+	userAgent := cfg.UserAgent
+	if userAgent == "" {
+		userAgent = fmt.Sprintf("%s/%s (%s)", version.Name, version.Version, version.Github)
+	}
+
+	transport := newTransport(tlsConfig, cfg.pinned())
+	if cfg.DialTimeout > 0 {
+		// Same keep-alive as http.DefaultTransport's dialer; only the
+		// connect bound changes.
+		transport.DialContext = (&net.Dialer{Timeout: cfg.DialTimeout, KeepAlive: 30 * time.Second}).DialContext
+	}
+
 	return &HTTPClient{
 		// A whole-request timeout is safe here because this client serves
 		// only doJSON's ordinary calls. The events stream, which stays open
 		// until a human decides, builds a client of its own (see sse.go).
 		// Without it a server that accepts the connection and never answers
 		// hangs the caller, which under ssh's Match exec means ssh itself.
-		http:      &http.Client{Transport: newTransport(tlsConfig, cfg.pinned()), Timeout: timeout},
+		http:      &http.Client{Transport: transport, Timeout: timeout},
 		timeout:   timeout,
 		serverURL: normalizeServerURL(cfg.ServerURL),
 		tlsConfig: tlsConfig,
-		userAgent: fmt.Sprintf("%s/%s (%s)", version.Name, version.Version, version.Github),
+		userAgent: userAgent,
 		log:       cfg.Logger,
 		direct:    cfg.pinned(),
 		keyID:     cfg.KeyID,

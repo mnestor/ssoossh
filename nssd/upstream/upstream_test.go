@@ -231,7 +231,7 @@ func TestEveryLookupKindShouldGoThroughTheSamePathWhenCalled(t *testing.T) {
 		t.Fatalf("got %d calls", n)
 	}
 	b := h.built[0]
-	if b.KeyID != "nss_k1" || b.KeySecret != "secret1" || b.ServerURL != "https://sso.example.com" || b.TLSSPKIPins[0] != "AAAA" || b.RequestTimeout != 5*time.Second {
+	if b.KeyID != "nss_k1" || b.KeySecret != "secret1" || b.ServerURL != "https://sso.example.com" || b.TLSSPKIPins[0] != "AAAA" || b.RequestTimeout != 5*time.Second || b.DialTimeout != 2*time.Second || !strings.HasPrefix(b.UserAgent, "ssoosshd-nss/") {
 		t.Fatalf("got api config %+v", b)
 	}
 }

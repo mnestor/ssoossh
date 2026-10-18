@@ -22,6 +22,7 @@ import (
 
 	"github.com/mnestor/ssoossh/internal/api"
 	"github.com/mnestor/ssoossh/internal/apitypes"
+	"github.com/mnestor/ssoossh/internal/version"
 	"github.com/mnestor/ssoossh/nssd/config"
 )
 
@@ -420,6 +421,11 @@ func (c *Client) pick(servers []string, attempt int) string {
 	return servers[(c.next+attempt)%len(servers)]
 }
 
+// connectTimeout bounds the TCP connect of every upstream call, so an
+// unreachable server is given up on quickly while a slow answer still has
+// the whole of the timeout setting.
+const connectTimeout = 2 * time.Second
+
 // clientFor returns the HTTPS client for url, building it on first use
 // with the current key.
 func (c *Client) clientFor(url string) (api.NSSClient, error) {
@@ -435,6 +441,8 @@ func (c *Client) clientFor(url string) (api.NSSClient, error) {
 		KeyID:          c.key.ID,
 		KeySecret:      c.key.Secret,
 		RequestTimeout: c.cfg.Timeout,
+		DialTimeout:    connectTimeout,
+		UserAgent:      "ssoosshd-nss/" + version.Version,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build the client for %s: %w", url, err)

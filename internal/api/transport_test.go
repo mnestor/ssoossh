@@ -182,3 +182,73 @@ func TestUndecodableError(t *testing.T) {
 		})
 	}
 }
+
+// TestNewClient_UserAgent covers the default header and a caller's own.
+func TestNewClient_UserAgent(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		userAgent  string
+		wantPrefix string
+		wantExact  bool
+	}{
+		{"should send the ssoossh client's user agent when none is configured", "", "ssoossh/", false},
+		{"should send the configured user agent verbatim when one is set", "ssoosshd-nss/1.2.3", "ssoosshd-nss/1.2.3", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := make(chan string, 1)
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				got <- r.Header.Get("User-Agent")
+				http.Error(w, "not here", http.StatusNotFound)
+			}))
+			t.Cleanup(ts.Close)
+
+			c, err := NewClient(Config{ServerURL: ts.URL, UserAgent: tt.userAgent})
+			if err != nil {
+				t.Fatalf("unexpected error building client: %v", err)
+			}
+			_, _ = c.GetCA(context.Background())
+
+			ua := <-got
+			if tt.wantExact && ua != tt.wantPrefix {
+				t.Errorf("User-Agent = %q, want %q", ua, tt.wantPrefix)
+			}
+			if !tt.wantExact && !strings.HasPrefix(ua, tt.wantPrefix) {
+				t.Errorf("User-Agent = %q, want the prefix %q", ua, tt.wantPrefix)
+			}
+		})
+	}
+}
+
+// TestNewClient_ShouldStillConnectWhenADialTimeoutIsSet proves the
+// replacement dialer is installed and dials, and leaves the request
+// timeout alone.
+func TestNewClient_ShouldStillConnectWhenADialTimeoutIsSet(t *testing.T) {
+	t.Parallel()
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "not here", http.StatusNotFound)
+	}))
+	t.Cleanup(ts.Close)
+
+	c, err := NewClient(Config{ServerURL: ts.URL, DialTimeout: 2 * time.Second})
+	if err != nil {
+		t.Fatalf("unexpected error building client: %v", err)
+	}
+	transport, ok := c.http.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("transport is %T, want *http.Transport", c.http.Transport)
+	}
+	conn, err := transport.DialContext(context.Background(), "tcp", ts.Listener.Addr().String())
+	if err != nil {
+		t.Fatalf("DialContext() error = %v, want a connection", err)
+	}
+	_ = conn.Close()
+	if c.http.Timeout != DefaultRequestTimeout {
+		t.Errorf("Timeout = %s, want the default %s untouched", c.http.Timeout, DefaultRequestTimeout)
+	}
+}
