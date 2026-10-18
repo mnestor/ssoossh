@@ -91,6 +91,9 @@ type NSSKeyService struct {
 
 	// now is the clock, time.Now outside tests.
 	now func() time.Time
+
+	// newID draws a key id, newNSSKeyID outside tests.
+	newID func() (string, error)
 }
 
 // NewNSSKeyService builds the key service. meter registers the
@@ -107,6 +110,7 @@ func NewNSSKeyService(c *config.Config, db *gorm.DB, meter metric.Meter) (*NSSKe
 		notifier:  discardNotifications{},
 		dummyHash: hashNSSSecret(hex.EncodeToString(seed)),
 		now:       time.Now,
+		newID:     newNSSKeyID,
 	}
 	if meter != nil {
 		if err := s.registerKeyGauge(meter); err != nil {
@@ -484,22 +488,24 @@ func (s *NSSKeyService) Create(ctx context.Context, identity *Identity, in NSSKe
 }
 
 // insertWithFreshID gives key a new id and inserts it, drawing again on
-// the vanishingly rare collision with an existing id.
+// the vanishingly rare collision with an existing id. Each attempt is a
+// nested transaction (a savepoint), because Postgres refuses every
+// statement after a failed one in the same transaction until it is rolled
+// back to a savepoint.
 func (s *NSSKeyService) insertWithFreshID(tx *gorm.DB, key *model.NSSKey) error {
 	for attempt := 0; ; attempt++ {
-		id, err := newNSSKeyID()
+		id, err := s.newID()
 		if err != nil {
 			return err
 		}
 		key.ID = id
-		err = tx.Create(key).Error
+		err = tx.Transaction(func(attemptTx *gorm.DB) error { return attemptTx.Create(key).Error })
 		if err == nil {
 			return nil
 		}
 		if !errors.Is(err, gorm.ErrDuplicatedKey) || attempt >= 2 {
 			return fmt.Errorf("create fleet key: %w", err)
 		}
-		// not covered: a 40-bit id colliding three times running.
 	}
 }
 

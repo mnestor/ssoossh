@@ -707,3 +707,45 @@ func TestNSSKeys_ShouldDeriveTheStatusWhenTheKeyIsRead(t *testing.T) {
 		})
 	}
 }
+
+func TestNSSKeys_ShouldDrawAnotherIDWhenTheFirstIsTaken(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		ids     []string
+		wantID  string
+		wantErr bool
+	}{
+		{name: "should use the second id when the first collides", ids: []string{"nss_taken000", "nss_fresh000"}, wantID: "nss_fresh000"},
+		{name: "should give up when three ids in a row collide", ids: []string{"nss_taken000", "nss_taken000", "nss_taken000"}, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			db := testdb.New(t)
+			seedNSSCallers(t, db)
+			keys, _ := newTestNSSKeys(t, nssTestConfig(), db)
+			keys.newID = func() (string, error) { return "nss_taken000", nil }
+			createNSSKey(t, keys, "first", "")
+			draws := 0
+			keys.newID = func() (string, error) {
+				id := tt.ids[draws]
+				draws++
+				return id, nil
+			}
+
+			view, _, err := keys.Create(t.Context(), nssAdmin, NSSKeyCreate{Name: "second"}, "")
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("Create = %+v, want an error after three collisions", view)
+				}
+				return
+			}
+			if err != nil || view.Key.ID != tt.wantID || draws != 2 {
+				t.Errorf("Create = %v, %v after %d draws; want %s on the second", view, err, draws, tt.wantID)
+			}
+		})
+	}
+}
