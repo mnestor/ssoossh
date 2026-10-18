@@ -171,6 +171,21 @@ func (s *NSSLookupService) missAfterRefresh(ctx context.Context, refreshErr erro
 // absent, withheld by a collision, or a tombstone past
 // nss.tombstone_retention that the purge has not reached yet.
 func (s *NSSLookupService) readServableUser(ctx context.Context, where func(*gorm.DB) *gorm.DB) (*posixUserRow, error) {
+	row, err := s.readUserRow(ctx, where)
+	if err != nil || row == nil {
+		return nil, err
+	}
+	if !s.servable(row.WithheldAt, row.DeletedAt) {
+		return nil, nil
+	}
+	return row, nil
+}
+
+// readUserRow reads the posix_users row where selects, with the linked
+// person's disable, whether or not it may be served; nil when there is
+// none. The directory viewer reads through it too, so the row it shows is
+// the row a lookup would judge.
+func (s *NSSLookupService) readUserRow(ctx context.Context, where func(*gorm.DB) *gorm.DB) (*posixUserRow, error) {
 	var row posixUserRow
 	err := where(s.db.WithContext(ctx).Table("posix_users").
 		Select("posix_users.*, users.disabled_at AS user_disabled_at").
@@ -181,9 +196,6 @@ func (s *NSSLookupService) readServableUser(ctx context.Context, where func(*gor
 	}
 	if err != nil {
 		return nil, fmt.Errorf("read posix account: %w", err)
-	}
-	if !s.servable(row.WithheldAt, row.DeletedAt) {
-		return nil, nil
 	}
 	return &row, nil
 }
