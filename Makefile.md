@@ -242,7 +242,7 @@ plain command report success over code it never looked at:
 
 | What hides | Hidden from | How it bit | Covered by |
 | --- | --- | --- | --- |
-| **Build tags** | `lint` passes none; `test` builds none | A suite behind `e2e`, `resilience`, `load`, `softhsm`, or `natsintegration` can fail to compile outright while both report success | `lint-tagged` |
+| **Build tags** | `lint` passes none; `test` builds none | A suite behind `e2e`, `resilience`, `load`, `softhsm`, `natsintegration`, or `ldaplive` can fail to compile outright while both report success | `lint-tagged` |
 | **GOOS** | `lint` runs with the host's | A G115 overflow bug sat in `client/config/policy_windows.go`, on a value an admin sets through Group Policy | `lint-cross` |
 | **cgo** | golangci-lint can't see into a cgo file | Every symbol referenced only from one reports as unused. The devcontainer defaults `CGO_ENABLED=0` | Explicit `CGO_ENABLED=1` per recipe |
 
