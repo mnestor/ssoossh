@@ -50,6 +50,55 @@ describe('ConfirmModal', () => {
 		expect(onconfirm).toHaveBeenCalledWith('');
 	});
 
+	describe('focus once the dialog has gone', () => {
+		/** openFrom focuses a button outside the dialog, as its opener. */
+		function openFrom(): HTMLButtonElement {
+			const opener = document.createElement('button');
+			document.body.append(opener);
+			opener.focus();
+			return opener;
+		}
+
+		it('should put the caret back on the opener', () => {
+			const opener = openFrom();
+			const { unmount } = render(ConfirmModal, props(vi.fn()));
+
+			unmount();
+
+			expect(document.activeElement).toBe(opener);
+			opener.remove();
+		});
+
+		it('should leave the caret where returnFocus placed it', () => {
+			const opener = openFrom();
+			const result = document.createElement('button');
+			document.body.append(result);
+			const { unmount } = render(ConfirmModal, {
+				...props(vi.fn()),
+				returnFocus: () => {
+					result.focus();
+					return true;
+				}
+			});
+
+			unmount();
+
+			expect(document.activeElement).toBe(result);
+			opener.remove();
+			result.remove();
+		});
+
+		it('should fall back to the opener when returnFocus places nothing', () => {
+			const opener = openFrom();
+			const { unmount } = render(ConfirmModal, { ...props(vi.fn()), returnFocus: () => false });
+
+			unmount();
+
+			expect(document.activeElement).toBe(opener);
+			opener.remove();
+		});
+	});
+
 	describe('typed confirmation', () => {
 		/** typedProps is a reasonless dialog that wants `expected` typed. */
 		function typedProps(onconfirm: (reason: string) => void) {

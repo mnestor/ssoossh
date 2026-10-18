@@ -30,6 +30,14 @@ if (typeof HTMLDialogElement !== 'undefined') {
 	}
 }
 
+// jsdom has window.scrollTo(), but only to report that it is not
+// implemented, which prints an error into the run on every call. Nothing
+// here lays a page out, so there is nothing to scroll: the stub does
+// nothing, and a test that cares where the page went spies on it.
+if (typeof window !== 'undefined') {
+	window.scrollTo = () => {};
+}
+
 // jsdom implements no Web Animations API, and Svelte 5 drives every
 // `transition:` through `element.animate()` — so the moment a component with
 // an entrance or an exit is rendered, jsdom throws "element.animate is not a

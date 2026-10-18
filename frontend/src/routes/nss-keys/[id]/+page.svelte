@@ -211,6 +211,7 @@
 	let rotateError = $state<string | null>(null);
 	// The rotation's answer while its secret is on screen; dropped on Done.
 	let issued = $state<NSSKeySecret | null>(null);
+	let secretPanel = $state<SecretPanel | undefined>(undefined);
 
 	async function rotate() {
 		if (!key) return;
@@ -232,6 +233,15 @@
 
 	function dismissSecret() {
 		issued = null;
+	}
+
+	// The panel opens at the top of the page, far above the Rotate button,
+	// and the dialog is still modal while it fades out, so the panel cannot
+	// take the caret when it mounts. Once the dialog has gone it can.
+	function focusSecret(): boolean {
+		if (!issued || !secretPanel) return false;
+		secretPanel.reveal();
+		return true;
 	}
 
 	beforeNavigate(({ cancel, type }) => {
@@ -482,6 +492,7 @@
 	{:else}
 		{#if issued}
 			<SecretPanel
+				bind:this={secretPanel}
 				keyId={issued.key.id}
 				secret={issued.secret}
 				previousExpiresAt={issued.key.previous_expires_at}
@@ -740,6 +751,7 @@
 		confirmTestid="nss-key-rotate-confirm"
 		onconfirm={rotate}
 		oncancel={() => (confirmRotate = false)}
+		returnFocus={focusSecret}
 	>
 		<p data-testid="nss-key-rotate-grace">
 			A new secret is issued and shown once.

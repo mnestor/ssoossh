@@ -17,10 +17,24 @@ const props = {
 
 afterEach(() => {
 	vi.unstubAllGlobals();
+	vi.restoreAllMocks();
 	props.ondismiss.mockReset();
 });
 
 describe('SecretPanel', () => {
+	it('should take the caret when it appears', () => {
+		render(SecretPanel, props);
+
+		expect(document.activeElement).toBe(screen.getByTestId('secret-panel-focus'));
+	});
+
+	it('should scroll the page to the top when it appears', () => {
+		const scroll = vi.spyOn(window, 'scrollTo');
+		render(SecretPanel, props);
+
+		expect(scroll).toHaveBeenCalledWith({ top: 0 });
+	});
+
 	it('should show the nss.key file as the key id then the secret', () => {
 		render(SecretPanel, props);
 

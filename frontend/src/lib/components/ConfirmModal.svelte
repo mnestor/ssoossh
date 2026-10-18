@@ -64,6 +64,14 @@
 		onconfirm: (reason: string) => void;
 		/** Called by Cancel and by Escape, which a native dialog gives free. */
 		oncancel: () => void;
+		/**
+		 * Puts the caret somewhere other than the control that opened the
+		 * dialog, for a confirm whose result appears elsewhere on the page.
+		 * Called once the dialog has left the page, because until then it is
+		 * modal and nothing outside it can take focus. Returns whether it
+		 * placed the caret; false falls back to the opener.
+		 */
+		returnFocus?: () => boolean;
 	}
 
 	let {
@@ -85,7 +93,8 @@
 		reasonTestid,
 		confirmTestid,
 		onconfirm,
-		oncancel
+		oncancel,
+		returnFocus
 	}: Props = $props();
 
 	// The reason lives here, so a caller opening the dialog with `{#if}`
@@ -119,6 +128,7 @@
 		const opener = document.activeElement;
 		dialogEl?.showModal();
 		return () => {
+			if (returnFocus?.()) return;
 			if (opener instanceof HTMLElement && opener.isConnected) {
 				opener.focus();
 			}

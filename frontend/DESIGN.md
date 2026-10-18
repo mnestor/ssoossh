@@ -642,7 +642,10 @@ rounded-md border-border-control bg-surface px-3 text-base`, `text-base`
     the server takes no reason for (the live LDAP sync).
   - It captures `document.activeElement` before opening and restores it on
     teardown, because callers dismiss it by unmounting and the caret would
-    otherwise land on `<body>`.
+    otherwise land on `<body>`. A caller whose result appears elsewhere on
+    the page passes `returnFocus`, which runs at that teardown and places
+    the caret itself; until then the dialog is modal and nothing outside it
+    can take focus.
   - A typed mode (`confirmText`), for an ending whose target is easy to
     mistake for the next row: revoking a fleet key (type the key id),
     accepting a changed uid or gid and purging a tombstone (type the name).
@@ -655,7 +658,11 @@ rounded-md border-border-control bg-surface px-3 text-base`, `text-base`
   it cannot be shown again; and Done held until "I have stored this secret"
   is ticked, with the reason beside it. The secret is only ever a prop: the
   page drops it on Done, and a navigation away before the box is ticked
-  asks first.
+  asks first. It opens at the top of the page, so on mount it scrolls the
+  page to the top and takes the caret (`tabindex="-1"`, never a Tab stop):
+  the control that asked for it sits further down, and the warning and the
+  box would otherwise be out of sight above the reader. After a rotation
+  the dialog's `returnFocus` hands the caret to it again.
 - **ConsentModal**: the blocking sign-in notice, typically a government
   system-use warning that a reader must accept before anything works. No
   visible title (the notice is the deployment's own approved wording; the

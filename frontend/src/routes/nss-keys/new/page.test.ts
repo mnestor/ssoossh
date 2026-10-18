@@ -241,6 +241,14 @@ describe('New NSS key', () => {
 			expect(await screen.findByTestId('secret-panel-secret')).toHaveTextContent(SECRET);
 		});
 
+		it('should take the caret onto the secret once the key is created', async () => {
+			answers();
+			render(Page);
+			await createNamed();
+
+			expect(document.activeElement).toBe(await screen.findByTestId('secret-panel-focus'));
+		});
+
 		it('should hold Done until the secret is acknowledged', async () => {
 			answers();
 			render(Page);

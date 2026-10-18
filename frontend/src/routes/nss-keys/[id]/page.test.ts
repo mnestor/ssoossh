@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/svelte';
+import { render, screen, waitFor, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -241,6 +241,23 @@ describe('NSS key detail', () => {
 			await rotateOnce();
 
 			expect(screen.getByTestId('secret-panel-secret')).toHaveTextContent(SECRET);
+		});
+
+		it('should leave the caret on the new secret once the dialog has gone', async () => {
+			await rotateOnce();
+			await waitFor(() =>
+				expect(screen.queryByTestId('nss-key-rotate-confirm')).not.toBeInTheDocument()
+			);
+
+			expect(document.activeElement).toBe(screen.getByTestId('secret-panel-focus'));
+		});
+
+		it('should scroll to the new secret at the top of the page when the rotation lands', async () => {
+			const scroll = vi.spyOn(window, 'scrollTo');
+			await rotateOnce();
+
+			expect(scroll).toHaveBeenCalledWith({ top: 0 });
+			scroll.mockRestore();
 		});
 
 		it('should say when the previous secret stops when the rotation lands', async () => {

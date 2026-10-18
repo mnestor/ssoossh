@@ -20,6 +20,9 @@
 	// The secret is a prop and nothing here copies it into state: the caller
 	// drops its own reference in ondismiss, and once this unmounts the page
 	// holds the secret nowhere.
+	//
+	// The panel opens at the top of its page while the control that asked
+	// for it sits further down, so it brings itself into view: see reveal.
 	interface Props {
 		keyId: string;
 		secret: string;
@@ -45,6 +48,24 @@
 		{ id: 'secret', label: 'Secret', value: secret }
 	]);
 
+	let panel = $state<HTMLDivElement | undefined>(undefined);
+
+	/**
+	 * reveal scrolls the page to the top, where the panel opens, and moves
+	 * the caret onto it, so the reader starts at the warning and the
+	 * acknowledgement is not left out of sight above them. It runs on
+	 * mount; a caller whose dialog was modal at that moment, and so kept
+	 * the caret, calls it again once the dialog has gone.
+	 */
+	export function reveal() {
+		panel?.focus({ preventScroll: true });
+		window.scrollTo({ top: 0 });
+	}
+
+	$effect(() => {
+		reveal();
+	});
+
 	async function copy(id: string, value: string) {
 		try {
 			await navigator.clipboard.writeText(value);
@@ -69,75 +90,79 @@
 	</button>
 {/snippet}
 
-<PageSection
-	title="Secret"
-	description="Shown this once. The server keeps only a hash, so nobody can read it back later."
-	{testid}
->
-	<div class="flex max-w-[70ch] flex-col gap-5">
-		<Alert variant="warning" title="Store the secret now" testid="{testid}-warning">
-			It cannot be shown again. If it is lost, rotate the key and update every host.
-		</Alert>
+<!-- tabindex="-1": where reveal puts the caret, never a Tab stop. Rounded
+     like the section so the focus ring follows its corners. -->
+<div bind:this={panel} tabindex="-1" class="rounded-lg" data-testid="{testid}-focus">
+	<PageSection
+		title="Secret"
+		description="Shown this once. The server keeps only a hash, so nobody can read it back later."
+		{testid}
+	>
+		<div class="flex max-w-[70ch] flex-col gap-5">
+			<Alert variant="warning" title="Store the secret now" testid="{testid}-warning">
+				It cannot be shown again. If it is lost, rotate the key and update every host.
+			</Alert>
 
-		<div class="flex flex-col gap-2">
-			<div class="flex flex-wrap items-center justify-between gap-2">
-				<span class="text-sm font-medium text-ink">nss.key</span>
-				{@render copyButton('file', 'File', file)}
+			<div class="flex flex-col gap-2">
+				<div class="flex flex-wrap items-center justify-between gap-2">
+					<span class="text-sm font-medium text-ink">nss.key</span>
+					{@render copyButton('file', 'File', file)}
+				</div>
+				<pre
+					class="overflow-x-auto rounded-md bg-surface-muted px-3 py-2 font-mono text-dense break-all whitespace-pre-wrap text-ink select-all"
+					data-testid="{testid}-file">{file}</pre>
+				<p class="text-dense text-ink-muted">
+					Save it on each host as <code class="font-mono">/etc/ssoossh/nss.key</code>, owned by root
+					with mode 0600: line 1 the key id, line 2 the secret.
+				</p>
 			</div>
-			<pre
-				class="overflow-x-auto rounded-md bg-surface-muted px-3 py-2 font-mono text-dense break-all whitespace-pre-wrap text-ink select-all"
-				data-testid="{testid}-file">{file}</pre>
-			<p class="text-dense text-ink-muted">
-				Save it on each host as <code class="font-mono">/etc/ssoossh/nss.key</code>, owned by root
-				with mode 0600: line 1 the key id, line 2 the secret.
-			</p>
-		</div>
 
-		<div class="flex flex-col gap-1">
-			<dl class="flex flex-col divide-y divide-border-subtle">
-				{#each values as item (item.id)}
-					<div class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
-						<dt class="w-20 shrink-0 text-dense text-ink-muted">{item.label}</dt>
-						<dd class="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-2">
-							<span
-								class="min-w-0 font-mono text-dense break-all text-ink select-all"
-								data-testid="{testid}-{item.id}">{item.value}</span
-							>
-							{@render copyButton(item.id, item.label, item.value)}
-						</dd>
-					</div>
-				{/each}
-			</dl>
+			<div class="flex flex-col gap-1">
+				<dl class="flex flex-col divide-y divide-border-subtle">
+					{#each values as item (item.id)}
+						<div class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
+							<dt class="w-20 shrink-0 text-dense text-ink-muted">{item.label}</dt>
+							<dd class="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-2">
+								<span
+									class="min-w-0 font-mono text-dense break-all text-ink select-all"
+									data-testid="{testid}-{item.id}">{item.value}</span
+								>
+								{@render copyButton(item.id, item.label, item.value)}
+							</dd>
+						</div>
+					{/each}
+				</dl>
 
-			<!-- Always in the document, so the live region exists before it
+				<!-- Always in the document, so the live region exists before it
 			     speaks. -->
-			<p role="status" class="text-xs text-danger" data-testid="{testid}-copy-failed">
-				{#if failed}
-					Copy failed. Select the value above and copy it by hand.
-				{/if}
-			</p>
-		</div>
+				<p role="status" class="text-xs text-danger" data-testid="{testid}-copy-failed">
+					{#if failed}
+						Copy failed. Select the value above and copy it by hand.
+					{/if}
+				</p>
+			</div>
 
-		{#if previousExpiresAt}
-			<p class="text-dense text-ink" data-testid="{testid}-grace">
-				The previous secret is accepted until {formatDateTime(previousExpiresAt)}. Hosts still
-				presenting it after that stop resolving accounts.
-			</p>
-		{/if}
+			{#if previousExpiresAt}
+				<p class="text-dense text-ink" data-testid="{testid}-grace">
+					The previous secret is accepted until {formatDateTime(previousExpiresAt)}. Hosts still
+					presenting it after that stop resolving accounts.
+				</p>
+			{/if}
 
-		<div class="flex flex-col gap-3 border-t border-border-subtle pt-4">
-			<label class="flex min-h-target items-center gap-2 text-sm text-ink">
-				<input type="checkbox" bind:checked={stored} data-testid="{testid}-stored" />
-				I have stored this secret
-			</label>
-			<div class="flex flex-wrap items-center gap-3">
-				<Button disabled={!stored} onclick={ondismiss} testid="{testid}-done">Done</Button>
-				{#if !stored}
-					<span class="text-dense text-ink-muted" data-testid="{testid}-done-reason">
-						Tick the box once the secret is stored.
-					</span>
-				{/if}
+			<div class="flex flex-col gap-3 border-t border-border-subtle pt-4">
+				<label class="flex min-h-target items-center gap-2 text-sm text-ink">
+					<input type="checkbox" bind:checked={stored} data-testid="{testid}-stored" />
+					I have stored this secret
+				</label>
+				<div class="flex flex-wrap items-center gap-3">
+					<Button disabled={!stored} onclick={ondismiss} testid="{testid}-done">Done</Button>
+					{#if !stored}
+						<span class="text-dense text-ink-muted" data-testid="{testid}-done-reason">
+							Tick the box once the secret is stored.
+						</span>
+					{/if}
+				</div>
 			</div>
 		</div>
-	</div>
-</PageSection>
+	</PageSection>
+</div>
