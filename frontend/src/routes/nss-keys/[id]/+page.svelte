@@ -13,6 +13,14 @@
 		rotateNSSKey,
 		updateNSSKey
 	} from '#lib/api/endpoints.js';
+	import {
+		NSSKeyPermissionAssignGroup,
+		NSSKeyPermissionEdit,
+		NSSKeyPermissionRevoke,
+		NSSKeyPermissionRotate,
+		NSSKeyStatusActive,
+		NSSKeyStatusRevoked
+	} from '#lib/api/generated/enums.js';
 	import type { NSSKey, NSSKeySecret, NSSKeyUsageRow, UpdateNSSKeyBody } from '#lib/api/types.js';
 	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
 	import Alert from '#lib/components/Alert.svelte';
@@ -30,15 +38,7 @@
 	import SecretPanel from '#lib/components/SecretPanel.svelte';
 	import { formatDateTime, remainingLabel } from '#lib/format.js';
 	import { describeLoaded } from '#lib/listStatus.js';
-	import {
-		NSSKeyPermission,
-		can,
-		expiryTone,
-		formatPercent,
-		keyStatus,
-		missRate,
-		previousLive
-	} from '#lib/nss.js';
+	import { can, expiryTone, formatPercent, keyStatus, missRate, previousLive } from '#lib/nss.js';
 
 	// One fleet key: what it is, its secret's state, who may change what,
 	// and how hosts are using it.
@@ -94,12 +94,12 @@
 		return () => controller.abort();
 	});
 
-	const status = $derived(key ? keyStatus(key, now) : 'active');
-	const revoked = $derived(key?.status === 'revoked');
-	const mayRotate = $derived(!!key && !revoked && can(key, NSSKeyPermission.Rotate));
-	const mayRevoke = $derived(!!key && !revoked && can(key, NSSKeyPermission.Revoke));
-	const mayEdit = $derived(!!key && !revoked && can(key, NSSKeyPermission.Edit));
-	const mayAssign = $derived(!!key && !revoked && can(key, NSSKeyPermission.AssignGroup));
+	const status = $derived(key ? keyStatus(key, now) : NSSKeyStatusActive);
+	const revoked = $derived(key?.status === NSSKeyStatusRevoked);
+	const mayRotate = $derived(!!key && !revoked && can(key, NSSKeyPermissionRotate));
+	const mayRevoke = $derived(!!key && !revoked && can(key, NSSKeyPermissionRevoke));
+	const mayEdit = $derived(!!key && !revoked && can(key, NSSKeyPermissionEdit));
+	const mayAssign = $derived(!!key && !revoked && can(key, NSSKeyPermissionAssignGroup));
 	const graceLive = $derived(!!key && previousLive(key, now));
 
 	// ---- Inline edits ---------------------------------------------------
@@ -597,8 +597,9 @@
 					{/if}
 				</DetailRow>
 				<DetailRow label="Created">
-					{formatDateTime(key.created_at)}{#if key.created_by_username}{' '}by
-						<span class="font-mono">{key.created_by_username}</span>{/if}
+					{formatDateTime(key.created_at)}
+					{#if key.created_by_username}by <span class="font-mono">{key.created_by_username}</span
+						>{/if}
 				</DetailRow>
 			</dl>
 		</PageSection>

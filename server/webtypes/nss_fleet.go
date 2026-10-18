@@ -1,6 +1,10 @@
 package webtypes
 
-import "time"
+import (
+	"time"
+
+	"github.com/mnestor/ssoossh/server/model"
+)
 
 // The NSS directory's session-authenticated shapes: the fleet API key
 // administration under /api/nss/keys, the allowed shells, and a person's
@@ -41,7 +45,7 @@ type NSSKeyResponse struct {
 	// none.
 	GroupName string `json:"group_name" validate:"required"`
 	// Status is derived from the revocation and expiry.
-	Status string `json:"status" enums:"active,expired,revoked" validate:"required"`
+	Status model.NSSKeyStatus `json:"status" validate:"required"`
 	// CurrentGeneration is 1 at creation and grows by one per rotation.
 	CurrentGeneration int `json:"current_generation" validate:"required"`
 	// CreatedBy is the creator's users.id, and CreatedByUsername their
@@ -66,7 +70,7 @@ type NSSKeyResponse struct {
 	// Permissions is what the caller may do with this key, decided by the
 	// server so the UI never reimplements the role matrix. A revoked key
 	// carries view alone.
-	Permissions []string `json:"permissions" enums:"view,rotate,revoke,edit,assign_group" validate:"required"`
+	Permissions []model.NSSKeyPermission `json:"permissions" validate:"required"`
 }
 
 // NSSKeyListResponse is GET /api/nss/keys: every key the caller may view,
@@ -138,7 +142,7 @@ type NSSRotationReportRowResponse struct {
 	LastGeneration int       `json:"last_generation" validate:"required"`
 	// Bucket is switched (last presented the current secret), not_switched
 	// (last presented an older one) or gone (not seen since the rotation).
-	Bucket string `json:"bucket" enums:"switched,not_switched,gone" validate:"required"`
+	Bucket model.NSSRotationBucket `json:"bucket" validate:"required"`
 }
 
 // NSSRotationReportResponse is GET /api/nss/keys/{id}/rotation-report:

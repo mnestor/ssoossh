@@ -290,23 +290,23 @@ func sameNSSIDs(a, b []string) bool {
 func TestNSSKeyController_ShouldReportEachCallersPermissions(t *testing.T) {
 	t.Parallel()
 
-	full := []string{"view", "rotate", "revoke", "edit", "assign_group"}
+	full := []model.NSSKeyPermission{"view", "rotate", "revoke", "edit", "assign_group"}
 	tests := []struct {
 		caller      string
 		revoked     bool
-		wantPerms   []string
+		wantPerms   []model.NSSKeyPermission
 		wantVisible bool
 	}{
 		{caller: nssCallerAdmin, wantPerms: full, wantVisible: true},
 		{caller: nssCallerKeyAdmin, wantPerms: full, wantVisible: true},
-		{caller: nssCallerSOC, wantPerms: []string{"view", "revoke"}, wantVisible: true},
-		{caller: nssCallerAuditor, wantPerms: []string{"view"}, wantVisible: true},
-		{caller: nssCallerMember, wantPerms: []string{"view", "rotate", "revoke", "edit"}, wantVisible: true},
+		{caller: nssCallerSOC, wantPerms: []model.NSSKeyPermission{"view", "revoke"}, wantVisible: true},
+		{caller: nssCallerAuditor, wantPerms: []model.NSSKeyPermission{"view"}, wantVisible: true},
+		{caller: nssCallerMember, wantPerms: []model.NSSKeyPermission{"view", "rotate", "revoke", "edit"}, wantVisible: true},
 		{caller: nssCallerUnrelated, wantVisible: false},
-		{caller: nssCallerAdmin, revoked: true, wantPerms: []string{"view"}, wantVisible: true},
-		{caller: nssCallerKeyAdmin, revoked: true, wantPerms: []string{"view"}, wantVisible: true},
-		{caller: nssCallerSOC, revoked: true, wantPerms: []string{"view"}, wantVisible: true},
-		{caller: nssCallerMember, revoked: true, wantPerms: []string{"view"}, wantVisible: true},
+		{caller: nssCallerAdmin, revoked: true, wantPerms: []model.NSSKeyPermission{"view"}, wantVisible: true},
+		{caller: nssCallerKeyAdmin, revoked: true, wantPerms: []model.NSSKeyPermission{"view"}, wantVisible: true},
+		{caller: nssCallerSOC, revoked: true, wantPerms: []model.NSSKeyPermission{"view"}, wantVisible: true},
+		{caller: nssCallerMember, revoked: true, wantPerms: []model.NSSKeyPermission{"view"}, wantVisible: true},
 	}
 	for _, tc := range tests {
 		state := "a live key"
@@ -373,7 +373,7 @@ func TestNSSKeyController_ShouldReturnTheSecretOnlyOnCreateAndRotate(t *testing.
 	if !strings.HasPrefix(key.ID, "nss_") || len(key.ID) != len("nss_")+8 {
 		t.Errorf("id = %q, want nss_ and 8 characters", key.ID)
 	}
-	if key.CurrentGeneration != 1 || key.Status != service.NSSKeyStatusActive || key.GroupName != "team-web" {
+	if key.CurrentGeneration != 1 || key.Status != model.NSSKeyStatusActive || key.GroupName != "team-web" {
 		t.Errorf("created key = generation %d, %s, group %q; want 1, active, team-web", key.CurrentGeneration, key.Status, key.GroupName)
 	}
 	if key.CreatedByUsername != caller.Username || key.NotificationEmail != caller.Email {
@@ -459,7 +459,7 @@ func TestNSSKeyController_ShouldAnswerConflicts(t *testing.T) {
 	}
 	var key webtypes.NSSKeyResponse
 	decodeEnvelope(t, w.Body.Bytes(), &key)
-	if key.Status != service.NSSKeyStatusRevoked || key.RevokedAt == nil || key.RevokedByUsername != "nss-admin" {
+	if key.Status != model.NSSKeyStatusRevoked || key.RevokedAt == nil || key.RevokedByUsername != "nss-admin" {
 		t.Errorf("revoked key = %s at %v by %q, want revoked by nss-admin", key.Status, key.RevokedAt, key.RevokedByUsername)
 	}
 

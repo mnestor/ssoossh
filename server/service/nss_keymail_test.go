@@ -229,9 +229,9 @@ func TestNSSKeyMail_ShouldListAtMostFiftyAddressesWhenTheDigestIsBuilt(t *testin
 
 	report := &NSSRotationReport{NotSwitched: 53, Switched: 2}
 	for i := range 53 {
-		report.Rows = append(report.Rows, NSSRotationReportRow{SourceIP: fmt.Sprintf("192.0.2.%d", i), Bucket: NSSRotationNotSwitched})
+		report.Rows = append(report.Rows, NSSRotationReportRow{SourceIP: fmt.Sprintf("192.0.2.%d", i), Bucket: model.NSSRotationBucketNotSwitched})
 	}
-	report.Rows = append(report.Rows, NSSRotationReportRow{SourceIP: "198.51.100.1", Bucket: NSSRotationSwitched})
+	report.Rows = append(report.Rows, NSSRotationReportRow{SourceIP: "198.51.100.1", Bucket: model.NSSRotationBucketSwitched})
 	payload := cleanupPayload(&model.NSSKey{ID: "nss_a", Name: "k", CurrentGeneration: 2}, report, "https://ssh.example.org")
 	if len(payload.NotSwitchedAddresses) != nssCleanupListLimit || payload.MoreNotSwitched != 3 {
 		t.Errorf("listed %d with %d more, want %d and 3", len(payload.NotSwitchedAddresses), payload.MoreNotSwitched, nssCleanupListLimit)

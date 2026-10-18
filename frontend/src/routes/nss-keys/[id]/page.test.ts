@@ -2,6 +2,7 @@ import { render, screen, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { NSSKeyPermission } from '#lib/api/generated/enums.js';
 import type { NSSKey } from '#lib/api/types.js';
 import { session } from '#lib/session.svelte.js';
 import {
@@ -40,7 +41,7 @@ import { fakePage } from '#lib/testing/page.svelte.js';
 import Page from './+page.svelte';
 
 const now = new Date('2026-10-18T12:00:00Z');
-const ALL = ['view', 'rotate', 'revoke', 'edit', 'assign_group'];
+const ALL: NSSKeyPermission[] = ['view', 'rotate', 'revoke', 'edit', 'assign_group'];
 const SECRET = 'bmV3LXNlY3JldA';
 
 beforeEach(() => {

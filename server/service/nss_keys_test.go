@@ -93,25 +93,25 @@ func auditDetails(t *testing.T, db *gorm.DB, action AuditAction) []map[string]an
 func TestNSSKeys_ShouldGrantEachRoleItsPermissionsWhenAKeyIsViewed(t *testing.T) {
 	t.Parallel()
 
-	all := []string{NSSKeyPermissionView, NSSKeyPermissionRotate, NSSKeyPermissionRevoke, NSSKeyPermissionEdit, NSSKeyPermissionAssignGroup}
+	all := []model.NSSKeyPermission{model.NSSKeyPermissionView, model.NSSKeyPermissionRotate, model.NSSKeyPermissionRevoke, model.NSSKeyPermissionEdit, model.NSSKeyPermissionAssignGroup}
 	tests := []struct {
 		name        string
 		caller      *Identity
 		revoked     bool
-		want        []string
+		want        []model.NSSKeyPermission
 		wantVisible bool
 	}{
 		{name: "should grant everything when the caller is an admin", caller: nssAdmin, want: all, wantVisible: true},
 		{name: "should grant everything when the caller holds the key admin role", caller: nssKeyAdmin, want: all, wantVisible: true},
-		{name: "should grant view and revoke when the caller is SOC", caller: nssSOC, want: []string{NSSKeyPermissionView, NSSKeyPermissionRevoke}, wantVisible: true},
-		{name: "should grant view alone when the caller is an auditor", caller: nssAuditor, want: []string{NSSKeyPermissionView}, wantVisible: true},
+		{name: "should grant view and revoke when the caller is SOC", caller: nssSOC, want: []model.NSSKeyPermission{model.NSSKeyPermissionView, model.NSSKeyPermissionRevoke}, wantVisible: true},
+		{name: "should grant view alone when the caller is an auditor", caller: nssAuditor, want: []model.NSSKeyPermission{model.NSSKeyPermissionView}, wantVisible: true},
 		{name: "should grant all but assign_group when the caller is in the key's group", caller: nssMember,
-			want: []string{NSSKeyPermissionView, NSSKeyPermissionRotate, NSSKeyPermissionRevoke, NSSKeyPermissionEdit}, wantVisible: true},
+			want: []model.NSSKeyPermission{model.NSSKeyPermissionView, model.NSSKeyPermissionRotate, model.NSSKeyPermissionRevoke, model.NSSKeyPermissionEdit}, wantVisible: true},
 		{name: "should hide the key when the caller holds no role and is not in its group", caller: nssPlain},
 		{name: "should leave only view when the key is revoked and the caller is an admin", caller: nssAdmin, revoked: true,
-			want: []string{NSSKeyPermissionView}, wantVisible: true},
+			want: []model.NSSKeyPermission{model.NSSKeyPermissionView}, wantVisible: true},
 		{name: "should leave only view when the key is revoked and the caller is in its group", caller: nssMember, revoked: true,
-			want: []string{NSSKeyPermissionView}, wantVisible: true},
+			want: []model.NSSKeyPermission{model.NSSKeyPermissionView}, wantVisible: true},
 	}
 
 	for _, tt := range tests {
@@ -216,7 +216,7 @@ func TestNSSKeys_ShouldCreateAKeyWithItsDefaultsWhenOnlyANameIsGiven(t *testing.
 	if key.NotificationEmail != "kim@example.org" {
 		t.Errorf("notification_email = %q, want the creator's address", key.NotificationEmail)
 	}
-	if view.Status != NSSKeyStatusActive || view.CreatedByUsername != "kim" {
+	if view.Status != model.NSSKeyStatusActive || view.CreatedByUsername != "kim" {
 		t.Errorf("view = %+v, want active and created by kim", view)
 	}
 
@@ -563,7 +563,7 @@ func TestNSSKeys_ShouldEndTheKeyForGoodWhenItIsRevoked(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Revoke: %v", err)
 	}
-	if view.Status != NSSKeyStatusRevoked || view.Key.RevokedBy == nil || *view.Key.RevokedBy != ids[nssSOC.Subject] ||
+	if view.Status != model.NSSKeyStatusRevoked || view.Key.RevokedBy == nil || *view.Key.RevokedBy != ids[nssSOC.Subject] ||
 		view.RevokedByUsername != "sam" {
 		t.Errorf("view = %+v, want revoked by the SOC caller", view)
 	}
@@ -693,11 +693,11 @@ func TestNSSKeys_ShouldDeriveTheStatusWhenTheKeyIsRead(t *testing.T) {
 	tests := []struct {
 		name string
 		key  model.NSSKey
-		want string
+		want model.NSSKeyStatus
 	}{
-		{name: "should be active when the key is live", key: model.NSSKey{ExpiresAt: nssNow.Add(time.Hour)}, want: NSSKeyStatusActive},
-		{name: "should be expired when expires_at is now", key: model.NSSKey{ExpiresAt: nssNow}, want: NSSKeyStatusExpired},
-		{name: "should be revoked when it is revoked, expired or not", key: model.NSSKey{ExpiresAt: nssNow.Add(-time.Hour), RevokedAt: nssAt(-time.Hour)}, want: NSSKeyStatusRevoked},
+		{name: "should be active when the key is live", key: model.NSSKey{ExpiresAt: nssNow.Add(time.Hour)}, want: model.NSSKeyStatusActive},
+		{name: "should be expired when expires_at is now", key: model.NSSKey{ExpiresAt: nssNow}, want: model.NSSKeyStatusExpired},
+		{name: "should be revoked when it is revoked, expired or not", key: model.NSSKey{ExpiresAt: nssNow.Add(-time.Hour), RevokedAt: nssAt(-time.Hour)}, want: model.NSSKeyStatusRevoked},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -615,7 +615,7 @@ func TestNSSMetrics_ShouldCountLookupsByKindAndResultWhenObserved(t *testing.T) 
 	if histogramCount != 3 {
 		t.Errorf("durations recorded = %d, want 3", histogramCount)
 	}
-	if gauge[NSSKeyStatusActive] != 1 || gauge[NSSKeyStatusRevoked] != 1 || gauge[NSSKeyStatusExpired] != 1 {
+	if gauge["active"] != 1 || gauge["revoked"] != 1 || gauge["expired"] != 1 {
 		t.Errorf("keys gauge = %v, want one key in each status", gauge)
 	}
 }

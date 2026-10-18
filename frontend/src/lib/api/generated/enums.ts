@@ -109,3 +109,98 @@ export const PosixStatusDisabled = "disabled";
  */
 export const PosixStatusDeleted = "deleted";
 export type PosixStatus = typeof PosixStatusActive | typeof PosixStatusDisabled | typeof PosixStatusDeleted;
+/**
+ * NSSKeyStatus is the state a fleet API key is in. Never stored: it is
+ * derived from the key's revocation and expiry each time the key is read,
+ * so a key that passes its expires_at is expired without a job having to
+ * run. The web UI shows a fourth state, rotating, for an active key whose
+ * previous secret is still accepted; the server never sends it.
+ */
+/**
+ * NSSKeyStatusActive is a key hosts may use.
+ */
+export const NSSKeyStatusActive = "active";
+/**
+ * NSSKeyStatusExpired is a key past its expires_at.
+ */
+export const NSSKeyStatusExpired = "expired";
+/**
+ * NSSKeyStatusRevoked is a key revoked by someone. Terminal.
+ */
+export const NSSKeyStatusRevoked = "revoked";
+export type NSSKeyStatus = typeof NSSKeyStatusActive | typeof NSSKeyStatusExpired | typeof NSSKeyStatusRevoked;
+/**
+ * NSSKeyPermission is one thing a caller may do with one fleet API key,
+ * sent with every key so the web UI shows exactly the affordances the
+ * server will honour.
+ */
+/**
+ * NSSKeyPermissionView reads the key, its usage and its rotation
+ * report.
+ */
+export const NSSKeyPermissionView = "view";
+/**
+ * NSSKeyPermissionRotate issues a new secret, and ends the previous
+ * one early.
+ */
+export const NSSKeyPermissionRotate = "rotate";
+/**
+ * NSSKeyPermissionRevoke revokes the key.
+ */
+export const NSSKeyPermissionRevoke = "revoke";
+/**
+ * NSSKeyPermissionEdit changes the description, expiry and
+ * notification address.
+ */
+export const NSSKeyPermissionEdit = "edit";
+/**
+ * NSSKeyPermissionAssignGroup changes the group that manages the key.
+ */
+export const NSSKeyPermissionAssignGroup = "assign_group";
+export type NSSKeyPermission = typeof NSSKeyPermissionView | typeof NSSKeyPermissionRotate | typeof NSSKeyPermissionRevoke | typeof NSSKeyPermissionEdit | typeof NSSKeyPermissionAssignGroup;
+/**
+ * NSSRotationBucket is where one source address stands in a fleet key's
+ * rotation report since the key was last rotated.
+ */
+/**
+ * NSSRotationBucketSwitched is an address whose latest lookup
+ * presented the current secret.
+ */
+export const NSSRotationBucketSwitched = "switched";
+/**
+ * NSSRotationBucketNotSwitched is an address whose latest lookup
+ * presented an older secret: it stops resolving accounts when the
+ * grace ends.
+ */
+export const NSSRotationBucketNotSwitched = "not_switched";
+/**
+ * NSSRotationBucketGone is an address seen before the rotation and
+ * not since, a host retired or one that has not booted since.
+ */
+export const NSSRotationBucketGone = "gone";
+export type NSSRotationBucket = typeof NSSRotationBucketSwitched | typeof NSSRotationBucketNotSwitched | typeof NSSRotationBucketGone;
+/**
+ * NSSCollisionKind says which unique value an NSSCollision contests, and so
+ * which table its HolderID and OtherID name.
+ */
+/**
+ * NSSCollisionKindUID is two accounts with one uid (posix_users).
+ */
+export const NSSCollisionKindUID = "uid";
+/**
+ * NSSCollisionKindUserName is two accounts with one name (posix_users).
+ */
+export const NSSCollisionKindUserName = "user_name";
+/**
+ * NSSCollisionKindGID is two groups with one gid (posix_groups).
+ */
+export const NSSCollisionKindGID = "gid";
+/**
+ * NSSCollisionKindGroupName is two groups with one name (posix_groups).
+ */
+export const NSSCollisionKindGroupName = "group_name";
+/**
+ * The four contested values. POSIX resolves one record per number and per
+ * name, and account and group names are separate namespaces.
+ */
+export type NSSCollisionKind = typeof NSSCollisionKindUID | typeof NSSCollisionKindUserName | typeof NSSCollisionKindGID | typeof NSSCollisionKindGroupName;

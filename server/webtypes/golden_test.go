@@ -109,7 +109,7 @@ func fullFixtures() map[string]any {
 		RevokedAt:         &keyRevokedAt,
 		RevokedBy:         &keyRevokedBy,
 		RevokedByUsername: "bob",
-		Permissions:       []string{"view", "rotate", "revoke", "edit", "assign_group"},
+		Permissions:       []model.NSSKeyPermission{"view", "rotate", "revoke", "edit", "assign_group"},
 	}
 	usageCursor := "1792022400.2.192.0.2.10"
 	nssKeyExpires := issuedAt.Add(8760 * time.Hour)

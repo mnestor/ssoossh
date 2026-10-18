@@ -434,7 +434,7 @@ func writeRotationReportCSV(g *gin.Context, report *service.NSSRotationReport) {
 	for _, row := range report.Rows {
 		records = append(records, []string{
 			row.SourceIP,
-			row.Bucket,
+			string(row.Bucket),
 			strconv.Itoa(row.LastGeneration),
 			row.FirstSeen.UTC().Format(time.RFC3339),
 			row.LastSeen.UTC().Format(time.RFC3339),

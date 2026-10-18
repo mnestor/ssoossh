@@ -1,6 +1,10 @@
 package webtypes
 
-import "time"
+import (
+	"time"
+
+	"github.com/mnestor/ssoossh/server/model"
+)
 
 // The NSS directory's admin views: POST /api/admin/ldap/sync's NSS half,
 // and /api/admin/nss/*. A group's members on the wire are only the
@@ -106,7 +110,7 @@ type NSSCollisionsResponse struct {
 type NSSCollisionResponse struct {
 	// Kind is the contested value: uid or user_name between accounts, gid
 	// or group_name between groups.
-	Kind string `json:"kind" validate:"required"`
+	Kind model.NSSCollisionKind `json:"kind" validate:"required"`
 	// Value is the contested uid, gid or name, as text.
 	Value string `json:"value" validate:"required"`
 	// Holder is the stored row holding the value; Other the entry

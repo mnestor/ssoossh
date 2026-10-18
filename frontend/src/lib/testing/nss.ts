@@ -1,5 +1,6 @@
 import { vi } from 'vitest';
 
+import type { NSSRotationBucket } from '#lib/api/generated/enums.js';
 import type {
 	CurrentUser,
 	NSSKey,
@@ -57,7 +58,7 @@ export function keyFixture(overrides: Partial<NSSKey> = {}): NSSKey {
 /** reportRow is one address in a rotation report. */
 export function reportRow(
 	source_ip: string,
-	bucket: string,
+	bucket: NSSRotationBucket,
 	overrides: Partial<NSSRotationReportRow> = {}
 ): NSSRotationReportRow {
 	return {

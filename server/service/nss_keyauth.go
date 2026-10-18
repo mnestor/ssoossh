@@ -72,9 +72,9 @@ func (s *NSSKeyService) VerifyFleetKey(ctx context.Context, keyID, secret string
 	if found {
 		verdict.Key = &key
 		switch nssKeyStatus(&key, now) {
-		case NSSKeyStatusRevoked:
+		case model.NSSKeyStatusRevoked:
 			verdict.Dead = NSSDeadKeyRevoked
-		case NSSKeyStatusExpired:
+		case model.NSSKeyStatusExpired:
 			verdict.Dead = NSSDeadKeyExpired
 		default:
 			current = key.SecretHash

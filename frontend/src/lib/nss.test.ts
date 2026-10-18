@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
+import * as enums from '#lib/api/generated/enums.js';
 import type { NSSRotationReportRow } from '#lib/api/types.js';
 import {
-	NSSCollisionKind,
-	NSSKeyPermission,
-	RotationBucket,
+	KeyRotating,
 	can,
 	collisionLabel,
 	expiryTone,
@@ -21,24 +20,35 @@ import {
 const now = new Date('2026-10-18T12:00:00Z');
 
 describe('wire values', () => {
-	// Literal on purpose: these are the server's spellings, which tygo does
-	// not generate, so this is where a rename on either side shows up.
-	it('should spell the key permissions as the server does', () => {
-		expect(Object.values(NSSKeyPermission)).toEqual([
-			'view',
-			'rotate',
-			'revoke',
-			'edit',
-			'assign_group'
-		]);
+	// Literal on purpose: these are the server's spellings, so a rename on
+	// either side shows up here as well as in svelte-check.
+	const cases: { name: string; got: string; want: string }[] = [
+		{ name: 'key status active', got: enums.NSSKeyStatusActive, want: 'active' },
+		{ name: 'key status expired', got: enums.NSSKeyStatusExpired, want: 'expired' },
+		{ name: 'key status revoked', got: enums.NSSKeyStatusRevoked, want: 'revoked' },
+		{ name: 'permission view', got: enums.NSSKeyPermissionView, want: 'view' },
+		{ name: 'permission rotate', got: enums.NSSKeyPermissionRotate, want: 'rotate' },
+		{ name: 'permission revoke', got: enums.NSSKeyPermissionRevoke, want: 'revoke' },
+		{ name: 'permission edit', got: enums.NSSKeyPermissionEdit, want: 'edit' },
+		{
+			name: 'permission assign_group',
+			got: enums.NSSKeyPermissionAssignGroup,
+			want: 'assign_group'
+		},
+		{ name: 'bucket switched', got: enums.NSSRotationBucketSwitched, want: 'switched' },
+		{ name: 'bucket not_switched', got: enums.NSSRotationBucketNotSwitched, want: 'not_switched' },
+		{ name: 'bucket gone', got: enums.NSSRotationBucketGone, want: 'gone' },
+		{ name: 'collision uid', got: enums.NSSCollisionKindUID, want: 'uid' },
+		{ name: 'collision user_name', got: enums.NSSCollisionKindUserName, want: 'user_name' },
+		{ name: 'collision gid', got: enums.NSSCollisionKindGID, want: 'gid' },
+		{ name: 'collision group_name', got: enums.NSSCollisionKindGroupName, want: 'group_name' }
+	];
+	it.each(cases)('should spell the $name as the server does', ({ got, want }) => {
+		expect(got).toBe(want);
 	});
 
-	it('should spell the rotation buckets as the server does', () => {
-		expect(Object.values(RotationBucket)).toEqual(['switched', 'not_switched', 'gone']);
-	});
-
-	it('should spell the collision kinds as the server does', () => {
-		expect(Object.values(NSSCollisionKind)).toEqual(['uid', 'user_name', 'gid', 'group_name']);
+	it('should keep rotating apart from every server status', () => {
+		expect(KeyRotating).toBe('rotating');
 	});
 });
 
@@ -74,22 +84,25 @@ describe('keyStatus', () => {
 
 	for (const { name, status, previous, want } of cases) {
 		it(`should read ${want} when the key is ${name}`, () => {
-			expect(keyStatus({ status, previous_expires_at: previous }, now)).toBe(want);
+			// Cast: the cases include a status no server sends today.
+			expect(
+				keyStatus({ status: status as enums.NSSKeyStatus, previous_expires_at: previous }, now)
+			).toBe(want);
 		});
 	}
 });
 
 describe('can', () => {
 	it('should allow what the permissions list names', () => {
-		expect(can({ permissions: ['view', 'rotate'] }, NSSKeyPermission.Rotate)).toBe(true);
+		expect(can({ permissions: ['view', 'rotate'] }, enums.NSSKeyPermissionRotate)).toBe(true);
 	});
 
 	it('should refuse what the permissions list leaves out', () => {
-		expect(can({ permissions: ['view'] }, NSSKeyPermission.Revoke)).toBe(false);
+		expect(can({ permissions: ['view'] }, enums.NSSKeyPermissionRevoke)).toBe(false);
 	});
 
 	it('should refuse everything when the list is empty', () => {
-		expect(can({ permissions: [] }, NSSKeyPermission.View)).toBe(false);
+		expect(can({ permissions: [] }, enums.NSSKeyPermissionView)).toBe(false);
 	});
 });
 
@@ -223,7 +236,8 @@ describe('groupRotationRows', () => {
 	function row(source_ip: string, bucket: string): NSSRotationReportRow {
 		return {
 			source_ip,
-			bucket,
+			// Cast: one case sends a bucket no server sends today.
+			bucket: bucket as enums.NSSRotationBucket,
 			first_seen: '2026-10-01T00:00:00Z',
 			last_seen: '2026-10-18T00:00:00Z',
 			lookups: 1,

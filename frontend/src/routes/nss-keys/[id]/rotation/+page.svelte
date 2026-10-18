@@ -4,6 +4,12 @@
 
 	import { ApiError } from '#lib/api/client.js';
 	import { getNSSRotationReport, nssRotationReportCSVURL } from '#lib/api/endpoints.js';
+	import {
+		NSSRotationBucketGone,
+		NSSRotationBucketNotSwitched,
+		NSSRotationBucketSwitched,
+		type NSSRotationBucket
+	} from '#lib/api/generated/enums.js';
 	import type { NSSRotationReport, NSSRotationReportRow } from '#lib/api/types.js';
 	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
 	import Alert from '#lib/components/Alert.svelte';
@@ -15,7 +21,7 @@
 	import PageSection from '#lib/components/PageSection.svelte';
 	import PageShell from '#lib/components/PageShell.svelte';
 	import { formatDateTime } from '#lib/format.js';
-	import { groupRotationRows, RotationBucket, type RotationBucketName } from '#lib/nss.js';
+	import { groupRotationRows } from '#lib/nss.js';
 
 	// The page an operator opens after rotating a key: which hosts have
 	// switched to the new secret, and which would break if the old one ended
@@ -82,20 +88,20 @@
 
 	const groups = $derived(report ? groupRotationRows(report.rows) : null);
 
-	const sections: { bucket: RotationBucketName; title: string; description: string }[] = [
+	const sections: { bucket: NSSRotationBucket; title: string; description: string }[] = [
 		{
-			bucket: RotationBucket.NotSwitched,
+			bucket: NSSRotationBucketNotSwitched,
 			title: 'Not switched',
 			description:
 				'Last presented an older secret. These stop resolving accounts when the previous secret ends.'
 		},
 		{
-			bucket: RotationBucket.Switched,
+			bucket: NSSRotationBucketSwitched,
 			title: 'Switched',
 			description: 'Last presented the current secret.'
 		},
 		{
-			bucket: RotationBucket.Gone,
+			bucket: NSSRotationBucketGone,
 			title: 'Gone',
 			description: 'Not seen since the rotation. They may be off, or no longer use this key.'
 		}
@@ -103,9 +109,9 @@
 
 	const shownCount = $derived(
 		groups
-			? visible(groups.not_switched).length +
-					visible(groups.switched).length +
-					visible(groups.gone).length
+			? visible(groups[NSSRotationBucketNotSwitched]).length +
+					visible(groups[NSSRotationBucketSwitched]).length +
+					visible(groups[NSSRotationBucketGone]).length
 			: 0
 	);
 	const listMessage = $derived(
