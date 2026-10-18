@@ -25,13 +25,15 @@
 		description?: string;
 		/** Stable selector for the e2e browser tier — see test/e2e/README.md. */
 		testid?: string;
+		/** The fragment another page links to (`/admin/directory#probe`). */
+		id?: string;
 		children: Snippet;
 	}
 
-	let { title, description, testid, children }: Props = $props();
+	let { title, description, testid, id, children }: Props = $props();
 </script>
 
-<section data-testid={testid} class="rounded-lg bg-surface p-5">
+<section {id} data-testid={testid} class="rounded-lg bg-surface p-5">
 	<h2 class="text-meta font-semibold tracking-label text-ink-muted uppercase">
 		{title}
 	</h2>

@@ -22,6 +22,12 @@ export interface NavItem {
 	 * auditors by adminNavFor, and their route renders AccessDenied.
 	 */
 	adminOnly?: boolean;
+	/**
+	 * Set on a section that exists only where the server serves NSS
+	 * (nss.enabled, CurrentUser.nss_enabled); adminNavFor drops it
+	 * elsewhere, the same signal that decides the NSS keys entry.
+	 */
+	nssOnly?: boolean;
 }
 
 /**
@@ -84,6 +90,10 @@ export const adminNav: readonly NavItem[] = [
 	// Admin-only (issue #136): the status names the directory connection
 	// and the sync settings, and the sync and the probe were already admin's.
 	{ href: '/admin/directory', label: 'Directory', icon: 'address-book', adminOnly: true },
+	// Not admin-only: the stored accounts and groups, and what hosts are
+	// served for each, are read by auditors, SOC and admins alike. Only
+	// where NSS is on.
+	{ href: '/admin/nss', label: 'NSS directory', icon: 'database-search', nssOnly: true },
 	// Admin-only (issue #161): starting an echo is the page's only action,
 	// and the server refuses it below admin.
 	{ href: '/admin/identity/echo', label: 'Claims echo', icon: 'braces', adminOnly: true },
@@ -100,14 +110,15 @@ export const adminNav: readonly NavItem[] = [
 
 /**
  * adminNavFor is the admin group as one viewer may use it: every section for
- * an admin, and every section not marked adminOnly for SOC and auditors.
+ * an admin, and every section not marked adminOnly for SOC and auditors;
+ * sections marked nssOnly only where the server serves NSS.
  *
  * Display only, like the admin layout's gate: the server refuses the
  * sections' reads on its own. Dropping the entry is what keeps a SOC member
  * or auditor from being offered a page that can only refuse them.
  */
-export function adminNavFor(isAdmin: boolean): NavItem[] {
-	return adminNav.filter((item) => isAdmin || !item.adminOnly);
+export function adminNavFor(isAdmin: boolean, nssEnabled = false): NavItem[] {
+	return adminNav.filter((item) => (isAdmin || !item.adminOnly) && (nssEnabled || !item.nssOnly));
 }
 
 /** accountNav sits in the rail's footer, below the destinations. */

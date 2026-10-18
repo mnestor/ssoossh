@@ -3,6 +3,10 @@ import { vi } from 'vitest';
 import type { NSSRotationBucket } from '#lib/api/generated/enums.js';
 import type {
 	CurrentUser,
+	NSSAccountDetail,
+	NSSAccountSummary,
+	NSSGroupDetail,
+	NSSGroupSummary,
 	NSSKey,
 	NSSRotationReport,
 	NSSRotationReportRow
@@ -88,6 +92,97 @@ export function reportFixture(
 		not_switched: count('not_switched'),
 		gone: count('gone'),
 		rows,
+		...overrides
+	};
+}
+
+/** accountSummary is one stored account as the list sends it, active. */
+export function accountSummary(
+	name: string,
+	uid: number,
+	overrides: Partial<NSSAccountSummary> = {}
+): NSSAccountSummary {
+	return {
+		id: `acct-${uid}`,
+		name,
+		uid,
+		gid: 5000,
+		gecos: `${name} user`,
+		dn: `uid=${name},ou=People,dc=corp,dc=example`,
+		state: 'active',
+		last_synced_at: '2026-10-18T09:00:00Z',
+		...overrides
+	};
+}
+
+/** groupSummary is one stored group as the list sends it, active. */
+export function groupSummary(
+	name: string,
+	gid: number,
+	overrides: Partial<NSSGroupSummary> = {}
+): NSSGroupSummary {
+	return {
+		id: `grp-${gid}`,
+		name,
+		gid,
+		dn: `cn=${name},ou=Groups,dc=corp,dc=example`,
+		state: 'active',
+		member_count: 3,
+		last_synced_at: '2026-10-18T09:00:00Z',
+		...overrides
+	};
+}
+
+/** accountFixture is bob, stored, active and served, in one stored group. */
+export function accountFixture(overrides: Partial<NSSAccountDetail> = {}): NSSAccountDetail {
+	return {
+		id: 'acct-10001',
+		name: 'bob',
+		uid: 10001,
+		gid: 5000,
+		directory_id: '7f3c2a10-0000-4000-8000-000000000001',
+		dn: 'uid=bob,ou=People,dc=corp,dc=example',
+		home: '/home/bob',
+		shell: '/bin/bash',
+		gecos: 'Bob Baker',
+		dir_disabled: false,
+		person: { user_id: 'user-bob', username: 'bob', display_name: 'Bob Baker' },
+		state: 'active',
+		created_at: '2026-09-01T00:00:00Z',
+		updated_at: '2026-10-17T00:00:00Z',
+		last_synced_at: '2026-10-18T09:00:00Z',
+		groups: [{ gid: 5100, name: 'ops', state: 'active' }],
+		served: {
+			name: 'bob',
+			uid: 10001,
+			gid: 5000,
+			groups: [
+				{ gid: 5000, name: 'staff' },
+				{ gid: 5100, name: 'ops' }
+			],
+			home: '/home/bob',
+			shell: '/bin/bash',
+			gecos: 'Bob Baker',
+			status: 'active'
+		},
+		...overrides
+	};
+}
+
+/** groupFixture is ops, stored, active and served with every member. */
+export function groupFixture(overrides: Partial<NSSGroupDetail> = {}): NSSGroupDetail {
+	return {
+		id: 'grp-5100',
+		name: 'ops',
+		gid: 5100,
+		directory_id: '7f3c2a10-0000-4000-8000-000000000101',
+		dn: 'cn=ops,ou=Groups,dc=corp,dc=example',
+		state: 'active',
+		member_count: 2,
+		created_at: '2026-09-01T00:00:00Z',
+		updated_at: '2026-10-17T00:00:00Z',
+		last_synced_at: '2026-10-18T09:00:00Z',
+		served: { name: 'ops', gid: 5100, member_count: 2, members_truncated: false },
 		...overrides
 	};
 }

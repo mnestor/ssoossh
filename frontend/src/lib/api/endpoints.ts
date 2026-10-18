@@ -33,7 +33,12 @@ import type {
 	NotificationPreferences,
 	NSSAcceptedGroupIDChangeResponse,
 	NSSAcceptedUserIDChangeResponse,
+	NSSAccountDetail,
+	NSSAccountsResponse,
 	NSSCollisionsResponse,
+	NSSGroupDetail,
+	NSSGroupMembersResponse,
+	NSSGroupsResponse,
 	NSSKey,
 	NSSKeyListResponse,
 	NSSKeySecret,
@@ -51,6 +56,7 @@ import type {
 	SetNotificationEmailRequestBody,
 	UpdateNSSKeyBody
 } from './types';
+import type { NSSEntryState } from './generated/enums';
 
 /** GET /api/users/me. */
 export function getCurrentUser(signal?: AbortSignal): Promise<CurrentUser> {
@@ -780,4 +786,66 @@ export function purgeNSSGroupTombstone(gid: number): Promise<NSSPurgedTombstoneR
 	return request<NSSPurgedTombstoneResponse>(`/admin/nss/groups/${gid}/tombstone`, {
 		method: 'DELETE'
 	});
+}
+
+/** The search and paging a stored entry list takes: GET /api/admin/nss/users and /groups. */
+export interface NSSEntryListOptions {
+	/** A case-insensitive substring of the name or DN, or an exact uid or gid when numeric. */
+	q?: string;
+	/** One entry state; omitted lists every state. */
+	state?: NSSEntryState;
+	/** The previous page's next_cursor. */
+	after?: string;
+	limit?: number;
+	signal?: AbortSignal;
+}
+
+/** entryListQuery renders the list options as a query string, empty values left out. */
+function entryListQuery(options: NSSEntryListOptions): string {
+	const params = new URLSearchParams();
+	if (options.q) params.set('q', options.q);
+	if (options.state) params.set('state', options.state);
+	if (options.after) params.set('after', options.after);
+	if (options.limit) params.set('limit', options.limit.toString());
+	const query = params.toString();
+	return query ? `?${query}` : '';
+}
+
+/** GET /api/admin/nss/users: one page of the stored accounts, by name. */
+export function listNSSAccounts(options: NSSEntryListOptions = {}): Promise<NSSAccountsResponse> {
+	return request<NSSAccountsResponse>(`/admin/nss/users${entryListQuery(options)}`, {
+		signal: options.signal
+	});
+}
+
+/** GET /api/admin/nss/users/:uid: one stored account and what hosts are served for it; 404 when none is stored. */
+export function getNSSAccount(uid: number, signal?: AbortSignal): Promise<NSSAccountDetail> {
+	return request<NSSAccountDetail>(`/admin/nss/users/${uid}`, { signal });
+}
+
+/** GET /api/admin/nss/groups: one page of the stored groups, by name. */
+export function listNSSGroups(options: NSSEntryListOptions = {}): Promise<NSSGroupsResponse> {
+	return request<NSSGroupsResponse>(`/admin/nss/groups${entryListQuery(options)}`, {
+		signal: options.signal
+	});
+}
+
+/** GET /api/admin/nss/groups/:gid: one stored group and what hosts are served for it; 404 when none is stored. */
+export function getNSSGroup(gid: number, signal?: AbortSignal): Promise<NSSGroupDetail> {
+	return request<NSSGroupDetail>(`/admin/nss/groups/${gid}`, { signal });
+}
+
+/** GET /api/admin/nss/groups/:gid/members: one page of a stored group's membership rows, by uid. */
+export function listNSSGroupMembers(
+	gid: number,
+	options: { after?: string; limit?: number; signal?: AbortSignal } = {}
+): Promise<NSSGroupMembersResponse> {
+	const params = new URLSearchParams();
+	if (options.after) params.set('after', options.after);
+	if (options.limit) params.set('limit', options.limit.toString());
+	const query = params.toString();
+	return request<NSSGroupMembersResponse>(
+		`/admin/nss/groups/${gid}/members${query ? `?${query}` : ''}`,
+		{ signal: options.signal }
+	);
 }

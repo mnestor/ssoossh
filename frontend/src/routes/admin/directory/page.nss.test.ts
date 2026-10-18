@@ -97,6 +97,8 @@ function serve(
 		'GET /api/admin/ldap/status': envelope(status),
 		'GET /api/admin/nss/pending-id-changes': envelope(pending),
 		'GET /api/admin/nss/collisions': envelope({ collisions }),
+		'GET /api/admin/nss/users': envelope({ accounts: [], total: 1234 }),
+		'GET /api/admin/nss/groups': envelope({ groups: [], total: 1 }),
 		...extra
 	});
 }
@@ -399,6 +401,163 @@ describe('Directory page NSS panels', () => {
 			await userEvent.click(screen.getByTestId('nss-purge-confirm'));
 
 			expect(calls.some((call) => call.url === '/api/admin/nss/groups/5100/tombstone')).toBe(true);
+		});
+	});
+
+	describe('stored entries', () => {
+		it('should count the stored accounts and groups when both lists answer', async () => {
+			serve();
+			render(Page);
+
+			expect(await screen.findByTestId('nss-stored-counts')).toHaveTextContent(
+				'1234 stored accounts and 1 stored group.'
+			);
+		});
+
+		it('should read each count with a single row', async () => {
+			const calls = serve();
+			render(Page);
+			await screen.findByTestId('nss-stored-counts');
+
+			expect(calls.filter((call) => call.url.endsWith('?limit=1')).map((call) => call.url)).toEqual(
+				['/api/admin/nss/users?limit=1', '/api/admin/nss/groups?limit=1']
+			);
+		});
+
+		const links = [
+			{ testid: 'nss-stored-accounts-link', href: '/admin/nss/accounts' },
+			{ testid: 'nss-stored-groups-link', href: '/admin/nss/groups' }
+		];
+
+		for (const { testid, href } of links) {
+			it(`should link to ${href} when the counts load`, async () => {
+				serve();
+				render(Page);
+
+				expect(await screen.findByTestId(testid)).toHaveAttribute('href', href);
+			});
+		}
+
+		it('should offer Try again when a count fails to load', async () => {
+			serve({ 'GET /api/admin/nss/groups': envelope(null, 500, 'boom') });
+			render(Page);
+
+			expect(await screen.findByTestId('nss-stored-error-retry')).toBeInTheDocument();
+		});
+
+		it('should keep the pending panel when the counts fail to load', async () => {
+			serve({ 'GET /api/admin/nss/users': envelope(null, 500, 'boom') });
+			render(Page);
+			await screen.findByTestId('nss-stored-error');
+
+			expect(await pendingRow('alice')).toBeInTheDocument();
+		});
+
+		it('should keep the sync section when the counts fail to load', async () => {
+			serve({ 'GET /api/admin/nss/users': envelope(null, 500, 'boom') });
+			render(Page);
+			await screen.findByTestId('nss-stored-error');
+
+			expect(screen.getByTestId('ldap-sync-card')).toBeInTheDocument();
+		});
+
+		it('should count again when Try again is pressed', async () => {
+			let fail = true;
+			serve({
+				'GET /api/admin/nss/users': () =>
+					fail ? envelope(null, 500, 'boom') : envelope({ accounts: [], total: 7 })
+			});
+			render(Page);
+			const retry = await screen.findByTestId('nss-stored-error-retry');
+			fail = false;
+			await userEvent.click(retry);
+
+			expect(await screen.findByTestId('nss-stored-counts')).toHaveTextContent('7 stored accounts');
+		});
+
+		it('should not count anything when NSS is off', async () => {
+			session.user = userFixture({
+				is_admin: true,
+				is_soc: true,
+				is_auditor: true,
+				nss_enabled: false
+			});
+			serve();
+			render(Page);
+			await screen.findByTestId('ldap-sync-card');
+
+			expect(screen.queryByTestId('nss-stored')).toBeNull();
+		});
+	});
+
+	describe('links into the viewer', () => {
+		it('should link a pending account to its page by the stored uid', async () => {
+			serve();
+			render(Page);
+
+			expect(within(await pendingRow('alice')).getByTestId('nss-pending-link')).toHaveAttribute(
+				'href',
+				'/admin/nss/accounts/10001'
+			);
+		});
+
+		it('should link a pending group to its page by the stored gid', async () => {
+			serve();
+			render(Page);
+
+			expect(within(await pendingRow('ops')).getByTestId('nss-pending-link')).toHaveAttribute(
+				'href',
+				'/admin/nss/groups/5100'
+			);
+		});
+
+		it('should link a stored collision side to its account', async () => {
+			serve();
+			render(Page);
+
+			expect(
+				within(await collisionRow('carol')).getByTestId('collision-holder-link')
+			).toHaveAttribute('href', '/admin/nss/accounts/10001');
+		});
+
+		it('should not link a collision side the sync refused to store', async () => {
+			serve();
+			render(Page);
+
+			expect(within(await collisionRow('carol')).queryByTestId('collision-other-link')).toBeNull();
+		});
+
+		it('should link a stored group collision side to its group', async () => {
+			const groupPair: NSSCollision = {
+				...tombstonePair,
+				kind: 'group_name',
+				value: 'legacy',
+				holder: side('legacy', { number: 5100 }),
+				other: side('legacy', { number: 5101, stored: false })
+			};
+			serve({}, [groupPair]);
+			render(Page);
+
+			expect(
+				within(await collisionRow('legacy')).getByTestId('collision-holder-link')
+			).toHaveAttribute('href', '/admin/nss/groups/5100');
+		});
+
+		it('should bring the section a link names into view once the page has loaded', async () => {
+			const scrolled = vi.fn();
+			Element.prototype.scrollIntoView = scrolled;
+			window.location.hash = '#collisions';
+			try {
+				serve();
+				render(Page);
+				await screen.findByTestId('nss-collisions');
+				await settle();
+
+				expect(scrolled.mock.contexts[0]).toBe(screen.getByTestId('nss-collisions'));
+			} finally {
+				window.location.hash = '';
+				delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+			}
 		});
 	});
 });
