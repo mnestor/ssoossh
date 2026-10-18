@@ -339,6 +339,46 @@ the moment someone omits it.
 
 See [Console login](/ssoossh/concepts/console-flow/) for the whole flow.
 
+## The NSS fleet key
+
+[The NSS directory](/ssoossh/operations/nss/) answers hosts' user and group
+lookups, and every lookup carries a fleet API key. Its exposure is that of an
+LDAP directory with a shared bind account, the usual sssd deployment, not of
+an anonymous bind:
+
+- **Any host holding a key can ask for any name** the directory sync stored.
+  There is no per-host identity and no per-key group gate on the server;
+  narrowing is the host's own `require_groups`. The control over what can be
+  learnt is [`nss.user_filter`](/ssoossh/reference/config/nss/#user_filter),
+  which decides what is stored at all.
+- **The key is shared.** It is baked into an image, not provisioned per host,
+  and readable by root only. Whoever holds root on one host holds the key for
+  the fleet. Scope a key to an environment, give it a managing group, rotate
+  it, and watch [`nss.key_source_alert`](/ssoossh/reference/config/nss/#key_source_alert)
+  and the miss-rate alert for a key in the wrong hands;
+  [`nss.source_allow_list`](/ssoossh/reference/config/nss/#source_allow_list)
+  limits where lookups may come from at all.
+- **A key reads; it grants nothing.** The answer is POSIX identity, never a
+  login decision, and nothing on the lookup path can issue or widen a
+  certificate.
+- **The secret is never logged.** The server stores only its SHA-256, takes
+  the `X-Ssoossh-Key-Secret` header off every request before the access log
+  writes it, and records only the key id in logs and audit events.
+
+On the host the trust root is a pinned CA or public key, never the system
+store, so a host cannot be pointed at another server by DNS or a proxy
+variable.
+
+:::danger[Never write deny rules against directory groups]
+`nss-systemd` honours `SYSTEMD_BYPASS_USERDB` and `SYSTEMD_ONLY_USERDB` from
+the caller's environment, setuid programs included, so a local user can hide
+the directory from a `sudo` they start. That fails closed for everything
+that grants by group: the user is unknown, or has fewer groups. It fails
+**open** for a rule that denies by group, such as sudoers `!%contractors`:
+hide the group and the denial is gone. Grant by directory
+group; never deny by one.
+:::
+
 ## Threats and controls
 
 | Threat | Control | Where configured |
@@ -362,6 +402,9 @@ See [Console login](/ssoossh/concepts/console-flow/) for the whole flow.
 | Group membership goes stale mid-session | Groups are read at login; the session's absolute cap bounds staleness | [`http.cookie_max_age`](/ssoossh/reference/config/http/#cookie_max_age) |
 | An issued certificate cannot be traced later | Append-only decision records, and `sshd` logs the key ID on every login | [`audit.retention`](/ssoossh/reference/config/audit/#retention), [key ID templates](/ssoossh/operations/key-id-templates/) |
 | A signing job is intercepted on the broker | Per-node identity via mTLS; the payload is not secret and is useless without the client's private key | [multi-instance and NATS](/ssoossh/operations/multi-instance/) |
+| A host is made to believe a name has another uid | Pinned TLS to `ssoosshd`; local names and ids always win; `min_id` keeps system ids out; a uid or gid never moves without an admin's accept; two entries claiming one number or name are both withheld | [NSS directory](/ssoossh/operations/nss/#frozen-uid-and-gid), the host's `nss.yaml` |
+| A fleet key leaks | It reads identity only; per-key alerts on address count and misses; rotation with a report of who has switched; revoke | [`nss.key_source_alert`](/ssoossh/reference/config/nss/#key_source_alert), [`nss.source_allow_list`](/ssoossh/reference/config/nss/#source_allow_list) |
+| A local user hides directory groups from a setuid program | Grant by directory group, never deny by one | sudoers, and any other setuid program's rules, on the host |
 | Clock skew breaks PAM validity checks | The module's own skew tolerance, and run NTP on every host | the `skew-tolerance` module argument in the host's pam.d stack |
 
 ## What is deliberately out of scope

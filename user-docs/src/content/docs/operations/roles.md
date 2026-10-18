@@ -62,6 +62,11 @@ flowchart TD
     S --> V["admin.auditor_group<br/>read-only views"]
 ```
 
+A fourth group sits outside that chain:
+[`admin.nss_key_group`](/ssoossh/reference/config/admin/#nss_key_group)
+administers the [NSS fleet keys](/ssoossh/operations/nss/#fleet-keys).
+Admins hold it too; SOC may revoke any key and auditors read them.
+
 Containment is symmetric: whoever can disable an account can also re-enable
 it, whichever role or the directory sync disabled it. A SOC disable of every
 admin therefore never needs a database edit to undo. Every re-enable requires

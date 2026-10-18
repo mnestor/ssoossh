@@ -26,6 +26,14 @@ Everything beyond that -- `sudo`, `su`, a console login, an SSH second factor
 -- is the optional PAM module, which you install and wire in one service at a
 time. See [Installing pam_ssoossh](/ssoossh/hosts/pam/install/).
 
+### Do directory users need an account on every host?
+
+Not with [`ssoosshd-nss`](/ssoossh/hosts/nss/). It resolves directory users
+and groups through systemd userdb, so `getent`, `id` and `sshd` see the
+account with nothing provisioned per host. It decides only what a name's uid,
+groups, home and shell are; who may log in is still the certificate's
+business.
+
 ### How do I revoke a certificate, or offboard someone?
 
 You do not revoke, and that is deliberate: certificates are short-lived enough

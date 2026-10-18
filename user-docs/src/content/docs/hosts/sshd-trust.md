@@ -132,6 +132,11 @@ stderr), so an unmapped account still admits a certificate that names it
 directly; see [below](#checking-the-mapping-actually-loaded). Edit the mapping with `ssoossh host mapping
 add`, `list` and `remove`.
 
+On Linux it also sends a one-way refresh hint for the account to
+[`ssoosshd-nss`](/ssoossh/hosts/nss/)'s local userdb socket, so a directory
+user's groups are fresh at this login. It waits at most 50 ms, reads no
+answer, and ignores every failure, including there being no daemon at all.
+
 The file lists, per local account, the principals allowed to assume it:
 
 ```yaml
@@ -144,8 +149,8 @@ alice:
 root:          # listed with nothing: only a certificate naming root itself
 ```
 
-Reading that file is the only privilege it needs. It opens no socket, writes
-nothing, and does not need a home directory or any environment, so give it a
+Reading that file is the only privilege it needs. It opens no network
+socket, writes nothing, and does not need a home directory or any environment, so give it a
 dedicated unprivileged account. `sshd` recommends exactly that: an account
 "that has no other role on the host than running authorized principals
 commands".

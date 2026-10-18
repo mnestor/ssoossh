@@ -51,7 +51,7 @@ flowchart LR
 | `ssoosshd sign` | optional | the signer as its own process, so the CA key never enters the web tier |
 | PKCS#11 token | optional | the CA private key stays in hardware |
 | SMTP relay | optional | outbound notifications about credentials people hold |
-| LDAP directory | optional | extra principals, persisted groups, and auto-disable |
+| LDAP directory | optional | extra principals, persisted groups, and auto-disable; required for the NSS directory |
 
 The server never stores an issued certificate, and never sees a private key.
 Delivery to the waiting client is the only copy of a certificate.
@@ -80,6 +80,8 @@ Delivery to the waiting client is the only copy of a certificate.
     default; turn it on with `mail.enabled`, a relay and a sender.
 11. [LDAP enrichment](/ssoossh/operations/ldap/) -- optional directory data on
     top of the OIDC identity.
+    The [NSS directory](/ssoossh/operations/nss/) builds on it to serve
+    POSIX users and groups to hosts.
 12. [Audit log](/ssoossh/operations/audit-log/) -- the shipped archive and the
     bounded table behind the UI.
 13. [Deployment diagnostics](/ssoossh/operations/diagnostics/) -- four
