@@ -12,10 +12,14 @@ import (
 
 // linkLogin links the account a person's directory entry carries to their
 // users row, at login, once the LDAP enrichment has resolved the entry
-// (LDAPService.Enrich calls it on the same connection). The account is
-// found by directory_id, then DN, then the entry's uid; when none is stored
-// yet (an entry created since the last sync) it is read on demand by uid,
-// exactly as a host's lookup would read it, and then linked.
+// (LDAPService.Enrich calls it on the same connection). The account must be
+// that same directory entry: found by directory_id, then DN. When none is
+// stored yet (an entry created since the last sync) the entry's uid is read
+// on demand, exactly as a host's lookup would read it, and the result is
+// linked only if it is the same entry. A row that merely carries the same
+// uid is another entry (a uid the directory hands out twice, one copy
+// outside nss.user_filter) and is never linked: the person would control
+// its shell, and their disable would lock it.
 //
 // A row already linked to this person is left alone; one linked to
 // someone else is never moved silently (a warning, and it stays), and
@@ -45,11 +49,11 @@ func (s *NSSDirectoryService) linkLogin(ctx context.Context, conn ldapConn, iden
 	}
 	uid := uint32(uid64)
 
-	row, err := s.loginRow(ctx, entry, uid)
+	row, err := s.loginRow(ctx, entry)
 	if err == nil && row == nil {
 		filter := s.andFilter(s.config.NSS.UserFilter, s.config.NSS.Attributes.UID, raw)
 		if _, _, err = s.readAccountsOnDemand(ctx, conn, filter, nssKinds{number: true}, func(a *nssAccount) bool { return a.UID == uid }); err == nil {
-			row, err = s.loginRow(ctx, entry, uid)
+			row, err = s.loginRow(ctx, entry)
 		}
 	}
 	if err != nil {
@@ -57,7 +61,8 @@ func (s *NSSDirectoryService) linkLogin(ctx context.Context, conn ldapConn, iden
 		return
 	}
 	if row == nil {
-		s.log.DebugContext(ctx, "no NSS account matches the person's directory entry", logAttrs...)
+		s.log.DebugContext(ctx, "the person's directory entry is not an NSS account; nothing linked",
+			append(logAttrs, "uid", uid)...)
 		return
 	}
 
@@ -71,9 +76,10 @@ func (s *NSSDirectoryService) linkLogin(ctx context.Context, conn ldapConn, iden
 	}
 }
 
-// loginRow finds the stored account for a person's entry: by directory_id,
-// then DN, then uid. Nil when there is none.
-func (s *NSSDirectoryService) loginRow(ctx context.Context, entry *ldapEntry, uid uint32) (*model.PosixUser, error) {
+// loginRow finds the stored account that is a person's entry: by
+// directory_id, then DN, never by uid alone (see linkLogin). Nil when there
+// is none.
+func (s *NSSDirectoryService) loginRow(ctx context.Context, entry *ldapEntry) (*model.PosixUser, error) {
 	db := s.db.WithContext(ctx)
 	anchors := []struct {
 		where string
@@ -82,7 +88,6 @@ func (s *NSSDirectoryService) loginRow(ctx context.Context, entry *ldapEntry, ui
 	}{
 		{"directory_id = ?", entry.DirectoryID, entry.DirectoryID != ""},
 		{"dn = ?", entry.DN, entry.DN != ""},
-		{"uid = ?", uid, true},
 	}
 	for _, a := range anchors {
 		if !a.use {

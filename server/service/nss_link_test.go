@@ -96,6 +96,41 @@ func TestNSSLinkLogin_ShouldLinkTheAccountWhenAPersonLogsIn(t *testing.T) {
 	}
 }
 
+func TestNSSLinkLogin_ShouldNotLinkAnotherEntryWhenOnlyTheUidMatches(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		synced bool
+	}{
+		{name: "should leave the stored account unlinked when it is another entry with the same uid", synced: true},
+		{name: "should leave an account read on demand unlinked when it is another entry with the same uid", synced: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			h := newNSSLinkHarness(t, nil)
+			// The person's login entry carries uid 1001 but is not a POSIX
+			// account in scope; bob's posixAccount carries the same number.
+			h.dir.put(nssAccountEntry("uid=ada,ou=staff,dc=test", "ada", 1001, 1001,
+				map[string][]string{"objectClass": {"top", "inetOrgPerson"}}))
+			h.dir.put(nssAccountEntry("", "bob", 1001, 1001, nil))
+			if tt.synced {
+				h.fullSync(t)
+			}
+			userID := seedPerson(t, h.db, "u-ada", "ada")
+
+			h.login(t, userID, "ada")
+
+			row := h.accountByName(t, "bob")
+			if row.UserID != nil {
+				t.Fatalf("bob's account user_id = %s, want it unlinked", *row.UserID)
+			}
+		})
+	}
+}
+
 func TestNSSLinkLogin_ShouldRequestTheMappedAttributesWhenNSSIsOn(t *testing.T) {
 	t.Parallel()
 
