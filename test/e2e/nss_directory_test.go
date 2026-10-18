@@ -59,6 +59,9 @@ const (
 	nssOrphanUID = 10099
 	// nssAccountCount is every stored account.
 	nssAccountCount = 3
+	// nssHistoryAction is the one audit event seeded about ada and devs:
+	// ada added to devs after the group was stored.
+	nssHistoryAction = "nss.group_members_changed"
 )
 
 // Selectors the NSS viewer tests share.
@@ -69,6 +72,7 @@ const (
 	nssVerdictWord  = `[data-testid="nss-account-verdict-word"]`
 	nssGroupMember  = `[data-testid="nss-group-member"]`
 	nssMemberOrphan = `[data-testid="nss-group-member-unstored"]`
+	nssHistoryEvent = `[data-testid="audit-event"]`
 )
 
 // newNSSDirectoryFixture starts a server with NSS on, the admin and auditor
@@ -152,8 +156,22 @@ func seedNSSDirectory(t *testing.T, db *gorm.DB) {
 		LastSeenAt:  now,
 	}
 
+	// One history event, as the sync records adding ada to devs: the event
+	// and its refs to both rows, which is what puts it on both pages.
+	event := model.AuditEvent{
+		ID: nssSeedID(t), CreatedAt: now, Action: nssHistoryAction,
+		Payload: `{"action":"` + nssHistoryAction + `","system":true,"detail":{"table":"posix_groups","name":"` + nssDevsName +
+			`","gid":` + strconv.Itoa(nssDevsGID) + `,"via":"full_sync","added":[{"uid":` + strconv.Itoa(nssActiveUID) +
+			`,"name":"` + nssActiveName + `"}],"removed":[],"added_count":1,"removed_count":0},"occurred_at":"` +
+			now.Format(time.RFC3339Nano) + `","v":1}`,
+	}
+	refs := []model.NSSAuditRef{
+		{EventID: event.ID, Kind: model.NSSAuditRefGroup, RowID: groups[0].ID, CreatedAt: now},
+		{EventID: event.ID, Kind: model.NSSAuditRefAccount, RowID: accounts[0].ID, CreatedAt: now},
+	}
+
 	err := db.Transaction(func(tx *gorm.DB) error {
-		for _, rows := range []any{&accounts, &groups, &members, &collision} {
+		for _, rows := range []any{&accounts, &groups, &members, &collision, &event, &refs} {
 			if err := tx.Create(rows).Error; err != nil {
 				return err
 			}
@@ -232,6 +250,16 @@ func TestNSSDirectory_AdminReadsTheStoredDirectory(t *testing.T) {
 			t.Errorf("verdict = %q, want Served", got)
 		}
 		b.WaitCount(t, `[data-testid="nss-account-served-group"]`, 2)
+	})
+
+	t.Run("should show the membership change in the history when the account and its group are opened", func(t *testing.T) {
+		b := signInWithGroupsAt(t, f, "/admin/nss/accounts/"+strconv.Itoa(nssActiveUID), nssHistoryEvent, "admin", admin)
+
+		if got := b.Text(t, nssHistoryEvent); !strings.Contains(got, nssHistoryAction) {
+			t.Errorf("the account's history row reads %q, want %s", got, nssHistoryAction)
+		}
+		b.Navigate(t, f.Server.BaseURL+"/admin/nss/groups/"+strconv.Itoa(nssDevsGID), nssHistoryEvent)
+		b.WaitCount(t, nssHistoryEvent, 1)
 	})
 
 	t.Run("should list the group's members with the unstored one never served when a served group is followed", func(t *testing.T) {

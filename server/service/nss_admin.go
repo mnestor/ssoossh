@@ -123,6 +123,7 @@ func (s *NSSDirectoryService) acceptUserTx(tx *gorm.DB, uid uint32, actor *Audit
 		}
 		if err := s.recordMemberChanges(tx, b, memberDeltas(before, after), nssMemberChange{
 			via: nssViaIDChangeAccepted, actor: actor, userNames: map[uint32]string{row.UID: row.Name, newUID: row.Name},
+			userIDs: map[uint32]string{row.UID: row.ID, newUID: row.ID},
 		}); err != nil {
 			return AuditEvent{}, err
 		}
@@ -135,6 +136,7 @@ func (s *NSSDirectoryService) acceptUserTx(tx *gorm.DB, uid uint32, actor *Audit
 		Action:     AuditNSSIDChangeAccepted,
 		Actor:      actor,
 		OccurredAt: now,
+		NSSRefs:    []NSSAuditRef{accountTable().auditRef(row.ID)},
 		Detail: map[string]any{
 			"table": "posix_users", "name": row.Name, "dn": row.DN,
 			"old_uid": row.UID, "new_uid": newUID, "old_gid": row.GID, "new_gid": newGID,
@@ -217,6 +219,7 @@ func (s *NSSDirectoryService) AcceptGroupIDChange(ctx context.Context, gid uint3
 			Action:     AuditNSSIDChangeAccepted,
 			Actor:      actor,
 			OccurredAt: now,
+			NSSRefs:    []NSSAuditRef{groupTable().auditRef(row.ID)},
 			Detail: map[string]any{
 				"table": "posix_groups", "name": row.Name, "dn": row.DN,
 				"old_gid": row.GID, "new_gid": newGID, "accounts_rekeyed": accounts,
@@ -251,6 +254,7 @@ func (s *NSSDirectoryService) rekeyGroupAudited(tx *gorm.DB, b *nssAuditBatch, r
 	moved := nssMembers{newGID: before[row.GID]}
 	return accounts, s.recordMemberChanges(tx, b, memberDeltas(moved, after), nssMemberChange{
 		via: nssViaIDChangeAccepted, actor: actor, groupNames: map[uint32]string{newGID: row.Name},
+		groupIDs: map[uint32]string{newGID: row.ID},
 	})
 }
 

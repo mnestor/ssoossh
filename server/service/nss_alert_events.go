@@ -67,7 +67,13 @@ func (s *NSSDirectoryService) raiseCollisionAlerts(ctx context.Context, t nssTab
 			detail["holder_name"] = holders[0].Name
 			detail["holder_number"] = holders[0].Number
 		}
-		s.raise(ctx, kind, subject, AuditEvent{Action: action, Detail: detail})
+		// Both sides when both are stored: the holder always is, the other
+		// entry only when the sync stored it.
+		refs := []NSSAuditRef{t.auditRef(p.HolderID)}
+		if p.OtherID != nil {
+			refs = append(refs, t.auditRef(*p.OtherID))
+		}
+		s.raise(ctx, kind, subject, AuditEvent{Action: action, Detail: detail, NSSRefs: refs})
 	}
 }
 
@@ -93,7 +99,9 @@ func (s *NSSDirectoryService) raisePendingAlert(ctx context.Context, t nssTable,
 	detail["table"] = t.table
 	detail["name"] = name
 	detail["dn"] = dn
-	s.raise(ctx, nssAlertIDChangePending, t.label+":"+id, AuditEvent{Action: AuditNSSIDChangePending, Detail: detail})
+	s.raise(ctx, nssAlertIDChangePending, t.label+":"+id, AuditEvent{
+		Action: AuditNSSIDChangePending, Detail: detail, NSSRefs: []NSSAuditRef{t.auditRef(id)},
+	})
 }
 
 // raiseNameMismatch raises nss.name_mismatch for the person userID at most
@@ -101,8 +109,9 @@ func (s *NSSDirectoryService) raisePendingAlert(ctx context.Context, t nssTable,
 // a certificate for their own name can never resolve on a host.
 func (s *NSSDirectoryService) raiseNameMismatch(ctx context.Context, target *AuditSubject, row *model.PosixUser) {
 	s.raise(ctx, nssAlertNameMismatch, target.UserID, AuditEvent{
-		Action: AuditNSSNameMismatch,
-		Target: target,
+		Action:  AuditNSSNameMismatch,
+		Target:  target,
+		NSSRefs: []NSSAuditRef{accountTable().auditRef(row.ID)},
 		Detail: map[string]any{
 			"username":   target.Username,
 			"posix_name": row.Name,

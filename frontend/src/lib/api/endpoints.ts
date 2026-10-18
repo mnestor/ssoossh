@@ -823,6 +823,41 @@ export function getNSSAccount(uid: number, signal?: AbortSignal): Promise<NSSAcc
 	return request<NSSAccountDetail>(`/admin/nss/users/${uid}`, { signal });
 }
 
+/**
+ * The query of one history page: the previous page's `next_cursor` as
+ * `after`, and the page size.
+ */
+function historyQuery(params: { limit?: number; after?: string }): string {
+	const query = new URLSearchParams();
+	if (params.limit !== undefined) query.set('limit', String(params.limit));
+	if (params.after) query.set('after', params.after);
+	return query.toString() ? `?${query}` : '';
+}
+
+/**
+ * GET /api/admin/nss/users/:uid/audit: one page of the audit events about a
+ * stored account, newest first, in the user timeline's shape. 404 when no
+ * account has the uid.
+ */
+export function getNSSAccountAudit(
+	uid: number,
+	params: { limit?: number; after?: string; signal?: AbortSignal } = {}
+): Promise<AuditEventsResponse> {
+	return request<AuditEventsResponse>(`/admin/nss/users/${uid}/audit${historyQuery(params)}`, {
+		signal: params.signal
+	});
+}
+
+/** GET /api/admin/nss/groups/:gid/audit: getNSSAccountAudit for a stored group. */
+export function getNSSGroupAudit(
+	gid: number,
+	params: { limit?: number; after?: string; signal?: AbortSignal } = {}
+): Promise<AuditEventsResponse> {
+	return request<AuditEventsResponse>(`/admin/nss/groups/${gid}/audit${historyQuery(params)}`, {
+		signal: params.signal
+	});
+}
+
 /** GET /api/admin/nss/groups: one page of the stored groups, by name. */
 export function listNSSGroups(options: NSSEntryListOptions = {}): Promise<NSSGroupsResponse> {
 	return request<NSSGroupsResponse>(`/admin/nss/groups${entryListQuery(options)}`, {

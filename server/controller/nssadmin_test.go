@@ -72,7 +72,9 @@ func nssAdminRouterWith(t *testing.T, cfg *config.Config, db *gorm.DB, identity 
 		}
 		svc.SetAuditor(service.NewAuditService(cfg, db))
 		admin = svc
-		viewer = service.NewNSSLookupService(cfg, db, nil)
+		lookups := service.NewNSSLookupService(cfg, db, nil)
+		lookups.SetAuditor(service.NewAuditService(cfg, db))
+		viewer = lookups
 	}
 
 	r := gin.New()

@@ -89,8 +89,9 @@ func (s *NSSLookupService) SetShellPref(ctx context.Context, identity *Identity,
 			return fmt.Errorf("save the shell preference: %w", err)
 		}
 		event = &AuditEvent{
-			Action: AuditNSSShellChanged,
-			Actor:  AuditSubjectFromIdentity(identity, userID),
+			Action:  AuditNSSShellChanged,
+			Actor:   AuditSubjectFromIdentity(identity, userID),
+			NSSRefs: []NSSAuditRef{accountTable().auditRef(row.ID)},
 			Detail: map[string]any{
 				"uid":       row.UID,
 				"name":      row.Name,

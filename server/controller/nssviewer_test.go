@@ -10,12 +10,14 @@ package controller
 
 import (
 	"net/http"
+	"slices"
 	"testing"
 	"time"
 
 	"gorm.io/gorm"
 
 	"github.com/mnestor/ssoossh/server/model"
+	"github.com/mnestor/ssoossh/server/service"
 	"github.com/mnestor/ssoossh/server/webtypes"
 	"github.com/mnestor/ssoossh/test/testdb"
 )
@@ -43,6 +45,8 @@ func TestNSSViewerRoutes_ShouldAdmitAuditorsAndAboveWhenCalled(t *testing.T) {
 		"/admin/nss/groups",
 		"/admin/nss/groups/500",
 		"/admin/nss/groups/500/members",
+		"/admin/nss/users/1001/audit",
+		"/admin/nss/groups/500/audit",
 	}
 	callers := []struct {
 		name   string
@@ -77,6 +81,7 @@ func TestNSSViewerRoutes_ShouldAnswerNotFoundWhenNSSIsDisabled(t *testing.T) {
 	paths := []string{
 		"/admin/nss/users", "/admin/nss/users/1001", "/admin/nss/groups",
 		"/admin/nss/groups/500", "/admin/nss/groups/500/members",
+		"/admin/nss/users/1001/audit", "/admin/nss/groups/500/audit",
 	}
 	for _, path := range paths {
 		t.Run("should answer not found for GET "+path+" when NSS is disabled", func(t *testing.T) {
@@ -112,6 +117,11 @@ func TestNSSViewerRoutes_ShouldAnswerTheErrorWhenAParameterIsWrong(t *testing.T)
 		{name: "should answer not found when no account has the uid", path: "/admin/nss/users/9999", want: http.StatusNotFound},
 		{name: "should answer not found when no group has the gid", path: "/admin/nss/groups/9999", want: http.StatusNotFound},
 		{name: "should answer not found for members when no group has the gid", path: "/admin/nss/groups/9999/members", want: http.StatusNotFound},
+		{name: "should answer not found for history when no account has the uid", path: "/admin/nss/users/9999/audit", want: http.StatusNotFound},
+		{name: "should answer not found for history when no group has the gid", path: "/admin/nss/groups/9999/audit", want: http.StatusNotFound},
+		{name: "should refuse a history uid when it is not a number", path: "/admin/nss/users/abc/audit", want: http.StatusBadRequest},
+		{name: "should refuse a history cursor when it names no event", path: "/admin/nss/groups/500/audit?after=nope", want: http.StatusBadRequest},
+		{name: "should refuse a history limit when it is not a number", path: "/admin/nss/users/1001/audit?limit=abc", want: http.StatusBadRequest},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -272,5 +282,74 @@ func TestNSSViewerMembers_ShouldPageTheMembershipRowsWhenAsked(t *testing.T) {
 	decodeEnvelope(t, w.Body.Bytes(), &got)
 	if len(got.Members) != 1 || got.Members[0] != (webtypes.NSSGroupMemberResponse{UID: 4242}) || got.NextCursor != nil {
 		t.Errorf("page = %+v, want only the unstored 4242 and no cursor", got)
+	}
+}
+
+// seedNSSHistory records n events about ada's row (pu-ada) a minute
+// apart, and one about the staff group, through the real recorder.
+func seedNSSHistory(t *testing.T, db *gorm.DB, n int) {
+	t.Helper()
+	audit := service.NewAuditService(nssAdminTestConfig(), db)
+	for i := range n {
+		audit.Record(t.Context(), service.AuditEvent{
+			Action: service.AuditNSSGroupMembersChanged, System: true,
+			OccurredAt: nssAdminTime().Add(time.Duration(i) * time.Minute),
+			Detail:     map[string]any{"n": i},
+			NSSRefs:    []service.NSSAuditRef{{Kind: model.NSSAuditRefAccount, RowID: "pu-ada"}},
+		})
+	}
+	audit.Record(t.Context(), service.AuditEvent{
+		Action: service.AuditNSSGroupCreated, System: true, OccurredAt: nssAdminTime(),
+		NSSRefs: []service.NSSAuditRef{{Kind: model.NSSAuditRefGroup, RowID: "pg-staff"}},
+	})
+}
+
+func TestNSSViewerHistory_ShouldPageTheRowsEventsNewestFirstWhenAsked(t *testing.T) {
+	t.Parallel()
+
+	db := testdb.New(t)
+	seedNSSViewerRows(t, db)
+	seedNSSHistory(t, db, 3)
+	r := nssAdminRouter(t, db, nssAdminIdentity("auditors"), true)
+
+	var got []float64
+	path := "/admin/nss/users/1001/audit?limit=2"
+	for range 5 {
+		w := doNSSRequest(r, http.MethodGet, path)
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d: %s", w.Code, w.Body.String())
+		}
+		var page webtypes.AuditEventsResponse
+		decodeEnvelope(t, w.Body.Bytes(), &page)
+		if page.Total != 3 {
+			t.Errorf("total = %d, want 3", page.Total)
+		}
+		for _, e := range page.Events {
+			n, _ := e.Detail["n"].(float64)
+			got = append(got, n)
+		}
+		if page.NextCursor == nil {
+			break
+		}
+		path = "/admin/nss/users/1001/audit?limit=2&after=" + *page.NextCursor
+	}
+	if !slices.Equal(got, []float64{2, 1, 0}) {
+		t.Errorf("events = %v, want n 2, 1, 0", got)
+	}
+}
+
+func TestNSSViewerHistory_ShouldAnswerOnlyTheGroupsEventsWhenTheGroupIsAsked(t *testing.T) {
+	t.Parallel()
+
+	db := testdb.New(t)
+	seedNSSViewerRows(t, db)
+	seedNSSHistory(t, db, 2)
+	r := nssAdminRouter(t, db, nssAdminIdentity("soc"), true)
+
+	w := doNSSRequest(r, http.MethodGet, "/admin/nss/groups/500/audit")
+	var page webtypes.AuditEventsResponse
+	decodeEnvelope(t, w.Body.Bytes(), &page)
+	if w.Code != http.StatusOK || len(page.Events) != 1 || page.Events[0].Action != string(service.AuditNSSGroupCreated) || !page.Events[0].System {
+		t.Errorf("status %d, page %+v; want staff's one system event", w.Code, page)
 	}
 }

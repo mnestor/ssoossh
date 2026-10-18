@@ -177,7 +177,26 @@ type AuditEvent struct {
 
 	// V is the payload schema version, set by the recorder.
 	V int `json:"v"`
+
+	// NSSRefs names the stored NSS accounts and groups the event concerns.
+	// The recorder writes one nss_audit_refs row for each, with the event
+	// row, so each one's history in the directory viewer finds the event
+	// from an index. Not part of the payload or the log line: the detail
+	// already names them for a reader.
+	NSSRefs []NSSAuditRef `json:"-"`
 }
+
+// NSSAuditRef is one stored NSS account or group an event concerns: Kind
+// is model.NSSAuditRefAccount or model.NSSAuditRefGroup, RowID the row's
+// id. See model.NSSAuditRef.
+type NSSAuditRef struct {
+	Kind  string
+	RowID string
+}
+
+// nssAuditRefBatch is how many refs one insert carries: four bind
+// parameters each, well inside both backends' caps.
+const nssAuditRefBatch = 500
 
 // reasonRequired lists the actions whose reason is required and
 // server-validated. These are the containment and restorative ones: the
@@ -250,6 +269,31 @@ func (s *AuditService) RecordTx(tx *gorm.DB, event AuditEvent) error {
 	if err := tx.Create(row).Error; err != nil {
 		return fmt.Errorf("failed to record the %s audit event: %w", prepared.Action, err)
 	}
+	return writeNSSAuditRefs(tx, row, prepared.NSSRefs)
+}
+
+// writeNSSAuditRefs writes the nss_audit_refs rows of one event row,
+// once per distinct row named: an accepted uid change names its account
+// as both the removed and the added member.
+func writeNSSAuditRefs(tx *gorm.DB, row *model.AuditEvent, refs []NSSAuditRef) error {
+	if len(refs) == 0 {
+		return nil
+	}
+	seen := make(map[NSSAuditRef]bool, len(refs))
+	rows := make([]model.NSSAuditRef, 0, len(refs))
+	for _, r := range refs {
+		if r.RowID == "" || seen[r] {
+			continue
+		}
+		seen[r] = true
+		rows = append(rows, model.NSSAuditRef{EventID: row.ID, Kind: r.Kind, RowID: r.RowID, CreatedAt: row.CreatedAt})
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+	if err := tx.CreateInBatches(rows, nssAuditRefBatch).Error; err != nil {
+		return fmt.Errorf("failed to record what the %s audit event concerns: %w", row.Action, err)
+	}
 	return nil
 }
 
@@ -272,7 +316,14 @@ func (s *AuditService) Record(ctx context.Context, event AuditEvent) {
 	if tableSkipped(prepared.Action) {
 		return
 	}
-	if err := s.db.WithContext(ctx).Create(row).Error; err != nil {
+	// One transaction, so an event is never stored without the refs that
+	// put it on an NSS row's history.
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(row).Error; err != nil {
+			return err
+		}
+		return writeNSSAuditRefs(tx, row, prepared.NSSRefs)
+	}); err != nil {
 		slog.Error("failed to record an audit event to the database; it is still in the shipped audit log",
 			"action", prepared.Action, "error", err)
 	}
@@ -474,6 +525,73 @@ func (s *AuditService) ListForUser(ctx context.Context, userID, after string, li
 	return s.page(ctx, q, q, after, limit)
 }
 
+// ListForNSSRow returns the events that concern one stored NSS account or
+// group, newest first: its history in the directory viewer. kind is
+// model.NSSAuditRefAccount or model.NSSAuditRefGroup and rowID the row's
+// id, so the history follows the row through renames and accepted id
+// changes.
+//
+// The page is read from nss_audit_refs alone, ordered and sought on its
+// (kind, row_id, created_at, event_id) index, and only the page's events
+// are then read by id. after is the id of the previous page's last event,
+// or "" for the first page; it must be an event on this row's history.
+func (s *AuditService) ListForNSSRow(ctx context.Context, kind, rowID, after string, limit int) (*AuditPage, error) {
+	refs := s.db.WithContext(ctx).Model(&model.NSSAuditRef{}).Where("kind = ? AND row_id = ?", kind, rowID)
+
+	var total int64
+	if err := refs.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+		return nil, fmt.Errorf("failed to count the NSS row's audit events: %w", err)
+	}
+
+	window := refs.Session(&gorm.Session{})
+	if after != "" {
+		var cursor model.NSSAuditRef
+		err := refs.Session(&gorm.Session{}).Select("event_id", "created_at").Where("event_id = ?", after).Take(&cursor).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, paging.UnknownCursor()
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to look up the audit cursor: %w", err)
+		}
+		where, args := paging.SeekBefore("created_at", "event_id", cursor.CreatedAt, cursor.EventID)
+		window = window.Where(where, args...)
+	}
+
+	var page []model.NSSAuditRef
+	if err := window.Select("event_id", "created_at").
+		Order("created_at DESC, event_id DESC").
+		Limit(limit + 1).
+		Find(&page).Error; err != nil {
+		return nil, fmt.Errorf("failed to list the NSS row's audit events: %w", err)
+	}
+	page, next := paging.Trim(page, limit, func(r model.NSSAuditRef) string { return r.EventID })
+
+	ids := make([]string, 0, len(page))
+	for _, r := range page {
+		ids = append(ids, r.EventID)
+	}
+	var rows []model.AuditEvent
+	if len(ids) > 0 {
+		if err := s.db.WithContext(ctx).Where("id IN ?", ids).Find(&rows).Error; err != nil {
+			return nil, fmt.Errorf("failed to read the NSS row's audit events: %w", err)
+		}
+	}
+	byID := make(map[string]model.AuditEvent, len(rows))
+	for _, row := range rows {
+		byID[row.ID] = row
+	}
+
+	out := &AuditPage{Events: make([]AuditEventRecord, 0, len(page)), Total: total, NextCursor: next}
+	for _, r := range page {
+		// The foreign key deletes a ref with its event, so every ref has
+		// one; the check only keeps a missing row from blanking the page.
+		if row, ok := byID[r.EventID]; ok {
+			out.Events = append(out.Events, decodeAuditRow(row))
+		}
+	}
+	return out, nil
+}
+
 // AuditFilter narrows the recent-activity feed. Each field is an equality
 // match on an indexed column, and the zero value matches everything.
 type AuditFilter struct {
@@ -573,18 +691,23 @@ func (s *AuditService) page(ctx context.Context, scope, q *gorm.DB, after string
 
 	page := &AuditPage{Events: make([]AuditEventRecord, 0, len(rows)), Total: total}
 	for _, row := range rows {
-		record := AuditEventRecord{ID: row.ID, CreatedAt: row.CreatedAt}
-		if err := json.Unmarshal([]byte(row.Payload), &record.Event); err != nil {
-			// A corrupt payload must not blank the whole page: the row's
-			// existence and timestamp are themselves audit evidence, so it
-			// is surfaced with an action naming the problem.
-			slog.Error("failed to decode a stored audit payload", "audit_event_id", row.ID, "error", err)
-			record.Event = AuditEvent{Action: "audit.unreadable", OccurredAt: row.CreatedAt}
-		}
-		page.Events = append(page.Events, record)
+		page.Events = append(page.Events, decodeAuditRow(row))
 	}
 	page.NextCursor = next
 	return page, nil
+}
+
+// decodeAuditRow decodes one stored event back into its payload.
+func decodeAuditRow(row model.AuditEvent) AuditEventRecord {
+	record := AuditEventRecord{ID: row.ID, CreatedAt: row.CreatedAt}
+	if err := json.Unmarshal([]byte(row.Payload), &record.Event); err != nil {
+		// A corrupt payload must not blank the whole page: the row's
+		// existence and timestamp are themselves audit evidence, so it is
+		// surfaced with an action naming the problem.
+		slog.Error("failed to decode a stored audit payload", "audit_event_id", row.ID, "error", err)
+		record.Event = AuditEvent{Action: "audit.unreadable", OccurredAt: row.CreatedAt}
+	}
+	return record
 }
 
 // auditSweepBatch is how many rows one delete in the row-cap sweep names.
@@ -604,6 +727,10 @@ const auditSweepBatch = 1000
 // burst of them can push older events out of the UI's history. That is left
 // to the deployment: a firewall keeps those networks out, the rate limits
 // slow what gets through, and the shipped log keeps every line regardless.
+//
+// An event's nss_audit_refs rows go with it, by their foreign key's ON
+// DELETE CASCADE: both backends enforce it (the SQLite connection always
+// carries foreign_keys(1), see bootstrap.addSqliteDefaultParameters).
 //
 // A package-level function rather than a method, so the scheduler can
 // register it without reaching through a service.

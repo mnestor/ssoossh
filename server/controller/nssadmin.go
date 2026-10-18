@@ -55,11 +55,14 @@ func NewNSSAdminController(
 	auditorGroup.GET("/groups", a.listGroupsHandler)
 	auditorGroup.GET("/groups/:gid", a.groupHandler)
 	auditorGroup.GET("/groups/:gid/members", a.groupMembersHandler)
+	auditorGroup.GET("/users/:uid/audit", a.accountHistoryHandler)
+	auditorGroup.GET("/groups/:gid/audit", a.groupHistoryHandler)
 }
 
 // nssAdminController handles the NSS directory's admin routes. The
 // mutations are audited by the service, in their own transactions; the
-// reads are not, as the user directory's are not.
+// reads are not, as the user directory's are not, except the two history
+// reads, which record admin.audit_viewed as the per-user timeline does.
 type nssAdminController struct {
 	db     *gorm.DB
 	nss    service.NSSDirectoryAdmin

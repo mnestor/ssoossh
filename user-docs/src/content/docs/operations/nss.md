@@ -283,6 +283,17 @@ is read-only and open to auditors, SOC and admins, and it appears only when
   each linking to its own page. A group's page says when
   [`nss.max_group_members`](/ssoossh/reference/config/nss/#max_group_members)
   cut the member list hosts receive.
+- **History**, at the bottom, is every recorded change to that account or
+  group, newest first, with Load more: when it was stored, renamed, went
+  missing or came back, each change to a group's members, collisions,
+  pending and accepted id changes and, for an account, shell changes. One
+  event shows on every page it concerns, so a group's history shows a
+  member added after the group was stored and that member's history shows
+  the same event, however many members the change touched. The history
+  belongs to the stored row, so it carries on across a rename or an
+  accepted uid or gid change. It holds only what the
+  [audit log](/ssoossh/operations/audit-log/)'s table still holds: events
+  past its retention or row cap leave the history with them.
 
 "No stored account has uid N" does not mean a host cannot resolve it: a
 lookup that misses the database still asks the directory on demand and
@@ -461,7 +472,10 @@ has that person as the target. Each detail has `table`, `name`, `uid` or
 Nothing is written when nothing changed: a sync over an unchanged directory
 adds no rows. A new group's members are in its `member_count`, not in a
 separate members event. On the Admin → Audit page they are under NSS
-directory in the action filter.
+directory in the action filter, and each also shows in the History of every
+stored account and group it concerns (above).
+`GET /api/admin/nss/users/:uid/audit` and `GET /api/admin/nss/groups/:gid/audit`
+(auditors and above) return the same pages.
 
 ## Mail
 

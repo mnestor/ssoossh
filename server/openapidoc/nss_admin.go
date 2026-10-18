@@ -67,3 +67,11 @@ type NSSGroupMembersEnvelope struct {
 	Data  webtypes.NSSGroupMembersResponse `json:"data" validate:"required"`
 	Error *string                          `json:"error"`
 }
+
+// NSSHistoryEnvelope is the body of both history reads,
+// GET /api/admin/nss/users/{uid}/audit and /api/admin/nss/groups/{gid}/audit:
+// the per-user timeline's payload.
+type NSSHistoryEnvelope struct {
+	Data  webtypes.AuditEventsResponse `json:"data" validate:"required"`
+	Error *string                      `json:"error"`
+}

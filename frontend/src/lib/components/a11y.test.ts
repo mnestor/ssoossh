@@ -497,10 +497,14 @@ describe('component accessibility roster', () => {
 		// NSSEntryList and NSSStoredEntries: the same, each fetches on mount;
 		// the viewer's list pages and the Directory page render them with
 		// fixtures (routes/admin/nss/*, routes/admin/directory/page.nss.test.ts).
+		//
+		// NSSEntryHistory: the same; historySuite (#lib/testing/history) runs
+		// axe over it with events loaded on both NSS detail pages.
 		covered.add('ConsentModal');
 		covered.add('NSSDirectoryPanels');
 		covered.add('NSSEntryList');
 		covered.add('NSSStoredEntries');
+		covered.add('NSSEntryHistory');
 		covered.add('ApprovalView');
 		covered.add('AdminServiceCodeDetail');
 

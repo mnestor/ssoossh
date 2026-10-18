@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -333,4 +334,83 @@ func (a *nssAdminController) groupMembersHandler(g *gin.Context) {
 		resp.Members = append(resp.Members, webtypes.NSSGroupMemberResponse{UID: m.UID, Name: m.Name, State: m.State})
 	}
 	respondData(g, resp)
+}
+
+// accountHistoryHandler handles GET /api/admin/nss/users/:uid/audit.
+//
+// @Summary     View a stored NSS account's audit history (auditor and above)
+// @Description The audit events about the posix_users row with this uid, newest first: its lifecycle
+// @Description (created, renamed, missing, tombstoned, revived, purged), the group membership changes that
+// @Description added or removed it, its collisions, pending and accepted uid changes, and shell changes.
+// @Description The history belongs to the row, so it follows a rename or an accepted uid change.
+// @Description Uses cursor-based pagination (not offset), as /api/admin/users/{id}/audit does.
+// @Tags        admin
+// @Produce     json
+// @Param       uid   path  integer true  "The account's stored uid"
+// @Param       after query string  false "Audit event ID to start after (cursor): the previous page's next_cursor; must be on this account's history"
+// @Param       limit query int     false "Page size (default 25, max 100)" example(25)
+// @Success     200 {object} openapidoc.NSSHistoryEnvelope "Audit events"
+// @Failure     400 {object} openapidoc.ErrorEnvelope "The uid is not a number, invalid paging parameters, an after that names no event on this history, or offset"
+// @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
+// @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as auditor"
+// @Failure     404 {object} openapidoc.ErrorEnvelope "No stored account has that uid, or NSS is disabled"
+// @Security    sessionCookie
+// @Router      /api/admin/nss/users/{uid}/audit [get]
+func (a *nssAdminController) accountHistoryHandler(g *gin.Context) {
+	// Checked before the method value is taken: viewer is nil with NSS off.
+	if !a.viewerEnabled(g) {
+		return
+	}
+	a.historyHandler(g, "uid", a.viewer.AccountHistory)
+}
+
+// groupHistoryHandler handles GET /api/admin/nss/groups/:gid/audit.
+//
+// @Summary     View a stored NSS group's audit history (auditor and above)
+// @Description The audit events about the posix_groups row with this gid, newest first: its lifecycle
+// @Description (created, renamed, missing, tombstoned, revived, purged), every change to its members,
+// @Description its collisions, and pending and accepted gid changes.
+// @Description The history belongs to the row, so it follows a rename or an accepted gid change.
+// @Description Uses cursor-based pagination (not offset), as /api/admin/users/{id}/audit does.
+// @Tags        admin
+// @Produce     json
+// @Param       gid   path  integer true  "The group's stored gid"
+// @Param       after query string  false "Audit event ID to start after (cursor): the previous page's next_cursor; must be on this group's history"
+// @Param       limit query int     false "Page size (default 25, max 100)" example(25)
+// @Success     200 {object} openapidoc.NSSHistoryEnvelope "Audit events"
+// @Failure     400 {object} openapidoc.ErrorEnvelope "The gid is not a number, invalid paging parameters, an after that names no event on this history, or offset"
+// @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
+// @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as auditor"
+// @Failure     404 {object} openapidoc.ErrorEnvelope "No stored group has that gid, or NSS is disabled"
+// @Security    sessionCookie
+// @Router      /api/admin/nss/groups/{gid}/audit [get]
+func (a *nssAdminController) groupHistoryHandler(g *gin.Context) {
+	if !a.viewerEnabled(g) {
+		return
+	}
+	a.historyHandler(g, "gid", a.viewer.GroupHistory)
+}
+
+// nssHistoryReader is AccountHistory or GroupHistory.
+type nssHistoryReader func(ctx context.Context, number uint32, params paging.Params, actor *service.AuditSubject) (*service.AuditPage, error)
+
+// historyHandler is the two history routes: the number from param, the
+// paging, and the page in the per-user timeline's wire shape, so the UI's
+// timeline renders either.
+func (a *nssAdminController) historyHandler(g *gin.Context, param string, read nssHistoryReader) {
+	number, ok := nssNumberParam(g, param)
+	if !ok {
+		return
+	}
+	params, err := paging.Parse(g.Request.URL.Query())
+	if err != nil {
+		handleError(g, err)
+		return
+	}
+	page, err := read(g.Request.Context(), number, params, a.actor(g))
+	if err != nil {
+		handleError(g, err)
+		return
+	}
+	respondData(g, auditPageResponse(page))
 }

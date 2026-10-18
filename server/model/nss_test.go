@@ -34,6 +34,7 @@ func TestNSSModels_ShouldNameTheirMigrationTableWhenAskedForTableName(t *testing
 		{name: "should map NSSKey to nss_keys when asked", model: NSSKey{}, want: "nss_keys"},
 		{name: "should map NSSKeyUsage to nss_key_usage when asked", model: NSSKeyUsage{}, want: "nss_key_usage"},
 		{name: "should map NSSAlert to nss_alerts when asked", model: NSSAlert{}, want: "nss_alerts"},
+		{name: "should map NSSAuditRef to nss_audit_refs when asked", model: NSSAuditRef{}, want: "nss_audit_refs"},
 	}
 
 	for _, tt := range tests {

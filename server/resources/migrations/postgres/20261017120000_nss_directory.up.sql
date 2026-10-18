@@ -1,8 +1,9 @@
 -- The NSS directory: the POSIX accounts and groups served to hosts over
 -- /api/nss/*, the collisions that withhold some of them, the fleet keys
 -- those hosts authenticate with, the keys' usage
--- aggregate, and the claim markers that hold each NSS alert to one per
--- window across instances. See docs/proposals/nss-directory/1-server-api.md
+-- aggregate, the claim markers that hold each NSS alert to one per
+-- window across instances, and the links from audit events to the rows
+-- they concern. See docs/proposals/nss-directory/1-server-api.md
 -- ("Data model") and server/model/posix.go and server/model/nss.go.
 --
 -- uid and gid are uint32 in Go. Postgres has no unsigned type and its
@@ -288,3 +289,28 @@ CREATE TABLE nss_alerts (
     last_raised_at TIMESTAMPTZ NOT NULL,
     PRIMARY KEY (kind, subject)
 );
+
+-- Which stored accounts and groups each NSS audit event concerns, so the
+-- viewer's history of one row reads an index rather than matching the
+-- events' JSON (decided 2026-10-18 by the owner). Written in the
+-- transaction that writes the event. A grouping key, never authoritative,
+-- as audit_events.target_user_id is: the payload is the record.
+CREATE TABLE nss_audit_refs (
+    -- Deleted with its event, which only the audit sweep deletes.
+    event_id   TEXT NOT NULL REFERENCES audit_events(id) ON DELETE CASCADE,
+    kind       TEXT NOT NULL CHECK (kind IN ('account', 'group')),
+    -- A posix_users.id for an account, a posix_groups.id for a group: the
+    -- random id, which survives a rename and an accepted uid or gid change
+    -- where the name and the number do not. No foreign key, so a purged
+    -- row's history stays until its events age out.
+    row_id     TEXT NOT NULL,
+    -- The event's created_at, so a page orders and seeks on this table
+    -- alone.
+    created_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (event_id, kind, row_id)
+);
+
+-- One row's history, newest first, keyset paged on (created_at, event_id)
+-- as the per-user audit timeline is on (created_at, id). The primary key
+-- leads with event_id, which serves the cascade from the sweep.
+CREATE INDEX idx_nss_audit_refs_row ON nss_audit_refs (kind, row_id, created_at, event_id);
