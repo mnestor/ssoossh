@@ -471,8 +471,8 @@ func TestOverrideSetShouldNameTheRangeWhenMaxIDIsSet(t *testing.T) {
 }
 
 // TestMainShouldReturnTheExitStatusWhenRun runs Main itself. Not
-// parallel: it sets os.Args, which every
-// test in the package would otherwise see.
+// parallel: it sets os.Args, which every test in the package would
+// otherwise see.
 func TestMainShouldReturnTheExitStatusWhenRun(t *testing.T) {
 	saved := os.Args
 	t.Cleanup(func() { os.Args = saved })
