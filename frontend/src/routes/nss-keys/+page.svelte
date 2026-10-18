@@ -20,7 +20,7 @@
 	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import PageShell from '#lib/components/PageShell.svelte';
-	import { formatDateTime, remainingLabel } from '#lib/format.js';
+	import { formatDateTime, relativeTime, remainingLabel } from '#lib/format.js';
 	import { expiryTone, KeyRotating, keyStatus, type KeyDisplayStatus } from '#lib/nss.js';
 
 	// Every fleet key the caller may see. The server decides which: all of
@@ -262,6 +262,7 @@
 										{#if sort === 'expiry'}<Icon name="chevron-down" size="xs" />{/if}
 									</button>
 								</th>
+								<th scope="col" class="max-sm:hidden">Last used</th>
 								<th scope="col" class="max-sm:hidden">Status</th>
 							</tr>
 						</thead>
@@ -311,6 +312,14 @@
 											{/if}
 										</span>
 										<div class="text-xs text-ink-muted">{formatDateTime(key.expires_at)}</div>
+									</td>
+									<td class="whitespace-nowrap max-sm:hidden" data-testid="nss-key-last-used">
+										{#if key.last_used_at}
+											<span class="text-ink">{relativeTime(key.last_used_at, now)}</span>
+											<div class="text-xs text-ink-muted">{formatDateTime(key.last_used_at)}</div>
+										{:else}
+											<span class="text-ink-muted">Never</span>
+										{/if}
 									</td>
 									<td class="max-sm:hidden"><KeyStatusBadge {status} testid="nss-key-status" /></td>
 								</tr>

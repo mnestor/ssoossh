@@ -6,11 +6,15 @@ import {
 	KeyRotating,
 	can,
 	collisionLabel,
+	defaultExpiryDay,
 	expiryTone,
 	formatPercent,
+	graceEnd,
 	groupRotationRows,
 	isAccountCollision,
+	keyAlerts,
 	keyStatus,
+	localDay,
 	missRate,
 	needsKeyCheck,
 	nssKeyFile,
@@ -267,4 +271,79 @@ describe('groupRotationRows', () => {
 		const groups = groupRotationRows([row('10.0.0.9', 'lost')]);
 		expect(groups.not_switched.length + groups.switched.length + groups.gone.length).toBe(0);
 	});
+});
+
+describe('localDay', () => {
+	it('should pad the month and day when they are single digits', () => {
+		expect(localDay(new Date(2027, 2, 5, 15, 0))).toBe('2027-03-05');
+	});
+});
+
+describe('defaultExpiryDay', () => {
+	const cases: { name: string; seconds: number; want: string | null }[] = [
+		{
+			name: 'the lifetime is a year',
+			seconds: 365 * 86400,
+			want: localDay(new Date(now.getTime() + 365 * 86400 * 1000))
+		},
+		{
+			name: 'the lifetime is a week',
+			seconds: 7 * 86400,
+			want: localDay(new Date(now.getTime() + 7 * 86400 * 1000))
+		},
+		{ name: 'the lifetime ends today', seconds: 60, want: null },
+		{ name: 'the lifetime is zero', seconds: 0, want: null },
+		{ name: 'the lifetime is not a number', seconds: Number.NaN, want: null }
+	];
+	for (const { name, seconds, want } of cases) {
+		it(`should propose ${want ?? 'nothing'} when ${name}`, () => {
+			expect(defaultExpiryDay(now, seconds)).toBe(want);
+		});
+	}
+});
+
+describe('graceEnd', () => {
+	const cases: { name: string; seconds: number; want: string }[] = [
+		{ name: 'the grace is 30 days', seconds: 30 * 86400, want: '2026-11-17T12:00:00.000Z' },
+		{ name: 'the grace is zero', seconds: 0, want: '2026-10-18T12:00:00.000Z' },
+		{ name: 'the grace is negative', seconds: -60, want: '2026-10-18T12:00:00.000Z' }
+	];
+	for (const { name, seconds, want } of cases) {
+		it(`should end at ${want} when ${name}`, () => {
+			expect(graceEnd(now, seconds).toISOString()).toBe(want);
+		});
+	}
+});
+
+describe('keyAlerts', () => {
+	const cases: {
+		name: string;
+		key: { miss_rate_alert_at?: string; key_source_alert_at?: string };
+		want: string[];
+	}[] = [
+		{ name: 'neither alert fired', key: {}, want: [] },
+		{
+			name: 'only the miss rate alert fired',
+			key: { miss_rate_alert_at: '2026-10-17T09:00:00Z' },
+			want: ['misses']
+		},
+		{
+			name: 'only the key source alert fired',
+			key: { key_source_alert_at: '2026-10-17T09:00:00Z' },
+			want: ['sources']
+		},
+		{
+			name: 'both fired, the source alert later',
+			key: {
+				miss_rate_alert_at: '2026-10-15T09:00:00Z',
+				key_source_alert_at: '2026-10-17T09:00:00Z'
+			},
+			want: ['sources', 'misses']
+		}
+	];
+	for (const { name, key, want } of cases) {
+		it(`should list ${want.join(' then ') || 'nothing'} when ${name}`, () => {
+			expect(keyAlerts(key).map((alert) => alert.kind)).toEqual(want);
+		});
+	}
 });

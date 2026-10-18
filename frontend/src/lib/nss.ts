@@ -165,3 +165,45 @@ export function groupRotationRows(rows: NSSRotationReportRow[]): RotationGroups 
 	}
 	return groups;
 }
+
+/** localDay is a moment as a date field's YYYY-MM-DD, in the reader's zone. */
+export function localDay(at: Date): string {
+	const pad = (n: number) => String(n).padStart(2, '0');
+	return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
+}
+
+/**
+ * defaultExpiryDay is the day the create form proposes: `now` plus the
+ * server's default lifetime, as a date field value. Null when that day is
+ * not after today, since the form only offers tomorrow onwards and an empty
+ * field already takes the server's default.
+ */
+export function defaultExpiryDay(now: Date, lifetimeSeconds: number): string | null {
+	if (!Number.isFinite(lifetimeSeconds) || lifetimeSeconds <= 0) return null;
+	const day = localDay(new Date(now.getTime() + lifetimeSeconds * 1000));
+	return day > localDay(now) ? day : null;
+}
+
+/** graceEnd is when a secret rotated out at `now` stops being accepted. */
+export function graceEnd(now: Date, graceSeconds: number): Date {
+	return new Date(now.getTime() + Math.max(0, graceSeconds) * 1000);
+}
+
+/** KeyAlert is one usage alert the server reports for a key: which, and when it last fired. */
+export interface KeyAlert {
+	kind: 'misses' | 'sources';
+	at: string;
+}
+
+/**
+ * keyAlerts lists the usage alerts that fired for a key in the server's
+ * lookback (the last 7 days), newest first. Empty when neither did.
+ */
+export function keyAlerts(
+	key: Pick<NSSKey, 'miss_rate_alert_at' | 'key_source_alert_at'>
+): KeyAlert[] {
+	const alerts: KeyAlert[] = [];
+	if (key.miss_rate_alert_at) alerts.push({ kind: 'misses', at: key.miss_rate_alert_at });
+	if (key.key_source_alert_at) alerts.push({ kind: 'sources', at: key.key_source_alert_at });
+	return alerts.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+}

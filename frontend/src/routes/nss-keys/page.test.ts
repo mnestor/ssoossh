@@ -59,6 +59,24 @@ describe('NSS keys list', () => {
 		);
 	});
 
+	const lastUsedCases: { name: string; lastUsed?: string; want: string }[] = [
+		{ name: 'a host used the key two hours ago', lastUsed: '2026-10-18T10:00:00Z', want: '2h ago' },
+		{
+			name: 'a host used the key three days ago',
+			lastUsed: '2026-10-15T11:00:00Z',
+			want: '3d ago'
+		},
+		{ name: 'no host has used the key', want: 'Never' }
+	];
+	for (const { name, lastUsed, want } of lastUsedCases) {
+		it(`should read ${want} in the last used column when ${name}`, async () => {
+			listOf([keyFixture({ last_used_at: lastUsed })]);
+			render(Page);
+
+			expect(await screen.findByTestId('nss-key-last-used')).toHaveTextContent(want);
+		});
+	}
+
 	it('should offer New key when the caller may create keys', async () => {
 		listOf([keyFixture()], true);
 		render(Page);
