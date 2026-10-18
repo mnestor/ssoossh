@@ -36,3 +36,34 @@ type NSSPurgedTombstoneEnvelope struct {
 	Data  webtypes.NSSPurgedTombstoneResponse `json:"data" validate:"required"`
 	Error *string                             `json:"error"`
 }
+
+// NSSAccountsEnvelope is GET /api/admin/nss/users's body.
+type NSSAccountsEnvelope struct {
+	Data  webtypes.NSSAccountsResponse `json:"data" validate:"required"`
+	Error *string                      `json:"error"`
+}
+
+// NSSAccountDetailEnvelope is GET /api/admin/nss/users/{uid}'s body.
+type NSSAccountDetailEnvelope struct {
+	Data  webtypes.NSSAccountDetailResponse `json:"data" validate:"required"`
+	Error *string                           `json:"error"`
+}
+
+// NSSGroupsEnvelope is GET /api/admin/nss/groups's body.
+type NSSGroupsEnvelope struct {
+	Data  webtypes.NSSGroupsResponse `json:"data" validate:"required"`
+	Error *string                    `json:"error"`
+}
+
+// NSSGroupDetailEnvelope is GET /api/admin/nss/groups/{gid}'s body.
+type NSSGroupDetailEnvelope struct {
+	Data  webtypes.NSSGroupDetailResponse `json:"data" validate:"required"`
+	Error *string                         `json:"error"`
+}
+
+// NSSGroupMembersEnvelope is GET /api/admin/nss/groups/{gid}/members's
+// body.
+type NSSGroupMembersEnvelope struct {
+	Data  webtypes.NSSGroupMembersResponse `json:"data" validate:"required"`
+	Error *string                          `json:"error"`
+}

@@ -544,7 +544,7 @@ func (a *app) registerRoutes(r *gin.Engine) error {
 	}
 	controller.NewLDAPAdminController(apiGroup, a.config, a.db, ldapDiagnostics, nssSync,
 		sessionAuth, adminAuth, csrf, probeRateLimit, a.svc.audit)
-	controller.NewNSSAdminController(apiGroup, a.db, nssAdmin, sessionAuth, adminAuth, csrf)
+	controller.NewNSSAdminController(apiGroup, a.db, nssAdmin, a.nssViewer(), sessionAuth, adminAuth, auditorAuth, csrf)
 	controller.NewIdentityEchoController(apiGroup, a.svc.auth, sessionAuth, adminAuth, csrf)
 
 	// The diagnostics run makes the server open an outbound connection to
@@ -582,6 +582,16 @@ func (a *app) registerNSSRoutes(apiGroup *gin.RouterGroup, sessionAuth, csrf gin
 // nil rather than a typed nil in the interface when NSS is off, for the
 // reason ldapDiagnostics is in registerRoutes.
 func (a *app) posixAccounts() service.PosixAccountProvider {
+	if a.svc.nssLookup == nil {
+		return nil
+	}
+	return a.svc.nssLookup
+}
+
+// nssViewer is the NSS admin controller's directory viewer, the lookups:
+// explicitly nil rather than a typed nil in the interface when NSS is off,
+// for the reason ldapDiagnostics is in registerRoutes.
+func (a *app) nssViewer() service.NSSDirectoryViewer {
 	if a.svc.nssLookup == nil {
 		return nil
 	}

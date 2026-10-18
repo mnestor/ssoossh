@@ -40,6 +40,8 @@ func nssAdminTestConfig() *config.Config {
 		},
 		GecosTemplate:      "{{.DisplayName}}",
 		TombstoneRetention: 2160 * time.Hour,
+		DisabledShell:      "/usr/sbin/nologin",
+		MaxGroupMembers:    2000,
 	}
 	return cfg
 }
@@ -47,15 +49,22 @@ func nssAdminTestConfig() *config.Config {
 // nssAdminTime is the fixed instant seeded rows are stamped with.
 func nssAdminTime() time.Time { return time.Date(2026, 10, 17, 12, 0, 0, 0, time.UTC) }
 
-// nssAdminRouter wires the NSS admin controller with the real admin
-// middleware, a pass-through CSRF check and the given identity. A nil
-// service is NSS disabled.
+// nssAdminRouter wires the NSS admin controller with the real admin and
+// auditor middleware, a pass-through CSRF check and the given identity.
+// When enabled, the viewer is the real lookup service with no directory
+// refresher; otherwise both services are nil, which is NSS disabled.
 func nssAdminRouter(t *testing.T, db *gorm.DB, identity *service.Identity, enabled bool) *gin.Engine {
+	t.Helper()
+	return nssAdminRouterWith(t, nssAdminTestConfig(), db, identity, enabled)
+}
+
+// nssAdminRouterWith is nssAdminRouter over cfg.
+func nssAdminRouterWith(t *testing.T, cfg *config.Config, db *gorm.DB, identity *service.Identity, enabled bool) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 
-	cfg := nssAdminTestConfig()
 	var admin service.NSSDirectoryAdmin
+	var viewer service.NSSDirectoryViewer
 	if enabled {
 		svc, err := service.NewNSSDirectoryService(cfg, db)
 		if err != nil {
@@ -63,12 +72,14 @@ func nssAdminRouter(t *testing.T, db *gorm.DB, identity *service.Identity, enabl
 		}
 		svc.SetAuditor(service.NewAuditService(cfg, db))
 		admin = svc
+		viewer = service.NewNSSLookupService(cfg, db, nil)
 	}
 
 	r := gin.New()
 	r.Use(middleware.NewErrorHandlerMiddleware().Add())
-	NewNSSAdminController(&r.RouterGroup, db, admin,
-		identityMiddleware(identity), middleware.NewAdminAuthMiddleware(cfg).Add(), func(c *gin.Context) { c.Next() })
+	NewNSSAdminController(&r.RouterGroup, db, admin, viewer,
+		identityMiddleware(identity), middleware.NewAdminAuthMiddleware(cfg).Add(),
+		middleware.NewAuditorAuthMiddleware(cfg).Add(), func(c *gin.Context) { c.Next() })
 	return r
 }
 

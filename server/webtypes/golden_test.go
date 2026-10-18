@@ -80,6 +80,8 @@ func fullFixtures() map[string]any {
 	}
 	pendingUID, pendingGID := uint32(20001), uint32(20002)
 	missingSince, deletedAt := issuedAt.Add(-48*time.Hour), issuedAt.Add(-24*time.Hour)
+	viewerCursor, viewerMemberCursor := "8d0f3c2a-1b4e-4c6d-9a7f-0e1d2c3b4a59", "10001"
+	viewerHome, viewerShell, viewerShellPref := "/home/ada.lovelace", "/bin/bash", "/bin/zsh"
 	callerUID, callerGID, callerPID, callerPPID := int64(1000), int64(1000), int64(4242), int64(4200)
 
 	// The NSS fixtures: one account, one rotated and revoked key, and the
@@ -380,6 +382,61 @@ func fullFixtures() map[string]any {
 		"nss_purged_tombstone": webtypes.NSSPurgedTombstoneResponse{
 			Name: "ada.lovelace", DN: "uid=ada.lovelace,ou=people,dc=example,dc=net", Number: 10001,
 		},
+		"nss_accounts": webtypes.NSSAccountsResponse{
+			Accounts: []webtypes.NSSAccountSummaryResponse{{
+				ID: "8d0f3c2a-1b4e-4c6d-9a7f-0e1d2c3b4a59", Name: "ada.lovelace", UID: 10001, GID: 10001,
+				Gecos: "Ada Lovelace", DN: "uid=ada.lovelace,ou=people,dc=example,dc=net",
+				State: model.NSSEntryStatePending, LastSyncedAt: issuedAt,
+			}},
+			Total:      42,
+			NextCursor: &viewerCursor,
+		},
+		"nss_account_detail": webtypes.NSSAccountDetailResponse{
+			ID: "8d0f3c2a-1b4e-4c6d-9a7f-0e1d2c3b4a59", Name: "ada.lovelace", UID: 10001, GID: 10001,
+			DirectoryID: "5b7c9d1e-2f3a-4b5c-8d6e-7f8091a2b3c4", DN: "uid=ada.lovelace,ou=people,dc=example,dc=net",
+			Home: &viewerHome, Shell: &viewerShell, ShellPref: &viewerShellPref, Gecos: "Ada Lovelace", DirDisabled: true,
+			Person: &webtypes.NSSLinkedPersonResponse{
+				UserID: "3c2b1a09-8f7e-4d6c-b5a4-938271605f4e", Username: "ada", DisplayName: "Ada Lovelace", DisabledAt: &deletedAt,
+			},
+			PendingUID: &pendingUID, PendingGID: &pendingGID, PendingSince: &missingSince,
+			MissingSince: &missingSince, DeletedAt: &deletedAt, WithheldAt: &deletedAt,
+			WithheldReason: "uid 10001 is also carried by uid=ada,ou=contractors,dc=example,dc=net",
+			State:          model.NSSEntryStateWithheld,
+			CreatedAt:      issuedAt.Add(-720 * time.Hour), UpdatedAt: issuedAt, LastSyncedAt: issuedAt,
+			Groups: []webtypes.NSSStoredMembershipResponse{{GID: 5000, Name: "engineering", State: model.NSSEntryStateActive}},
+			Served: &webtypes.NSSServedAccountResponse{
+				Name: "ada.lovelace", UID: 10001, GID: 10001,
+				Groups: []webtypes.NSSServedMembershipResponse{{GID: 10001, Name: "ada.lovelace"}, {GID: 5000, Name: "engineering"}},
+				Home:   &viewerHome, Shell: &viewerShell, ShellPref: &viewerShellPref, Gecos: "Ada Lovelace",
+				Status: model.PosixStatusDisabled,
+			},
+			NotServed: model.NSSNotServedWithheld,
+		},
+		"nss_groups": webtypes.NSSGroupsResponse{
+			Groups: []webtypes.NSSGroupSummaryResponse{{
+				ID: "1e2d3c4b-5a69-4788-9a0b-1c2d3e4f5a6b", Name: "engineering", GID: 5000,
+				DN: "cn=engineering,ou=groups,dc=example,dc=net", State: model.NSSEntryStateMissing,
+				MemberCount: 12, LastSyncedAt: issuedAt,
+			}},
+			Total:      7,
+			NextCursor: &viewerCursor,
+		},
+		"nss_group_detail": webtypes.NSSGroupDetailResponse{
+			ID: "1e2d3c4b-5a69-4788-9a0b-1c2d3e4f5a6b", Name: "engineering", GID: 5000,
+			DirectoryID: "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d", DN: "cn=engineering,ou=groups,dc=example,dc=net",
+			PendingGID: &pendingGID, PendingSince: &missingSince, MissingSince: &missingSince,
+			DeletedAt: &deletedAt, WithheldAt: &deletedAt,
+			WithheldReason: "gid 5000 is also carried by cn=eng,ou=legacy,dc=example,dc=net",
+			State:          model.NSSEntryStateWithheld, MemberCount: 2400,
+			CreatedAt: issuedAt.Add(-720 * time.Hour), UpdatedAt: issuedAt, LastSyncedAt: issuedAt,
+			Served:    &webtypes.NSSServedGroupResponse{Name: "engineering", GID: 5000, MemberCount: 2000, MembersTruncated: true},
+			NotServed: model.NSSNotServedPastRetention,
+		},
+		"nss_group_members": webtypes.NSSGroupMembersResponse{
+			Members:    []webtypes.NSSGroupMemberResponse{{UID: 10001, Name: "ada.lovelace", State: model.NSSEntryStateDisabled}},
+			Total:      12,
+			NextCursor: &viewerMemberCursor,
+		},
 		"ldap_probe": webtypes.LDAPProbeResponse{
 			BaseDN:      "dc=example,dc=net",
 			FilterSent:  "(&(objectClass=person)(uid=alice))",
@@ -456,6 +513,11 @@ func zeroFixtures() map[string]any {
 		"nss_accepted_group_id_change": webtypes.NSSAcceptedGroupIDChangeResponse{},
 		"nss_collisions":               webtypes.NSSCollisionsResponse{},
 		"nss_purged_tombstone":         webtypes.NSSPurgedTombstoneResponse{},
+		"nss_accounts":                 webtypes.NSSAccountsResponse{},
+		"nss_account_detail":           webtypes.NSSAccountDetailResponse{},
+		"nss_groups":                   webtypes.NSSGroupsResponse{},
+		"nss_group_detail":             webtypes.NSSGroupDetailResponse{},
+		"nss_group_members":            webtypes.NSSGroupMembersResponse{},
 		"posix_account":                webtypes.PosixAccountResponse{},
 		"update_shell":                 webtypes.UpdateShellBody{},
 		"nss_shells":                   webtypes.NSSShellsResponse{},

@@ -400,6 +400,49 @@ members are not admins (README R16).
 doc-comment + `mapstructure` + `default` convention, fail-closed like the
 others. Admins inherit it.
 
+## Directory viewer (auditor and above)
+
+(added 2026-10-18 at the owner's request)
+
+A read-only view of the stored directory, under `/api/admin/nss` beside
+the routes above but behind the auditor middleware (auditor implies SOC
+implies admin, as the user directory), and not audit-logged, as the
+pending and collisions reads are not. Each answers the `nss.enabled` 404
+when NSS is off. Types: the "read-only directory viewer" block of
+`server/webtypes/nss_admin.go`.
+
+| Path | Method | Behaviour |
+| --- | --- | --- |
+| `/api/admin/nss/users` | GET | one page of `posix_users`, by name then id: id, name, uid, stored gid, gecos, dn, state, `last_synced_at`; `total`, `next_cursor` |
+| `/api/admin/nss/users/:uid` | GET | the stored row in full, the linked person (users id, username, display name, `disabled_at`), every `posix_group_members` row for the uid by gid with the stored group's name and state, and `served` or `not_served`; 404 when no row has the uid |
+| `/api/admin/nss/groups` | GET | one page of `posix_groups`, by name then id: id, name, gid, dn, state, membership row count, `last_synced_at`; `total`, `next_cursor` |
+| `/api/admin/nss/groups/:gid` | GET | the stored row in full, its membership row count, and `served` (name, gid, member names served after `nss.max_group_members`, truncated) or `not_served`; 404 when no row has the gid |
+| `/api/admin/nss/groups/:gid/members` | GET | one page of the group's `posix_group_members` rows by uid, each with the stored account's name and state when there is one; the cursor is the last uid; 404 when no group has the gid |
+
+The lists take `after`, `limit` and `q` as the user directory does
+(`server/utils/paging`), and `state`. `q` is a case-insensitive substring
+of the name or the DN, and also an exact uid or gid when it parses as one.
+An `after` that names no row, a members `after` that is not a uid, and a
+`state` the list does not have are 400s.
+
+**State.** One value per row, derived on read, never stored; the first
+that holds wins: `withheld` (`withheld_at`), `tombstone` (`deleted_at`),
+`disabled` (accounts only: `dir_disabled` or the linked
+`users.disabled_at`), `missing` (`missing_since`), `pending`
+(`pending_uid` or `pending_gid`), else `active`. The `state` filter is the
+same rule as SQL, tested to agree with the Go function over every
+combination of marks on both backends.
+
+**Served.** What a host's lookup by the uid or gid gets now, built by the
+lookup code (`servable`, `buildUser`, `primaryGroup`, `buildGroup`) on
+`NSSLookupService`. It never calls the directory refresher, never writes
+and never reads LDAP, so a row a host's miss would refresh is shown as the
+database has it. `not_served` is `withheld`, `past_retention` (a tombstone
+past `nss.tombstone_retention` the purge has not reached) or
+`private_group_clash` (`nss.auto_private_groups: "true"` and a directory
+group holds the private group's gid or name); `served` is absent exactly
+when it is set.
+
 ## Mail
 
 Reuses `mail.*` and the `mail.template_dir` override scheme. Templates:
