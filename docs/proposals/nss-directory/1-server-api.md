@@ -297,6 +297,37 @@ has `table`, the row's `name`, `uid` or `gid`, `dn`, and `via`: one of
 An event is written only when something changed, so a sync over an
 unchanged directory writes none. `nss.tombstone_purged` is unchanged.
 
+**History per row** (decided 2026-10-18 by the owner). Each stored
+account's and group's page in the [viewer](#directory-viewer-auditor-and-above)
+shows the audit events about it, so a group's page shows that a member
+was added after the group was stored, and the member's page shows the same
+event. `audit_events` is never filtered by its JSON payload, so every
+event about stored rows also writes one `nss_audit_refs` row per row it
+concerns, in the same transaction:
+
+| Column | Notes |
+| --- | --- |
+| `event_id` | FK `audit_events.id`, `ON DELETE CASCADE`, so the retention and row-cap sweeps take a ref with its event (SQLite enforces foreign keys on every connection) |
+| `kind` | `account` or `group` |
+| `row_id` | `posix_users.id` or `posix_groups.id`: the random id, which survives a rename and an accepted uid or gid change where the name and the number do not. No foreign key: a purged row's refs stay until their events age out |
+| `created_at` | the event's, so a page orders and seeks on this table alone |
+
+PK `(event_id, kind, row_id)`; index `(kind, row_id, created_at, event_id)`
+for the newest-first cursor read. What each event refers to:
+
+| Action | Refs |
+| --- | --- |
+| the lifecycle events above (`created`, `renamed`, `missing`, `tombstoned`, `revived`, for accounts and groups) | the row |
+| `nss.group_members_changed` | the group, and every added and removed account that is stored, including those past the 100 the detail lists |
+| `nss.uid_collision`, `nss.gid_collision`, `nss.name_collision` | the holder, and the other entry when it is stored too |
+| `nss.id_change_pending`, `nss.id_change_accepted`, `nss.tombstone_purged` | the row |
+| `nss.shell_changed`, `nss.name_mismatch` | the account |
+| `nss.initial_import` | none: it is a summary |
+
+The fleet key and lookup events (`nss.key_*`, `nss.lookup_forbidden`,
+`nss.miss_rate_alert`, `nss.privileged_name_lookup`) are about keys and
+hosts, not stored rows, and write none.
+
 ## Status
 
 `status` is derived at response time, never stored (README R24):
@@ -476,7 +507,7 @@ others. Admins inherit it.
 A read-only view of the stored directory, under `/api/admin/nss` beside
 the routes above but behind the auditor middleware (auditor implies SOC
 implies admin, as the user directory), and not audit-logged, as the
-pending and collisions reads are not. Each answers the `nss.enabled` 404
+pending and collisions reads are not, except the two history reads. Each answers the `nss.enabled` 404
 when NSS is off. Types: the "read-only directory viewer" block of
 `server/webtypes/nss_admin.go`.
 
@@ -487,6 +518,7 @@ when NSS is off. Types: the "read-only directory viewer" block of
 | `/api/admin/nss/groups` | GET | one page of `posix_groups`, by name then id: id, name, gid, dn, state, membership row count, `last_synced_at`; `total`, `next_cursor` |
 | `/api/admin/nss/groups/:gid` | GET | the stored row in full, its membership row count, and `served` (name, gid, member names served after `nss.max_group_members`, truncated) or `not_served`; 404 when no row has the gid |
 | `/api/admin/nss/groups/:gid/members` | GET | one page of the group's `posix_group_members` rows by uid, each with the stored account's name and state when there is one; the cursor is the last uid; 404 when no group has the gid |
+| `/api/admin/nss/users/:uid/audit`, `/api/admin/nss/groups/:gid/audit` | GET | the row's history (decided 2026-10-18 by the owner): one page of the events whose `nss_audit_refs` name the row, newest first, cursor-paged and shaped as `/api/admin/users/:id/audit` (`AuditEventsResponse`, an `after` off the history is a 400); 404 when no row has the number. Each read records `admin.audit_viewed` (scope `nss_account_timeline` or `nss_group_timeline`) to the shipped log only, as the user timeline does |
 
 The lists take `after`, `limit` and `q` as the user directory does
 (`server/utils/paging`), and `state`. `q` is a case-insensitive substring
@@ -619,6 +651,10 @@ status. No per-key or per-name attributes, so cardinality stays bounded.
 - Usage flusher: counts aggregate, flush on shutdown, pruning.
 - Rotation report bucketing.
 - Migrations up/down on both DBs.
+- History: refs written for every event kind above, including members past
+  the 100 cap; the two history routes page newest first, 404 an unknown
+  number, admit auditors and above, and 404 with NSS off; the sweep takes
+  refs with their events; a rename or accepted id change keeps one history.
 
 ## Done when
 

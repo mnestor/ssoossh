@@ -815,8 +815,9 @@ off, and confirms through a reasonless `ConfirmModal`.
   stated once in `#lib/viewport` (`NARROW_QUERY`, `watchNarrow`).
 - **Paging:** every list pages by cursor with "Load more", a ghost button
   under the rows that goes once the last page is in. Every Load more list
-  (history, audit feed, a user's audit timeline, users, certificates, service
-  codes) renders its footer through `LoadMoreFooter`: the count line above
+  (history, audit feed, a user's audit timeline, an NSS entry's history,
+  users, certificates, service codes) renders its footer through
+  `LoadMoreFooter`: the count line above
   that button, worded once by `describeLoaded` in `#lib/listStatus`:
   `48 shown`, then `, 120 older not loaded` while the server holds more
   (history has no server total, so it says only `48 shown`). "older" where
@@ -1082,8 +1083,12 @@ beneath it.
     an admin concluding the wrong way and fixing the wrong layer. Then
     "What hosts get" (replaced by "Nothing" when not served), "Stored
     entry", "Entry state" (only off active, every mark the row carries) and
-    the memberships or the paged members. Related accounts, groups and the
-    linked person are links. The back chip returns to the list with the
+    the memberships or the paged members, then History at the bottom: the
+    row's audit events through `AuditTimeline` and `LoadMoreFooter`, as a
+    user's audit timeline (its own loading, "No recorded changes", error
+    with Try again, Load more), following the row across a rename or an
+    accepted id change. Related accounts, groups and the linked person are
+    links. The back chip returns to the list with the
     filters it was opened from (`?back=`, a query string only). A 404 says
     no stored entry has that number and that a host lookup would still ask
     the directory; a group's also links the account with that uid, since
