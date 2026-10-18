@@ -21,26 +21,28 @@ import (
 const nssUniquenessLimit = 4
 
 // NSSSyncCounts is what one sync run did to the accounts or the groups.
+// The JSON names are webtypes.NSSSyncCountsResponse's, so the audit event
+// that records a run (see nssSyncAudit) reads like the API response.
 type NSSSyncCounts struct {
 	// Seen is the entries the directory returned.
-	Seen int
+	Seen int `json:"seen"`
 	// Skipped is the entries rejected by parsing (a name that fails the
 	// POSIX rules, a uid that is not a number, a relative home), each
 	// logged with its DN.
-	Skipped int
+	Skipped int `json:"skipped"`
 	// Created and Updated are the rows written.
-	Created int
-	Updated int
+	Created int `json:"created"`
+	Updated int `json:"updated"`
 	// Refused is the new entries not stored because another row, a
 	// tombstone included, holds their number or name.
-	Refused int
+	Refused int `json:"refused"`
 	// Failed is the entries that could not be checked or written; each is
 	// logged and left as it was.
-	Failed int
+	Failed int `json:"failed"`
 	// Missing and Tombstoned are the rows a full run marked missing for the
 	// first time and the rows it tombstoned.
-	Missing    int
-	Tombstoned int
+	Missing    int `json:"missing"`
+	Tombstoned int `json:"tombstoned"`
 }
 
 // NSSSyncResult reports one sync run.

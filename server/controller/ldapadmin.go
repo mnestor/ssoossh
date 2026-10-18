@@ -172,45 +172,46 @@ func (a *ldapAdminController) syncHandler(g *gin.Context) {
 		return
 	}
 
-	actor := a.auditActor(g)
-	opts := service.SyncOptions{
-		Trigger: model.LDAPSyncTriggerManual,
-		DryRun:  req.DryRun,
-	}
-	if actor != nil {
-		opts.ActorUserID = actor.UserID
-	}
-
-	run, err := a.ldap.SyncWithOptions(g.Request.Context(), opts)
-	if errors.Is(err, service.ErrSyncInProgress) {
+	// The pass, the NSS sync after it and the audit event are one service
+	// call, shared with `ssoosshd ldap sync`, so the two cannot drift.
+	result := service.RunManualSync(g.Request.Context(), a.ldap, a.nss, a.audit, service.ManualSyncRequest{
+		DryRun: req.DryRun,
+		Actor:  a.auditActor(g),
+	})
+	if errors.Is(result.Err, service.ErrSyncInProgress) {
 		handleError(g, &errorresponses.ConflictError{
 			Reason: "a directory sync is already running on this instance; wait for it to finish",
 		})
 		return
 	}
 
-	// The NSS sync runs whatever the LDAP pass concluded: it reads the
-	// directory on its own connection, and an LDAP pass that found nobody
-	// to refresh says nothing about the POSIX entries.
-	var nssRun *webtypes.NSSSyncRunResponse
-	if a.nss != nil && !req.DryRun {
-		nssRun = newNSSSyncRunResponse(a.nss.FullSync(g.Request.Context()))
-	}
-
 	// A pass that could not reach the directory still produced a run row,
 	// and that row is the answer: it says the pass ran and why it failed,
 	// which is exactly what the operator pressed the button to find out.
-	// So the error is recorded and reported in the body rather than
-	// swallowing the record behind a bare 5xx.
-	a.recordSyncAudit(g, actor, run, nssRun, err)
-
-	if run == nil {
-		handleError(g, err)
+	// So the error is reported in the body rather than swallowing the
+	// record behind a bare 5xx.
+	if result.Run == nil {
+		handleError(g, result.Err)
 		return
 	}
-	resp := a.newSyncRunResponse(g, run)
-	resp.NSS = nssRun
+	resp := NewManualSyncResponse(result)
+	resp.ActorUsername = a.actorUsername(g, result.Run)
 	respondData(g, resp)
+}
+
+// NewManualSyncResponse is a manual pass's outcome in the shape POST
+// /api/admin/ldap/sync returns, short of the actor's username, which takes
+// a lookup only the endpoint makes. `ssoosshd ldap sync --json` prints it.
+// Nil when the pass never started.
+func NewManualSyncResponse(result *service.ManualSyncResult) *webtypes.LDAPSyncRunResponse {
+	if result == nil || result.Run == nil {
+		return nil
+	}
+	resp := syncRunResponse(result.Run)
+	if result.NSSRan {
+		resp.NSS = newNSSSyncRunResponse(result.NSS, result.NSSErr)
+	}
+	return resp
 }
 
 // newNSSSyncRunResponse maps an NSS sync's outcome to the wire. A run
@@ -239,34 +240,6 @@ func nssCountsResponse(c service.NSSSyncCounts) webtypes.NSSSyncCountsResponse {
 		Seen: c.Seen, Skipped: c.Skipped, Created: c.Created, Updated: c.Updated,
 		Refused: c.Refused, Failed: c.Failed, Missing: c.Missing, Tombstoned: c.Tombstoned,
 	}
-}
-
-// recordSyncAudit records the triggered sync with what it concluded,
-// including the NSS sync's counts when it ran.
-func (a *ldapAdminController) recordSyncAudit(g *gin.Context, actor *service.AuditSubject, run *model.LDAPSyncRun, nssRun *webtypes.NSSSyncRunResponse, cause error) {
-	detail := map[string]any{"dry_run": run != nil && run.DryRun}
-	if nssRun != nil {
-		detail["nss"] = nssRun
-	}
-	if run != nil {
-		detail["run_id"] = run.ID
-		detail["users"] = run.UsersSeen
-		detail["found"] = run.Found
-		detail["missing"] = run.Missing
-		detail["failed"] = run.Failed
-		detail["disabled"] = run.Disabled
-		detail["reenabled"] = run.Reenabled
-	}
-	if cause != nil {
-		detail["error"] = cause.Error()
-	}
-
-	a.auditRecord(g, service.AuditEvent{
-		Action:     service.AuditLDAPSyncTriggered,
-		Actor:      actor,
-		OccurredAt: time.Now(),
-		Detail:     detail,
-	})
 }
 
 // probeHandler handles POST /api/admin/ldap/probe.
@@ -458,14 +431,20 @@ func configuredAttributes(cfg *config.LDAPConfig) []string {
 }
 
 // newSyncRunResponse converts a run row to its wire shape, resolving the
-// actor's username for display. A missing actor row leaves the name empty
-// rather than failing the read: the run still happened.
+// actor's username for display.
 func (a *ldapAdminController) newSyncRunResponse(g *gin.Context, run *model.LDAPSyncRun) *webtypes.LDAPSyncRunResponse {
 	if run == nil {
 		return nil
 	}
+	resp := syncRunResponse(run)
+	resp.ActorUsername = a.actorUsername(g, run)
+	return resp
+}
 
-	resp := &webtypes.LDAPSyncRunResponse{
+// syncRunResponse converts a run row to its wire shape, without the
+// actor's username.
+func syncRunResponse(run *model.LDAPSyncRun) *webtypes.LDAPSyncRunResponse {
+	return &webtypes.LDAPSyncRunResponse{
 		ID:         run.ID,
 		StartedAt:  run.StartedAt,
 		FinishedAt: run.FinishedAt,
@@ -480,16 +459,22 @@ func (a *ldapAdminController) newSyncRunResponse(g *gin.Context, run *model.LDAP
 		Reenabled:  run.Reenabled,
 		Error:      run.ErrorMessage,
 	}
+}
 
-	if run.ActorUserID != nil && a.db != nil {
-		var actor model.User
-		if err := a.db.WithContext(g.Request.Context()).
-			Select("username").Where("id = ?", *run.ActorUserID).
-			First(&actor).Error; err == nil {
-			resp.ActorUsername = actor.Username
-		}
+// actorUsername is the username of the admin who ran a pass, or empty for
+// a scheduled or command-line pass. A missing actor row leaves the name
+// empty rather than failing the read: the run still happened.
+func (a *ldapAdminController) actorUsername(g *gin.Context, run *model.LDAPSyncRun) string {
+	if run.ActorUserID == nil || a.db == nil {
+		return ""
 	}
-	return resp
+	var actor model.User
+	if err := a.db.WithContext(g.Request.Context()).
+		Select("username").Where("id = ?", *run.ActorUserID).
+		First(&actor).Error; err != nil {
+		return ""
+	}
+	return actor.Username
 }
 
 // newProbeResponse converts a probe result to its wire shape.

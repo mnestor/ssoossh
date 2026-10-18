@@ -210,6 +210,12 @@ attribute.
   existing admin `ldap/sync` endpoint triggers it too (verify the route
   name before wiring). Registered in `serve` and `serve api`; `sign` has
   no scheduler (README R28).
+- **From a shell** (added 2026-10-18 at the owner's request).
+  `ssoosshd ldap sync [--dry-run] [--json]` runs the endpoint's pass in
+  its own process: the LDAP sync, then the NSS full sync unless it is a dry
+  run. Neither job runs at startup, so a restart refreshes nothing. It is
+  one more unelected instance against the shared database, never migrates
+  it, and is audited as `ldap.sync_triggered` with the actor `local-cli`.
 - **No gate.** Every entry with a uid attribute and a valid name is
   resolvable. Entries without the uid attribute, or whose name fails the
   validator, are skipped with a warning and are 404.

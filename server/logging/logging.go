@@ -75,6 +75,7 @@ package logging
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	"os"
 
@@ -90,22 +91,33 @@ import (
 // goroutines and file handles are released. Each is safe to call even when
 // that destination was never opened.
 func New(c *config.Config) (closeFns []func(context.Context) error, err error) {
+	return NewWithConsole(c, os.Stdout)
+}
+
+// NewWithConsole is New with console, rather than stdout, as the general
+// destinations' console stream. A command that prints its own report on
+// stdout (`ssoosshd ldap sync`, whose --json output a script parses) passes
+// stderr, so the process log and the report never interleave. Everything
+// else about the destination contract is unchanged, the named loggers'
+// files included: an audit event a command records still reaches the
+// configured audit log.
+func NewWithConsole(c *config.Config, console io.Writer) (closeFns []func(context.Context) error, err error) {
 	isTerminal := terminalDetector()
 
 	router := slogmulti.Router()
 	for _, nl := range namedLoggers(c) {
-		if h := namedRoute(c, nl, isTerminal); h != nil {
+		if h := namedRoute(c, console, nl, isTerminal); h != nil {
 			router = router.Add(h, slogmulti.AttrValueIs(AttrKeyType, nl.tag))
 		}
 	}
 	// Before the catch-all, and so ahead of it in FirstMatch order: the
 	// startup records, which have to survive the default WARN level.
 	router = router.Add(
-		generalFanout(c, isTerminal, infoFloor(c)),
+		generalFanout(c, console, isTerminal, infoFloor(c)),
 		slogmulti.AttrValueIs(AttrKeyType, TagStartup),
 	)
 
-	router = router.Add(generalFanout(c, isTerminal, LevelFromString(c.Logging.Level)))
+	router = router.Add(generalFanout(c, console, isTerminal, LevelFromString(c.Logging.Level)))
 
 	logger := slog.New(router.FirstMatch().Handler())
 	if c.Logging.IncludeAppName {
@@ -157,12 +169,12 @@ func namedLoggers(c *config.Config) []namedLoggerConfig {
 // gets that file alone, while a tag with just a level keeps the general
 // destinations and only moves its threshold. Both are routes, so a record
 // takes one of them or the fanout, never two (see the package doc).
-func namedRoute(c *config.Config, nl namedLoggerConfig, isTerminal bool) slog.Handler {
+func namedRoute(c *config.Config, console io.Writer, nl namedLoggerConfig, isTerminal bool) slog.Handler {
 	if nl.src.LogFilename() != "" {
 		return newNamedHandler(nl)
 	}
 	if level := nl.src.LogLevelString(); level != "" {
-		return generalFanout(c, isTerminal, LevelFromString(level))
+		return generalFanout(c, console, isTerminal, LevelFromString(level))
 	}
 	// A tag that must stay visible keeps the general destinations at the
 	// INFO floor rather than falling through to logging.level. Without
@@ -170,7 +182,7 @@ func namedRoute(c *config.Config, nl namedLoggerConfig, isTerminal bool) slog.Ha
 	// which is not what "leave it unset and the events still reach the
 	// general log" says — see namedLoggerConfig.floorAtInfo.
 	if nl.floorAtInfo {
-		return generalFanout(c, isTerminal, infoFloor(c))
+		return generalFanout(c, console, isTerminal, infoFloor(c))
 	}
 	return nil
 }
@@ -189,14 +201,15 @@ func infoFloor(c *config.Config) slog.Level {
 }
 
 // generalFanout builds the broadcast handler for the general destinations:
-// the main file, stdout, and the non-terminal stderr error copy, per the
-// destination contract in the package doc. Always returns at least one
-// destination — a process whose config names no file still logs to stdout.
+// the main file, the console (stdout, unless NewWithConsole named another),
+// and the non-terminal stderr error copy, per the destination contract in
+// the package doc. Always returns at least one destination: a process
+// whose config names no file still logs to the console.
 //
 // level is the threshold to filter at: logging.level for the catch-all, or
 // a named logger's own level for the route built by namedRoute. Only the
 // threshold varies; every caller gets the same set of destinations.
-func generalFanout(c *config.Config, isTerminal bool, level slog.Level) slog.Handler {
+func generalFanout(c *config.Config, console io.Writer, isTerminal bool, level slog.Level) slog.Handler {
 	opts := &slog.HandlerOptions{
 		Level: level,
 		// Source locations only when someone turned the level below INFO:
@@ -212,14 +225,15 @@ func generalFanout(c *config.Config, isTerminal bool, level slog.Level) slog.Han
 	}
 
 	if isTerminal || c.Logging.CopyStdout || !haveMainFile {
-		fanout = append(fanout, GetHandler(c.Logging.LogJSON, isTerminal, os.Stdout, opts))
+		fanout = append(fanout, GetHandler(c.Logging.LogJSON, isTerminal, console, opts))
 	}
 
 	// The container/systemd convention: errors are duplicated to stderr so
 	// a supervisor separating the streams still surfaces them. A fanout
 	// member with its own ERROR floor — never a router route (see the
-	// package doc for the bug that was).
-	if !isTerminal {
+	// package doc for the bug that was). Not when the console already is
+	// stderr, which would print every error twice.
+	if !isTerminal && console != io.Writer(os.Stderr) {
 		fanout = append(fanout, GetHandler(c.Logging.LogJSON, isTerminal, os.Stderr, &slog.HandlerOptions{
 			Level: slog.LevelError,
 		}))

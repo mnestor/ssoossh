@@ -82,8 +82,12 @@ process has no scheduler), and every instance runs its own:
 
 The first incremental run after a start is a full one, and so is any run the
 directory refuses the `modifyTimestamp` filter for. Zero disables either job.
-Admin → Directory's **Sync now** (`POST /api/admin/ldap/sync`) runs a full
-NSS sync after the LDAP pass, except on a dry run, and reports its counts.
+Neither job runs at startup, so a restart does not refresh anything; the
+first runs one interval after start. Admin → Directory's **Sync now**
+(`POST /api/admin/ldap/sync`) runs a full NSS sync after the LDAP pass,
+except on a dry run, and reports its counts, and so does `ssoosshd ldap
+sync` on the server host, for a shell or a script (see
+[Forcing a sync from the command line](/ssoossh/operations/ldap/#forcing-a-sync-from-the-command-line)).
 A lookup for a name or uid the database does not have reads that one entry
 from the directory on the spot, so an account created a minute ago resolves
 before the next sync; misses are remembered for 60 seconds per instance.

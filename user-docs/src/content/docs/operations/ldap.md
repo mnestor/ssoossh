@@ -466,6 +466,64 @@ visible as a pass that ran and failed.
 A manual sync is audited as `ldap.sync_triggered`, with the counts and
 `dry_run`.
 
+### Forcing a sync from the command line
+
+A restart does not run a sync: the scheduled pass first runs one
+`ldap.sync.interval` after the process starts, on purpose, since a sync that
+disables accounts during boot is the hardest kind to interrupt. To force a
+refresh from a shell or a script, without a browser session, run the same
+pass on the server host:
+
+```sh
+ssoosshd -c /etc/ssoossh/ssoosshd.yaml ldap sync --dry-run
+ssoosshd -c /etc/ssoossh/ssoosshd.yaml ldap sync
+ssoosshd ldap sync --json
+```
+
+It is the pass **Sync now** runs, in the command's own process, against the
+database and directory the config file names: the LDAP pass, then the NSS
+full sync when `nss.enabled` is on and the pass is not a dry run. Unlike the
+button, a live pass is the default here; pass `--dry-run` to change nothing.
+
+- **Safe beside a running server.** The scheduled syncs are not
+  leader-elected, so every instance already runs its own, and the command is
+  one more. On SQLite it is a second writer to the same file, which works:
+  the server opens SQLite in WAL mode with a busy timeout, so the command's
+  writes wait for the server's rather than failing.
+- **The schema must match.** The database is never migrated by the command;
+  if its schema is not the one this `ssoosshd` expects, it refuses to run.
+  Use the binary the server runs.
+- **Mail goes out before it exits.** An admin the pass disables is emailed
+  by the command itself, through the same templates and relay, when
+  `mail.enabled` is on.
+- **Audited as the local CLI.** The `ldap.sync_triggered` event's actor is
+  `local-cli`, with no user behind it; its detail carries `via: cli`, the
+  host, and the operating-system account that ran it (`os_user`, and
+  `sudo_user` under sudo). The run row records the pass as manual with no
+  admin.
+
+The report is one fact per line, with a fixed label, so it can be grepped:
+
+```text
+ldap sync      completed (run 6c0d1e2f-... on ssh-1)
+dry run        no
+users          12
+found          10
+missing        1
+failed         1
+disabled       1
+re-enabled     0
+nss sync       completed
+nss accounts   seen=40 created=2 updated=3 skipped=0 refused=0 failed=0 missing=1 tombstoned=0
+nss groups     seen=8 created=0 updated=1 skipped=0 refused=0 failed=0 missing=0 tombstoned=0
+```
+
+`--json` prints what `POST /api/admin/ldap/sync` returns instead. The
+command exits non-zero, with the reason on stderr, when the directory could
+not be reached or either pass failed; a pass that completed exits zero
+whatever it concluded about individual users. The process log goes to stderr
+(and to any log files the config names), so stdout is only the report.
+
 ## Probing the directory
 
 `/admin/directory` also carries a read-only probe, for the question a log line
