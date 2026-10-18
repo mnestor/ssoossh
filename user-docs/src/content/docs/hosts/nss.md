@@ -387,7 +387,7 @@ three in step.
 | `tls_ca_file` | `""` | a private CA bundle (PEM) the server's certificate must chain to; this or `tls_spki_pin` is required |
 | `tls_spki_pin` | `[]` | base64 SHA-256 digests of the server's SubjectPublicKeyInfo; with `tls_ca_file` as well, both must hold |
 | `api_key_file` | `/etc/ssoossh/nss.key` | the fleet key: line 1 the key id, line 2 the secret, root-only |
-| `timeout` | `5s` | bounds one upstream lookup, retries included |
+| `timeout` | `5s` | bounds one upstream lookup, retries included. Each attempt but the last gets at most half of what is left, and no more than `socket_answer_deadline` less a second (1.5 s by default), so a retry still answers the caller in time |
 | `reconnection_retries` | `3` | further attempts after a transport failure, rotating through the discovered servers, before the daemon counts the server as offline |
 | `offline_timeout` | `60s` | the first wait before probing an offline server again; it doubles after each failed probe, up to an hour |
 | `socket_answer_deadline` | `2.5s` | how long a userdb call may take to answer; must stay under 45 s, systemd's own call timeout |
@@ -474,6 +474,7 @@ it. `ssoosshd-nss lookup` asks the same socket and is always there.
 | `getent` works, but `sshd` refuses every directory user with `UsePAM yes` | `shadow:` lacks `systemd` |
 | `state: unauthorized` | the server refused the fleet key: revoked, expired, rotated past its grace, or mistyped. Fix `/etc/ssoossh/nss.key`; the next lookup retries |
 | `state: offline` with a pin error | the server's key changed; the error names the digest it presented |
+| The host flips to `state: offline` after quiet periods, with `no response within ... on a reused connection` in the log, and directory users stop resolving for a while | something between the host and the server (a firewall, NAT or load balancer) silently drops connections that sit idle. The daemon pings an idle HTTP/2 connection every 15 s and closes it when no answer comes within 5 s, and a lookup attempt that gets no answer is retried on a fresh connection, so this should now cost one slow lookup at most. If it persists, check the TCP state (idle) timeout of every stateful device on the path: the pings keep a flow alive only when that timeout is longer than 15 s, and a device that drops flows regardless of traffic needs fixing there |
 | `state: rate_limited` | the server answered 429; the daemon waits out its `Retry-After` and serves the cache meanwhile |
 | A user resolves on one host but not another | `status` on both, then the host policy: a local account of the same name or uid, `min_id`, `max_id`, `filter_users` and `require_groups` all refuse. A name refused before any upstream call is logged only at `debug` (`run --log-level debug`); a server answer the policy refuses is a warning naming the reason |
 | A removed group still works for someone already logged in | expected: see [what to expect](#what-to-expect) |
