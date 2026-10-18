@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/mnestor/ssoossh/internal/apitypes"
 	"github.com/mnestor/ssoossh/internal/posixname"
@@ -71,6 +72,11 @@ type Engine struct {
 	overridesMu   sync.Mutex
 	lastGood      config.Overrides
 	lastErr       string
+
+	// found remembers refused directory groups for warn-once and status;
+	// now stamps them.
+	found *findings
+	now   func() time.Time
 }
 
 // New returns an Engine over cfg and the files in paths.
@@ -83,6 +89,8 @@ func New(cfg *config.Config, paths Paths, log *slog.Logger) *Engine {
 		shells:        newWatched(paths.Shells, readShells),
 		overridesFile: newWatched(paths.Overrides, config.LoadOverrides),
 		lastGood:      config.Overrides{},
+		found:         newFindings(),
+		now:           time.Now,
 	}
 }
 
@@ -93,6 +101,18 @@ func (e *Engine) Reload() {
 	e.group.invalidate()
 	e.shells.invalidate()
 	e.overridesFile.invalidate()
+}
+
+// Findings returns the group name collisions and id range refusals met
+// since the daemon started or last cleared them, for status.
+func (e *Engine) Findings() Findings {
+	return e.found.snapshot()
+}
+
+// ClearFindings forgets them, for SIGHUP, so each is logged again when
+// next met.
+func (e *Engine) ClearFindings() {
+	e.found.clear()
 }
 
 // CheckUserName is the short-circuit for a user name: the name rules, then
@@ -180,9 +200,10 @@ type User struct {
 	Locked bool
 	// Status is the server's status.
 	Status string
-	// Groups are the memberships worth answering GetMemberships with:
-	// valid names not in filter_groups. Local groups such as sudo stay,
-	// because initgroups resolves them through files (README U12).
+	// Groups are the group names to answer GetMemberships with, after
+	// the gid rule (see memberships): initgroups resolves each name
+	// through /etc/group first (README U12), so a name is only listed
+	// when it resolves to the membership's own gid.
 	Groups []string
 }
 
@@ -220,8 +241,20 @@ func (e *Engine) User(resp *apitypes.NSSUserResponse) (User, error) {
 		}
 	}
 
-	if err := e.sanity(name, uid, gid, resp.Groups); err != nil {
+	if err := e.sanity(name, uid, gid); err != nil {
 		return User{}, err
+	}
+	// require_groups is checked against the memberships the gid rule
+	// keeps, so a directory group whose name collides with a local group
+	// cannot satisfy it by name.
+	groups, kept, err := e.memberships(resp.Groups)
+	if err != nil {
+		return User{}, err
+	}
+	if len(e.cfg.RequireGroups) > 0 && !slices.ContainsFunc(kept, func(g string) bool {
+		return slices.Contains(e.cfg.RequireGroups, g)
+	}) {
+		return User{}, rejected("user %q is in none of require_groups", name)
 	}
 	// override_gid applies after the range rule, so it may name a shared
 	// group below min_id such as gid 100 "users". It is never 0: that
@@ -236,7 +269,7 @@ func (e *Engine) User(resp *apitypes.NSSUserResponse) (User, error) {
 	}
 	u := User{Name: name, UID: uid, GID: gid, Home: resolvedHome, Status: resp.Status}
 	u.RealName, _ = posixname.SanitizeGECOS(resp.Gecos, name)
-	u.Groups = e.membershipNames(resp.Groups)
+	u.Groups = groups
 
 	switch resp.Status {
 	case apitypes.NSSStatusActive:
@@ -256,7 +289,7 @@ func (e *Engine) User(resp *apitypes.NSSUserResponse) (User, error) {
 
 // sanity applies the rules every served user must pass, in the order the
 // proposal lists them.
-func (e *Engine) sanity(name string, uid, gid uint32, groups []apitypes.NSSMembership) error {
+func (e *Engine) sanity(name string, uid, gid uint32) error {
 	if slices.Contains(e.cfg.FilterUsers, name) {
 		return rejected("user %q is in filter_users", name)
 	}
@@ -278,24 +311,130 @@ func (e *Engine) sanity(name string, uid, gid uint32, groups []apitypes.NSSMembe
 	if local.hasID(uid) {
 		return rejected("user %q: uid %d belongs to a local account", name, uid)
 	}
-	if len(e.cfg.RequireGroups) > 0 && !slices.ContainsFunc(groups, func(m apitypes.NSSMembership) bool {
-		return slices.Contains(e.cfg.RequireGroups, m.Name)
-	}) {
-		return rejected("user %q is in none of require_groups", name)
-	}
 	return nil
 }
 
-// membershipNames returns the group names worth listing for a user.
-func (e *Engine) membershipNames(groups []apitypes.NSSMembership) []string {
-	names := make([]string, 0, len(groups))
-	for _, m := range groups {
-		if posixname.Valid(m.Name) != nil || slices.Contains(e.cfg.FilterGroups, m.Name) || slices.Contains(names, m.Name) {
+// memberships applies the gid rule (decided 2026-10-18 by the owner) to a
+// user's memberships. systemd userdb carries a membership as a group name,
+// and initgroups resolves that name through /etc/group first (README U12),
+// so a name is only ever listed when it resolves to the membership's gid.
+// For each membership, first match wins:
+//
+//  1. gid outside min_id..max_id: dropped, as a group answer is.
+//  2. gid of a local group: the local group's name, which resolves to
+//     that same gid through files.
+//  3. name of a local group (with another gid): a name collision, dropped
+//     and warned about; the member does not get the directory gid here.
+//  4. invalid name, or in filter_groups: dropped.
+//  5. otherwise the directory name.
+//
+// filter_groups also applies to the local name of rule 2, since it is a
+// name this daemon would answer with. groups is the names to list, kept
+// the directory names of the memberships listed, for require_groups.
+func (e *Engine) memberships(in []apitypes.NSSMembership) (groups, kept []string, err error) {
+	local, err := e.group.get()
+	if err != nil {
+		// Fail closed: without /etc/group no name can be checked against
+		// the gid it resolves to.
+		return nil, nil, rejected("cannot read the local groups: %v", err)
+	}
+	groups = make([]string, 0, len(in))
+	for _, m := range in {
+		name, ok := e.membership(local, m)
+		if !ok {
 			continue
 		}
-		names = append(names, m.Name)
+		kept = append(kept, m.Name)
+		if !slices.Contains(groups, name) {
+			groups = append(groups, name)
+		}
 	}
-	return names
+	return groups, kept, nil
+}
+
+// membership is the gid rule for one membership: the name to list, or
+// false to drop it.
+func (e *Engine) membership(local localDB, m apitypes.NSSMembership) (string, bool) {
+	if !e.cfg.InRange(m.GID) {
+		e.noteRefused(m.Name, m.GID)
+		return "", false
+	}
+	if name, ok := local.nameOf(m.GID); ok {
+		if posixname.Valid(name) != nil || slices.Contains(e.cfg.FilterGroups, name) {
+			return "", false
+		}
+		if name != m.Name {
+			e.log.Debug("a directory membership's gid is a local group's; listing the local name",
+				"group", m.Name, "gid", m.GID, "local_group", name)
+		}
+		return name, true
+	}
+	if e.noteCollision(local, m.Name, m.GID) {
+		return "", false
+	}
+	if posixname.Valid(m.Name) != nil || slices.Contains(e.cfg.FilterGroups, m.Name) {
+		return "", false
+	}
+	return m.Name, true
+}
+
+// noteGroup records a directory group from a server answer, or one of a
+// user's memberships, that the gid rule refuses: one outside the id range,
+// or one whose name a local group with another gid has. Only answers reach
+// it, never the local-name short-circuit, so it cannot flood the log.
+func (e *Engine) noteGroup(name string, gid uint32) {
+	if !e.cfg.InRange(gid) {
+		e.noteRefused(name, gid)
+		return
+	}
+	local, err := e.group.get()
+	if err != nil {
+		// The caller's own check fails closed on the same error.
+		return
+	}
+	if _, ok := local.nameOf(gid); !ok {
+		e.noteCollision(local, name, gid)
+	}
+}
+
+// noteRefused records and, the first time, logs a directory group outside
+// min_id..max_id.
+func (e *Engine) noteRefused(name string, gid uint32) {
+	reason := fmt.Sprintf("gid %d is outside min_id..max_id (%d..%s)", gid, e.cfg.MinID, maxIDText(e.cfg.MaxID))
+	if e.found.refused(RefusedGroup{Name: name, GID: gid, Reason: reason, FirstSeen: e.now().UTC()}) {
+		e.log.Warn("a directory group's gid is outside min_id..max_id; it is not served on this host and its members do not get it here",
+			"group", name, "gid", gid, "min_id", e.cfg.MinID, "max_id", e.cfg.MaxID)
+	}
+}
+
+// noteCollision reports whether name is a local group's name, recording
+// and, the first time, logging it as a collision. The caller has checked
+// that gid is no local group's.
+func (e *Engine) noteCollision(local localDB, name string, gid uint32) bool {
+	id, ok := local.idOf(name)
+	if !ok {
+		return false
+	}
+	c := NameCollision{Name: name, GID: gid, FirstSeen: e.now().UTC()}
+	attrs := []any{"group", name, "gid", gid}
+	if id.known {
+		c.LocalGID = &id.id
+		attrs = append(attrs, "local_gid", id.id)
+	}
+	if e.found.collision(c) {
+		e.log.Warn("a directory group has the same name as a local group; it is not resolved on this host: "+
+			"its members do not get its gid here, files owned by its gid show the number, and the local group is unaffected. "+
+			"Rename one of the two to fix it", attrs...)
+	}
+	return true
+}
+
+// maxIDText is max_id for a message, "unlimited" when unset.
+func maxIDText(maxID uint32) string {
+	if maxID == 0 {
+		return "unlimited"
+	}
+	return strconv.FormatUint(uint64(maxID), 10)
 }
 
 // Group is a group answer after policy.
@@ -314,6 +453,9 @@ func (e *Engine) Group(resp *apitypes.NSSGroupResponse) (Group, error) {
 	if resp == nil {
 		return Group{}, rejected("the server sent no group record")
 	}
+	// A colliding name or an out-of-range gid is still refused below, as
+	// by the short-circuit; noting it first makes it visible.
+	e.noteGroup(resp.Name, resp.GID)
 	if err := e.CheckGroupName(resp.Name); err != nil {
 		return Group{}, err
 	}
@@ -346,6 +488,7 @@ func (e *Engine) Group(resp *apitypes.NSSGroupResponse) (Group, error) {
 // GroupStub checks a membership taken from a user answer before it fills
 // the group cache: the same rules as a group answer, without members.
 func (e *Engine) GroupStub(m apitypes.NSSMembership) error {
+	e.noteGroup(m.Name, m.GID)
 	if err := e.CheckGroupName(m.Name); err != nil {
 		return err
 	}

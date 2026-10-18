@@ -56,7 +56,8 @@ func (c *runCommand) Init(cd *simplecobra.Commandeer) error {
 	c.short = "Run the daemon (the default with no subcommand)."
 	c.long = "Runs the userdb service. Under systemd the userdb socket comes from " +
 		"ssoosshd-nss.socket (socket activation); otherwise --listen binds one. " +
-		"SIGHUP re-reads the host files and the fleet key and clears the 401 latch and the offline backoff."
+		"SIGHUP re-reads the host files and the fleet key and clears the 401 latch, the offline backoff and " +
+		"the group name collisions and refused groups that status lists."
 	if err := c.leaf.Init(cd); err != nil {
 		// not covered: leaf.Init never fails.
 		return err

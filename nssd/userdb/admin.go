@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/mnestor/ssoossh/nssd/cache"
+	"github.com/mnestor/ssoossh/nssd/policy"
 	"github.com/mnestor/ssoossh/nssd/upstream"
 )
 
@@ -25,6 +26,9 @@ type Status struct {
 	PendingRefreshes int `json:"pending_refreshes"`
 	// Overrides counts host overrides in force.
 	Overrides int `json:"overrides"`
+	// Groups are the directory groups the gid rule refused since the
+	// start or the last SIGHUP: name collisions and id range refusals.
+	Groups policy.Findings `json:"groups"`
 	// StartedAt is when the daemon started.
 	StartedAt time.Time `json:"started_at"`
 }
@@ -37,6 +41,7 @@ func (d *Daemon) Status(ctx context.Context) Status {
 		NegativeEntries:  d.negative.Len(),
 		PendingRefreshes: d.refresher.Pending(),
 		Overrides:        len(d.policy.Overrides()),
+		Groups:           d.policy.Findings(),
 		StartedAt:        d.started,
 	}
 	counts, err := d.store.Counts(ctx)
@@ -77,8 +82,10 @@ func (d *Daemon) ReloadPolicy() {
 }
 
 // Reset is SIGHUP: re-read the host files and the fleet key, and clear
-// the 401 latch and the offline backoff.
+// the 401 latch, the offline backoff and the refused groups status lists,
+// which are logged again when next met.
 func (d *Daemon) Reset() {
 	d.ReloadPolicy()
+	d.policy.ClearFindings()
 	d.upstream.Reset()
 }

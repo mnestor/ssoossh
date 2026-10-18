@@ -71,3 +71,17 @@ lookup_asserts() {
 	getent passwd carol >/dev/null
 	check "unknown user is not found" "2" "$?"
 }
+
+# collision_asserts STATUS LOG: the gid rule for alice's directory group
+# users (gid 60200), named like the local users (gid 100), and oldstaff
+# (gid 500, below min_id), from `ssoosshd-nss status` and the daemon's log.
+collision_asserts() {
+	check "collision: alice gets neither the local nor the directory gid" "60001 60100" "$(id -G alice)"
+	getent group 60200 >/dev/null
+	check "collision: the directory gid is not resolved" "2" "$?"
+	check "collision: the local group is unaffected" "users:x:100:" "$(getent group users)"
+	check_contains "collision: status lists it" "users: directory gid 60200, local gid 100, first seen" "$1"
+	check_contains "refused: status lists the system gid" "oldstaff: gid 500 is outside min_id..max_id (1000..unlimited)" "$1"
+	check_contains "collision: the daemon warns" '"msg":"a directory group has the same name as a local group' "$2"
+	check_contains "collision: the warning names both gids" '"group":"users","gid":60200,"local_gid":100' "$2"
+}

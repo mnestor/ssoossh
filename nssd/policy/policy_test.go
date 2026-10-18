@@ -7,8 +7,10 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mnestor/ssoossh/internal/apitypes"
 	"github.com/mnestor/ssoossh/nssd/config"
@@ -17,7 +19,7 @@ import (
 // Fixture host files.
 const (
 	testPasswd = "root:x:0:0:root:/root:/bin/bash\n# comment\n\nbob:x:1001:1001::/home/bob:/bin/sh\n+nisuser\nbroken:x:notanumber\n"
-	testGroup  = "root:x:0:\nsudo:x:27:bob\nlocalgrp:x:1500:\n"
+	testGroup  = "root:x:0:\nsudo:x:27:bob\nlocalgrp:x:1500:\nalias:x:1500:\nusers:x:100:\nops:x:1600:\n+nisgrp\n"
 	testShells = "# /etc/shells\n/bin/sh\n/bin/bash\n/usr/bin/zsh\n\n/usr/bin/fish\n"
 )
 
@@ -72,7 +74,7 @@ func activeUser() *apitypes.NSSUserResponse {
 		Name:   "alice",
 		UID:    5001,
 		GID:    5001,
-		Groups: []apitypes.NSSMembership{{GID: 5001, Name: "alice"}, {GID: 27, Name: "sudo"}, {GID: 0, Name: "root"}, {GID: 9, Name: "bad:name"}, {GID: 5001, Name: "alice"}},
+		Groups: []apitypes.NSSMembership{{GID: 5001, Name: "alice"}, {GID: 1500, Name: "localgrp"}, {GID: 27, Name: "sudo"}, {GID: 5100, Name: "devs"}, {GID: 5101, Name: "bad:name"}, {GID: 5001, Name: "alice"}},
 		Home:   str("/home/alice"),
 		Shell:  str("/bin/bash"),
 		Gecos:  "Alice: Smith\n",
@@ -197,7 +199,14 @@ func TestUserSanityRules(t *testing.T) {
 		{name: "should refuse a local name when /etc/passwd lists it", resp: func(r *apitypes.NSSUserResponse) { r.Name = "bob"; r.UID = 7000 }, wantErr: "local account"},
 		{name: "should refuse a local uid when a local account uses it", resp: func(r *apitypes.NSSUserResponse) { r.UID = 1001 }, wantErr: "belongs to a local account"},
 		{name: "should refuse a user outside require_groups when it is set", mutate: func(c *config.Config) { c.RequireGroups = []string{"staff"} }, wantErr: "require_groups"},
-		{name: "should accept a member of require_groups when one matches", mutate: func(c *config.Config) { c.RequireGroups = []string{"staff", "sudo"} }},
+		{name: "should accept a member of require_groups when one matches", mutate: func(c *config.Config) { c.RequireGroups = []string{"staff", "devs"} }},
+		{name: "should accept a member of require_groups when the match's gid is a local group's", mutate: func(c *config.Config) { c.RequireGroups = []string{"localgrp"} }},
+		{name: "should refuse a user for require_groups when the only match is outside min_id..max_id", mutate: func(c *config.Config) { c.RequireGroups = []string{"sudo"} }, wantErr: "require_groups"},
+		{name: "should refuse a user for require_groups when the only match's name collides with a local group", mutate: func(c *config.Config) { c.RequireGroups = []string{"users"} },
+			resp: func(r *apitypes.NSSUserResponse) {
+				r.Groups = append(r.Groups, apitypes.NSSMembership{GID: 2005, Name: "users"})
+			}, wantErr: "require_groups"},
+		{name: "should refuse a user for require_groups when the only match is in filter_groups", mutate: func(c *config.Config) { c.RequireGroups = []string{"devs"}; c.FilterGroups = []string{"devs"} }, wantErr: "require_groups"},
 		{name: "should refuse a user with no home when no candidate is absolute", mutate: func(c *config.Config) { c.FallbackHomedir = "%h" }, resp: func(r *apitypes.NSSUserResponse) { r.Home = nil }, wantErr: "home"},
 	}
 	for _, tt := range tests {
@@ -238,9 +247,10 @@ func TestUserMapping(t *testing.T) {
 	if u.RealName != "Alice Smith" {
 		t.Fatalf("should sanitise realName when it holds ':' and a newline, got %q", u.RealName)
 	}
-	// Local sudo stays (README U12); filtered root and the invalid name go;
-	// the duplicate alice is listed once.
-	if want := []string{"alice", "sudo"}; !slices.Equal(u.Groups, want) {
+	// The local gid 1500 stays under its local name (README U12); sudo's
+	// system gid and the invalid name go; the duplicate alice is listed
+	// once.
+	if want := []string{"alice", "localgrp", "devs"}; !slices.Equal(u.Groups, want) {
 		t.Fatalf("got groups %v, want %v", u.Groups, want)
 	}
 }
@@ -519,5 +529,230 @@ func TestParseLocalDBShouldReadAVeryLongLineWhenOneIsPresent(t *testing.T) {
 	db := parseLocalDB([]byte("long:x:2000:2000:" + strings.Repeat("g", 70000) + ":/h:/s\n"))
 	if !db.hasName("long") || !db.hasID(2000) {
 		t.Fatal("a long gecos should not hide the entry")
+	}
+}
+
+// fixedNow is the time findings are stamped with in tests.
+var fixedNow = time.Date(2026, 10, 18, 9, 0, 0, 0, time.UTC)
+
+// debugFixture is newFixture with debug logging and a fixed clock.
+func debugFixture(t *testing.T, mutate func(*config.Config)) *fixture {
+	t.Helper()
+	f := newFixture(t, mutate)
+	f.engine.log = slog.New(slog.NewTextHandler(f.logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	f.engine.now = func() time.Time { return fixedNow }
+	return f
+}
+
+// u32 returns a pointer to v.
+func u32(v uint32) *uint32 { return &v }
+
+func TestMembershipsGIDRule(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		mutate         func(*config.Config)
+		groups         []apitypes.NSSMembership
+		want           []string
+		wantLog        string
+		wantNoLog      string
+		wantCollisions []NameCollision
+		wantRefused    []RefusedGroup
+	}{
+		{name: "should drop a membership when its gid is below min_id",
+			groups: []apitypes.NSSMembership{{GID: 27, Name: "sudo"}}, want: []string{},
+			wantLog:     "outside min_id..max_id",
+			wantRefused: []RefusedGroup{{Name: "sudo", GID: 27, Reason: "gid 27 is outside min_id..max_id (1000..unlimited)", FirstSeen: fixedNow}}},
+		{name: "should drop a membership when its gid is above max_id", mutate: func(c *config.Config) { c.MaxID = 6000 },
+			groups: []apitypes.NSSMembership{{GID: 7000, Name: "big"}}, want: []string{},
+			wantRefused: []RefusedGroup{{Name: "big", GID: 7000, Reason: "gid 7000 is outside min_id..max_id (1000..6000)", FirstSeen: fixedNow}}},
+		{name: "should list the local name without a warning when a local group has the same name and gid",
+			groups: []apitypes.NSSMembership{{GID: 1500, Name: "localgrp"}}, want: []string{"localgrp"}, wantNoLog: "level="},
+		{name: "should list the local name with a debug line when the gid is a local group's under another name",
+			groups: []apitypes.NSSMembership{{GID: 1500, Name: "dirgrp"}}, want: []string{"localgrp"},
+			wantLog: "level=DEBUG msg=\"a directory membership's gid is a local group's"},
+		{name: "should drop a membership when its gid is a local group's that filter_groups lists", mutate: func(c *config.Config) { c.FilterGroups = []string{"ops"} },
+			groups: []apitypes.NSSMembership{{GID: 1600, Name: "dirops"}}, want: []string{}},
+		{name: "should drop a membership and warn when its name is a local group's with another gid",
+			groups: []apitypes.NSSMembership{{GID: 2005, Name: "users"}}, want: []string{},
+			wantLog:        `level=WARN msg="a directory group has the same name as a local group; it is not resolved on this host`,
+			wantCollisions: []NameCollision{{Name: "users", GID: 2005, LocalGID: u32(100), FirstSeen: fixedNow}}},
+		{name: "should drop a membership and record no local gid when the local entry gives none",
+			groups: []apitypes.NSSMembership{{GID: 2006, Name: "nisgrp"}}, want: []string{},
+			wantCollisions: []NameCollision{{Name: "nisgrp", GID: 2006, FirstSeen: fixedNow}}},
+		{name: "should drop a membership when its name is invalid",
+			groups: []apitypes.NSSMembership{{GID: 5101, Name: "bad:name"}}, want: []string{}, wantNoLog: "level="},
+		{name: "should drop a membership when filter_groups lists its name", mutate: func(c *config.Config) { c.FilterGroups = []string{"devs"} },
+			groups: []apitypes.NSSMembership{{GID: 5100, Name: "devs"}}, want: []string{}},
+		{name: "should list the directory name when no rule refuses it",
+			groups: []apitypes.NSSMembership{{GID: 5100, Name: "devs"}}, want: []string{"devs"}, wantNoLog: "level="},
+		{name: "should list a name once when two memberships give it",
+			groups: []apitypes.NSSMembership{{GID: 1500, Name: "localgrp"}, {GID: 1500, Name: "alias"}, {GID: 5100, Name: "devs"}, {GID: 5100, Name: "devs"}},
+			want:   []string{"localgrp", "devs"}},
+		{name: "should list nothing when the user has no memberships", groups: nil, want: []string{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			f := debugFixture(t, tt.mutate)
+			resp := activeUser()
+			resp.Groups = tt.groups
+			u, err := f.engine.User(resp)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(u.Groups, tt.want) {
+				t.Fatalf("got groups %v, want %v", u.Groups, tt.want)
+			}
+			logs := f.logs.String()
+			if tt.wantLog != "" && !strings.Contains(logs, tt.wantLog) {
+				t.Fatalf("want a log containing %q, got %s", tt.wantLog, logs)
+			}
+			if tt.wantNoLog != "" && strings.Contains(logs, tt.wantNoLog) {
+				t.Fatalf("want no log containing %q, got %s", tt.wantNoLog, logs)
+			}
+			got := f.engine.Findings()
+			if !slices.EqualFunc(got.Collisions, tt.wantCollisions, equalCollision) || !slices.Equal(got.Refused, tt.wantRefused) {
+				t.Fatalf("got findings %+v, want collisions %+v and refused %+v", got, tt.wantCollisions, tt.wantRefused)
+			}
+		})
+	}
+}
+
+// equalCollision compares two collisions by value.
+func equalCollision(a, b NameCollision) bool {
+	return a.Name == b.Name && a.GID == b.GID && a.FirstSeen.Equal(b.FirstSeen) &&
+		(a.LocalGID == nil) == (b.LocalGID == nil) && (a.LocalGID == nil || *a.LocalGID == *b.LocalGID)
+}
+
+func TestMembershipsShouldRefuseTheUserWhenTheLocalGroupsCannotBeRead(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, nil)
+	if err := os.Remove(f.paths.Group); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(f.paths.Group, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	f.engine.Reload()
+	if _, err := f.engine.User(activeUser()); !errors.Is(err, ErrRejected) || !strings.Contains(err.Error(), "local groups") {
+		t.Fatalf("got %v, want a refusal naming the local groups", err)
+	}
+}
+
+func TestGroupAnswerGIDRule(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		check          func(*Engine) error
+		wantErr        string
+		wantCollisions int
+		wantRefused    int
+	}{
+		{name: "should refuse and record a group answer when its name collides with a local group",
+			check: func(e *Engine) error {
+				_, err := e.Group(&apitypes.NSSGroupResponse{Name: "users", GID: 2005})
+				return err
+			}, wantErr: "local group", wantCollisions: 1},
+		{name: "should refuse and record a group answer when its gid is outside min_id..max_id",
+			check: func(e *Engine) error {
+				_, err := e.Group(&apitypes.NSSGroupResponse{Name: "oldstaff", GID: 500})
+				return err
+			}, wantErr: "gid 500", wantRefused: 1},
+		{name: "should refuse without recording a group answer when it is the local group itself",
+			check: func(e *Engine) error {
+				_, err := e.Group(&apitypes.NSSGroupResponse{Name: "localgrp", GID: 1500})
+				return err
+			}, wantErr: "local group"},
+		{name: "should refuse and record a membership stub when its name collides with a local group",
+			check: func(e *Engine) error { return e.GroupStub(apitypes.NSSMembership{Name: "users", GID: 2005}) }, wantErr: "local group", wantCollisions: 1},
+		{name: "should refuse and record a membership stub when its gid is outside min_id..max_id",
+			check: func(e *Engine) error { return e.GroupStub(apitypes.NSSMembership{Name: "sudo", GID: 27}) }, wantErr: "local group", wantRefused: 1},
+		{name: "should not record a local group name when the short-circuit refuses it",
+			check: func(e *Engine) error { return e.CheckGroupName("users") }, wantErr: "local group"},
+		{name: "should not record a system gid when the short-circuit refuses it",
+			check: func(e *Engine) error { return e.CheckGID(27) }, wantErr: "gid 27"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			f := debugFixture(t, nil)
+			err := tt.check(f.engine)
+			if !errors.Is(err, ErrRejected) || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("got %v, want a refusal containing %q", err, tt.wantErr)
+			}
+			got := f.engine.Findings()
+			if len(got.Collisions) != tt.wantCollisions || len(got.Refused) != tt.wantRefused {
+				t.Fatalf("got findings %+v, want %d collisions and %d refused", got, tt.wantCollisions, tt.wantRefused)
+			}
+			if tt.wantCollisions+tt.wantRefused == 0 && strings.Contains(f.logs.String(), "level=WARN") {
+				t.Fatalf("want no warning, got %s", f.logs)
+			}
+		})
+	}
+}
+
+func TestFindingsShouldWarnOnceWhenACollisionRecurs(t *testing.T) {
+	t.Parallel()
+	f := debugFixture(t, nil)
+	resp := activeUser()
+	resp.Groups = append(resp.Groups, apitypes.NSSMembership{GID: 2005, Name: "users"})
+	for range 3 {
+		if _, err := f.engine.User(resp); err != nil {
+			t.Fatal(err)
+		}
+		_, _ = f.engine.Group(&apitypes.NSSGroupResponse{Name: "users", GID: 2005})
+		_ = f.engine.GroupStub(apitypes.NSSMembership{Name: "users", GID: 2005})
+	}
+	if n := strings.Count(f.logs.String(), "same name as a local group"); n != 1 {
+		t.Fatalf("got %d warnings, want 1:\n%s", n, f.logs)
+	}
+}
+
+func TestFindingsShouldWarnAgainWhenTheLocalGIDDiffers(t *testing.T) {
+	t.Parallel()
+	f := debugFixture(t, nil)
+	stub := apitypes.NSSMembership{GID: 2005, Name: "users"}
+	_ = f.engine.GroupStub(stub)
+	if err := os.WriteFile(f.paths.Group, []byte(strings.Replace(testGroup, "users:x:100:", "users:x:101:", 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f.engine.Reload()
+	_ = f.engine.GroupStub(stub)
+	if got := f.engine.Findings(); len(got.Collisions) != 2 {
+		t.Fatalf("got %+v, want one collision per local gid", got)
+	}
+}
+
+func TestFindingsShouldStartOverWhenCleared(t *testing.T) {
+	t.Parallel()
+	f := debugFixture(t, nil)
+	stub := apitypes.NSSMembership{GID: 2005, Name: "users"}
+	_ = f.engine.GroupStub(stub)
+	_ = f.engine.GroupStub(apitypes.NSSMembership{GID: 27, Name: "sudo"})
+	f.engine.ClearFindings()
+	if got := f.engine.Findings(); len(got.Collisions)+len(got.Refused) != 0 {
+		t.Fatalf("got %+v, want nothing after a clear", got)
+	}
+	_ = f.engine.GroupStub(stub)
+	if n := strings.Count(f.logs.String(), "same name as a local group"); n != 2 {
+		t.Fatalf("got %d warnings, want 2 (one each side of the clear):\n%s", n, f.logs)
+	}
+}
+
+func TestFindingsShouldCapTheListWhenManyGroupsAreRefused(t *testing.T) {
+	t.Parallel()
+	f := debugFixture(t, nil)
+	extra := 5
+	for i := range findingsShown + extra {
+		_ = f.engine.GroupStub(apitypes.NSSMembership{GID: uint32(3000 + i), Name: "users"})
+		_ = f.engine.GroupStub(apitypes.NSSMembership{GID: uint32(100 + i), Name: "low" + strconv.Itoa(i)})
+	}
+	got := f.engine.Findings()
+	if len(got.Collisions) != findingsShown || got.MoreCollisions != extra || len(got.Refused) != findingsShown || got.MoreRefused != extra {
+		t.Fatalf("got %d (+%d) collisions and %d (+%d) refused, want %d (+%d) of each",
+			len(got.Collisions), got.MoreCollisions, len(got.Refused), got.MoreRefused, findingsShown, extra)
 	}
 }

@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/mnestor/ssoossh/nssd/policy"
 	"github.com/mnestor/ssoossh/nssd/server"
 	"github.com/mnestor/ssoossh/nssd/userdb"
 )
@@ -25,7 +27,10 @@ func newStatusCommand(root *RootCommand) *leaf {
 		name:  "status",
 		short: "Show the daemon's state and check that this host consults it.",
 		long: "Prints the directory connection's state (online, offline, unauthorized or rate limited), the " +
-			"server, the fleet key id, the cache counts and the last error, from the running daemon; then " +
+			"server, the fleet key id, the cache counts and the last error, from the running daemon, with any " +
+			"group name collisions (a directory group with a local group's name and another gid, which is not " +
+			"resolved on this host) and refused groups (outside min_id..max_id) met since the start or the last " +
+			"SIGHUP; then " +
 			"whether nsswitch.conf lists systemd on its passwd, group and shadow lines, and whether nscd " +
 			"or unscd is running, which would cache a slow lookup's \"not found\". Exits non-zero when the " +
 			"daemon does not answer or a check fails.",
@@ -86,5 +91,45 @@ func printDaemonStatus(out io.Writer, s *userdb.Status) {
 		fmt.Fprintf(out, "cache error:   %s\n", s.CacheError)
 	}
 	fmt.Fprintf(out, "overrides:     %d\n", s.Overrides)
+	printGroupFindings(out, s.Groups)
 	fmt.Fprintf(out, "started:       %s\n", s.StartedAt.Format(time.RFC3339))
+}
+
+// printGroupFindings writes the refused directory groups, when there are
+// any: one line per kind, then one indented line per group.
+func printGroupFindings(out io.Writer, f policy.Findings) {
+	if n := len(f.Collisions) + f.MoreCollisions; n > 0 {
+		fmt.Fprintf(out, "collisions:    %d group name %s (a directory group with a local group's name; not resolved here, rename one of the two)\n",
+			n, plural(n, "collision", "collisions"))
+		for _, c := range f.Collisions {
+			local := "unknown"
+			if c.LocalGID != nil {
+				local = strconv.FormatUint(uint64(*c.LocalGID), 10)
+			}
+			fmt.Fprintf(out, "  %s: directory gid %d, local gid %s, first seen %s\n", c.Name, c.GID, local, c.FirstSeen.Format(time.RFC3339))
+		}
+		printMore(out, f.MoreCollisions)
+	}
+	if n := len(f.Refused) + f.MoreRefused; n > 0 {
+		fmt.Fprintf(out, "refused:       %d refused %s (not served on this host)\n", n, plural(n, "group", "groups"))
+		for _, r := range f.Refused {
+			fmt.Fprintf(out, "  %s: %s, first seen %s\n", r.Name, r.Reason, r.FirstSeen.Format(time.RFC3339))
+		}
+		printMore(out, f.MoreRefused)
+	}
+}
+
+// printMore writes the count past the listed entries.
+func printMore(out io.Writer, more int) {
+	if more > 0 {
+		fmt.Fprintf(out, "  and %d more\n", more)
+	}
+}
+
+// plural picks the word for n.
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }

@@ -30,7 +30,7 @@ func fakeDirectory(t *testing.T) (*httptest.Server, string) {
 	home, shell := "/home/alice", "/bin/sh"
 	alice := apitypes.NSSUserResponse{
 		Name: "alice", UID: 5001, GID: 5001,
-		Groups: []apitypes.NSSMembership{{GID: 5001, Name: "alice"}, {GID: 5100, Name: "devs"}},
+		Groups: []apitypes.NSSMembership{{GID: 5001, Name: "alice"}, {GID: 5100, Name: "devs"}, {GID: 2005, Name: "users"}},
 		Home:   &home, Shell: &shell, Gecos: "Alice Smith", Status: apitypes.NSSStatusActive, KeyID: "nss_test",
 	}
 	devs := apitypes.NSSGroupResponse{Name: "devs", GID: 5100, Members: []string{"alice"}}
@@ -143,7 +143,7 @@ func newHost(t *testing.T, serverURL, pin, extraConfig string) *host {
 		h.key:                              "nss_test\ns3cret\n",
 		h.nsswitch:                         "passwd: files systemd\ngroup: files systemd\nshadow: files\n",
 		filepath.Join(dir, "passwd"):       "root:x:0:0::/root:/bin/sh\nbob:x:1001:1001::/home/bob:/bin/sh\n",
-		filepath.Join(dir, "group"):        "root:x:0:\n",
+		filepath.Join(dir, "group"):        "root:x:0:\nusers:x:100:\n",
 		filepath.Join(dir, "shells"):       "/bin/sh\n/bin/bash\n",
 		filepath.Join(h.proc, "1", "comm"): "nscd\n",
 	}
@@ -245,7 +245,8 @@ func TestDaemonEndToEnd(t *testing.T) {
 	if err == nil {
 		t.Fatal("status should fail when the shadow line lacks systemd")
 	}
-	for _, want := range []string{"state:         online", "key id:        nss_test", "1 users", `the shadow: line "files"`, "nscd is running"} {
+	for _, want := range []string{"state:         online", "key id:        nss_test", "1 users", `the shadow: line "files"`, "nscd is running",
+		"collisions:    1 group name collision", "  users: directory gid 2005, local gid 100, first seen "} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("status should say %q:\n%s", want, out)
 		}
@@ -257,6 +258,9 @@ func TestDaemonEndToEnd(t *testing.T) {
 		t.Fatalf("status: %v\n%s", err, out)
 	}
 
+	if !strings.Contains(h.errOut.String(), `"msg":"a directory group has the same name as a local group`) {
+		t.Fatalf("the daemon should warn about the collision:\n%s", h.errOut)
+	}
 	if out, err := h.exec(t, "cache", "-u", "alice"); err != nil || !strings.Contains(out, "marked 1 cached entries stale") {
 		t.Fatalf("cache -u: %v\n%s", err, out)
 	}
@@ -416,8 +420,9 @@ func TestCommandsShouldFailWhenTheDaemonIsNotRunning(t *testing.T) {
 	}
 }
 
+// Not parallel: SIGHUP goes to the whole test process, so it would reset
+// every daemon a parallel test is running and race their status checks.
 func TestReloadOnShouldResetWhenASignalArrives(t *testing.T) {
-	t.Parallel()
 	srv, pin := fakeDirectory(t)
 	h := newHost(t, srv.URL, pin, "")
 	h.startDaemon(t, "run", "--listen", h.socket, "--cache-file", h.cache)

@@ -63,9 +63,10 @@ func newFakeUpstream() *fakeUpstream {
 			"dave":  userResp("dave", 5004, apitypes.NSSStatusDeleted),
 		},
 		groups: map[string]*apitypes.NSSGroupResponse{
-			"devs": {Name: "devs", GID: 5100, Members: []string{"alice", "carol"}},
-			"solo": {Name: "solo", GID: 5101, Members: []string{"alice"}},
-			"none": {Name: "none", GID: 5102, Members: []string{}},
+			"devs":  {Name: "devs", GID: 5100, Members: []string{"alice", "carol"}},
+			"solo":  {Name: "solo", GID: 5101, Members: []string{"alice"}},
+			"none":  {Name: "none", GID: 5102, Members: []string{}},
+			"users": {Name: "users", GID: 2005, Members: []string{"alice"}},
 		},
 		status: upstream.Status{State: upstream.StateOnline, KeyID: "nss_k"},
 	}
@@ -76,7 +77,7 @@ func userResp(name string, uid uint32, status string) *apitypes.NSSUserResponse 
 	home, shell := "/home/"+name, "/bin/bash"
 	return &apitypes.NSSUserResponse{
 		Name: name, UID: uid, GID: uid,
-		Groups: []apitypes.NSSMembership{{GID: uid, Name: name}, {GID: 5100, Name: "devs"}, {GID: 27, Name: "sudo"}},
+		Groups: []apitypes.NSSMembership{{GID: uid, Name: name}, {GID: 5100, Name: "devs"}, {GID: 27, Name: "sudo"}, {GID: 1500, Name: "dirstaff"}, {GID: 2005, Name: "users"}},
 		Home:   &home, Shell: &shell, Gecos: "User: " + name, Status: status, KeyID: "nss_k",
 	}
 }
@@ -226,7 +227,7 @@ func newFixture(t *testing.T, mutate func(*config.Config)) *fixture {
 	}
 	files := map[string]string{
 		paths.Passwd: "root:x:0:0::/root:/bin/bash\nbob:x:1001:1001::/home/bob:/bin/sh\n",
-		paths.Group:  "root:x:0:\nsudo:x:27:\n",
+		paths.Group:  "root:x:0:\nsudo:x:27:\nusers:x:100:\nstaff:x:1500:\n",
 		paths.Shells: "/bin/sh\n/bin/bash\n",
 	}
 	for p, content := range files {

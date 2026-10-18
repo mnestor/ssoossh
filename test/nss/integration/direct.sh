@@ -15,6 +15,7 @@ DAEMON=$!
 wait_for "$SOCK"
 
 lookup_asserts
+collision_asserts "$(/it/bin/ssoosshd-nss status 2>&1)" "$(cat "$RUN/daemon.log")"
 
 # With the daemon gone, killed so its socket file is left behind, a lookup
 # is a quick not-found rather than a wait.
