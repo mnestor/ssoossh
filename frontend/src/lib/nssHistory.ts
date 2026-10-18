@@ -24,12 +24,15 @@ import { describeAuditAction, visibleAuditEvents } from '#lib/audit.js';
 import { collisionNoun } from '#lib/nss.js';
 
 // The History section of a stored NSS account's or group's page, as one
-// short line per thing that happened: "Added to wheel", "sonia added",
-// "Renamed from a to b". Built from each audit event's detail, which is
-// what was true when it was recorded, never from a fresh lookup. One
+// short line per thing that happened: "Removed from wheel", "sonia
+// removed", "Renamed from a to b". Built from each audit event's detail,
+// which is what was true when it was recorded, never from a fresh lookup.
+// Additions draw no line (owner's call, 2026-10-18): the memberships and
+// members tables date each current membership in their Added column. One
 // nss.group_members_changed event can become many lines on a group's page
-// (one per member) and one or none on an account's page (only what
-// happened to that account).
+// (one per member removed or renumbered) and one or none on an account's
+// page (only what happened to that account), and an event that only added
+// draws none.
 
 /** One run of a line's text; mono marks a name or number read character by character. */
 export interface HistoryPart {
@@ -322,11 +325,14 @@ function accountUIDs(events: AuditEvent[], uid: number): Set<number> {
 }
 
 /**
- * accountMemberParts is what one member change did to the account: added
- * to the group, removed from it, or nothing (another account's change, or
- * a re-key by an accepted uid change, which its own event already says).
+ * accountMemberParts is what one member change did to the account that
+ * the history lists: removed from the group, or nothing (an addition,
+ * which the Added column dates instead; another account's change; or a
+ * re-key by an accepted uid change, which its own event already says).
  * When the account is past the capped lists, which list it was cut from
- * decides the line; both cut says either.
+ * decides the line: cut from the removed list is a removal, from the
+ * added list nothing, and both cut is the one ambiguous line, kept
+ * because it may be a removal.
  */
 function accountMemberParts(detail: Record<string, unknown>, uids: Set<number>): HistoryPart[][] {
 	const added = members(detail.added);
@@ -337,23 +343,22 @@ function accountMemberParts(detail: Record<string, unknown>, uids: Set<number>):
 	const rekeyed = renumbered(added, removed).some(([r, a]) => uids.has(r.uid) || uids.has(a.uid));
 	if (rekeyed) return [];
 
-	const lines: HistoryPart[][] = [];
-	if (mineAdded.length > 0) lines.push([text('Added to '), group]);
-	if (mineRemoved.length > 0) lines.push([text('Removed from '), group]);
-	if (lines.length > 0) return lines;
+	if (mineRemoved.length > 0) return [[text('Removed from '), group]];
+	if (mineAdded.length > 0) return [];
 
 	const addedCut = notListed(detail.added_count, added) > 0;
 	const removedCut = notListed(detail.removed_count, removed) > 0;
 	if (addedCut && removedCut) return [[text('Added to or removed from '), group]];
-	if (addedCut) return [[text('Added to '), group]];
 	if (removedCut) return [[text('Removed from '), group]];
 	return [];
 }
 
 /**
- * groupMemberParts is one line per member a change added or removed, a
- * re-keyed member as one renumbered line, and "and N more" for each list
- * the event capped, so no member is silently dropped.
+ * groupMemberParts is one line per member a change removed, a re-keyed
+ * member as one renumbered line, and "and N more removed" when the event
+ * capped its removed list, so no removal is silently dropped. Additions
+ * draw no line, so a change that only added draws none; "Members changed"
+ * is left for an event whose detail lists nothing at all.
  */
 function groupMemberParts(detail: Record<string, unknown>): HistoryPart[][] {
 	const added = members(detail.added);
@@ -368,13 +373,12 @@ function groupMemberParts(detail: Record<string, unknown>): HistoryPart[][] {
 		text(' to '),
 		mono(String(a.uid))
 	]);
-	for (const m of added) if (!paired.has(m)) lines.push([mono(memberLabel(m)), text(' added')]);
-	const moreAdded = notListed(detail.added_count, added);
-	if (moreAdded > 0) lines.push([text(`and ${moreAdded} more added`)]);
 	for (const m of removed) if (!paired.has(m)) lines.push([mono(memberLabel(m)), text(' removed')]);
 	const moreRemoved = notListed(detail.removed_count, removed);
 	if (moreRemoved > 0) lines.push([text(`and ${moreRemoved} more removed`)]);
-	return lines.length > 0 ? lines : [[text('Members changed')]];
+	if (lines.length > 0) return lines;
+	const addedAny = added.length > 0 || (num(detail.added_count) ?? 0) > 0;
+	return addedAny ? [] : [[text('Members changed')]];
 }
 
 /**
@@ -396,8 +400,8 @@ export function accountHistoryRows(events: AuditEvent[], uid: number): HistoryRo
 
 /**
  * groupHistoryRows is the history of a stored group, newest first as the
- * events came: one line per member added or removed, and one per
- * lifecycle event.
+ * events came: one line per member removed or renumbered, none per member
+ * added, and one per lifecycle event.
  */
 export function groupHistoryRows(events: AuditEvent[]): HistoryRow[] {
 	return visibleAuditEvents(events).flatMap((event) => {

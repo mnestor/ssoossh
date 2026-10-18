@@ -172,7 +172,7 @@ func nssAccountDetailResponse(view *service.NSSAccountView) webtypes.NSSAccountD
 		}
 	}
 	for _, m := range view.Groups {
-		resp.Groups = append(resp.Groups, webtypes.NSSStoredMembershipResponse{GID: m.GID, Name: m.Name, State: m.State})
+		resp.Groups = append(resp.Groups, webtypes.NSSStoredMembershipResponse{GID: m.GID, Name: m.Name, State: m.State, AddedAt: m.AddedAt})
 	}
 	return resp
 }
@@ -331,7 +331,7 @@ func (a *nssAdminController) groupMembersHandler(g *gin.Context) {
 		Total:   page.Total, NextCursor: page.NextCursor,
 	}
 	for _, m := range page.Members {
-		resp.Members = append(resp.Members, webtypes.NSSGroupMemberResponse{UID: m.UID, Name: m.Name, State: m.State})
+		resp.Members = append(resp.Members, webtypes.NSSGroupMemberResponse{UID: m.UID, Name: m.Name, State: m.State, AddedAt: m.AddedAt})
 	}
 	respondData(g, resp)
 }

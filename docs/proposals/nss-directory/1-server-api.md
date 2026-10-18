@@ -121,6 +121,15 @@ groups), timestamps. **`posix_group_members`**: `(gid, uid)` PK, keyed by
 uid rather than `users.id` because members include accounts that never log
 in. Membership comes from the mapped member attribute: `memberUid` values
 are names, `member` values are DNs resolved against `posix_users.dn`.
+`added_at` (nullable, added 2026-10-18 at the owner's request) is when
+ssoosshd first stored the membership, since the directory does not
+timestamp member values; NULL for one the first full import stored (the
+run that records `nss.initial_import`). The writers store only the
+difference from the stored set, so the value survives later syncs, an
+accepted uid or gid change (a re-key updates the number in place), a
+group rename and an account revive; a removal (a sync, a group
+tombstone, a purge) deletes the row, and a membership added again gets
+the new time.
 
 **Linking a person.** When a login's LDAP enrichment resolves the person's
 entry (by ID, then DN, then filter, `server/service/ldap.go:326`), the
@@ -536,10 +545,10 @@ when NSS is off. Types: the "read-only directory viewer" block of
 | Path | Method | Behaviour |
 | --- | --- | --- |
 | `/api/admin/nss/users` | GET | one page of `posix_users`, by name then id: id, name, uid, stored gid, gecos, dn, state, `last_synced_at`; `total`, `next_cursor` |
-| `/api/admin/nss/users/:uid` | GET | the stored row in full, the linked person (users id, username, display name, `disabled_at`), every `posix_group_members` row for the uid by gid with the stored group's name and state, and `served` or `not_served`; 404 when no row has the uid |
+| `/api/admin/nss/users/:uid` | GET | the stored row in full, the linked person (users id, username, display name, `disabled_at`), every `posix_group_members` row for the uid by gid with the stored group's name and state and the row's `added_at` (added 2026-10-18), and `served` or `not_served`; 404 when no row has the uid |
 | `/api/admin/nss/groups` | GET | one page of `posix_groups`, by name then id: id, name, gid, dn, state, membership row count, `last_synced_at`; `total`, `next_cursor` |
 | `/api/admin/nss/groups/:gid` | GET | the stored row in full, its membership row count, and `served` (name, gid, member names served after `nss.max_group_members`, truncated) or `not_served`; 404 when no row has the gid |
-| `/api/admin/nss/groups/:gid/members` | GET | one page of the group's `posix_group_members` rows by uid, each with the stored account's name and state when there is one; the cursor is the last uid; 404 when no group has the gid |
+| `/api/admin/nss/groups/:gid/members` | GET | one page of the group's `posix_group_members` rows by uid, each with the stored account's name and state when there is one and the row's `added_at` (added 2026-10-18); the cursor is the last uid; 404 when no group has the gid |
 | `/api/admin/nss/users/:uid/audit`, `/api/admin/nss/groups/:gid/audit` | GET | the row's history (decided 2026-10-18 by the owner): one page of the events whose `nss_audit_refs` name the row, newest first, cursor-paged and shaped as `/api/admin/users/:id/audit` (`AuditEventsResponse`, an `after` off the history is a 400); 404 when no row has the number. Each read records `admin.audit_viewed` (scope `nss_account_timeline` or `nss_group_timeline`) to the shipped log only, as the user timeline does |
 
 The lists take `after`, `limit` and `q` as the user directory does

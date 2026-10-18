@@ -3034,6 +3034,13 @@ components:
       type: object
     webtypes.NSSGroupMemberResponse:
       properties:
+        added_at:
+          description: |-
+            AddedAt is when ssoosshd first stored the membership, which is not
+            the date of the add in the directory (it does not timestamp member
+            values). Absent for a membership the first full import stored:
+            present before that import.
+          type: string
         name:
           description: |-
             Name and State describe the stored account with that uid, and are
@@ -3522,6 +3529,13 @@ components:
       type: object
     webtypes.NSSStoredMembershipResponse:
       properties:
+        added_at:
+          description: |-
+            AddedAt is when ssoosshd first stored the membership, which is not
+            the date of the add in the directory (it does not timestamp member
+            values). Absent for a membership the first full import stored:
+            present before that import.
+          type: string
         gid:
           type: integer
         name:

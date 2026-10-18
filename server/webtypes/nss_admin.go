@@ -254,6 +254,11 @@ type NSSStoredMembershipResponse struct {
 	// absent when no stored group has it.
 	Name  string              `json:"name,omitempty"`
 	State model.NSSEntryState `json:"state,omitempty"`
+	// AddedAt is when ssoosshd first stored the membership, which is not
+	// the date of the add in the directory (it does not timestamp member
+	// values). Absent for a membership the first full import stored:
+	// present before that import.
+	AddedAt *time.Time `json:"added_at,omitempty"`
 }
 
 // NSSServedAccountResponse is the record a host's user lookup receives,
@@ -363,4 +368,9 @@ type NSSGroupMemberResponse struct {
 	// served).
 	Name  string              `json:"name,omitempty"`
 	State model.NSSEntryState `json:"state,omitempty"`
+	// AddedAt is when ssoosshd first stored the membership, which is not
+	// the date of the add in the directory (it does not timestamp member
+	// values). Absent for a membership the first full import stored:
+	// present before that import.
+	AddedAt *time.Time `json:"added_at,omitempty"`
 }

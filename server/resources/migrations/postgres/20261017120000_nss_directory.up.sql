@@ -157,8 +157,16 @@ CREATE UNIQUE INDEX idx_posix_groups_dn ON posix_groups (dn) WHERE dn <> '';
 -- uid or gid change re-keys these rows itself, in the same transaction that
 -- changes the number, and a constraint would fix the order of those writes.
 CREATE TABLE posix_group_members (
-    gid BIGINT NOT NULL,
-    uid BIGINT NOT NULL,
+    gid      BIGINT NOT NULL,
+    uid      BIGINT NOT NULL,
+    -- When ssoosshd first stored this membership. The directory does not
+    -- timestamp member values, so this is not the date the member was
+    -- added there. NULL for a membership the first full import stored (the
+    -- run that records nss.initial_import): present before that import.
+    -- A later sync that leaves the membership in place, an accepted uid or
+    -- gid change and a group rename keep it; only a removal clears it, and
+    -- a membership added again gets the time it is stored again.
+    added_at TIMESTAMPTZ,
     PRIMARY KEY (gid, uid)
 );
 

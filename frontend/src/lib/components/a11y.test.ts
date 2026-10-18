@@ -31,6 +31,7 @@ import LoadingBlock from './LoadingBlock.svelte';
 import LoadMoreFooter from './LoadMoreFooter.svelte';
 import NSSDirectoryRef from './NSSDirectoryRef.svelte';
 import NSSEntryMarks from './NSSEntryMarks.svelte';
+import NSSMembershipAdded from './NSSMembershipAdded.svelte';
 import NSSServedVerdict from './NSSServedVerdict.svelte';
 import NSSStateBadge from './NSSStateBadge.svelte';
 import NSSViewSwitch from './NSSViewSwitch.svelte';
@@ -358,6 +359,8 @@ const cases: [string, any, Record<string, unknown>][] = [
 		NSSServedVerdict,
 		{ kind: 'group', served: false, reason: 'past_retention' }
 	],
+	['NSSMembershipAdded', NSSMembershipAdded, { at: '2026-08-22T12:00:00Z' }],
+	['NSSMembershipAdded (before first import)', NSSMembershipAdded, {}],
 	['NSSStateBadge', NSSStateBadge, { state: 'pending' }],
 	['NSSViewSwitch', NSSViewSwitch, { current: 'groups' }],
 	['OptionDiffList', OptionDiffList, { entries: [], emptyLabel: 'Nothing was trimmed' }],

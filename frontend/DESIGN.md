@@ -1089,17 +1089,23 @@ beneath it.
     (`NSSEntryHistory`): the row's audit events as one ruled line each
     per thing that happened, words left and `formatDateTime` right, names
     and numbers in the mono, built by `#lib/nssHistory` from each event's
-    detail (what was true then, never a fresh lookup). An account's page
-    says only what happened to it ("Added to wheel", "Removed from ops",
-    "Renamed from a to b"); a group's page draws one line per member added
-    or removed ("sonia added"), with "and 412 more added" when the event
-    capped its list, so one event can draw several lines. A re-key by an
+    detail (what was true then, never a fresh lookup). Additions draw no
+    line: the memberships and members tables carry an Added column
+    (`formatDateTime`, `whitespace-nowrap`, or "Before first import" in
+    `ink-muted` for one the first full import stored) through
+    `NSSMembershipAdded`. An account's page says only what happened to it
+    ("Removed from ops", "Renamed from a to b", and "Added to or removed
+    from ops" when it is in neither capped list, since that may be a
+    removal); a group's page draws one line per member removed ("sonia
+    removed"), with "and 412 more removed" when the event capped its list,
+    so one event can draw several lines, or none. A re-key by an
     accepted uid change is "bob renumbered from uid 9001 to 10001" on the
     group and no line on the account, whose own uid change says it. An
     action with no wording falls back to its audit phrase, or its raw name.
     No actor and no detail list: those are in the audit log. Its own
-    loading, "No recorded changes", error with Try again, and Load more by
-    event, counted "3 events shown", following the row across a rename or
+    loading, "No recorded changes", "None of the events loaded so far is
+    listed here" when the loaded events drew no line, error with Try
+    again, and Load more by event, counted "3 events shown", following the row across a rename or
     an accepted id change. Related accounts, groups and the linked person are
     links. The back chip returns to the list with the
     filters it was opened from (`?back=`, a query string only). A 404 says

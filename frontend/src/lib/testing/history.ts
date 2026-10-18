@@ -51,17 +51,18 @@ export function pagedHistory(second: Response = envelope(olderPage)): Route {
 	return (call) => (call.url.includes('after=ev-new') ? second.clone() : envelope(newerPage));
 }
 
-// The newer event adds the account with uid 10001 to the group with gid
-// 5100, the two rows the pages open, so it draws one line on either page.
+// The newer event removes the account with uid 10001 from the group with
+// gid 5100, the two rows the pages open, so it draws one line on either
+// page (an addition would draw none).
 const newerPage: AuditEventsResponse = {
 	events: [
 		nssEvent('ev-new', 'nss.group_members_changed', {
 			name: 'ops',
 			gid: 5100,
-			added: [{ uid: 10001, name: 'bob' }],
-			removed: [],
-			added_count: 1,
-			removed_count: 0
+			added: [],
+			removed: [{ uid: 10001, name: 'bob' }],
+			added_count: 0,
+			removed_count: 1
 		})
 	],
 	total: 2,

@@ -162,6 +162,15 @@ func (PosixGroup) TableName() string { return "posix_groups" }
 type PosixGroupMember struct {
 	GID uint32 `gorm:"column:gid;primaryKey"`
 	UID uint32 `gorm:"column:uid;primaryKey;index:idx_posix_group_members_uid"`
+
+	// AddedAt is when ssoosshd first stored the membership; the directory
+	// does not timestamp member values, so the date of the add there is
+	// unknowable. Nil for a membership the first full import stored (the
+	// run that records nss.initial_import): present before that import.
+	// The writers leave a row that stays in place untouched, so the value
+	// survives later syncs, an accepted uid or gid change and a group
+	// rename; a membership removed and added again gets the new time.
+	AddedAt *time.Time `gorm:"column:added_at"`
 }
 
 // TableName overrides GORM's default pluralization to match the migration.

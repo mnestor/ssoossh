@@ -613,7 +613,7 @@ func (s *NSSDirectoryService) storeGroupTx(ctx context.Context, tx *gorm.DB, gro
 	if index == nil {
 		return nil
 	}
-	return s.replaceGroupMembers(tx, out.row, members, w, out)
+	return s.replaceGroupMembers(tx, out.row, members, w, now, out)
 }
 
 // writeGroup is storeGroup's row write, as writeAccount is storeAccount's,
@@ -896,26 +896,32 @@ func (s *NSSDirectoryService) recordAccountEvents(tx *gorm.DB, w nssWrite, out *
 
 // replaceGroupMembers makes row's membership rows exactly uids, recording
 // nss.group_members_changed when the set changed. A group created by this
-// write has its members in nss.group_created instead.
-func (s *NSSDirectoryService) replaceGroupMembers(tx *gorm.DB, row *model.PosixGroup, uids []uint32, w nssWrite, out *nssStoredGroup) error {
-	var before nssMembers
-	if !out.created {
-		var err error
-		if before, err = readMembers(tx, "gid = ?", row.GID); err != nil {
-			return err
-		}
-	}
-	if err := replaceMembersOfGroup(tx, row.GID, uids); err != nil {
-		return err
-	}
-	if out.created {
-		return nil
-	}
+// write has its members in nss.group_created instead. Only the difference
+// is written, so a membership that stays keeps its added_at; a new one
+// gets memberAddedAt's.
+func (s *NSSDirectoryService) replaceGroupMembers(tx *gorm.DB, row *model.PosixGroup, uids []uint32, w nssWrite, now time.Time, out *nssStoredGroup) error {
 	after := nssMembers{}
 	for _, uid := range uids {
 		after.add(row.GID, uid)
 	}
-	return s.recordMemberChanges(tx, &out.audit, memberDeltas(before, after), nssMemberChange{
+	addedAt := memberAddedAt(w, now)
+	if out.created {
+		// Every membership of a new group is new: a row already under its
+		// gid is left over from an earlier holder of the number.
+		if err := tx.Where("gid = ?", row.GID).Delete(&model.PosixGroupMember{}).Error; err != nil {
+			return fmt.Errorf("clear left-over members of gid %d: %w", row.GID, err)
+		}
+		return applyMemberDeltas(tx, memberDeltas(nssMembers{}, after), addedAt)
+	}
+	before, err := readMembers(tx, "gid = ?", row.GID)
+	if err != nil {
+		return err
+	}
+	deltas := memberDeltas(before, after)
+	if err := applyMemberDeltas(tx, deltas, addedAt); err != nil {
+		return err
+	}
+	return s.recordMemberChanges(tx, &out.audit, deltas, nssMemberChange{
 		via: w.via, groupNames: map[uint32]string{row.GID: row.Name}, groupIDs: map[uint32]string{row.GID: row.ID},
 	})
 }
@@ -1285,40 +1291,38 @@ func (i *nssMemberIndex) resolve(members []string) []uint32 {
 	return slices.Sorted(maps.Keys(seen))
 }
 
-// replaceMembersOfGroup makes gid's membership rows exactly uids.
-func replaceMembersOfGroup(tx *gorm.DB, gid uint32, uids []uint32) error {
-	if err := tx.Where("gid = ?", gid).Delete(&model.PosixGroupMember{}).Error; err != nil {
-		return fmt.Errorf("clear the members of gid %d: %w", gid, err)
-	}
-	if len(uids) == 0 {
+// memberAddedAt is the added_at a membership row stored now gets: nil
+// during the first full import (the run that records nss.initial_import),
+// meaning the membership was present before it, and now after that.
+func memberAddedAt(w nssWrite, now time.Time) *time.Time {
+	if w.importing {
 		return nil
 	}
-	rows := make([]model.PosixGroupMember, 0, len(uids))
-	for _, uid := range uids {
-		rows = append(rows, model.PosixGroupMember{GID: gid, UID: uid})
-	}
-	if err := tx.CreateInBatches(rows, nssBatchSize).Error; err != nil {
-		return fmt.Errorf("write the members of gid %d: %w", gid, err)
-	}
-	return nil
+	return &now
 }
 
-// replaceMembershipsOfUser makes uid's membership rows exactly gids.
-func replaceMembershipsOfUser(tx *gorm.DB, uid uint32, gids []uint32) error {
-	if err := tx.Where("uid = ?", uid).Delete(&model.PosixGroupMember{}).Error; err != nil {
-		return fmt.Errorf("clear the memberships of uid %d: %w", uid, err)
+// applyMemberDeltas writes deltas, the change from the stored membership
+// rows to the wanted ones: it deletes each removed row and inserts each
+// added one with addedAt. A row that stays is not touched, so its added_at
+// survives every write that leaves the membership in place.
+func applyMemberDeltas(tx *gorm.DB, deltas map[uint32]nssMemberDelta, addedAt *time.Time) error {
+	var rows []model.PosixGroupMember
+	for _, gid := range slices.Sorted(maps.Keys(deltas)) {
+		d := deltas[gid]
+		for chunk := range slices.Chunk(d.removed, nssBatchSize) {
+			if err := tx.Where("gid = ? AND uid IN ?", gid, chunk).Delete(&model.PosixGroupMember{}).Error; err != nil {
+				return fmt.Errorf("remove members of gid %d: %w", gid, err)
+			}
+		}
+		for _, uid := range d.added {
+			rows = append(rows, model.PosixGroupMember{GID: gid, UID: uid, AddedAt: addedAt})
+		}
 	}
-	slices.Sort(gids)
-	gids = slices.Compact(gids)
-	if len(gids) == 0 {
+	if len(rows) == 0 {
 		return nil
 	}
-	rows := make([]model.PosixGroupMember, 0, len(gids))
-	for _, gid := range gids {
-		rows = append(rows, model.PosixGroupMember{GID: gid, UID: uid})
-	}
 	if err := tx.CreateInBatches(rows, nssBatchSize).Error; err != nil {
-		return fmt.Errorf("write the memberships of uid %d: %w", uid, err)
+		return fmt.Errorf("write new memberships: %w", err)
 	}
 	return nil
 }

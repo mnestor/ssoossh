@@ -670,3 +670,225 @@ func TestNSSStoreAccount_ShouldServeTheOwnersServiceAccountOnlyWhenTheModeIsTrue
 		})
 	}
 }
+
+// addedAt reads the added_at of the membership of uid in gid, failing the
+// test when there is no such row.
+func (h *nssHarness) addedAt(t *testing.T, gid, uid uint32) *time.Time {
+	t.Helper()
+	var row model.PosixGroupMember
+	if err := h.db.Where("gid = ? AND uid = ?", gid, uid).First(&row).Error; err != nil {
+		t.Fatalf("read membership of %d in %d: %v", uid, gid, err)
+	}
+	return row.AddedAt
+}
+
+// nssMembership names one membership row and the added_at it should hold:
+// nil for one the first full import stored.
+type nssMembership struct {
+	gid, uid uint32
+	want     *time.Time
+}
+
+func TestNSSMemberAddedAt_ShouldRecordWhenTheMembershipWasFirstStored(t *testing.T) {
+	t.Parallel()
+
+	// importOps stores ada (uid 1) and bob (uid 2) and ops (gid 700) with
+	// ada its only member, from the first full sync, then an hour later
+	// adds bob to ops with a second full sync.
+	importOps := func(t *testing.T, h *nssHarness) {
+		t.Helper()
+		h.dir.put(nssAccountEntry("", "ada", 1, 100, nil))
+		h.dir.put(nssAccountEntry("", "bob", 2, 100, nil))
+		h.dir.put(nssGroupEntry("ops", 700, "ada"))
+		h.fullSync(t)
+		h.clock.advance(time.Hour)
+		h.dir.put(nssGroupEntry("ops", 700, "ada", "bob"))
+		h.fullSync(t)
+	}
+
+	tests := []struct {
+		name  string
+		steps func(t *testing.T, h *nssHarness)
+		want  []nssMembership
+	}{
+		{
+			name: "should leave added_at null when the first full import stores the membership",
+			steps: func(t *testing.T, h *nssHarness) {
+				h.dir.put(nssAccountEntry("", "ada", 1, 100, nil))
+				h.dir.put(nssGroupEntry("ops", 700, "ada"))
+				h.fullSync(t)
+			},
+			want: []nssMembership{{700, 1, nil}},
+		},
+		{
+			name:  "should set added_at when a later sync adds the membership",
+			steps: importOps,
+			want:  []nssMembership{{700, 1, nil}, {700, 2, nssAt(time.Hour)}},
+		},
+		{
+			name: "should keep added_at when a later sync sees the membership unchanged",
+			steps: func(t *testing.T, h *nssHarness) {
+				importOps(t, h)
+				h.clock.advance(time.Hour)
+				h.fullSync(t)
+				h.clock.advance(time.Hour)
+				if result, err := h.svc.IncrementalSync(t.Context()); err != nil || result.Full {
+					t.Fatalf("IncrementalSync() = %+v, %v; want an incremental run", result, err)
+				}
+			},
+			want: []nssMembership{{700, 1, nil}, {700, 2, nssAt(time.Hour)}},
+		},
+		{
+			name: "should keep added_at when an accepted uid change re-keys the memberships",
+			steps: func(t *testing.T, h *nssHarness) {
+				importOps(t, h)
+				h.clock.advance(time.Hour)
+				h.dir.put(nssAccountEntry("", "ada", 1001, 100, nil))
+				h.dir.put(nssAccountEntry("", "bob", 1002, 100, nil))
+				h.fullSync(t)
+				for _, uid := range []uint32{1, 2} {
+					if _, err := h.svc.AcceptUserIDChange(t.Context(), uid, nssAdminActor()); err != nil {
+						t.Fatalf("AcceptUserIDChange(%d) error = %v", uid, err)
+					}
+				}
+				h.clock.advance(time.Hour)
+				h.fullSync(t)
+			},
+			want: []nssMembership{{700, 1001, nil}, {700, 1002, nssAt(time.Hour)}},
+		},
+		{
+			name: "should keep added_at when an accepted gid change re-keys the members",
+			steps: func(t *testing.T, h *nssHarness) {
+				importOps(t, h)
+				h.clock.advance(time.Hour)
+				h.dir.put(nssGroupEntry("ops", 800, "ada", "bob"))
+				h.fullSync(t)
+				if _, err := h.svc.AcceptGroupIDChange(t.Context(), 700, nssAdminActor()); err != nil {
+					t.Fatalf("AcceptGroupIDChange() error = %v", err)
+				}
+				h.clock.advance(time.Hour)
+				h.fullSync(t)
+			},
+			want: []nssMembership{{800, 1, nil}, {800, 2, nssAt(time.Hour)}},
+		},
+		{
+			name: "should keep added_at when the group is renamed with the same gid",
+			steps: func(t *testing.T, h *nssHarness) {
+				importOps(t, h)
+				h.clock.advance(time.Hour)
+				h.dir.remove("cn=ops,ou=groups,dc=test")
+				h.dir.put(nssGroupEntry("ops-team", 700, "ada", "bob"))
+				h.fullSync(t)
+				if row := h.groupByName(t, "ops-team"); row.GID != 700 {
+					t.Fatalf("ops-team = %+v, want the renamed ops", row)
+				}
+			},
+			want: []nssMembership{{700, 1, nil}, {700, 2, nssAt(time.Hour)}},
+		},
+		{
+			name: "should keep added_at when a tombstoned account is revived",
+			steps: func(t *testing.T, h *nssHarness) {
+				importOps(t, h)
+				h.dir.remove("uid=bob,ou=people,dc=test")
+				h.clock.advance(time.Hour)
+				h.fullSync(t)
+				h.clock.advance(169 * time.Hour)
+				h.fullSync(t)
+				if row := h.accountByName(t, "bob"); row.DeletedAt == nil {
+					t.Fatalf("bob = %+v, want a tombstone before the revive", row)
+				}
+				h.clock.advance(time.Hour)
+				h.dir.put(nssAccountEntry("", "bob", 2, 100, nil))
+				h.fullSync(t)
+			},
+			want: []nssMembership{{700, 1, nil}, {700, 2, nssAt(time.Hour)}},
+		},
+		{
+			name: "should keep added_at when an on-demand account read sees the membership unchanged",
+			steps: func(t *testing.T, h *nssHarness) {
+				importOps(t, h)
+				h.clock.advance(time.Hour)
+				if _, err := h.svc.RefreshUserByName(t.Context(), "bob"); err != nil {
+					t.Fatalf("RefreshUserByName() error = %v", err)
+				}
+			},
+			want: []nssMembership{{700, 1, nil}, {700, 2, nssAt(time.Hour)}},
+		},
+		{
+			name: "should set added_at when an on-demand account read finds a new membership",
+			steps: func(t *testing.T, h *nssHarness) {
+				importOps(t, h)
+				h.clock.advance(time.Hour)
+				h.dir.put(nssAccountEntry("", "carol", 3, 100, nil))
+				h.dir.put(nssGroupEntry("ops", 700, "ada", "bob", "carol"))
+				if _, err := h.svc.RefreshUserByName(t.Context(), "carol"); err != nil {
+					t.Fatalf("RefreshUserByName() error = %v", err)
+				}
+			},
+			want: []nssMembership{{700, 1, nil}, {700, 2, nssAt(time.Hour)}, {700, 3, nssAt(2 * time.Hour)}},
+		},
+		{
+			name: "should reset added_at when the membership is removed and added again",
+			steps: func(t *testing.T, h *nssHarness) {
+				importOps(t, h)
+				h.clock.advance(time.Hour)
+				h.dir.put(nssGroupEntry("ops", 700))
+				h.fullSync(t)
+				h.clock.advance(time.Hour)
+				h.dir.put(nssGroupEntry("ops", 700, "ada", "bob"))
+				h.fullSync(t)
+			},
+			want: []nssMembership{{700, 1, nssAt(3 * time.Hour)}, {700, 2, nssAt(3 * time.Hour)}},
+		},
+		{
+			name: "should set added_at for every member when a group first appears after the import",
+			steps: func(t *testing.T, h *nssHarness) {
+				importOps(t, h)
+				h.clock.advance(time.Hour)
+				h.dir.put(nssGroupEntry("devs", 900, "ada", "bob"))
+				h.fullSync(t)
+			},
+			want: []nssMembership{{700, 1, nil}, {700, 2, nssAt(time.Hour)}, {900, 1, nssAt(2 * time.Hour)}, {900, 2, nssAt(2 * time.Hour)}},
+		},
+		{
+			// A tombstoned group is served with no members: the tombstone
+			// removes them, so a revival adds them again.
+			name: "should reset added_at when a tombstoned group is revived",
+			steps: func(t *testing.T, h *nssHarness) {
+				importOps(t, h)
+				h.dir.remove("cn=ops,ou=groups,dc=test")
+				h.clock.advance(time.Hour)
+				h.fullSync(t)
+				h.clock.advance(169 * time.Hour)
+				h.fullSync(t)
+				if n := len(h.members(t, 700)); n != 0 {
+					t.Fatalf("members of the tombstone = %d, want none", n)
+				}
+				h.clock.advance(time.Hour)
+				h.dir.put(nssGroupEntry("ops", 700, "ada"))
+				h.fullSync(t)
+			},
+			want: []nssMembership{{700, 1, nssAt(172 * time.Hour)}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			h := newNSSHarness(t, nil)
+			tt.steps(t, h)
+
+			var stored int64
+			for _, m := range tt.want {
+				got := h.addedAt(t, m.gid, m.uid)
+				if (got == nil) != (m.want == nil) || (got != nil && !got.Equal(*m.want)) {
+					t.Errorf("added_at of %d in %d = %v, want %v", m.uid, m.gid, got, m.want)
+				}
+				stored++
+			}
+			if n := h.count(t, &model.PosixGroupMember{}, ""); n != stored {
+				t.Errorf("membership rows = %d, want exactly the %d checked", n, stored)
+			}
+		})
+	}
+}

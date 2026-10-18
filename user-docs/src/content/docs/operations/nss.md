@@ -301,20 +301,31 @@ is read-only and open to auditors, SOC and admins, and it appears only when
   directory gave them, the linked person), its marks when it is not active
   (missing since, tombstoned since, withheld and why, a pending uid or gid),
   and its memberships: an account's stored group rows, or a group's members,
-  each linking to its own page. A group's page says when
+  each linking to its own page. Their Added column is when ssoosshd first
+  stored the membership, not when it was added in the directory, which does
+  not date member values. A membership the first full import stored shows
+  "Before first import". The date stays through later syncs, an accepted
+  uid or gid change and a group rename; a membership removed and added
+  again shows the new date, and so do the members of a tombstoned group
+  that comes back, since a tombstone drops its members. A group's page says when
   [`nss.max_group_members`](/ssoossh/reference/config/nss/#max_group_members)
   cut the member list hosts receive.
 - **History**, at the bottom, is every recorded change to that account or
   group, newest first, one line each with its time, with Load more: when
   it was stored, renamed, went missing or came back, collisions, pending
-  and accepted id changes, and membership. An account's page says only
-  what happened to that account ("Added to wheel", "Removed from ops"); a
-  group's page has a line per member added or removed ("sonia added"),
-  and "and 412 more added" when one change touched more members than the
-  audit event lists. One event shows on every page it concerns, so a
-  group's history shows a member added after the group was stored and
-  that member's history shows the same change, however many members it
-  touched. Who made a change and its full detail are in the
+  and accepted id changes, and membership removals. Additions are not
+  listed: the Added column above dates each current membership. An
+  account's page says only what happened to that account ("Removed from
+  ops"); a group's page has a line per member removed ("sonia removed"),
+  and "and 412 more removed" when one change removed more members than the
+  audit event lists. When an account is in neither of a large change's
+  capped lists, its page says "Added to or removed from ops", since it may
+  have been a removal. The count under the list is of events, and an event
+  that only added draws no line. One event shows on every page it
+  concerns, so a group's history shows a member removed after the group
+  was stored and that member's history shows the same change, however
+  many members it touched. Additions are still in the
+  [audit log](/ssoossh/operations/audit-log/). Who made a change and its full detail are in the
   [audit log](/ssoossh/operations/audit-log/). The history
   belongs to the stored row, so it carries on across a rename or an
   accepted uid or gid change. It holds only what the
