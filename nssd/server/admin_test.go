@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/mnestor/ssoossh/nssd/userdb"
@@ -109,9 +110,67 @@ func TestCallAdminShouldFailWhenTheRequestCannotBeSent(t *testing.T) {
 			_ = conn.Close()
 		}
 	}()
-	// The listener closes at once; the write or the read fails.
-	if _, err := CallAdmin(t.Context(), path, AdminRequest{Op: AdminStatus}); err == nil || !strings.Contains(err.Error(), "admin call") {
+	// The listener closes at once: the write or the read fails, and either
+	// way it is the same refusal.
+	if _, err := CallAdmin(t.Context(), path, AdminRequest{Op: AdminStatus}); err == nil || !strings.Contains(err.Error(), "without answering") {
 		t.Fatalf("got %v", err)
+	}
+}
+
+// adminConn is a net.Conn whose writes fail with writeErr and whose reads
+// return what is in read, for exchangeAdmin's outcomes without a race.
+type adminConn struct {
+	net.Conn
+	writeErr error
+	read     *strings.Reader
+}
+
+// Write fails with writeErr, or takes the bytes when it is nil.
+func (c *adminConn) Write(b []byte) (int, error) {
+	if c.writeErr != nil {
+		return 0, c.writeErr
+	}
+	return len(b), nil
+}
+
+// Read reads the canned answer.
+func (c *adminConn) Read(b []byte) (int, error) { return c.read.Read(b) }
+
+func TestExchangeAdminShouldReportEachWayACallEnds(t *testing.T) {
+	t.Parallel()
+
+	// What a write to a socket the daemon already closed fails with.
+	closedWrite := func(errno syscall.Errno) error {
+		return &net.OpError{Op: "write", Net: "unix", Err: os.NewSyscallError("write", errno)}
+	}
+	tests := []struct {
+		name     string
+		writeErr error
+		answer   string
+		want     string
+		wantResp AdminResponse
+	}{
+		{name: "should say the daemon closed without answering when the write fails with EPIPE", writeErr: closedWrite(syscall.EPIPE), want: "without answering"},
+		{name: "should say the daemon closed without answering when the write fails with ECONNRESET", writeErr: closedWrite(syscall.ECONNRESET), want: "without answering"},
+		{name: "should report the write error itself when it is anything else", writeErr: closedWrite(syscall.ENOSPC), want: "admin call: write unix: write: no space left on device"},
+		{name: "should say the daemon closed without answering when it closes before the answer", answer: "", want: "without answering"},
+		{name: "should return the daemon's error when it answers with one", answer: `{"error":"unknown admin operation \"x\""}` + "\n", want: `unknown admin operation "x"`, wantResp: AdminResponse{Error: `unknown admin operation "x"`}},
+		{name: "should return the answer when the daemon gives one", answer: `{"marked":3}` + "\n", wantResp: AdminResponse{Marked: 3}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			resp, err := exchangeAdmin(&adminConn{writeErr: tt.writeErr, read: strings.NewReader(tt.answer)}, AdminRequest{Op: AdminStatus})
+			switch {
+			case tt.want == "" && err != nil:
+				t.Fatalf("got %v, want no error", err)
+			case tt.want != "" && (err == nil || !strings.Contains(err.Error(), tt.want)):
+				t.Fatalf("got %v, want %q", err, tt.want)
+			}
+			if resp.Marked != tt.wantResp.Marked || resp.Error != tt.wantResp.Error {
+				t.Fatalf("got %+v, want %+v", resp, tt.wantResp)
+			}
+		})
 	}
 }
 

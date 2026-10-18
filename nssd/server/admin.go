@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/mnestor/ssoossh/nssd/cache"
@@ -153,15 +154,33 @@ func CallAdmin(ctx context.Context, path string, req AdminRequest) (AdminRespons
 			return AdminResponse{}, fmt.Errorf("admin call: %w", err)
 		}
 	}
+	return exchangeAdmin(conn, req)
+}
+
+// exchangeAdmin writes one admin request on conn and reads the answer.
+//
+// The daemon refuses a peer by closing without answering, and whether that
+// close lands before the request is written (the write fails with EPIPE or
+// ECONNRESET) or after (the read fails) is timing. Both are reported as the
+// same refusal, so the caller sees one message whichever way it went.
+func exchangeAdmin(conn net.Conn, req AdminRequest) (AdminResponse, error) {
 	if err := json.NewEncoder(conn).Encode(req); err != nil {
+		if errors.Is(err, syscall.EPIPE) || errors.Is(err, syscall.ECONNRESET) {
+			return AdminResponse{}, adminClosed(err)
+		}
 		return AdminResponse{}, fmt.Errorf("admin call: %w", err)
 	}
 	var resp AdminResponse
 	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
-		return AdminResponse{}, fmt.Errorf("admin call: the daemon closed the connection without answering: %w", err)
+		return AdminResponse{}, adminClosed(err)
 	}
 	if resp.Error != "" {
 		return resp, errors.New(resp.Error)
 	}
 	return resp, nil
+}
+
+// adminClosed is an admin call the daemon ended without answering.
+func adminClosed(err error) error {
+	return fmt.Errorf("admin call: the daemon closed the connection without answering: %w", err)
 }
