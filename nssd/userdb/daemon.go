@@ -124,6 +124,10 @@ type Daemon struct {
 
 	debounceMu sync.Mutex
 	debounce   map[string]time.Time
+
+	// contradictions keeps the membership coherence checks from refetching
+	// a group whose disagreement with a user the server itself keeps.
+	contradictions *contradictions
 }
 
 // New returns a Daemon. Run must be running for background refreshes to
@@ -143,6 +147,8 @@ func New(opts Options) *Daemon {
 		negative: cache.NewNegative(opts.Config.EntryNegativeTimeout, opts.Clock),
 		debounce: map[string]time.Time{},
 		started:  opts.Clock.Now(),
+
+		contradictions: newContradictions(maxContradictions),
 	}
 	d.refresher = cache.NewRefresher(opts.Config.RefreshRate, d.refresh)
 	return d

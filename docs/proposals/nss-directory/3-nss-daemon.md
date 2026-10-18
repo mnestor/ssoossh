@@ -411,24 +411,46 @@ the server is unreachable). It never edits a member list into a record the
 server did not send.
 
 - A user stored from the server (lookup, background refresh, the sshd login
-  refresh) is compared with the cached user entry it replaces. A group the
-  user joined (every served membership when none was cached) whose cached
-  member list lacks the user is marked stale; a group the user left whose
-  cached list still names the user is marked stale too, and so is every
-  group still naming a user the server no longer serves. Only joined and
-  left groups are weighed, so a lasting disagreement (the directory primary
-  group the server adds to a user's list under
-  `nss.auto_private_groups: true`, with no membership row behind it) costs
-  one refetch, not one per fetch. The primary group, memberships
-  the policy drops, stub entries, a truncated list lacking the user, and
-  every group under `ignore_group_members` are left alone.
+  refresh) is checked against the groups it is in. Every served membership
+  whose cached group member list lacks the user is marked stale, whether or
+  not the membership changed since the cached user entry it replaces: a
+  group cached from a server state that did not yet list the user (a server
+  repopulating its memberships after a reset, while the host kept its
+  persistent cache) is repaired by the user's next fetch. A group the user
+  left (in the replaced entry, not in the fresh one) whose cached list still
+  names the user is marked stale too, and so is every group still naming a
+  user the server no longer serves. The primary group, memberships the
+  policy drops, stub entries, a truncated list lacking the user, and every
+  group under `ignore_group_members` are left alone.
+- A disagreement the server itself keeps (the directory primary group it
+  adds to a user's list under `nss.auto_private_groups: true`, with no
+  membership row behind it, so the group's member list never names the
+  user) is confirmed rather than refetched on every user fetch. Each
+  (group, user) pair that marked a group stale is remembered in memory;
+  when the group is next stored from the server and its fresh list still
+  lacks the user, the pair is confirmed, and later user fetches whose
+  membership in that group has not changed do not mark it again. A
+  confirmed pair is cleared when a fresh copy of the group names the user
+  or is truncated, when a fresh copy's member list differs from the cached
+  one it replaces (the group is in flux, so the next disagreement is
+  weighed again), when the user's record leaves the group, or when it is
+  evicted from the map (4096 pairs, oldest marked first; an eviction costs
+  at most one extra refetch). A membership the user joined is always
+  weighed. So a transient disagreement heals on the next user fetch, and a
+  lasting one costs one extra group fetch, plus one per change of that
+  group's member list and one per daemon restart.
 - A group stored from the server is compared with the cached group entry it
   replaces. Each user added to or removed from the member list whose cached
   memberships do not already say the same is marked stale, so the next
   `initgroups` (`id`) refetches the user.
+- Not covered by a user fetch: a group the user is in neither before nor
+  after, whose cached list still names the user. Finding it would mean
+  decoding every cached group, so the group-side check above and the group
+  TTL bound it instead.
 
-Each check reads only the entries named in the change, by primary key, and
-logs at debug when it marks one.
+Each check reads only entries it can name by primary key (the user's served
+groups, or the group's changed members), and logs at debug when it marks
+one.
 
 Background sweep at `refresh_expired_interval`, jittered, bounded by
 `refresh_rate`. Singleflight per `(method, key)`; use `golang.org/x/sync`

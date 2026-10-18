@@ -1042,13 +1042,21 @@ func TestFreshUserShouldMarkContradictedGroupsStale(t *testing.T) {
 		prev          []apitypes.NSSMembership // nil: alice not cached before
 		fresh         []apitypes.NSSMembership
 		ignoreMembers bool
+		confirmed     bool // the server already confirmed alice is not in the group
 		wantStale     bool
 	}{
 		{name: "should mark the group when a first fetch joins it and its cached list lacks the user", group: apitypes.NSSGroupResponse{Name: "ops", GID: 5103, Members: []string{"mnestor"}}, fresh: []apitypes.NSSMembership{alice, devs, ops}, wantStale: true},
 		{name: "should mark the group when a refetch joins it and its cached list lacks the user", group: apitypes.NSSGroupResponse{Name: "ops", GID: 5103, Members: []string{"mnestor"}}, prev: []apitypes.NSSMembership{alice, devs}, fresh: []apitypes.NSSMembership{alice, devs, ops}, wantStale: true},
 		{name: "should mark the group when a refetch leaves it and its cached list still names the user", group: apitypes.NSSGroupResponse{Name: "ops", GID: 5103, Members: []string{"mnestor", "alice"}}, prev: []apitypes.NSSMembership{alice, devs, ops}, fresh: []apitypes.NSSMembership{alice, devs}, wantStale: true},
 		{name: "should not mark the group when the memberships are unchanged and agree", group: apitypes.NSSGroupResponse{Name: "ops", GID: 5103, Members: []string{"mnestor", "alice"}}, prev: []apitypes.NSSMembership{alice, devs, ops}, fresh: []apitypes.NSSMembership{alice, devs, ops}},
-		{name: "should not mark the group again when an unchanged membership still disagrees", group: apitypes.NSSGroupResponse{Name: "ops", GID: 5103, Members: []string{"mnestor"}}, prev: []apitypes.NSSMembership{alice, devs, ops}, fresh: []apitypes.NSSMembership{alice, devs, ops}},
+		{name: "should mark the group when an unchanged membership disagrees and the server has not confirmed it", group: apitypes.NSSGroupResponse{Name: "ops", GID: 5103, Members: []string{"mnestor"}}, prev: []apitypes.NSSMembership{alice, devs, ops}, fresh: []apitypes.NSSMembership{alice, devs, ops}, wantStale: true},
+		{name: "should not mark the group when an unchanged membership disagrees and the server confirmed it", group: apitypes.NSSGroupResponse{Name: "ops", GID: 5103, Members: []string{"mnestor"}}, prev: []apitypes.NSSMembership{alice, devs, ops}, fresh: []apitypes.NSSMembership{alice, devs, ops}, confirmed: true},
+		{name: "should mark the group when a joined membership disagrees even though the server confirmed it", group: apitypes.NSSGroupResponse{Name: "ops", GID: 5103, Members: []string{"mnestor"}}, prev: []apitypes.NSSMembership{alice, devs}, fresh: []apitypes.NSSMembership{alice, devs, ops}, confirmed: true, wantStale: true},
+		{name: "should not mark the group when it is the user's primary group and the membership is unchanged", group: apitypes.NSSGroupResponse{Name: "alice", GID: 5001, Members: []string{"mnestor"}}, prev: []apitypes.NSSMembership{alice, devs}, fresh: []apitypes.NSSMembership{alice, devs}},
+		{name: "should not mark the group when only a stub is cached and the membership is unchanged", group: apitypes.NSSGroupResponse{Name: "ops", GID: 5103}, stub: true, prev: []apitypes.NSSMembership{alice, ops}, fresh: []apitypes.NSSMembership{alice, ops}},
+		{name: "should not mark the group when its truncated list lacks the user and the membership is unchanged", group: apitypes.NSSGroupResponse{Name: "ops", GID: 5103, Members: []string{"mnestor"}, MembersTruncated: true}, prev: []apitypes.NSSMembership{alice, ops}, fresh: []apitypes.NSSMembership{alice, ops}},
+		{name: "should not mark the group when the policy drops an unchanged membership", group: apitypes.NSSGroupResponse{Name: "users", GID: 2005, Members: []string{"mnestor"}}, prev: []apitypes.NSSMembership{alice, users}, fresh: []apitypes.NSSMembership{alice, users}},
+		{name: "should not mark the group when ignore_group_members is set and the membership is unchanged", group: apitypes.NSSGroupResponse{Name: "ops", GID: 5103, Members: []string{"mnestor"}}, prev: []apitypes.NSSMembership{alice, ops}, fresh: []apitypes.NSSMembership{alice, ops}, ignoreMembers: true},
 		{name: "should not mark the group when a joined group's cached list already names the user", group: apitypes.NSSGroupResponse{Name: "ops", GID: 5103, Members: []string{"alice"}}, fresh: []apitypes.NSSMembership{alice, ops}},
 		{name: "should not mark the group when a left group's cached list already lacks the user", group: apitypes.NSSGroupResponse{Name: "ops", GID: 5103, Members: []string{"mnestor"}}, prev: []apitypes.NSSMembership{alice, ops}, fresh: []apitypes.NSSMembership{alice}},
 		{name: "should not mark the group when the policy drops the membership", group: apitypes.NSSGroupResponse{Name: "users", GID: 2005, Members: []string{"mnestor"}}, fresh: []apitypes.NSSMembership{alice, users}},
@@ -1065,6 +1073,10 @@ func TestFreshUserShouldMarkContradictedGroupsStale(t *testing.T) {
 				putGroup(t, f, tt.group, !tt.stub)
 				if tt.prev != nil {
 					putUser(t, f, "alice", 5001, tt.prev, true)
+				}
+				if tt.confirmed {
+					f.d.contradictions.marked(tt.group.Name, "alice")
+					f.d.contradictions.groupStored(tt.group.Name, tt.group.Members, false, true)
 				}
 				f.up.users["alice"].Groups = tt.fresh
 				if r := one(t, f.call(t, MethodGetUserRecord, p("userName", "alice"), userPeer, false)); r.Error != "" {
@@ -1292,4 +1304,273 @@ func TestStaleUserShouldDropARemovedGroupWhenIDAsksNext(t *testing.T) {
 	if strings.Join(got, ",") != "alice" {
 		t.Fatalf("got groups %v, want the refetched list without devs", got)
 	}
+}
+
+// allUsers and soniaPrimary are the owner's groups: sonia's primary group
+// is mnestor's, and every account is in all-users.
+var (
+	allUsers     = apitypes.NSSMembership{GID: 2005, Name: "all-users"}
+	soniaPrimary = apitypes.NSSMembership{GID: 2004, Name: "mnestor"}
+)
+
+// setupSonia replays the owner's restart: all-users is fetched while the
+// server lists only mnestor, then sonia's entry from before the restart,
+// which already has all-users, is due a refetch. The server now answers
+// sonia with groups, and all-users with members.
+func setupSonia(t *testing.T, f *fixture, groups []apitypes.NSSMembership, members []string) {
+	t.Helper()
+	f.up.groups["all-users"] = &apitypes.NSSGroupResponse{Name: "all-users", GID: 2005, Members: []string{"mnestor"}}
+	if got := groupMembers(t, f, "all-users"); strings.Join(got, ",") != "mnestor" {
+		t.Fatalf("got members %v", got)
+	}
+	resp := userResp("sonia", 5010, apitypes.NSSStatusActive)
+	resp.GID, resp.Groups = 2004, []apitypes.NSSMembership{soniaPrimary, allUsers}
+	now := f.clock.Now()
+	e := cache.UserEntry{Name: "sonia", UID: 5010, GID: 2004, Data: mustJSON(t, resp), FetchedAt: now, ExpiresAt: now.Add(f.cfg.TTLUser()), Stale: true}
+	if err := f.store.PutUser(t.Context(), e); err != nil {
+		t.Fatal(err)
+	}
+	fresh := *resp
+	fresh.Groups = groups
+	f.up.users["sonia"] = &fresh
+	f.up.groups["all-users"] = &apitypes.NSSGroupResponse{Name: "all-users", GID: 2005, Members: members}
+}
+
+// groupMembers lists a group's members through GetMemberships by group.
+func groupMembers(t *testing.T, f *fixture, group string) []string {
+	t.Helper()
+	var got []string
+	for _, r := range f.call(t, MethodGetMemberships, p("groupName", group), rootPeer, true) {
+		var m membershipReply
+		if err := json.Unmarshal(r.Parameters, &m); err != nil || r.Error != "" {
+			t.Fatalf("reply %+v, %v", r, err)
+		}
+		got = append(got, m.UserName)
+	}
+	return got
+}
+
+// groupCalls counts the upstream fetches of the group named name.
+func (f *fakeUpstream) groupCalls(name string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n := 0
+	for _, c := range f.calls {
+		if c == "group/name/"+name {
+			n++
+		}
+	}
+	return n
+}
+
+// fetchUser forces one upstream fetch of the user named name, as the
+// background refresh does.
+func (f *fixture) fetchUser(t *testing.T, name string) {
+	t.Helper()
+	f.d.refresh(t.Context(), userKey{name: name}.String())
+}
+
+func TestFreshUserShouldRepairAGroupFetchedBeforeTheMembershipWhenThePreviousEntryAgreed(t *testing.T) {
+	t.Parallel()
+	withStore(t, nil, func(t *testing.T, f *fixture) {
+		setupSonia(t, f, []apitypes.NSSMembership{soniaPrimary, allUsers}, []string{"mnestor", "sonia"})
+		if r := one(t, f.call(t, MethodGetUserRecord, p("userName", "sonia"), userPeer, false)); r.Error != "" {
+			t.Fatalf("got %s", r.Error)
+		}
+		if !groupStale(t, f, "all-users") {
+			t.Fatal("should mark all-users stale although sonia's previous entry already had it")
+		}
+		before := f.up.groupCalls("all-users")
+		if got := groupMembers(t, f, "all-users"); strings.Join(got, ",") != "mnestor,sonia" || f.up.groupCalls("all-users") != before+1 {
+			t.Fatalf("got members %v after %d group fetches, want a refetch listing sonia", got, f.up.groupCalls("all-users")-before)
+		}
+		if f.d.contradictions.n != 0 {
+			t.Fatalf("got %d pairs held, want the healed pair cleared", f.d.contradictions.n)
+		}
+	})
+}
+
+func TestLastingDisagreementShouldCostOneGroupRefetchWhenTheServerConfirmsIt(t *testing.T) {
+	t.Parallel()
+	withStore(t, nil, func(t *testing.T, f *fixture) {
+		// The server keeps all-users without sonia, as it does for a group
+		// it adds without a membership row.
+		setupSonia(t, f, []apitypes.NSSMembership{soniaPrimary, allUsers}, []string{"mnestor"})
+		f.fetchUser(t, "sonia")
+		if !groupStale(t, f, "all-users") {
+			t.Fatal("the first user fetch should mark the group stale")
+		}
+		groupMembers(t, f, "all-users")
+		for i := range 3 {
+			f.fetchUser(t, "sonia")
+			if groupStale(t, f, "all-users") {
+				t.Fatalf("user fetch %d marked a confirmed disagreement again", i+2)
+			}
+			groupMembers(t, f, "all-users")
+		}
+		if got := f.up.groupCalls("all-users"); got != 2 {
+			t.Fatalf("got %d group fetches, want 2: the first state and one confirming refetch", got)
+		}
+	})
+}
+
+func TestConfirmedDisagreementShouldClearWhenTheGroupOrTheUserMoves(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		change    func(f *fixture) // the server's change after confirmation
+		refresh   bool             // the group is refetched on its own, as its TTL does
+		wantPairs int
+		wantStale bool // after the next user fetch
+		wantList  string
+	}{
+		{name: "should keep suppressing when the group is refetched with the same list", refresh: true, wantPairs: 1, wantList: "mnestor"},
+		{
+			name:     "should clear the pair when the refetched group names the user",
+			change:   func(f *fixture) { f.up.groups["all-users"].Members = []string{"mnestor", "sonia"} },
+			refresh:  true,
+			wantList: "mnestor,sonia",
+		},
+		{
+			name:     "should clear the pair when the refetched group is truncated",
+			change:   func(f *fixture) { f.up.groups["all-users"].MembersTruncated = true },
+			refresh:  true,
+			wantList: "mnestor",
+		},
+		{
+			name:      "should weigh the membership again when the refetched group's list changed",
+			change:    func(f *fixture) { f.up.groups["all-users"].Members = []string{"mnestor", "erin"} },
+			refresh:   true,
+			wantPairs: 1, // marked again by the next user fetch
+			wantStale: true,
+			wantList:  "mnestor,erin",
+		},
+		{
+			name:     "should clear the pair when the user leaves the group",
+			change:   func(f *fixture) { f.up.users["sonia"].Groups = []apitypes.NSSMembership{soniaPrimary} },
+			wantList: "mnestor",
+		},
+		{
+			name:      "should stay suppressed until the group is refetched when the server starts listing the user",
+			change:    func(f *fixture) { f.up.groups["all-users"].Members = []string{"mnestor", "sonia"} },
+			wantPairs: 1,
+			wantList:  "mnestor",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			withStore(t, nil, func(t *testing.T, f *fixture) {
+				setupSonia(t, f, []apitypes.NSSMembership{soniaPrimary, allUsers}, []string{"mnestor"})
+				f.fetchUser(t, "sonia")
+				groupMembers(t, f, "all-users")
+				if !f.d.contradictions.suppressed("all-users", "sonia") {
+					t.Fatal("the refetch should confirm the pair")
+				}
+				if tt.change != nil {
+					tt.change(f)
+				}
+				if tt.refresh {
+					f.d.refresh(t.Context(), groupKey{name: "all-users"}.String())
+				}
+				f.fetchUser(t, "sonia")
+				if got := groupStale(t, f, "all-users"); got != tt.wantStale {
+					t.Fatalf("group stale %v, want %v", got, tt.wantStale)
+				}
+				if f.d.contradictions.n != tt.wantPairs {
+					t.Fatalf("got %d pairs held, want %d", f.d.contradictions.n, tt.wantPairs)
+				}
+				if got := strings.Join(groupMembers(t, f, "all-users"), ","); got != tt.wantList {
+					t.Fatalf("got members %s, want %s", got, tt.wantList)
+				}
+			})
+		})
+	}
+}
+
+// flakyStore wraps a Store and fails the operations its flags name.
+type flakyStore struct {
+	cache.Store
+	failMarkStale, failGroupRead bool
+}
+
+// MarkStale fails when failMarkStale is set.
+func (s *flakyStore) MarkStale(ctx context.Context, sel cache.Selector) (int, error) {
+	if s.failMarkStale {
+		return 0, errStore
+	}
+	return s.Store.MarkStale(ctx, sel)
+}
+
+// GroupByName fails when failGroupRead is set.
+func (s *flakyStore) GroupByName(ctx context.Context, name string) (*cache.GroupEntry, error) {
+	if s.failGroupRead {
+		return nil, errStore
+	}
+	return s.Store.GroupByName(ctx, name)
+}
+
+func TestContradictionShouldOnlyBeRememberedWhenTheGroupIsStale(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		alreadyStale  bool
+		corrupt       bool
+		failMarkStale bool
+		failGroupRead bool
+		wantPairs     int
+		wantLog       string
+	}{
+		{name: "should remember the pair when the group was already stale", alreadyStale: true, wantPairs: 1},
+		{name: "should not remember the pair when marking the group fails", failMarkStale: true, wantLog: "cannot mark a cache entry stale"},
+		{name: "should not remember the pair when the group cache cannot be read", failGroupRead: true, wantLog: "cannot read the group cache"},
+		{name: "should not remember the pair when the cached group does not decode", corrupt: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			withStore(t, nil, func(t *testing.T, f *fixture) {
+				setupSonia(t, f, []apitypes.NSSMembership{soniaPrimary, allUsers}, []string{"mnestor"})
+				if tt.corrupt {
+					now := f.clock.Now()
+					e := cache.GroupEntry{Name: "all-users", GID: 2005, Members: true, Data: []byte("{"), FetchedAt: now, ExpiresAt: now.Add(f.cfg.TTLGroup())}
+					if err := f.store.PutGroup(t.Context(), e); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if tt.alreadyStale {
+					if _, err := f.store.MarkStale(t.Context(), cache.Selector{Groups: true, Name: "all-users"}); err != nil {
+						t.Fatal(err)
+					}
+				}
+				f.d.store = &flakyStore{Store: f.store, failMarkStale: tt.failMarkStale, failGroupRead: tt.failGroupRead}
+				f.fetchUser(t, "sonia")
+				if f.d.contradictions.n != tt.wantPairs {
+					t.Fatalf("got %d pairs held, want %d", f.d.contradictions.n, tt.wantPairs)
+				}
+				if tt.wantLog != "" && !strings.Contains(f.logs.String(), tt.wantLog) {
+					t.Fatalf("should log %q, got %s", tt.wantLog, f.logs)
+				}
+			})
+		})
+	}
+}
+
+func TestCorruptCachedGroupShouldCountAsNoListWhenTheGroupIsStored(t *testing.T) {
+	t.Parallel()
+	withStore(t, nil, func(t *testing.T, f *fixture) {
+		now := f.clock.Now()
+		e := cache.GroupEntry{Name: "devs", GID: 5100, Members: true, Data: []byte("{"), FetchedAt: now, ExpiresAt: now.Add(f.cfg.TTLGroup())}
+		if err := f.store.PutGroup(t.Context(), e); err != nil {
+			t.Fatal(err)
+		}
+		f.d.contradictions.marked("devs", "erin")
+		f.d.contradictions.groupStored("devs", nil, false, true)
+		f.d.refresh(t.Context(), groupKey{name: "devs"}.String())
+		if f.d.contradictions.n != 0 {
+			t.Fatalf("got %d pairs held, want the confirmed pair cleared as by a changed list", f.d.contradictions.n)
+		}
+	})
 }
