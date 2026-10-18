@@ -52,6 +52,13 @@ type HTTPSettings struct {
 	// That only holds because the router passes this to SetTrustedProxies
 	// unconditionally — gin's own default is to trust every proxy, so
 	// skipping the call for an empty list would mean the opposite.
+	//
+	// Keep it empty or limited to the real proxies: a peer inside it picks
+	// its own client IP with X-Forwarded-For, so it passes
+	// nss.source_allow_list, forges the audited source_ip and gets a fresh
+	// nss.rate_limit bucket per address. On http.unix_socket gin trusts
+	// every peer whatever this says, so the proxy in front must set
+	// X-Forwarded-For itself.
 	TrustedProxies []string `mapstructure:"trusted_proxies" default:"[]"`
 
 	// PublicURL is the scheme and host browsers actually reach this

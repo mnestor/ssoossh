@@ -304,6 +304,8 @@ Default:
 Lists the CIDR ranges of reverse proxies trusted to set X\-Forwarded\-For/X\-Forwarded\-Proto, passed to gin's SetTrustedProxies. Empty means no proxy is trusted, so c.ClientIP() always reports the direct connection's address and a client\-supplied X\-Forwarded\-For is ignored.
 .IP
 That only holds because the router passes this to SetTrustedProxies unconditionally \(em gin's own default is to trust every proxy, so skipping the call for an empty list would mean the opposite.
+.IP
+Keep it empty or limited to the real proxies: a peer inside it picks its own client IP with X\-Forwarded\-For, so it passes nss.source_allow_list, forges the audited source_ip and gets a fresh nss.rate_limit bucket per address. On http.unix_socket gin trusts every peer whatever this says, so the proxy in front must set X\-Forwarded\-For itself.
 Default:
 .BR empty .
 .TP
@@ -861,12 +863,12 @@ Default:
 .BR 2000 .
 .TP
 .BI nss.rate_limit: " number"
-The lookups per second allowed for one fleet key from one source address. The address is the one the server observes, honouring forwarded headers only from http.trusted_proxies, the same address the audit log records as source_ip; behind a load balancer listed there each host keeps its own bucket rather than all of them sharing the balancer's. Each server instance keeps its own buckets, so N instances behind a load balancer allow N times this. Must be greater than zero.
+The lookups per second allowed for one fleet key from one source address. The address is the one the server observes, honouring forwarded headers only from http.trusted_proxies, the same address the audit log records as source_ip; behind a load balancer listed there each host keeps its own bucket rather than all of them sharing the balancer's. An overbroad http.trusted_proxies lets a key holder spoof that address with X\-Forwarded\-For and get a fresh bucket per address; nss.key_source_alert still fires but never blocks. Each server instance keeps its own buckets, so N instances behind a load balancer allow N times this. Must be greater than zero.
 Default:
 .BR 20 .
 .TP
 .BI nss.rate_burst: " int"
-How many lookups one key and source address (as for rate_limit) may make back to back before rate_limit starts holding them back: a host starting up resolves many names at once. Must be greater than zero, since a zero burst refuses every lookup.
+How many lookups one key and source address (as for rate_limit, with the same http.trusted_proxies caveat) may make back to back before rate_limit starts holding them back: a host starting up resolves many names at once. Must be greater than zero, since a zero burst refuses every lookup.
 Default:
 .BR 200 .
 .TP
@@ -891,7 +893,7 @@ Default:
 .BR 720h .
 .TP
 .BI nss.source_allow_list: " list"
-Limits the lookup endpoints to requests from these CIDR networks, checked before the key is: a request from anywhere else is refused with an audit event that carries its address and the key id it presented. The address is the one the server observes, honouring forwarded headers only from http.trusted_proxies, the same address the audit log records as source_ip; a forwarded header from any other peer is ignored. Empty allows every address.
+Limits the lookup endpoints to requests from these CIDR networks, checked before the key is: a request from anywhere else is refused with an audit event that carries its address and the key id it presented. The address is the one the server observes, honouring forwarded headers only from http.trusted_proxies, the same address the audit log records as source_ip; a forwarded header from any other peer is ignored. An overbroad http.trusted_proxies lets a key holder pass this list, and forge the audited address, with X\-Forwarded\-For. Empty allows every address.
 Default:
 .BR empty .
 .TP
