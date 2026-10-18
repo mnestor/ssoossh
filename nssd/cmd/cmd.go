@@ -63,6 +63,12 @@ type RootCommand struct {
 
 	// run holds the daemon flags, shared with the run subcommand.
 	run runFlags
+
+	// cobraRoot is the assembled cobra command, captured by Init. By the
+	// time simplecobra.New returns every subcommand hangs beneath it, which
+	// is what lets internal/tools/gendocs write the man pages from the
+	// real tree without executing anything.
+	cobraRoot *cobra.Command
 }
 
 var _ simplecobra.Commander = (*RootCommand)(nil)
@@ -76,6 +82,7 @@ func (r *RootCommand) Commands() []simplecobra.Commander { return r.commands }
 // Init implements simplecobra.Commander.
 func (r *RootCommand) Init(cd *simplecobra.Commandeer) error {
 	cmd := cd.CobraCommand
+	r.cobraRoot = cmd
 	cmd.Short = "The ssoossh NSS daemon: directory users and groups for this host through systemd userdb."
 	cmd.Long = "ssoosshd-nss answers systemd's io.systemd.UserDatabase varlink interface on " +
 		config.UserdbSocket + ", so nss-systemd resolves directory users and groups " +
@@ -103,6 +110,7 @@ func (r *RootCommand) Run(ctx context.Context, cd *simplecobra.Commandeer, args 
 // Command is the executable command tree.
 type Command struct {
 	exec *simplecobra.Exec
+	root *RootCommand
 }
 
 // NewCommand builds the command tree over env.
@@ -124,7 +132,14 @@ func NewCommand(env Environment) (*Command, error) {
 		// command whose Init returns an error, which none here do.
 		return nil, fmt.Errorf("build the command tree: %w", err)
 	}
-	return &Command{exec: exec}, nil
+	return &Command{exec: exec, root: root}, nil
+}
+
+// Command returns the root of the cobra tree Execute runs, for the man page
+// generator. Building the tree runs every command's Init and nothing else,
+// so it reads no configuration and opens no socket.
+func (c *Command) Command() *cobra.Command {
+	return c.root.cobraRoot
 }
 
 // Execute runs the command with args.

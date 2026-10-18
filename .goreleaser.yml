@@ -206,6 +206,22 @@ builds:
       - arm64
     ldflags: *build-ldflags
 
+  # The NSS daemon, Linux only (cmd/ssoosshd-nss is build-tagged linux). No
+  # env of its own on purpose: it inherits the global CGO_ENABLED=0, so it
+  # links statically like the default server build (its SQLite cache is the
+  # same pure-Go driver), and the global GOFIPS140, so it is built with the
+  # same FIPS 140-3 module as the server. test/packaging pins both.
+  - id: nss-linux-build
+    binary: ssoosshd-nss
+    dir: ./cmd/ssoosshd-nss
+    flags: *flags
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags: *build-ldflags
+
   - id: windows-build
     binary: *name
     dir: *dir
@@ -463,8 +479,21 @@ nfpms:
       - src: THIRD-PARTY-LICENSES.md
         dst: /usr/share/doc/ssoosshd/THIRD-PARTY-LICENSES.md
       # One page per cobra subcommand — see the client package above for
-      # why this is a glob and why the .5 page is not.
-      - src: docs/man/ssoosshd*.8
+      # why these are globs and why the .5 page is not. One glob per
+      # top-level subcommand rather than ssoosshd*.8, which would also match
+      # ssoosshd-nss*.8: those pages belong to the ssoosshd-nss package, and
+      # two packages owning one path cannot be installed together. A new
+      # subcommand needs a line here; test/packaging names the page that
+      # nothing ships until it has one.
+      - src: docs/man/ssoosshd.8
+        dst: /usr/share/man/man8/ssoosshd.8
+      - src: docs/man/ssoosshd-serve*.8
+        dst: /usr/share/man/man8/
+      - src: docs/man/ssoosshd-sign*.8
+        dst: /usr/share/man/man8/
+      - src: docs/man/ssoosshd-ldap*.8
+        dst: /usr/share/man/man8/
+      - src: docs/man/ssoosshd-version*.8
         dst: /usr/share/man/man8/
       - src: docs/man/ssoosshd.yaml.5
         dst: /usr/share/man/man5/ssoosshd.yaml.5
@@ -556,8 +585,21 @@ nfpms:
       - src: THIRD-PARTY-LICENSES.md
         dst: /usr/share/doc/ssoosshd/THIRD-PARTY-LICENSES.md
       # One page per cobra subcommand — see the client package above for
-      # why this is a glob and why the .5 page is not.
-      - src: docs/man/ssoosshd*.8
+      # why these are globs and why the .5 page is not. One glob per
+      # top-level subcommand rather than ssoosshd*.8, which would also match
+      # ssoosshd-nss*.8: those pages belong to the ssoosshd-nss package, and
+      # two packages owning one path cannot be installed together. A new
+      # subcommand needs a line here; test/packaging names the page that
+      # nothing ships until it has one.
+      - src: docs/man/ssoosshd.8
+        dst: /usr/share/man/man8/ssoosshd.8
+      - src: docs/man/ssoosshd-serve*.8
+        dst: /usr/share/man/man8/
+      - src: docs/man/ssoosshd-sign*.8
+        dst: /usr/share/man/man8/
+      - src: docs/man/ssoosshd-ldap*.8
+        dst: /usr/share/man/man8/
+      - src: docs/man/ssoosshd-version*.8
         dst: /usr/share/man/man8/
       - src: docs/man/ssoosshd.yaml.5
         dst: /usr/share/man/man5/ssoosshd.yaml.5
@@ -573,6 +615,153 @@ nfpms:
       # later release would stop the server from starting.
       - src: server/resources/mail/*.tmpl
         dst: /usr/share/ssoossh/mail-templates/
+
+  # The NSS daemon: directory users and groups for a host through systemd
+  # userdb (docs/proposals/nss-directory, Part 3). One package, the daemon
+  # and its two units; nss-systemd, which systemd ships, is the glibc side,
+  # so there is no NSS module of our own to package.
+  #
+  # deb and rpm only. No apk: musl cannot load NSS modules and Alpine has no
+  # systemd, so there is nothing there for this daemon to plug into.
+  - id: nss
+    package_name: ssoosshd-nss
+    file_name_template: 'ssoosshd-nss_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}{{ with .Mips }}_{{ . }}{{ end }}{{ if not (eq .Amd64 "v1") }}{{ .Amd64 }}{{ end }}'
+    license: *license
+    maintainer: *maintainer
+    homepage: *website
+    description: "NSS daemon serving ssoossh directory users and groups to this host through systemd userdb"
+    ids:
+      - nss-linux-build
+    bindir: /usr/sbin
+    # postinstall reloads systemd and nothing else: it never enables a
+    # unit and never edits nsswitch.conf. See the script for why.
+    scripts:
+      postinstall: packaging/linux/nss-postinstall.sh
+      preremove: packaging/linux/nss-preremove.sh
+      postremove: packaging/linux/nss-postremove.sh
+    formats: *nfpmFormats
+    rpm:
+      signature:
+        key_file: private.pgp
+    deb:
+      signature:
+        key_file: private.pgp
+    # The platform floor (Part 3, "Platform floor"): systemd 245, where
+    # userdb arrived, and the package that ships nss-systemd itself.
+    overrides:
+      deb:
+        dependencies:
+          # Its postinst adds "systemd" to the passwd and group lines of
+          # nsswitch.conf (and shadow, on Debian 12+ and Ubuntu 24.04+).
+          # Ubuntu 20.04's 245.4 is the oldest systemd in the target set.
+          - libnss-systemd
+          - systemd (>= 245)
+      rpm:
+        dependencies:
+          # The soname capability rather than a package name: it resolves
+          # to systemd-libs on EL9, EL10 and Fedora and to systemd on
+          # openSUSE, so one string serves every family. Not a file path
+          # such as /usr/lib64/libnss_systemd.so.2: EL10's dnf loads no
+          # filelists by default and cannot resolve one.
+          - libnss_systemd.so.2()(64bit)
+          - systemd >= 245
+        # The daemon runs confined only with the policy package, and
+        # without it SELinux denies every confined caller (sshd, logind,
+        # systemd-userwork) the userdb socket. A weak dependency, so a host
+        # with SELinux disabled can still decline it.
+        recommends:
+          - ssoossh-nss-selinux
+    contents:
+      # Installed, deliberately not enabled; see nss-postinstall.sh. Modes
+      # are explicit for the reason the server package gives.
+      - src: deploy/ssoosshd-nss.socket
+        dst: /usr/lib/systemd/system/ssoosshd-nss.socket
+        file_info:
+          mode: 0644
+      - src: deploy/ssoosshd-nss.service
+        dst: /usr/lib/systemd/system/ssoosshd-nss.service
+        file_info:
+          mode: 0644
+      # Every option at its default, commented out, so installing changes
+      # nothing. Root-only: the daemon refuses a configuration anyone else
+      # can read. /etc/ssoossh/nss.key, the fleet key, is never shipped;
+      # an administrator writes it.
+      - src: packaging/linux/nss.yaml
+        dst: /etc/ssoossh/nss.yaml
+        type: "config|noreplace"
+        file_info:
+          owner: root
+          group: root
+          mode: 0600
+      - src: LICENSE
+        dst: /usr/share/doc/ssoosshd-nss/LICENSE
+      - src: NOTICE
+        dst: /usr/share/doc/ssoosshd-nss/NOTICE
+      - src: THIRD-PARTY-LICENSES.md
+        dst: /usr/share/doc/ssoosshd-nss/THIRD-PARTY-LICENSES.md
+      # The root page and one per subcommand. The server packages leave
+      # these out of their own ssoosshd* globs.
+      - src: docs/man/ssoosshd-nss*.8
+        dst: /usr/share/man/man8/
+
+  # The SELinux policy for ssoosshd-nss: its own domain, the labels of its
+  # files, and the one rule every confined caller needs to reach its userdb
+  # socket. Source in packaging/selinux/.
+  #
+  # rpm only, for the targeted policy of Red Hat Enterprise Linux, its
+  # rebuilds and Fedora. A meta package because it carries no binary: the
+  # payload is a compiled policy module, which is not machine code. That
+  # module is not built here. goreleaser's host has no SELinux toolchain, so
+  # `make selinux-nss` builds build/selinux/ssoossh_nss.pp in an AlmaLinux 9
+  # container first (the nss-selinux job in build.yaml), and this entry
+  # fails without it.
+  - id: nss-selinux
+    package_name: ssoossh-nss-selinux
+    file_name_template: 'ssoossh-nss-selinux_{{ .Version }}_noarch'
+    license: *license
+    maintainer: *maintainer
+    homepage: *website
+    description: "SELinux policy for ssoosshd-nss, the ssoossh NSS daemon"
+    meta: true
+    formats:
+      - rpm
+    rpm:
+      signature:
+        key_file: private.pgp
+    dependencies:
+      # semodule and restorecon.
+      - policycoreutils
+      # The policy the module was built and tested against: AlmaLinux 9.8's
+      # 38.1.75 (EL10 ships 42.x). A binary module may not load on an older
+      # policy, and the solver refusing the install is a better way to learn
+      # that than semodule failing in postinstall.
+      - selinux-policy-targeted >= 38.1.75
+    scripts:
+      postinstall: packaging/selinux/postinstall.sh
+      preremove: packaging/selinux/preremove.sh
+    contents:
+      - src: build/selinux/ssoossh_nss.pp
+        dst: /usr/share/selinux/packages/ssoossh-nss/ssoossh_nss.pp
+        file_info:
+          mode: 0644
+      # The source travels with the module, so a site that will not load a
+      # compiled blob it cannot read can build the same module itself.
+      - src: packaging/selinux/ssoossh_nss.te
+        dst: /usr/share/doc/ssoossh-nss-selinux/ssoossh_nss.te
+        file_info:
+          mode: 0644
+      - src: packaging/selinux/ssoossh_nss.fc
+        dst: /usr/share/doc/ssoossh-nss-selinux/ssoossh_nss.fc
+        file_info:
+          mode: 0644
+      - src: packaging/selinux/ssoossh_nss.if
+        dst: /usr/share/doc/ssoossh-nss-selinux/ssoossh_nss.if
+        file_info:
+          mode: 0644
+      - src: LICENSE
+        dst: /usr/share/doc/ssoossh-nss-selinux/LICENSE
+        file_info:
+          mode: 0644
 
   # The two halves of `dnf install ssoossh-client` working at all: a package
   # whose only job is to install the repository definition and the key that

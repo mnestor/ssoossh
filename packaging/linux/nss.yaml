@@ -1,0 +1,163 @@
+# ssoosshd-nss configuration, ssoosshd-nss(8).
+#
+# Installed as /etc/ssoossh/nss.yaml, root-only (0600). The daemon refuses a
+# file anyone but root can read or write, and never consults the
+# environment, so nothing a caller's environment says can change which
+# server this host trusts or how it maps names to ids.
+#
+# Every option is listed below at its default, commented out. A line
+# starting "#name:" is an option; uncomment it to change it. Option names
+# follow sssd.conf(5). Durations take Go duration strings ("90s", "1h30m")
+# or, as sssd.conf counts, a bare number of seconds.
+#
+# Before the first start, set at least:
+#   - server (or rely on SRV discovery),
+#   - tls_ca_file or tls_spki_pin, and
+#   - the fleet key file named by api_key_file,
+# then `systemctl enable --now ssoosshd-nss.socket`. As shipped the daemon
+# refuses to start: the system trust store is never used, so it has nothing
+# to trust until one of the two TLS options is set.
+
+# --- server ---------------------------------------------------------------
+
+# The ssoosshd https URL, e.g. "https://sso.example.com". Empty discovers
+# the server from the _ssoossh._tcp SRV records of dns_discovery_domain.
+#server: ""
+
+# The domain SRV discovery queries, and what %d expands to in the homedir
+# templates. Empty means the host's own domain: what follows the first dot
+# of the hostname, else the first domain or search entry of
+# /etc/resolv.conf.
+#dns_discovery_domain: ""
+
+# The one trust root. One of the two is required. tls_ca_file is a private
+# CA bundle (PEM) the server's certificate must chain to; tls_spki_pin is a
+# list of base64 (standard encoding) SHA-256 digests of the server's
+# SubjectPublicKeyInfo. With both, the certificate must chain to the CA and
+# carry a pinned key. TLS 1.3 only; proxy variables are ignored.
+#tls_ca_file: ""
+#tls_spki_pin: []
+
+# The fleet key: line 1 the key id, line 2 the secret. Root-only (0600)
+# like this file. Not shipped by the package; an administrator creates the
+# key on the server and writes it here.
+#api_key_file: /etc/ssoossh/nss.key
+
+# Bounds one upstream lookup, retries included.
+#timeout: 5s
+
+# How many more attempts a lookup makes after a transport failure, rotating
+# through the discovered servers, before the daemon counts the directory as
+# offline.
+#reconnection_retries: 3
+
+# The first wait before probing an offline server again; it doubles after
+# each failed probe.
+#offline_timeout: 60s
+
+# How long a userdb call may take to answer. An upstream fetch still running
+# then completes into the cache, and the caller is told the service is not
+# available, which glibc callers see as "not found". Must stay under 45s,
+# systemd's own call timeout.
+#socket_answer_deadline: 2.5s
+
+# --- cache ----------------------------------------------------------------
+
+# persistent keeps the cache in /var/lib/ssoossh-nss/cache.db across
+# restarts, so a host rebooted while the server is down still resolves the
+# users it knew. memory keeps it in the daemon's memory only.
+#cache_mode: persistent
+
+# How long a positive entry is valid (5400 s, sssd's default).
+#entry_cache_timeout: 90m
+
+# Per-kind overrides of entry_cache_timeout; 0 inherits it.
+#entry_cache_user_timeout: 0
+#entry_cache_group_timeout: 0
+
+# How long an authoritative "no such user or group" is remembered.
+#entry_negative_timeout: 15s
+
+# The share of an entry's lifetime, in percent, during which it is answered
+# without a refresh. Past it the entry is still answered and is refreshed in
+# the background. 0 turns the background refresh off.
+#entry_cache_nowait_percentage: 50
+
+# The background sweep's period. 0 means 75% of the shorter entry lifetime
+# in persistent mode, and no sweep in memory mode.
+#refresh_expired_interval: 0
+
+# Background upstream refreshes per second, at most.
+#refresh_rate: 2
+
+# How long after its fetch an entry may still be answered while the server
+# is unreachable. 0 means for ever.
+#cache_expire_offline: 0
+
+# --- sshd logins ----------------------------------------------------------
+
+# When sshd looks a user up and the entry is older than this, the daemon
+# refreshes it first, so a group removed in the directory is gone at the
+# next login. It is also the per-name debounce for the RefreshUser call
+# `ssoossh host principals` makes.
+#login_soft_ttl: 60s
+
+# Bounds that synchronous refresh; on timeout the cached entry is answered.
+# Must not exceed socket_answer_deadline.
+#login_refresh_timeout: 1s
+
+# The systemd units sshd runs as. A uid 0 caller counts as sshd only when its
+# cgroup is one of these units. "name@.service" matches every instance of a
+# template, which is how a socket-activated sshd runs each connection.
+#sshd_units: [sshd.service, ssh.service, sshd@.service, ssh@.service]
+
+# --- ids, homes and shells ------------------------------------------------
+
+# Every uid and gid served lies within min_id..max_id; 0 for max_id means no
+# upper bound. min_id cannot be 0, so the directory can never serve root.
+#min_id: 1000
+#max_id: 0
+
+# Replaces every user's primary gid; 0 leaves it as the server sent it.
+# Applied after the min_id..max_id check, so it may name a shared group such
+# as gid 100.
+#override_gid: 0
+
+# Home directory, first valid absolute path wins: override_homedir, then the
+# server's home, then fallback_homedir. Templates expand %u (name), %U (uid),
+# %d (domain), %h (the server's home) and %%.
+#override_homedir: ""
+#fallback_homedir: /home/%u
+
+# Shell of an active account, first acceptable one wins: override_shell, then
+# the user's own shell choice (shell_pref) resolved through shell_map and
+# then by name in /etc/shells, then the server's shell, then shell_fallback,
+# which is used even when it is not otherwise acceptable. Acceptable means
+# listed in allowed_shells (or in /etc/shells when that is empty) and not in
+# vetoed_shells.
+#override_shell: ""
+#shell_fallback: /bin/sh
+#allowed_shells: []
+#vetoed_shells: []
+
+# Maps a shell name a user may choose on the server to a path on this host,
+# e.g.
+#   shell_map:
+#     zsh: /opt/homebrew/bin/zsh
+#shell_map: {}
+
+# The shell of a disabled or deleted account, which is also served locked.
+# Exempt from the shells checks, since Debian does not list nologin in
+# /etc/shells.
+#disabled_shell: /usr/sbin/nologin
+
+# Drops member lists from group answers; a user's own groups still resolve.
+#ignore_group_members: false
+
+# Names never served, however the server answers. Names and ids present in
+# /etc/passwd and /etc/group are never served either, whatever these say.
+#filter_users: [root]
+#filter_groups: [root]
+
+# When set, only members of at least one of these groups are served.
+#require_groups: []

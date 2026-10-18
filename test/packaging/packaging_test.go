@@ -45,6 +45,8 @@ type goreleaserConfig struct {
 		Files   []archiveFile `yaml:"files"`
 	} `yaml:"archives"`
 	Builds []goreleaserBuild `yaml:"builds"`
+	// Env is the global build environment every build inherits.
+	Env []string `yaml:"env"`
 }
 
 // nfpmPackage is one entry under nfpms:. Bindir and Scripts are read as
@@ -59,6 +61,17 @@ type nfpmPackage struct {
 	APK         nfpmAPK       `yaml:"apk"`
 	Scripts     nfpmScripts   `yaml:"scripts"`
 	Contents    []nfpmContent `yaml:"contents"`
+	// Dependencies apply to every format; Overrides adds per-format ones,
+	// keyed by format, which is where the deb and rpm spellings of one
+	// dependency differ.
+	Dependencies []string                `yaml:"dependencies"`
+	Overrides    map[string]nfpmOverride `yaml:"overrides"`
+}
+
+// nfpmOverride is one format's entry under overrides:.
+type nfpmOverride struct {
+	Dependencies []string `yaml:"dependencies"`
+	Recommends   []string `yaml:"recommends"`
 }
 
 // nfpmAPK carries the apk-only signing block. apk cannot use the OpenPGP
@@ -96,9 +109,12 @@ type nfpmContent struct {
 // goreleaserBuild is one entry under builds:. Flags carries the -tags
 // argument, which is what decides whether crypto11 is compiled in at all.
 type goreleaserBuild struct {
-	ID    string   `yaml:"id"`
-	Env   []string `yaml:"env"`
-	Flags []string `yaml:"flags"`
+	ID     string   `yaml:"id"`
+	Dir    string   `yaml:"dir"`
+	Env    []string `yaml:"env"`
+	Flags  []string `yaml:"flags"`
+	Goos   []string `yaml:"goos"`
+	Goarch []string `yaml:"goarch"`
 }
 
 // archiveFile is one entry in an archive's files list. GoReleaser accepts
@@ -368,13 +384,18 @@ var manOwners = map[string]manPageOwner{
 	"ssoossh": {packages: []string{"client"}},
 	// The server's root and per-subcommand pages, plus its config page.
 	"ssoosshd": {packages: serverPackageIDs},
+	// The NSS daemon's root and per-subcommand pages.
+	"ssoosshd-nss": {packages: []string{"nss"}},
 }
 
 // ownerFor returns the owner key for a man page filename.
 func ownerFor(name string) string {
 	switch {
-	// Checked before "ssoossh": every server page name starts with the
-	// client's prefix too, so the order here is the whole discrimination.
+	// Longest prefix first: every NSS daemon page name starts with the
+	// server's prefix, and every server page name with the client's, so
+	// the order here is the whole discrimination.
+	case strings.HasPrefix(name, "ssoosshd-nss"):
+		return "ssoosshd-nss"
 	case strings.HasPrefix(name, "ssoosshd"):
 		return "ssoosshd"
 	case strings.HasPrefix(name, "ssoossh"):
@@ -625,6 +646,7 @@ func TestNFPMShouldInstallBinariesOutsideUsrLocal(t *testing.T) {
 		"client":        "/usr/bin",
 		"server":        "/usr/sbin",
 		"server-pkcs11": "/usr/sbin",
+		"nss":           "/usr/sbin",
 	}
 
 	for _, pkg := range loadGoreleaser(t).NFPMs {
