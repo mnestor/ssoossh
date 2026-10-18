@@ -69,7 +69,17 @@ func fullFixtures() map[string]any {
 		Disabled:      1,
 		Reenabled:     1,
 		Error:         "the directory refused the bind",
+		NSS: &webtypes.NSSSyncRunResponse{
+			Full:       true,
+			StartedAt:  issuedAt.Add(2 * time.Minute),
+			FinishedAt: &syncFinishedAt,
+			Accounts:   webtypes.NSSSyncCountsResponse{Seen: 120, Skipped: 1, Created: 3, Updated: 115, Refused: 1, Failed: 1, Missing: 2, Tombstoned: 1},
+			Groups:     webtypes.NSSSyncCountsResponse{Seen: 40, Skipped: 2, Created: 1, Updated: 36, Refused: 1, Failed: 1, Missing: 1, Tombstoned: 1},
+			Error:      "another NSS sync was still running",
+		},
 	}
+	pendingUID, pendingGID := uint32(20001), uint32(20002)
+	missingSince, deletedAt := issuedAt.Add(-48*time.Hour), issuedAt.Add(-24*time.Hour)
 	callerUID, callerGID, callerPID, callerPPID := int64(1000), int64(1000), int64(4242), int64(4200)
 
 	return map[string]any{
@@ -275,6 +285,40 @@ func fullFixtures() map[string]any {
 			LastRun:               &syncRun,
 		},
 		"ldap_sync_run": syncRun,
+		"nss_pending_id_changes": webtypes.NSSPendingIDChangesResponse{
+			Users: []webtypes.NSSPendingUserIDChange{{
+				Name: "ada.lovelace", DN: "uid=ada.lovelace,ou=people,dc=example,dc=net", UID: 10001, GID: 10001,
+				PendingUID: &pendingUID, PendingGID: &pendingGID, PendingSince: issuedAt,
+			}},
+			Groups: []webtypes.NSSPendingGroupIDChange{{
+				Name: "engineering", DN: "cn=engineering,ou=groups,dc=example,dc=net", GID: 5000, PendingGID: 5001, PendingSince: issuedAt,
+			}},
+		},
+		"nss_accepted_user_id_change": webtypes.NSSAcceptedUserIDChangeResponse{
+			Name: "ada.lovelace", DN: "uid=ada.lovelace,ou=people,dc=example,dc=net", UID: 20001, GID: 20002,
+		},
+		"nss_accepted_group_id_change": webtypes.NSSAcceptedGroupIDChangeResponse{
+			Name: "engineering", DN: "cn=engineering,ou=groups,dc=example,dc=net", GID: 5001,
+		},
+		"nss_collisions": webtypes.NSSCollisionsResponse{
+			Collisions: []webtypes.NSSCollisionResponse{{
+				Kind:  "uid",
+				Value: "10001",
+				Holder: webtypes.NSSCollisionEntryResponse{
+					Name: "ada.lovelace", DN: "uid=ada.lovelace,ou=people,dc=example,dc=net", Number: 10001,
+					Stored: true, Tombstone: true, MissingSince: &missingSince, DeletedAt: &deletedAt,
+				},
+				Other: webtypes.NSSCollisionEntryResponse{
+					Name: "ada", DN: "uid=ada,ou=contractors,dc=example,dc=net", Number: 10001,
+					Stored: true, Tombstone: true, MissingSince: &missingSince, DeletedAt: &deletedAt,
+				},
+				FirstSeenAt: issuedAt.Add(-time.Hour),
+				LastSeenAt:  issuedAt,
+			}},
+		},
+		"nss_purged_tombstone": webtypes.NSSPurgedTombstoneResponse{
+			Name: "ada.lovelace", DN: "uid=ada.lovelace,ou=people,dc=example,dc=net", Number: 10001,
+		},
 		"ldap_probe": webtypes.LDAPProbeResponse{
 			BaseDN:      "dc=example,dc=net",
 			FilterSent:  "(&(objectClass=person)(uid=alice))",
@@ -335,17 +379,22 @@ func fullFixtures() map[string]any {
 // reaches production.
 func zeroFixtures() map[string]any {
 	return map[string]any{
-		"current_user":             webtypes.CurrentUserResponse{},
-		"certificate_options":      webtypes.CertificateOptionsResponse{},
-		"request_detail":           webtypes.RequestDetailResponse{},
-		"certificate":              webtypes.CertificateResponse{},
-		"service_enrollment":       webtypes.ServiceEnrollmentResponse{},
-		"enrollment_retrievals":    webtypes.EnrollmentRetrievalsResponse{},
-		"notification_preferences": webtypes.NotificationPreferencesResponse{},
-		"display_preferences":      webtypes.DisplayPreferencesResponse{},
-		"ldap_status":              webtypes.LDAPStatusResponse{},
-		"ldap_sync_run":            webtypes.LDAPSyncRunResponse{},
-		"ldap_probe":               webtypes.LDAPProbeResponse{},
+		"current_user":                 webtypes.CurrentUserResponse{},
+		"certificate_options":          webtypes.CertificateOptionsResponse{},
+		"request_detail":               webtypes.RequestDetailResponse{},
+		"certificate":                  webtypes.CertificateResponse{},
+		"service_enrollment":           webtypes.ServiceEnrollmentResponse{},
+		"enrollment_retrievals":        webtypes.EnrollmentRetrievalsResponse{},
+		"notification_preferences":     webtypes.NotificationPreferencesResponse{},
+		"display_preferences":          webtypes.DisplayPreferencesResponse{},
+		"ldap_status":                  webtypes.LDAPStatusResponse{},
+		"ldap_sync_run":                webtypes.LDAPSyncRunResponse{},
+		"ldap_probe":                   webtypes.LDAPProbeResponse{},
+		"nss_pending_id_changes":       webtypes.NSSPendingIDChangesResponse{},
+		"nss_accepted_user_id_change":  webtypes.NSSAcceptedUserIDChangeResponse{},
+		"nss_accepted_group_id_change": webtypes.NSSAcceptedGroupIDChangeResponse{},
+		"nss_collisions":               webtypes.NSSCollisionsResponse{},
+		"nss_purged_tombstone":         webtypes.NSSPurgedTombstoneResponse{},
 	}
 }
 

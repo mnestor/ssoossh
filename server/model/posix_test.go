@@ -90,6 +90,7 @@ func TestPosixModels_ShouldNameTheirMigrationTableWhenAskedForTableName(t *testi
 		{name: "should map PosixUser to posix_users when asked", model: PosixUser{}, want: "posix_users"},
 		{name: "should map PosixGroup to posix_groups when asked", model: PosixGroup{}, want: "posix_groups"},
 		{name: "should map PosixGroupMember to posix_group_members when asked", model: PosixGroupMember{}, want: "posix_group_members"},
+		{name: "should map NSSCollision to nss_collisions when asked", model: NSSCollision{}, want: "nss_collisions"},
 	}
 
 	for _, tt := range tests {
@@ -170,6 +171,7 @@ func TestPosixUser_ShouldRefuseASecondRowWhenAUniqueValueIsAlreadyHeld(t *testin
 		{name: "should refuse the row when the uid is held", mutate: func(r *PosixUser, _ string) { r.UID = first.UID }, wantErr: true},
 		{name: "should refuse the row when the name is held", mutate: func(r *PosixUser, _ string) { r.Name = first.Name }, wantErr: true},
 		{name: "should refuse the row when the dn is held", mutate: func(r *PosixUser, _ string) { r.DN = first.DN }, wantErr: true},
+		{name: "should accept the row when its dn is released and the holder's is not", mutate: func(r *PosixUser, _ string) { r.DN = "" }, wantErr: false},
 		{name: "should refuse the row when the person is already linked", linkHolder: true, mutate: func(r *PosixUser, id string) { r.UserID = &id }, wantErr: true},
 		{name: "should accept the row when neither row is linked to a person", mutate: func(*PosixUser, string) {}, wantErr: false},
 	}
@@ -216,14 +218,17 @@ func TestPosixGroup_ShouldRoundTripEveryColumnWhenStoredAndReadBack(t *testing.T
 			row: PosixGroup{
 				ID: "pg-1", GID: 20000, PendingGID: ptr(uint32(20001)), PendingSince: at(time.Hour),
 				Name: "engineering", DirectoryID: "a1b2-entry", DN: "cn=engineering,ou=groups,dc=example",
-				Synthetic: true, MissingSince: at(3 * time.Hour), DeletedAt: at(4 * time.Hour),
+				MissingSince: at(3 * time.Hour), DeletedAt: at(4 * time.Hour),
 				WithheldAt: at(2 * time.Hour), WithheldReason: "gid 20000 is also carried by cn=eng,dc=example",
-				CreatedAt: nssTestTime(), UpdatedAt: nssTestTime().Add(time.Minute), LastSyncedAt: at(5 * time.Hour),
+				CreatedAt: nssTestTime(), UpdatedAt: nssTestTime().Add(time.Minute), LastSyncedAt: nssTestTime().Add(5 * time.Hour),
 			},
 		},
 		{
 			name: "should keep nil nullable fields nil when none of them are set",
-			row:  PosixGroup{ID: "pg-2", GID: math.MaxUint32, Name: "ada.lovelace", CreatedAt: nssTestTime(), UpdatedAt: nssTestTime()},
+			row: PosixGroup{
+				ID: "pg-2", GID: math.MaxUint32, Name: "ada.lovelace", DN: "cn=ada.lovelace,dc=example",
+				CreatedAt: nssTestTime(), UpdatedAt: nssTestTime(), LastSyncedAt: nssTestTime(),
+			},
 		},
 	}
 
@@ -262,6 +267,135 @@ func TestPosixGroupMember_ShouldRoundTripWhenStoredAndReadBack(t *testing.T) {
 			}
 			if len(got) != 1 || got[0] != tt.row {
 				t.Errorf("rows = %+v, want exactly %+v", got, tt.row)
+			}
+		})
+	}
+}
+
+func TestPosixGroup_ShouldRefuseASecondRowWhenAUniqueValueIsAlreadyHeld(t *testing.T) {
+	t.Parallel()
+
+	first := PosixGroup{
+		ID: "pg-holder", GID: 7000, Name: "devs", DN: "cn=devs,dc=example",
+		CreatedAt: nssTestTime(), UpdatedAt: nssTestTime(), LastSyncedAt: nssTestTime(),
+	}
+	tests := []struct {
+		name    string
+		mutate  func(row *PosixGroup)
+		wantErr bool
+	}{
+		{name: "should refuse the row when the gid is held", mutate: func(r *PosixGroup) { r.GID = first.GID }, wantErr: true},
+		{name: "should refuse the row when the name is held", mutate: func(r *PosixGroup) { r.Name = first.Name }, wantErr: true},
+		{name: "should refuse the row when the dn is held", mutate: func(r *PosixGroup) { r.DN = first.DN }, wantErr: true},
+		{name: "should accept the row when its dn is released", mutate: func(r *PosixGroup) { r.DN = "" }, wantErr: false},
+		{name: "should accept the row when nothing it holds is taken", mutate: func(*PosixGroup) {}, wantErr: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			db := testdb.New(t)
+			holder := first
+			if err := db.Create(&holder).Error; err != nil {
+				t.Fatalf("create holder: %v", err)
+			}
+			second := PosixGroup{
+				ID: "pg-second", GID: 7001, Name: "ops", DN: "cn=ops,dc=example",
+				CreatedAt: nssTestTime(), UpdatedAt: nssTestTime(), LastSyncedAt: nssTestTime(),
+			}
+			tt.mutate(&second)
+			err := db.Create(&second).Error
+			if tt.wantErr && !errors.Is(err, gorm.ErrDuplicatedKey) {
+				t.Errorf("create = %v, want a duplicated key error", err)
+			}
+			if !tt.wantErr && err != nil {
+				t.Errorf("create = %v, want success", err)
+			}
+		})
+	}
+}
+
+func TestPosixGroup_ShouldAcceptSeveralReleasedDNsWhenEachIsEmpty(t *testing.T) {
+	t.Parallel()
+
+	db := testdb.New(t)
+	for i, id := range []string{"pg-a", "pg-b"} {
+		row := PosixGroup{
+			ID: id, GID: uint32(8000 + i), Name: id, DN: "",
+			CreatedAt: nssTestTime(), UpdatedAt: nssTestTime(), LastSyncedAt: nssTestTime(),
+		}
+		if err := db.Create(&row).Error; err != nil {
+			t.Fatalf("create %s: %v", id, err)
+		}
+	}
+}
+
+func TestNSSCollision_ShouldRoundTripEveryColumnWhenStoredAndReadBack(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		row  NSSCollision
+	}{
+		{
+			name: "should keep every field when the other entry is stored too",
+			row: NSSCollision{
+				Kind: NSSCollisionUserName, HolderID: "pu-1", OtherDN: "uid=alice,ou=people,dc=example",
+				Value: "alice", OtherID: ptr("pu-2"), OtherName: "alice", OtherNumber: math.MaxUint32,
+				FirstSeenAt: nssTestTime(), LastSeenAt: nssTestTime().Add(time.Hour),
+			},
+		},
+		{
+			name: "should keep the other row nil when the other entry was refused",
+			row: NSSCollision{
+				Kind: NSSCollisionGID, HolderID: "pg-1", OtherDN: "cn=dup,dc=example", Value: "20000",
+				OtherName: "dup", OtherNumber: 20000, FirstSeenAt: nssTestTime(), LastSeenAt: nssTestTime(),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			assertRoundTrip(t, testdb.New(t), tt.row)
+		})
+	}
+}
+
+func TestNSSCollision_ShouldRefuseTheRowWhenTheKindIsUnknown(t *testing.T) {
+	t.Parallel()
+
+	db := testdb.New(t)
+	row := NSSCollision{
+		Kind: "shoe_size", HolderID: "pu-1", OtherDN: "uid=x,dc=example", Value: "9",
+		FirstSeenAt: nssTestTime(), LastSeenAt: nssTestTime(),
+	}
+	if err := db.Create(&row).Error; err == nil {
+		t.Error("create accepted a kind outside the CHECK constraint")
+	}
+}
+
+func TestNSSCollisionKind_ShouldReportTheGroupTableWhenTheKindIsAboutGroups(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		kind NSSCollisionKind
+		want bool
+	}{
+		{name: "should report accounts when the kind is uid", kind: NSSCollisionUID, want: false},
+		{name: "should report accounts when the kind is user_name", kind: NSSCollisionUserName, want: false},
+		{name: "should report groups when the kind is gid", kind: NSSCollisionGID, want: true},
+		{name: "should report groups when the kind is group_name", kind: NSSCollisionGroupName, want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := tt.kind.ForGroups(); got != tt.want {
+				t.Errorf("ForGroups() = %v, want %v", got, tt.want)
 			}
 		})
 	}

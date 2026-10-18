@@ -2,6 +2,198 @@
 import type { CertificateType, CertificateRequestStatus, DetailLevel } from './enums';
 
 //////////
+// source: nss_admin.go
+
+/**
+ * NSSSyncRunResponse is what one NSS directory sync run concluded.
+ */
+export interface NSSSyncRunResponse {
+	/**
+	 * Full is true for a full run, which is the only kind that marks
+	 * entries missing; the admin trigger always runs one.
+	 */
+	full: boolean;
+	started_at: string;
+	/**
+	 * FinishedAt is absent when the run stopped on an error.
+	 */
+	finished_at?: string;
+	accounts: NSSSyncCountsResponse;
+	groups: NSSSyncCountsResponse;
+	/**
+	 * Error is why the run stopped short: the directory could not be
+	 * reached or searched, or another run was in progress on this
+	 * instance. Nothing is marked missing by a run that stopped short.
+	 */
+	error?: string;
+}
+/**
+ * NSSSyncCountsResponse is what one run did to the accounts or the groups.
+ */
+export interface NSSSyncCountsResponse {
+	/**
+	 * Seen is the entries the directory returned.
+	 */
+	seen: number /* int */;
+	/**
+	 * Skipped is the entries rejected because a value did not parse (a
+	 * name the POSIX rules refuse, a uid that is not a number, a relative
+	 * home); each is logged with its DN.
+	 */
+	skipped: number /* int */;
+	created: number /* int */;
+	updated: number /* int */;
+	/**
+	 * Refused is the new entries not stored because another row, a
+	 * tombstone included, holds their number or name.
+	 */
+	refused: number /* int */;
+	/**
+	 * Failed is the entries that could not be checked or written.
+	 */
+	failed: number /* int */;
+	/**
+	 * Missing is the rows marked missing for the first time; Tombstoned
+	 * the rows missing for nss.tombstone_after and now deleted.
+	 */
+	missing: number /* int */;
+	tombstoned: number /* int */;
+}
+/**
+ * NSSPendingIDChangesResponse is GET /api/admin/nss/pending-id-changes:
+ * every account and group whose directory entry now gives a stored uid or
+ * gid a different value. The stored value is what hosts are served until
+ * an admin accepts the change or the directory reverts.
+ */
+export interface NSSPendingIDChangesResponse {
+	users: NSSPendingUserIDChange[];
+	groups: NSSPendingGroupIDChange[];
+}
+/**
+ * NSSPendingUserIDChange is one account with a pending uid, gid or both.
+ */
+export interface NSSPendingUserIDChange {
+	name: string;
+	dn: string;
+	/**
+	 * UID and GID are the stored values, still served.
+	 */
+	uid: number /* uint32 */;
+	gid: number /* uint32 */;
+	/**
+	 * PendingUID and PendingGID are the directory's values, absent when
+	 * that number has not changed.
+	 */
+	pending_uid?: number /* uint32 */;
+	pending_gid?: number /* uint32 */;
+	/**
+	 * PendingSince is the first sync that saw the pending value.
+	 */
+	pending_since: string;
+}
+/**
+ * NSSPendingGroupIDChange is one group with a pending gid.
+ */
+export interface NSSPendingGroupIDChange {
+	name: string;
+	dn: string;
+	gid: number /* uint32 */;
+	pending_gid: number /* uint32 */;
+	pending_since: string;
+}
+/**
+ * NSSAcceptedUserIDChangeResponse is the account after
+ * POST /api/admin/nss/users/{uid}/accept-id-change.
+ */
+export interface NSSAcceptedUserIDChangeResponse {
+	name: string;
+	dn: string;
+	uid: number /* uint32 */;
+	gid: number /* uint32 */;
+}
+/**
+ * NSSAcceptedGroupIDChangeResponse is the group after
+ * POST /api/admin/nss/groups/{gid}/accept-id-change.
+ */
+export interface NSSAcceptedGroupIDChangeResponse {
+	name: string;
+	dn: string;
+	gid: number /* uint32 */;
+}
+/**
+ * NSSCollisionsResponse is GET /api/admin/nss/collisions: every pair of
+ * directory entries contending for one uid, gid or name, oldest first.
+ * Neither entry of a pair is served while it lasts.
+ */
+export interface NSSCollisionsResponse {
+	collisions: NSSCollisionResponse[];
+}
+/**
+ * NSSCollisionResponse is one collision.
+ */
+export interface NSSCollisionResponse {
+	/**
+	 * Kind is the contested value: uid or user_name between accounts, gid
+	 * or group_name between groups.
+	 */
+	kind: string;
+	/**
+	 * Value is the contested uid, gid or name, as text.
+	 */
+	value: string;
+	/**
+	 * Holder is the stored row holding the value; Other the entry
+	 * contending for it.
+	 */
+	holder: NSSCollisionEntryResponse;
+	other: NSSCollisionEntryResponse;
+	first_seen_at: string;
+	last_seen_at: string;
+}
+/**
+ * NSSCollisionEntryResponse is one side of a collision.
+ */
+export interface NSSCollisionEntryResponse {
+	name: string;
+	dn: string;
+	/**
+	 * Number is the uid (accounts) or gid (groups) the entry carries.
+	 */
+	number: number /* uint32 */;
+	/**
+	 * Stored is false for an entry the sync refused to store because the
+	 * holder has its number or name; it is known only by what it carried.
+	 */
+	stored: boolean;
+	/**
+	 * Tombstone is true for a stored row the directory no longer has and
+	 * that is kept, holding its number and name, until
+	 * nss.tombstone_retention or an admin purges it.
+	 */
+	tombstone: boolean;
+	/**
+	 * MissingSince and DeletedAt are the stored row's, absent while it
+	 * resolves.
+	 */
+	missing_since?: string;
+	deleted_at?: string;
+}
+/**
+ * NSSPurgedTombstoneResponse is the row
+ * DELETE /api/admin/nss/users/{uid}/tombstone or
+ * /api/admin/nss/groups/{gid}/tombstone removed. Its number and name are
+ * free from then on.
+ */
+export interface NSSPurgedTombstoneResponse {
+	name: string;
+	dn: string;
+	/**
+	 * Number is the uid or gid the row held.
+	 */
+	number: number /* uint32 */;
+}
+
+//////////
 // source: webtypes.go
 /*
 Package webtypes holds the JSON response shapes the web UI consumes.
@@ -1588,6 +1780,13 @@ export interface LDAPSyncRunResponse {
 	 * about individual users.
 	 */
 	error?: string;
+	/**
+	 * NSS is what the NSS directory's full sync concluded when an admin
+	 * ran this pass by hand with nss.enabled on: POST /api/admin/ldap/sync
+	 * runs both, except on a dry run. Absent otherwise, and on every
+	 * scheduled pass, which the NSS sync does not ride on.
+	 */
+	nss?: NSSSyncRunResponse;
 }
 /**
  * LDAPStatusResponse answers "is the sync even running", and describes the

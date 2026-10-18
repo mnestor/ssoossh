@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -28,6 +29,19 @@ const ldapSyncJobName = "ldap-directory-sync"
 
 // expiryReminderJobName identifies the enrollment expiry reminder sweep.
 const expiryReminderJobName = "enrollment-expiry-reminder"
+
+// NSS directory job names: the incremental and full syncs and the
+// tombstone purge.
+const (
+	nssIncrementalSyncJobName = "nss-directory-incremental-sync"
+	nssFullSyncJobName        = "nss-directory-full-sync"
+	nssTombstonePurgeJobName  = "nss-tombstone-purge"
+)
+
+// nssTombstonePurgeInterval is how often the NSS tombstone purge runs.
+// Retention is measured in days, so an hour late is nothing, and the sweep
+// is one indexed query when nothing is due.
+const nssTombstonePurgeInterval = time.Hour
 
 // expiryReminderSweepDivisor sets the reminder sweep's interval as a
 // fraction of the shortest reminder cadence (the daily one, or the lead
@@ -62,7 +76,67 @@ func (a *app) registerJobs(ctx context.Context) error {
 	if err := a.registerExpiryReminderJob(ctx); err != nil {
 		return err
 	}
-	return a.registerLDAPSyncJob(ctx)
+	if err := a.registerLDAPSyncJob(ctx); err != nil {
+		return err
+	}
+	return a.registerNSSJobs(ctx)
+}
+
+// registerNSSJobs schedules the NSS directory's jobs: the incremental sync
+// every nss.sync_interval, the full sync every nss.full_sync_interval
+// (either skipped at zero), and the hourly tombstone purge. Nothing when
+// NSS is disabled. Registered in serve and serve api, which call
+// registerJobs; sign has no scheduler.
+//
+// Not run inline at startup, as the LDAP sync is not: the first
+// incremental run, one interval after start, runs as a full sync because
+// this instance has no earlier run to read changes since.
+func (a *app) registerNSSJobs(ctx context.Context) error {
+	if a.svc.nss == nil {
+		return nil
+	}
+	nss := a.svc.nss
+	jobs := []struct {
+		name     string
+		interval time.Duration
+		run      func(context.Context) error
+	}{
+		{nssIncrementalSyncJobName, a.config.NSS.SyncInterval, func(c context.Context) error {
+			_, err := nss.IncrementalSync(c)
+			return nssSyncJobError(c, err)
+		}},
+		{nssFullSyncJobName, a.config.NSS.FullSyncInterval, func(c context.Context) error {
+			_, err := nss.FullSync(c)
+			return nssSyncJobError(c, err)
+		}},
+		{nssTombstonePurgeJobName, nssTombstonePurgeInterval, func(c context.Context) error {
+			_, err := nss.PurgeTombstones(c)
+			return err
+		}},
+	}
+	for _, job := range jobs {
+		if job.interval <= 0 {
+			slog.DebugContext(ctx, "nss job not registered: its interval is zero", slog.String("job", job.name))
+			continue
+		}
+		if err := a.scheduler.RegisterJob(ctx, job.name, gocron.DurationJob(job.interval), job.run, service.RegisterJobOpts{}); err != nil {
+			return fmt.Errorf("failed to register %s: %w", job.name, err)
+		}
+		slog.DebugContext(ctx, "registered an NSS directory job",
+			slog.String("job", job.name), slog.Duration("interval", job.interval))
+	}
+	return nil
+}
+
+// nssSyncJobError is a scheduled sync's result for the job wrapper. A run
+// skipped because another is still going (a full sync outlasting the
+// incremental interval) is routine, not a failure to log as one.
+func nssSyncJobError(ctx context.Context, err error) error {
+	if errors.Is(err, service.ErrNSSSyncInProgress) {
+		slog.InfoContext(ctx, "nss sync skipped: another run is still going on this instance")
+		return nil
+	}
+	return err
 }
 
 // registerExpiryReminderJob schedules the enrollment expiry reminder sweep,

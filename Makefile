@@ -76,7 +76,7 @@ pre-pr: fmt lint-fix check-generated ci-required ## Format, autofix, then run ev
 # `lint-tagged` and `lint-cross` are the reason this target exists rather
 # than people running `lint` and `test` by hand. `lint` passes no build tags
 # and `test` does not build the tagged suites, so a suite behind `e2e`,
-# `resilience`, `load`, `softhsm` or `natsintegration` can fail
+# `resilience`, `load`, `softhsm`, `natsintegration` or `ldaplive` can fail
 # to compile outright while both report success. `lint` also runs with the
 # host GOOS, so nothing here sees the Windows or macOS build at all. Any
 # hand-assembled subset that omits either will believe it has coverage it
@@ -390,7 +390,7 @@ lint: ## golangci-lint over the whole module (merge gate)
 # One invocation per tag set rather than a single combined one: the tags
 # select mutually exclusive views of the tree in places, so a combined run
 # does not typecheck.
-LINT_TAGGED := e2e resilience load hsm softhsm natsintegration
+LINT_TAGGED := e2e resilience load hsm softhsm natsintegration ldaplive
 
 .PHONY: lint-tagged
 lint-tagged: ## golangci-lint over the build-tagged suites lint(1) cannot see

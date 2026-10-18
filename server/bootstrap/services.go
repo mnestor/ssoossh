@@ -33,6 +33,9 @@ type services struct {
 	// ldap is nil when directory enrichment is disabled, which every
 	// consumer treats as "no enrichment" rather than branching on config.
 	ldap *service.LDAPService
+	// nss is nil when the NSS directory is disabled, on the same terms as
+	// ldap.
+	nss *service.NSSDirectoryService
 	// identity re-reads the stored half of a session identity on each
 	// request. Always present: it answers the same question with or
 	// without a directory, just from fewer sources.
@@ -62,6 +65,13 @@ func (a *app) initServices() (*services, error) {
 		return nil, err
 	}
 	svc.ldap = ldapSvc
+	// After the LDAP service for the same reason: a bad NSS filter or gecos
+	// template is a startup error with its own message.
+	nssSvc, err := service.NewNSSDirectoryService(a.config, a.db)
+	if err != nil {
+		return nil, err
+	}
+	svc.nss = nssSvc
 	svc.caKeyRegistry = service.NewCAKeyRegistry(a.db, 15*time.Minute)
 
 	g := new(errgroup.Group)
@@ -114,7 +124,10 @@ func (a *app) initServices() (*services, error) {
 	svc.enrollment.SetAuditor(svc.audit)
 	svc.auth.SetAuditor(svc.audit)
 	svc.ldap.SetAuditor(svc.audit)
+	svc.nss.SetAuditor(svc.audit)
 	svc.auth.SetLDAP(svc.ldap)
+	// A login links the person to the POSIX account their entry carries.
+	svc.ldap.SetNSSDirectory(svc.nss)
 
 	// Built last of the plain constructors because it reads through the
 	// directory service, and after it so a nil svc.ldap here means the same

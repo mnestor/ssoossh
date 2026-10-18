@@ -34,7 +34,9 @@ type fakeDirectory struct {
 	dialErr error
 	// searches records every filter the code issued.
 	searches []string
-	closed   bool
+	// pagedSizes records the page size of every paged search.
+	pagedSizes []uint32
+	closed     bool
 }
 
 func (f *fakeDirectory) Search(req *ldap.SearchRequest) (*ldap.SearchResult, error) {
@@ -53,6 +55,13 @@ func (f *fakeDirectory) Search(req *ldap.SearchRequest) (*ldap.SearchResult, err
 		return nil, ldap.NewError(ldap.LDAPResultNoSuchObject, errors.New("no such object"))
 	}
 	return &ldap.SearchResult{Entries: f.entries}, nil
+}
+
+// SearchWithPaging answers a paged search the way Search answers any
+// search: the fake has no pages, so every entry comes back at once.
+func (f *fakeDirectory) SearchWithPaging(req *ldap.SearchRequest, pagingSize uint32) (*ldap.SearchResult, error) {
+	f.pagedSizes = append(f.pagedSizes, pagingSize)
+	return f.Search(req)
 }
 
 func (f *fakeDirectory) Close() error { f.closed = true; return nil }

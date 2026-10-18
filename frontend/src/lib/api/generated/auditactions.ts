@@ -194,3 +194,47 @@ export const AuditLDAPProbed: AuditAction = "ldap.probed";
  * the worst status each check reached.
  */
 export const AuditAdminDiagnosticsRun: AuditAction = "admin.diagnostics_run";
+/**
+ * AuditNSSUIDCollision is two directory accounts carrying one uid.
+ * Neither is served while it lasts: the stored one is withheld and the
+ * other is not stored. A tombstone holds its uid, so a new entry
+ * presenting it collides too.
+ */
+export const AuditNSSUIDCollision: AuditAction = "nss.uid_collision";
+/**
+ * AuditNSSGIDCollision is the same for two directory groups and a gid.
+ */
+export const AuditNSSGIDCollision: AuditAction = "nss.gid_collision";
+/**
+ * AuditNSSNameCollision is two accounts, or two groups, carrying one
+ * name, including a rename onto a name another row holds. The detail's
+ * "table" says which.
+ */
+export const AuditNSSNameCollision: AuditAction = "nss.name_collision";
+/**
+ * AuditNSSIDChangePending is a stored uid or gid the directory now
+ * gives a different value. The stored value keeps being served until
+ * an admin accepts the change (nss.id_change_accepted) or the
+ * directory reverts.
+ */
+export const AuditNSSIDChangePending: AuditAction = "nss.id_change_pending";
+/**
+ * AuditNSSNameMismatch is a person whose username differs from the
+ * POSIX name of the account linked to them, so a certificate for their
+ * own name can never resolve on a host. Raised at login; the target is
+ * the person.
+ */
+export const AuditNSSNameMismatch: AuditAction = "nss.name_mismatch";
+/**
+ * AuditNSSIDChangeAccepted is an admin applying a pending uid or gid
+ * change, which re-keys the account's or group's memberships in the
+ * same transaction. Hosts see the new number only after it.
+ */
+export const AuditNSSIDChangeAccepted: AuditAction = "nss.id_change_accepted";
+/**
+ * AuditNSSTombstonePurged is a tombstoned account or group deleted,
+ * freeing its number and name: by the server once
+ * nss.tombstone_retention has passed (System), or early by an admin.
+ * One event per row, naming it.
+ */
+export const AuditNSSTombstonePurged: AuditAction = "nss.tombstone_purged";

@@ -79,10 +79,11 @@ type NSSConfig struct {
 	Enabled bool `mapstructure:"enabled" default:"false"`
 
 	// UserFilter is the LDAP filter that selects POSIX accounts under
-	// ldap.base_dn. A plain RFC 4515 filter, not a template: the sync
-	// enumerates it, and an on-demand lookup ANDs it with an equality on
-	// the name or uid attribute. Required when nss.enabled is on; its
-	// syntax is checked when the server starts.
+	// ldap.base_dn. A plain RFC 4515 filter in parentheses, not a template:
+	// the sync enumerates it with paged searches, so ldap.limits does not
+	// cap it, and an on-demand lookup ANDs it with an equality on the name
+	// or uid attribute. Required when nss.enabled is on; its syntax is
+	// checked when the server starts.
 	UserFilter string `mapstructure:"user_filter" default:"(objectClass=posixAccount)"`
 
 	// GroupFilter is the LDAP filter that selects POSIX groups under
@@ -98,6 +99,23 @@ type NSSConfig struct {
 	// Empty means the directory never disables an account; a person's
 	// ssoossh disable still does.
 	DisabledFilter string `mapstructure:"disabled_filter" default:"" example:"\"(nsAccountLock=TRUE)\""`
+
+	// SyncInterval is how often the incremental sync runs: it reads only
+	// the accounts and groups whose modifyTimestamp is no older than five
+	// minutes before the last successful run on this instance began, so
+	// changes reach hosts within one interval. The first run after a
+	// start, and any run the directory refuses the modifyTimestamp filter
+	// for, is a full sync instead. Every instance runs its own. Zero
+	// disables the incremental sync.
+	SyncInterval time.Duration `mapstructure:"sync_interval,string" default:"15m"`
+
+	// FullSyncInterval is how often the full sync runs: it reads every
+	// account and group the filters select, which is the only run that
+	// notices an entry has gone (missing_since, then a tombstone after
+	// tombstone_after) and the only one that clears collisions whose other
+	// entry has gone. POST /api/admin/ldap/sync runs one too. Zero
+	// disables the scheduled full sync.
+	FullSyncInterval time.Duration `mapstructure:"full_sync_interval,string" default:"24h"`
 
 	// Attributes names the directory attribute each POSIX field is read
 	// from. See NSSAttributes.
@@ -170,19 +188,25 @@ type NSSConfig struct {
 
 	// MaxGroupMembers caps the members returned for one group. A larger
 	// group is truncated and flagged as truncated in the response, and the
-	// daemon logs it. Must be greater than zero.
+	// daemon logs it. The sync stores every member it can resolve to an
+	// account; this caps only what one lookup returns. Must be greater
+	// than zero.
 	MaxGroupMembers int `mapstructure:"max_group_members" default:"2000"`
 
 	// RateLimit is the lookups per second allowed for one fleet key from
-	// one connection address. Each server instance keeps its own buckets,
+	// one source address. The address is the one the server observes,
+	// honouring forwarded headers only from http.trusted_proxies, the same
+	// address the audit log records as source_ip; behind a load balancer
+	// listed there each host keeps its own bucket rather than all of them
+	// sharing the balancer's. Each server instance keeps its own buckets,
 	// so N instances behind a load balancer allow N times this. Must be
 	// greater than zero.
 	RateLimit float64 `mapstructure:"rate_limit" default:"20"`
 
-	// RateBurst is how many lookups one key and address may make back to
-	// back before RateLimit starts holding them back: a host starting up
-	// resolves many names at once. Must be greater than zero, since a zero
-	// burst refuses every lookup.
+	// RateBurst is how many lookups one key and source address (as for
+	// rate_limit) may make back to back before RateLimit starts holding
+	// them back: a host starting up resolves many names at once. Must be
+	// greater than zero, since a zero burst refuses every lookup.
 	RateBurst int `mapstructure:"rate_burst" default:"200"`
 
 	// MissAlertRate is the not-found lookups per second for one key above
@@ -207,10 +231,13 @@ type NSSConfig struct {
 	// rotation itself.
 	KeyRotationGrace time.Duration `mapstructure:"key_rotation_grace,string" default:"720h"`
 
-	// SourceAllowList limits the lookup endpoints to connections from
-	// these CIDR networks, checked before the key is: a connection from
-	// anywhere else is refused with an audit event that carries its
-	// address and the key id it presented. Empty allows every address.
+	// SourceAllowList limits the lookup endpoints to requests from these
+	// CIDR networks, checked before the key is: a request from anywhere
+	// else is refused with an audit event that carries its address and the
+	// key id it presented. The address is the one the server observes,
+	// honouring forwarded headers only from http.trusted_proxies, the same
+	// address the audit log records as source_ip; a forwarded header from
+	// any other peer is ignored. Empty allows every address.
 	SourceAllowList []string `mapstructure:"source_allow_list" default:"[]"`
 
 	// PrivilegedNameAlert lists account names whose lookup raises an audit
@@ -258,9 +285,14 @@ type NSSAttributes struct {
 	// GroupGID is a group's numeric gid. Frozen once stored, like uid.
 	GroupGID string `mapstructure:"group_gid" default:"gidNumber"`
 
-	// GroupMember lists a group's members: memberUid holds account names
-	// (RFC 2307); set member for groups whose members are DNs (RFC
-	// 2307bis), which are resolved against the accounts' DNs.
+	// GroupMember lists a group's members. Whether its values are names or
+	// DNs is decided by the attribute's name, case-insensitively: member
+	// and uniqueMember (RFC 2307bis, groupOfNames, groupOfUniqueNames)
+	// hold DNs, matched against the accounts' DNs as DNs, so case and the
+	// spacing around separators do not matter (a uniqueMember's optional
+	// #'...'B suffix is dropped); any other attribute, memberUid (RFC 2307)
+	// included, holds account names, matched byte for byte. A member that
+	// resolves to no account the sync has stored is left out.
 	GroupMember string `mapstructure:"group_member" default:"memberUid"`
 
 	// GecosAttributes are the only attributes nss.gecos_template may read,
@@ -407,6 +439,8 @@ func (c *NSSConfig) validateLimits() error {
 		{"tombstone_retention", c.TombstoneRetention},
 		{"usage_retention", c.UsageRetention},
 		{"key_rotation_grace", c.KeyRotationGrace},
+		{"sync_interval", c.SyncInterval},
+		{"full_sync_interval", c.FullSyncInterval},
 	}
 	for _, d := range durations {
 		if d.value < 0 {

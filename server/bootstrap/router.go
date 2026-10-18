@@ -525,8 +525,16 @@ func (a *app) registerRoutes(r *gin.Engine) error {
 	if a.svc.ldap != nil {
 		ldapDiagnostics = a.svc.ldap
 	}
-	controller.NewLDAPAdminController(apiGroup, a.config, a.db, ldapDiagnostics,
+	// Explicitly nil for the same reason, for the NSS directory.
+	var nssSync service.NSSDirectorySync
+	var nssAdmin service.NSSDirectoryAdmin
+	if a.svc.nss != nil {
+		nssSync = a.svc.nss
+		nssAdmin = a.svc.nss
+	}
+	controller.NewLDAPAdminController(apiGroup, a.config, a.db, ldapDiagnostics, nssSync,
 		sessionAuth, adminAuth, csrf, probeRateLimit, a.svc.audit)
+	controller.NewNSSAdminController(apiGroup, a.db, nssAdmin, sessionAuth, adminAuth, csrf)
 	controller.NewIdentityEchoController(apiGroup, a.svc.auth, sessionAuth, adminAuth, csrf)
 
 	// The diagnostics run makes the server open an outbound connection to

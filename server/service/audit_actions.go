@@ -138,4 +138,41 @@ const (
 	// outbound connection (to its own public URL), so it is recorded with
 	// the worst status each check reached.
 	AuditAdminDiagnosticsRun AuditAction = "admin.diagnostics_run"
+
+	// The NSS directory's alerts. The server raises each itself (System,
+	// no actor), at most once a day per contested value, row or person
+	// across every instance, and keeps raising it daily while the
+	// condition lasts; the detail names the entries involved.
+
+	// AuditNSSUIDCollision is two directory accounts carrying one uid.
+	// Neither is served while it lasts: the stored one is withheld and the
+	// other is not stored. A tombstone holds its uid, so a new entry
+	// presenting it collides too.
+	AuditNSSUIDCollision AuditAction = "nss.uid_collision"
+	// AuditNSSGIDCollision is the same for two directory groups and a gid.
+	AuditNSSGIDCollision AuditAction = "nss.gid_collision"
+	// AuditNSSNameCollision is two accounts, or two groups, carrying one
+	// name, including a rename onto a name another row holds. The detail's
+	// "table" says which.
+	AuditNSSNameCollision AuditAction = "nss.name_collision"
+	// AuditNSSIDChangePending is a stored uid or gid the directory now
+	// gives a different value. The stored value keeps being served until
+	// an admin accepts the change (nss.id_change_accepted) or the
+	// directory reverts.
+	AuditNSSIDChangePending AuditAction = "nss.id_change_pending"
+	// AuditNSSNameMismatch is a person whose username differs from the
+	// POSIX name of the account linked to them, so a certificate for their
+	// own name can never resolve on a host. Raised at login; the target is
+	// the person.
+	AuditNSSNameMismatch AuditAction = "nss.name_mismatch"
+
+	// AuditNSSIDChangeAccepted is an admin applying a pending uid or gid
+	// change, which re-keys the account's or group's memberships in the
+	// same transaction. Hosts see the new number only after it.
+	AuditNSSIDChangeAccepted AuditAction = "nss.id_change_accepted"
+	// AuditNSSTombstonePurged is a tombstoned account or group deleted,
+	// freeing its number and name: by the server once
+	// nss.tombstone_retention has passed (System), or early by an admin.
+	// One event per row, naming it.
+	AuditNSSTombstonePurged AuditAction = "nss.tombstone_purged"
 )

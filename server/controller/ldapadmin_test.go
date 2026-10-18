@@ -79,6 +79,13 @@ func ldapAdminTestConfig() *config.Config {
 // middleware and the given identity.
 func ldapRouter(t *testing.T, cfg *config.Config, db *gorm.DB, identity *service.Identity, diagnostics service.LDAPDiagnostics) *gin.Engine {
 	t.Helper()
+	return ldapRouterWithNSS(t, cfg, db, identity, diagnostics, nil)
+}
+
+// ldapRouterWithNSS is ldapRouter with the NSS directory's sync attached,
+// as router.go attaches it when nss.enabled is on.
+func ldapRouterWithNSS(t *testing.T, cfg *config.Config, db *gorm.DB, identity *service.Identity, diagnostics service.LDAPDiagnostics, nss service.NSSDirectorySync) *gin.Engine {
+	t.Helper()
 	gin.SetMode(gin.TestMode)
 
 	r := gin.New()
@@ -90,6 +97,7 @@ func ldapRouter(t *testing.T, cfg *config.Config, db *gorm.DB, identity *service
 		cfg,
 		db,
 		diagnostics,
+		nss,
 		identityMiddleware(identity),
 		middleware.NewAdminAuthMiddleware(cfg).Add(),
 		func(c *gin.Context) { c.Next() },

@@ -65,6 +65,13 @@ var auditActions = []AuditAction{
 	AuditLDAPSyncTriggered,
 	AuditLDAPProbed,
 	AuditAdminDiagnosticsRun,
+	AuditNSSUIDCollision,
+	AuditNSSGIDCollision,
+	AuditNSSNameCollision,
+	AuditNSSIDChangePending,
+	AuditNSSNameMismatch,
+	AuditNSSIDChangeAccepted,
+	AuditNSSTombstonePurged,
 }
 
 // IsAuditAction reports whether action is in the taxonomy, including the

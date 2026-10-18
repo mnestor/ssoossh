@@ -12,5 +12,31 @@
   "failed": 1,
   "disabled": 1,
   "reenabled": 1,
-  "error": "the directory refused the bind"
+  "error": "the directory refused the bind",
+  "nss": {
+    "full": true,
+    "started_at": "2026-08-14T09:32:00+02:00",
+    "finished_at": "2026-08-14T09:31:30+02:00",
+    "accounts": {
+      "seen": 120,
+      "skipped": 1,
+      "created": 3,
+      "updated": 115,
+      "refused": 1,
+      "failed": 1,
+      "missing": 2,
+      "tombstoned": 1
+    },
+    "groups": {
+      "seen": 40,
+      "skipped": 2,
+      "created": 1,
+      "updated": 36,
+      "refused": 1,
+      "failed": 1,
+      "missing": 1,
+      "tombstoned": 1
+    },
+    "error": "another NSS sync was still running"
+  }
 }

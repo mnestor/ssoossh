@@ -27,6 +27,13 @@ import {
 	AuditEnrollmentRedeemed,
 	AuditLDAPProbed,
 	AuditLDAPSyncTriggered,
+	AuditNSSGIDCollision,
+	AuditNSSIDChangeAccepted,
+	AuditNSSIDChangePending,
+	AuditNSSNameCollision,
+	AuditNSSNameMismatch,
+	AuditNSSTombstonePurged,
+	AuditNSSUIDCollision,
 	AuditUserAutoDisabled,
 	AuditUserDisableRefused,
 	AuditUserDisabled,
@@ -119,7 +126,20 @@ export const auditPhrasing: Record<string, string> = {
 	// phrased: the filter is a display rule and this is what the row
 	// would read as if it were ever lifted.
 	[AuditAdminUserViewed]: 'viewed a user record',
-	[AuditAdminAuditViewed]: 'viewed the audit log'
+	[AuditAdminAuditViewed]: 'viewed the audit log',
+	// The NSS directory's alerts are system events, read as "The server
+	// ...", and repeat daily while the condition lasts.
+	[AuditNSSUIDCollision]: 'withheld two directory accounts that share a uid',
+	[AuditNSSGIDCollision]: 'withheld two directory groups that share a gid',
+	[AuditNSSNameCollision]: 'withheld two directory entries that share a name',
+	[AuditNSSIDChangePending]: 'held back a changed uid or gid from the directory',
+	// The target is the person, so the row reads "The server found that
+	// the POSIX name differs from the username of bob".
+	[AuditNSSNameMismatch]: 'found that the POSIX name differs from the username of',
+	[AuditNSSIDChangeAccepted]: 'accepted a uid or gid change from the directory',
+	// System once nss.tombstone_retention has passed, an admin when purged
+	// early.
+	[AuditNSSTombstonePurged]: 'purged a deleted directory account or group'
 };
 
 /**
@@ -157,7 +177,8 @@ export const auditNamespaceLabels: [string, string][] = [
 	[auditNamespace.User, 'Accounts'],
 	[auditNamespace.Enrollment, 'Service codes'],
 	[auditNamespace.LDAP, 'Directory'],
-	[auditNamespace.Admin, 'Admin views']
+	[auditNamespace.Admin, 'Admin views'],
+	[auditNamespace.NSS, 'NSS directory']
 ];
 
 /**

@@ -82,6 +82,7 @@ nss.attributes.uid = uidNumber
 nss.auto_private_groups = hybrid
 nss.default_home = /home/%u
 nss.disabled_shell = /usr/sbin/nologin
+nss.full_sync_interval = 24h
 nss.gecos_template = {{.DisplayName}}
 nss.group_filter = (objectClass=posixGroup)
 nss.key_default_lifetime = 8760h
@@ -96,6 +97,7 @@ nss.privileged_name_alert[3] = bin
 nss.privileged_name_alert[4] = sys
 nss.rate_burst = 200
 nss.rate_limit = 20
+nss.sync_interval = 15m
 nss.tombstone_after = 168h
 nss.tombstone_retention = 2160h
 nss.usage_retention = 2160h

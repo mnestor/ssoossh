@@ -1,0 +1,5 @@
+{
+  "name": "engineering",
+  "dn": "cn=engineering,ou=groups,dc=example,dc=net",
+  "gid": 5001
+}
