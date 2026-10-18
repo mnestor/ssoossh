@@ -379,7 +379,7 @@ func TestNSSKeyController_ShouldReturnTheSecretOnlyOnCreateAndRotate(t *testing.
 	if key.CreatedByUsername != caller.Username || key.NotificationEmail != caller.Email {
 		t.Errorf("created by %q mailing %q, want %q mailing %q", key.CreatedByUsername, key.NotificationEmail, caller.Username, caller.Email)
 	}
-	if want := time.Now().Add(env.cfg.NSS.KeyDefaultLifetime); key.ExpiresAt.Sub(want).Abs() > time.Minute {
+	if want := time.Now().Add(env.cfg.NSS.KeyMaxLifetime); key.ExpiresAt.Sub(want).Abs() > time.Minute {
 		t.Errorf("expires_at = %v, want about %v", key.ExpiresAt, want)
 	}
 	if verdict, err := env.keys.VerifyFleetKey(ctx, key.ID, first); err != nil || !verdict.OK || verdict.Generation != 1 {
@@ -490,6 +490,7 @@ func TestNSSKeyController_ShouldRejectMalformedRequests(t *testing.T) {
 	r := env.router(nssCallerNamed(t, nssCallerAdmin))
 	id, _ := createNSSKey(t, env.keys, nssCreatorIdentity(), nssKeyGroup)
 	past := time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)
+	later := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
 
 	tests := []struct {
 		name   string
@@ -504,7 +505,7 @@ func TestNSSKeyController_ShouldRejectMalformedRequests(t *testing.T) {
 		{name: "should refuse a create when the address is not one", method: http.MethodPost, path: "/nss/keys", body: `{"name":"x","notification_email":"not an address"}`},
 		{name: "should refuse an edit when the body is cut short", method: http.MethodPatch, path: "/nss/keys/{id}", body: `{"description":`},
 		{name: "should refuse an edit when there is nothing to change", method: http.MethodPatch, path: "/nss/keys/{id}", body: `{}`},
-		{name: "should refuse an edit when the expiry is past", method: http.MethodPatch, path: "/nss/keys/{id}", body: `{"expires_at":"` + past + `"}`},
+		{name: "should refuse an edit when it only moves the expiry", method: http.MethodPatch, path: "/nss/keys/{id}", body: `{"expires_at":"` + later + `"}`},
 		{name: "should refuse a report when the format is xml", method: http.MethodGet, path: "/nss/keys/{id}/rotation-report?format=xml"},
 		{name: "should refuse usage when the limit is not a number", method: http.MethodGet, path: "/nss/keys/{id}/usage?limit=abc"},
 		{name: "should refuse usage when the cursor is unknown", method: http.MethodGet, path: "/nss/keys/{id}/usage?after=garbage"},
@@ -652,9 +653,9 @@ func TestNSSKeyController_ShouldAnswerTheKeyLifetimesInSeconds(t *testing.T) {
 		want  webtypes.NSSKeySettingsResponse
 	}{
 		{name: "should answer both lifetimes when the grace is set", grace: 720 * time.Hour,
-			want: webtypes.NSSKeySettingsResponse{DefaultLifetimeSeconds: 31536000, RotationGraceSeconds: 2592000}},
+			want: webtypes.NSSKeySettingsResponse{MaxLifetimeSeconds: 31536000, RotationGraceSeconds: 2592000}},
 		{name: "should answer a zero grace when a rotation ends the previous secret at once", grace: 0,
-			want: webtypes.NSSKeySettingsResponse{DefaultLifetimeSeconds: 31536000}},
+			want: webtypes.NSSKeySettingsResponse{MaxLifetimeSeconds: 31536000}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

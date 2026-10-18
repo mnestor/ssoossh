@@ -35,7 +35,7 @@ func validNSS() (NSSConfig, *LDAPConfig) {
 		RateBurst:           200,
 		MissAlertRate:       5,
 		UsageRetention:      2160 * time.Hour,
-		KeyDefaultLifetime:  8760 * time.Hour,
+		KeyMaxLifetime:      8760 * time.Hour,
 		KeyRotationGrace:    720 * time.Hour,
 		PrivilegedNameAlert: []string{"root", "admin", "daemon", "bin", "sys"},
 		KeySourceAlert:      1000,
@@ -84,14 +84,14 @@ func TestNSSConfig_ShouldAcceptTheConfigurationWhenEveryRuleHolds(t *testing.T) 
 		{
 			name: "should accept zero when every duration and alert that allows it is zero",
 			mutate: func(c *NSSConfig) {
-				c.TombstoneAfter, c.TombstoneRetention, c.UsageRetention, c.KeyRotationGrace = 0, 0, 0, 0
+				c.TombstoneAfter, c.TombstoneRetention, c.UsageRetention, c.KeyRotationGrace, c.KeyMaxLifetime = 0, 0, 0, 0, 0
 				c.MissAlertRate, c.KeySourceAlert = 0, 0
 			},
 		},
 		{
 			name: "should accept the smallest positive values when the limits are at their floor",
 			mutate: func(c *NSSConfig) {
-				c.MaxGroupMembers, c.RateBurst, c.RateLimit, c.KeyDefaultLifetime = 1, 1, 0.5, time.Nanosecond
+				c.MaxGroupMembers, c.RateBurst, c.RateLimit = 1, 1, 0.5
 			},
 		},
 	}
@@ -151,8 +151,7 @@ func TestNSSConfig_ShouldRejectTheConfigurationWhenARuleIsBroken(t *testing.T) {
 		{name: "should reject the duration when key_rotation_grace is negative", mutate: func(c *NSSConfig, _ *LDAPConfig) { c.KeyRotationGrace = -time.Hour }, wantErr: "nss.key_rotation_grace"},
 		{name: "should reject the duration when sync_interval is negative", mutate: func(c *NSSConfig, _ *LDAPConfig) { c.SyncInterval = -time.Minute }, wantErr: "nss.sync_interval"},
 		{name: "should reject the duration when full_sync_interval is negative", mutate: func(c *NSSConfig, _ *LDAPConfig) { c.FullSyncInterval = -time.Hour }, wantErr: "nss.full_sync_interval"},
-		{name: "should reject the duration when key_default_lifetime is zero", mutate: func(c *NSSConfig, _ *LDAPConfig) { c.KeyDefaultLifetime = 0 }, wantErr: "nss.key_default_lifetime"},
-		{name: "should reject the duration when key_default_lifetime is negative", mutate: func(c *NSSConfig, _ *LDAPConfig) { c.KeyDefaultLifetime = -time.Hour }, wantErr: "nss.key_default_lifetime"},
+		{name: "should reject the duration when key_max_lifetime is negative", mutate: func(c *NSSConfig, _ *LDAPConfig) { c.KeyMaxLifetime = -time.Hour }, wantErr: "nss.key_max_lifetime"},
 		{name: "should reject the rate when miss_alert_rate is negative", mutate: func(c *NSSConfig, _ *LDAPConfig) { c.MissAlertRate = -1 }, wantErr: "nss.miss_alert_rate"},
 		{name: "should reject the count when key_source_alert is negative", mutate: func(c *NSSConfig, _ *LDAPConfig) { c.KeySourceAlert = -1 }, wantErr: "nss.key_source_alert"},
 		{name: "should reject the cap when max_group_members is zero", mutate: func(c *NSSConfig, _ *LDAPConfig) { c.MaxGroupMembers = 0 }, wantErr: "nss.max_group_members"},

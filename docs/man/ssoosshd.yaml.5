@@ -869,8 +869,8 @@ How long the per\-key, per\-address, per\-day usage counts are kept for the usag
 Default:
 .BR 2160h .
 .TP
-.BI nss.key_default_lifetime: " duration"
-How long a new fleet key lives when its creator gives no expiry. Every key expires. Must be greater than zero: a zero lifetime would create keys that are already expired.
+.BI nss.key_max_lifetime: " duration"
+The longest a new fleet key may live, and how long it lives when its creator gives no expiry. A later expiry is trimmed to it. A key's expiry is fixed at creation, so lowering this does not shorten keys that already exist. 0 sets no limit: a key created without an expiry then never expires.
 Default:
 .BR 8760h .
 .TP

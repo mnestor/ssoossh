@@ -160,6 +160,13 @@ describe('NSS keys list', () => {
 			});
 		}
 
+		it('should say never when the key never expires', async () => {
+			listOf([keyFixture({ expires_at: undefined })]);
+			render(Page);
+
+			expect(await screen.findByTestId('nss-key-expiry')).toHaveTextContent('never');
+		});
+
 		it('should say expired in words when the expiry has passed', async () => {
 			listOf([keyFixture({ expires_at: '2026-10-01T12:00:00Z' })]);
 			render(Page);
@@ -200,6 +207,14 @@ describe('NSS keys list', () => {
 			await userEvent.click(await screen.findByTestId('nss-keys-sort-expiry'));
 
 			expect(rowNames()).toEqual(['bravo', 'charlie', 'alpha']);
+		});
+
+		it('should list a key that never expires last when sorted by expiry', async () => {
+			listOf([keyFixture({ id: 'nss_d', name: 'delta', expires_at: undefined }), ...keys]);
+			render(Page);
+			await userEvent.click(await screen.findByTestId('nss-keys-sort-expiry'));
+
+			expect(rowNames()).toEqual(['bravo', 'charlie', 'alpha', 'delta']);
 		});
 
 		it('should keep only revoked keys when the revoked filter is chosen', async () => {

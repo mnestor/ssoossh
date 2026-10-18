@@ -1058,10 +1058,12 @@ nss:
   # usage and rotation reports. Zero disables the prune and keeps every row.
   usage_retention: 2160h
 
-  # How long a new fleet key lives when its creator gives no expiry. Every key
-  # expires. Must be greater than zero: a zero lifetime would create keys that
-  # are already expired.
-  key_default_lifetime: 8760h
+  # The longest a new fleet key may live, and how long it lives when its
+  # creator gives no expiry. A later expiry is trimmed to it. A key's expiry
+  # is fixed at creation, so lowering this does not shorten keys that already
+  # exist. 0 sets no limit: a key created without an expiry then never
+  # expires.
+  key_max_lifetime: 8760h
 
   # How long the previous secret stays accepted after a key is rotated, so
   # every host can pick up the new one before the old one stops working. Zero

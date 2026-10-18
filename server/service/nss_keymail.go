@@ -108,7 +108,7 @@ func (s *NSSKeyService) notifyDeadKeyAttempt(ctx context.Context, attempt *nssDe
 		KeyName:     attempt.key.Name,
 		SourceIP:    attempt.sourceIP,
 		AttemptedAt: attempt.at,
-		ExpiredAt:   attempt.key.ExpiresAt,
+		ExpiredAt:   derefTime(attempt.key.ExpiresAt),
 		ServerURL:   s.config.HTTP.PublicOrigin(),
 	})
 }
@@ -116,8 +116,8 @@ func (s *NSSKeyService) notifyDeadKeyAttempt(ctx context.Context, attempt *nssDe
 // SweepExpiryReminders sends nss_key_expiring for live keys within
 // mail.expiry_reminder_lead of expiring, on the service code reminder's
 // cadence: weekly, then daily over the final ExpiryReminderDailyWindow.
-// Each send is claimed on expiry_reminder_sent_at, which an edit of
-// expires_at clears. A scheduled job; a zero lead sends nothing.
+// Each send is claimed on expiry_reminder_sent_at. A key that never
+// expires is never due. A scheduled job; a zero lead sends nothing.
 func (s *NSSKeyService) SweepExpiryReminders(ctx context.Context) error {
 	lead := s.config.Mail.ExpiryReminderLead
 	if !s.config.Mail.Enabled || lead <= 0 {
@@ -164,7 +164,7 @@ func (s *NSSKeyService) SweepExpiryReminders(ctx context.Context) error {
 			KeyName:     key.Name,
 			Description: key.Description,
 			GroupName:   key.GroupName,
-			ExpiresAt:   key.ExpiresAt,
+			ExpiresAt:   derefTime(key.ExpiresAt),
 			Daily:       daily,
 			ServerURL:   s.config.HTTP.PublicOrigin(),
 		})

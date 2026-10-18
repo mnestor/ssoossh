@@ -48,7 +48,7 @@ func newNSSTestConfig(t *testing.T) *config.Config {
 		MaxGroupMembers:    2000,
 		RateLimit:          20,
 		RateBurst:          200,
-		KeyDefaultLifetime: 8760 * time.Hour,
+		KeyMaxLifetime:     8760 * time.Hour,
 		KeyRotationGrace:   720 * time.Hour,
 	}
 	return cfg

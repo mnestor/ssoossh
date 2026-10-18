@@ -1075,7 +1075,7 @@ func seedNSSKey(t *testing.T, db *gorm.DB, id, address string) {
 		SecretHash:        "hash-" + id,
 		Name:              "deploy-fleet",
 		CreatedBy:         seedUser(t, db, "creator-"+id),
-		ExpiresAt:         time.Now().Add(24 * time.Hour),
+		ExpiresAt:         ptr(time.Now().Add(24 * time.Hour)),
 		NotificationEmail: address,
 		CreatedAt:         time.Now(),
 		UpdatedAt:         time.Now(),

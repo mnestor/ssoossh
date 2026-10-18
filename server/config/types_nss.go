@@ -220,10 +220,12 @@ type NSSConfig struct {
 	// the prune and keeps every row.
 	UsageRetention time.Duration `mapstructure:"usage_retention,string" default:"2160h"`
 
-	// KeyDefaultLifetime is how long a new fleet key lives when its
-	// creator gives no expiry. Every key expires. Must be greater than
-	// zero: a zero lifetime would create keys that are already expired.
-	KeyDefaultLifetime time.Duration `mapstructure:"key_default_lifetime,string" default:"8760h"`
+	// KeyMaxLifetime is the longest a new fleet key may live, and how
+	// long it lives when its creator gives no expiry. A later expiry is
+	// trimmed to it. A key's expiry is fixed at creation, so lowering
+	// this does not shorten keys that already exist. 0 sets no limit: a
+	// key created without an expiry then never expires.
+	KeyMaxLifetime time.Duration `mapstructure:"key_max_lifetime,string" default:"8760h"`
 
 	// KeyRotationGrace is how long the previous secret stays accepted
 	// after a key is rotated, so every host can pick up the new one before
@@ -454,8 +456,8 @@ func (c *NSSConfig) validateLimits() error {
 		return fmt.Errorf("nss.key_source_alert %d is negative: use 0 to disable the alert", c.KeySourceAlert)
 	}
 
-	if c.KeyDefaultLifetime <= 0 {
-		return fmt.Errorf("nss.key_default_lifetime must be greater than zero (the default is 8760h): a zero lifetime creates keys that are already expired")
+	if c.KeyMaxLifetime < 0 {
+		return fmt.Errorf("nss.key_max_lifetime %s is negative: use 0 for keys that never expire", c.KeyMaxLifetime)
 	}
 	if c.MaxGroupMembers <= 0 {
 		return fmt.Errorf("nss.max_group_members must be greater than zero (the default is 2000)")

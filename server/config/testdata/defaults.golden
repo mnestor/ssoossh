@@ -85,7 +85,7 @@ nss.disabled_shell = /usr/sbin/nologin
 nss.full_sync_interval = 24h
 nss.gecos_template = {{.DisplayName}}
 nss.group_filter = (objectClass=posixGroup)
-nss.key_default_lifetime = 8760h
+nss.key_max_lifetime = 8760h
 nss.key_rotation_grace = 720h
 nss.key_source_alert = 1000
 nss.max_group_members = 2000

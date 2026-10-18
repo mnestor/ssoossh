@@ -54,7 +54,9 @@ type NSSKeyResponse struct {
 	CreatedByUsername string    `json:"created_by_username" validate:"required"`
 	CreatedAt         time.Time `json:"created_at" validate:"required"`
 	UpdatedAt         time.Time `json:"updated_at" validate:"required"`
-	ExpiresAt         time.Time `json:"expires_at" validate:"required"`
+	// ExpiresAt is when the key stops being accepted, fixed at creation;
+	// absent for a key that never expires.
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 	// NotificationEmail is where the key's mail goes, empty for nowhere.
 	NotificationEmail string `json:"notification_email" validate:"required"`
 	// RotatedAt is the last rotation, absent for a key never rotated.
@@ -88,12 +90,13 @@ type NSSKeyResponse struct {
 
 // NSSKeySettingsResponse is GET /api/nss/key-settings: the parts of the
 // nss configuration the key pages state before an operator acts, so the
-// create form can propose an expiry and the rotate dialog can name the day
-// the previous secret stops working.
+// create form can bound and propose an expiry and the rotate dialog can
+// name the day the previous secret stops working.
 type NSSKeySettingsResponse struct {
-	// DefaultLifetimeSeconds is nss.key_default_lifetime: a new key's
-	// expiry when none is given.
-	DefaultLifetimeSeconds int `json:"default_lifetime_seconds" validate:"required"`
+	// MaxLifetimeSeconds is nss.key_max_lifetime: the latest a new key
+	// may expire, and its expiry when none is given. 0 sets no limit, and
+	// a key created without a date then never expires.
+	MaxLifetimeSeconds int `json:"max_lifetime_seconds" validate:"required"`
 	// RotationGraceSeconds is nss.key_rotation_grace: how long the
 	// previous secret stays accepted after a rotation.
 	RotationGraceSeconds int `json:"rotation_grace_seconds" validate:"required"`
@@ -116,8 +119,10 @@ type NSSKeySecretResponse struct {
 }
 
 // CreateNSSKeyBody creates a key. ExpiresAt defaults to now plus
-// nss.key_default_lifetime and NotificationEmail to the creator's address;
-// an empty NotificationEmail sends the key's mail nowhere.
+// nss.key_max_lifetime, and a later one is trimmed to that; with the
+// setting at 0 a key without one never expires. The expiry cannot be
+// changed afterwards. NotificationEmail defaults to the creator's
+// address; an empty one sends the key's mail nowhere.
 type CreateNSSKeyBody struct {
 	Name              string     `json:"name" validate:"required"`
 	Description       string     `json:"description,omitempty"`
@@ -128,11 +133,11 @@ type CreateNSSKeyBody struct {
 
 // UpdateNSSKeyBody changes a key; fields left out are unchanged.
 // GroupName needs the fleet key admin role, the rest the key's own group.
+// The expiry is not here: it is fixed at creation.
 type UpdateNSSKeyBody struct {
-	Description       *string    `json:"description,omitempty"`
-	ExpiresAt         *time.Time `json:"expires_at,omitempty"`
-	NotificationEmail *string    `json:"notification_email,omitempty"`
-	GroupName         *string    `json:"group_name,omitempty"`
+	Description       *string `json:"description,omitempty"`
+	NotificationEmail *string `json:"notification_email,omitempty"`
+	GroupName         *string `json:"group_name,omitempty"`
 }
 
 // NSSKeyUsageRowResponse is one key's lookups from one address with one

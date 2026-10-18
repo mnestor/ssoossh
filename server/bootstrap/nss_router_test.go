@@ -33,7 +33,7 @@ func nssRouterConfig(rateLimit int) *config.Config {
 	c.NSS = config.NSSConfig{
 		Enabled: true, AutoPrivateGroups: config.AutoPrivateGroupsHybrid, TombstoneRetention: time.Hour,
 		DefaultHome: "/home/%u", DisabledShell: "/usr/sbin/nologin", AllowedShells: []string{"bash"},
-		MaxGroupMembers: 10, RateLimit: 20, RateBurst: 200, KeyDefaultLifetime: time.Hour, KeyRotationGrace: time.Hour,
+		MaxGroupMembers: 10, RateLimit: 20, RateBurst: 200, KeyMaxLifetime: time.Hour, KeyRotationGrace: time.Hour,
 	}
 	return c
 }

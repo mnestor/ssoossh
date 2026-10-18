@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { session } from '#lib/session.svelte.js';
+import { endOfDay, localDay } from '#lib/nss.js';
 import { envelope, keyFixture, routeFetch, settle, userFixture } from '#lib/testing/nss.js';
 
 // Test methodology: fill the form and route the create call to a fixture
@@ -126,15 +127,20 @@ describe('New NSS key', () => {
 			});
 		}
 
+		const YEAR = envelope({ max_lifetime_seconds: 31536000, rotation_grace_seconds: 2592000 });
+		// The last day whose end is inside a year from now, in the test's zone.
+		const lastDay = localDay(new Date(now.getTime() + (31536000 - 86400) * 1000));
+
 		const cases: { name: string; settings: Response; want: string }[] = [
+			{ name: 'the server limits keys to a year', settings: YEAR, want: lastDay },
 			{
-				name: 'the server keeps a one year default',
-				settings: envelope({ default_lifetime_seconds: 31536000, rotation_grace_seconds: 2592000 }),
-				want: '2027-10-18'
+				name: 'the server limits keys to less than a day',
+				settings: envelope({ max_lifetime_seconds: 3600, rotation_grace_seconds: 0 }),
+				want: ''
 			},
 			{
-				name: 'the server keeps a default shorter than a day',
-				settings: envelope({ default_lifetime_seconds: 3600, rotation_grace_seconds: 0 }),
+				name: 'the server sets no limit',
+				settings: envelope({ max_lifetime_seconds: 0, rotation_grace_seconds: 0 }),
 				want: ''
 			},
 			{
@@ -154,15 +160,65 @@ describe('New NSS key', () => {
 		}
 
 		it('should send the end of the proposed day when the expiry is left as proposed', async () => {
-			const calls = withSettings(
-				envelope({ default_lifetime_seconds: 31536000, rotation_grace_seconds: 2592000 })
-			);
+			const calls = withSettings(YEAR);
 			render(Page);
 			await settle();
 			await createNamed();
 
 			const body = calls.find((call) => call.method === 'POST')?.body as { expires_at: string };
-			expect(new Date(body.expires_at).getTime()).toBe(new Date('2027-10-18T23:59:59').getTime());
+			expect(new Date(body.expires_at).getTime()).toBe(endOfDay(lastDay).getTime());
+		});
+
+		it('should bound the field at the last day the server allows', async () => {
+			withSettings(YEAR);
+			render(Page);
+			await settle();
+
+			expect(screen.getByTestId('nss-key-expires')).toHaveAttribute('max', lastDay);
+		});
+
+		it('should refuse a typed day past the limit without asking the server', async () => {
+			const calls = withSettings(YEAR);
+			render(Page);
+			await settle();
+			await userEvent.clear(screen.getByTestId('nss-key-expires'));
+			await userEvent.type(screen.getByTestId('nss-key-expires'), '2030-01-01');
+			await createNamed();
+
+			expect(screen.getByTestId('nss-key-expires-error')).toBeInTheDocument();
+			expect(calls.some((call) => call.method === 'POST')).toBe(false);
+		});
+
+		it('should send no expiry when the limit is under a day', async () => {
+			const calls = withSettings(
+				envelope({ max_lifetime_seconds: 3600, rotation_grace_seconds: 0 })
+			);
+			render(Page);
+			await settle();
+			await createNamed();
+
+			const body = calls.find((call) => call.method === 'POST')?.body as object;
+			expect(body).not.toHaveProperty('expires_at');
+		});
+
+		it('should say an empty expiry never expires when the server sets no limit', async () => {
+			withSettings(envelope({ max_lifetime_seconds: 0, rotation_grace_seconds: 0 }));
+			render(Page);
+			await settle();
+
+			expect(screen.getByTestId('nss-key-expires-hint')).toHaveTextContent(
+				'Leave it empty and the key never expires.'
+			);
+		});
+
+		it('should say the expiry is fixed once the key exists', async () => {
+			withSettings(YEAR);
+			render(Page);
+			await settle();
+
+			expect(screen.getByTestId('nss-key-expires-hint')).toHaveTextContent(
+				'The expiry cannot be changed once the key exists.'
+			);
 		});
 	});
 

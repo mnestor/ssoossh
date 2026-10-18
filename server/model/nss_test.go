@@ -16,7 +16,7 @@ func seedNSSKey(t *testing.T, db *gorm.DB, id string) string {
 
 	key := NSSKey{
 		ID: id, CurrentGeneration: 1, SecretHash: "00", Name: id,
-		CreatedBy: seedNSSUser(t, db, "u-"+id), ExpiresAt: nssTestTime().Add(24 * time.Hour),
+		CreatedBy: seedNSSUser(t, db, "u-"+id), ExpiresAt: ptr(nssTestTime().Add(24 * time.Hour)),
 		CreatedAt: nssTestTime(), UpdatedAt: nssTestTime(),
 	}
 	if err := db.Create(&key).Error; err != nil {
@@ -59,7 +59,7 @@ func TestNSSKey_ShouldRoundTripEveryColumnWhenStoredAndReadBack(t *testing.T) {
 					ID: "nss_ABCD2345", CurrentGeneration: 3, SecretHash: "9f86d081884c7d65",
 					PreviousSecretHash: ptr("60303ae22b998861"), PreviousExpiresAt: at(720 * time.Hour),
 					Name: "web fleet", Description: "every web host", CreatedBy: creator, GroupName: "web-admins",
-					ExpiresAt: nssTestTime().Add(8760 * time.Hour), NotificationEmail: "web-admins@example.com",
+					ExpiresAt: at(8760 * time.Hour), NotificationEmail: "web-admins@example.com",
 					RevokedAt: at(time.Hour), RevokedBy: &revoker, RotatedAt: at(2 * time.Hour),
 					ExpiryReminderSentAt: at(3 * time.Hour), LastExpiredAttemptNotifiedAt: at(4 * time.Hour),
 					RotationCleanupSentAt: at(5 * time.Hour),
@@ -72,7 +72,7 @@ func TestNSSKey_ShouldRoundTripEveryColumnWhenStoredAndReadBack(t *testing.T) {
 			row: func(creator, _ string) NSSKey {
 				return NSSKey{
 					ID: "nss_WXYZ6789", CurrentGeneration: 1, SecretHash: "9f86d081884c7d65", Name: "db fleet",
-					CreatedBy: creator, ExpiresAt: nssTestTime().Add(time.Hour), CreatedAt: nssTestTime(), UpdatedAt: nssTestTime(),
+					CreatedBy: creator, CreatedAt: nssTestTime(), UpdatedAt: nssTestTime(),
 				}
 			},
 		},
@@ -94,7 +94,7 @@ func TestNSSKey_ShouldRefuseTheRowWhenTheCreatorIsNotAUser(t *testing.T) {
 	db := testdb.New(t)
 	key := NSSKey{
 		ID: "nss_ORPHAN22", CurrentGeneration: 1, SecretHash: "00", Name: "orphan", CreatedBy: "no-such-user",
-		ExpiresAt: nssTestTime(), CreatedAt: nssTestTime(), UpdatedAt: nssTestTime(),
+		ExpiresAt: ptr(nssTestTime()), CreatedAt: nssTestTime(), UpdatedAt: nssTestTime(),
 	}
 	if err := db.Create(&key).Error; err == nil {
 		t.Error("create succeeded, want the users foreign key to refuse it")

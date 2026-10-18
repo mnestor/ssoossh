@@ -134,7 +134,7 @@ func nssKeyStatus(key *model.NSSKey, now time.Time) model.NSSKeyStatus {
 	switch {
 	case key.RevokedAt != nil:
 		return model.NSSKeyStatusRevoked
-	case !key.ExpiresAt.After(now):
+	case key.ExpiresAt != nil && !key.ExpiresAt.After(now):
 		return model.NSSKeyStatusExpired
 	default:
 		return model.NSSKeyStatusActive
@@ -389,16 +389,16 @@ func (s *NSSKeyService) activity(ctx context.Context, keys []model.NSSKey, now t
 }
 
 // NSSKeySettings is the part of the nss configuration the key pages show
-// before an operator acts: how long a new key lives unless told otherwise,
-// and how long a rotated-out secret stays accepted.
+// before an operator acts: the longest a new key may live, and how long a
+// rotated-out secret stays accepted.
 type NSSKeySettings struct {
-	DefaultLifetime time.Duration
-	RotationGrace   time.Duration
+	MaxLifetime   time.Duration
+	RotationGrace time.Duration
 }
 
-// Settings returns nss.key_default_lifetime and nss.key_rotation_grace.
+// Settings returns nss.key_max_lifetime and nss.key_rotation_grace.
 func (s *NSSKeyService) Settings() NSSKeySettings {
-	return NSSKeySettings{DefaultLifetime: s.config.NSS.KeyDefaultLifetime, RotationGrace: s.config.NSS.KeyRotationGrace}
+	return NSSKeySettings{MaxLifetime: s.config.NSS.KeyMaxLifetime, RotationGrace: s.config.NSS.KeyRotationGrace}
 }
 
 // identityGroups is the identity's groups, nil-safe.
@@ -410,8 +410,9 @@ func identityGroups(identity *Identity) []string {
 }
 
 // NSSKeyCreate is what a caller supplies for a new key. Nil fields take
-// their defaults: expires_at now plus nss.key_default_lifetime, the
-// notification address the creator's own.
+// their defaults: expires_at now plus nss.key_max_lifetime, the
+// notification address the creator's own. An expires_at past that ceiling
+// is trimmed to it. The expiry is fixed once the key exists.
 type NSSKeyCreate struct {
 	Name              string
 	Description       string
@@ -421,10 +422,10 @@ type NSSKeyCreate struct {
 }
 
 // NSSKeyUpdate is a change to a key; nil fields are left alone.
-// GroupName needs assign_group, the rest edit.
+// GroupName needs assign_group, the rest edit. The expiry is not here: it
+// is set once, at creation, inside nss.key_max_lifetime.
 type NSSKeyUpdate struct {
 	Description       *string
-	ExpiresAt         *time.Time
 	NotificationEmail *string
 	GroupName         *string
 }
@@ -491,12 +492,9 @@ func (s *NSSKeyService) Create(ctx context.Context, identity *Identity, in NSSKe
 	if err != nil {
 		return nil, "", err
 	}
-	expiresAt := now.Add(s.config.NSS.KeyDefaultLifetime)
-	if in.ExpiresAt != nil {
-		expiresAt = *in.ExpiresAt
-	}
-	if !expiresAt.After(now) {
-		return nil, "", &errorresponses.InvalidRequestError{Reason: "expires_at must be in the future"}
+	expiresAt, requested, err := s.keyExpiry(in.ExpiresAt, now)
+	if err != nil {
+		return nil, "", err
 	}
 	email := actor.user.Email
 	if email == "" {
@@ -520,7 +518,7 @@ func (s *NSSKeyService) Create(ctx context.Context, identity *Identity, in NSSKe
 		Description:       description,
 		CreatedBy:         actor.user.ID,
 		GroupName:         group,
-		ExpiresAt:         expiresAt.UTC(),
+		ExpiresAt:         expiresAt,
 		NotificationEmail: email,
 		CreatedAt:         now,
 		UpdatedAt:         now,
@@ -542,6 +540,9 @@ func (s *NSSKeyService) Create(ctx context.Context, identity *Identity, in NSSKe
 				"notification_email": key.NotificationEmail,
 				"source_ip":          sourceIP,
 			},
+		}
+		if requested != nil {
+			event.Detail["requested_expires_at"] = requested.UTC()
 		}
 		return s.recordTx(tx, event)
 	})
@@ -657,14 +658,44 @@ func (s *NSSKeyService) mutate(ctx context.Context, identity *Identity, id strin
 	return view, updated, nil
 }
 
-// Update changes a key's description, expiry, notification address or
-// group. Changing the expiry re-arms the expiring reminder.
+// keyExpiry is the expiry a new key gets from the one its creator asked
+// for. The config is the outer bound: a later date is trimmed to now plus
+// nss.key_max_lifetime, as issuance trims options the config does not
+// allow, and is returned as requested so the audit event can say so. No
+// date takes that ceiling. A zero nss.key_max_lifetime sets no ceiling,
+// so no date there means the key never expires (nil).
+func (s *NSSKeyService) keyExpiry(asked *time.Time, now time.Time) (expires, requested *time.Time, err error) {
+	if asked != nil && !asked.After(now) {
+		return nil, nil, &errorresponses.InvalidRequestError{Reason: "expires_at must be in the future"}
+	}
+	lifetime := s.config.NSS.KeyMaxLifetime
+	if lifetime <= 0 {
+		if asked == nil {
+			return nil, nil, nil
+		}
+		at := asked.UTC()
+		return &at, nil, nil
+	}
+	ceiling := now.Add(lifetime).UTC()
+	switch {
+	case asked == nil:
+		return &ceiling, nil, nil
+	case asked.After(ceiling):
+		return &ceiling, asked, nil
+	default:
+		at := asked.UTC()
+		return &at, nil, nil
+	}
+}
+
+// Update changes a key's description, notification address or group.
+// The expiry is fixed at creation.
 func (s *NSSKeyService) Update(ctx context.Context, identity *Identity, id string, in NSSKeyUpdate, sourceIP string) (*NSSKeyView, error) {
-	if in.Description == nil && in.ExpiresAt == nil && in.NotificationEmail == nil && in.GroupName == nil {
-		return nil, &errorresponses.InvalidRequestError{Reason: "nothing to change: send description, expires_at, notification_email or group_name"}
+	if in.Description == nil && in.NotificationEmail == nil && in.GroupName == nil {
+		return nil, &errorresponses.InvalidRequestError{Reason: "nothing to change: send description, notification_email or group_name"}
 	}
 	needed := []model.NSSKeyPermission{}
-	if in.Description != nil || in.ExpiresAt != nil || in.NotificationEmail != nil {
+	if in.Description != nil || in.NotificationEmail != nil {
 		needed = append(needed, model.NSSKeyPermissionEdit)
 	}
 	if in.GroupName != nil {
@@ -706,17 +737,6 @@ func (s *NSSKeyService) updates(key *model.NSSKey, in NSSKeyUpdate, now time.Tim
 		}
 		if description != key.Description {
 			change("description", key.Description, description)
-		}
-	}
-	if in.ExpiresAt != nil {
-		if !in.ExpiresAt.After(now) {
-			return nil, nil, &errorresponses.InvalidRequestError{Reason: "expires_at must be in the future"}
-		}
-		if !in.ExpiresAt.Equal(key.ExpiresAt) {
-			change("expires_at", key.ExpiresAt, in.ExpiresAt.UTC())
-			// The reminder cadence restarts from the new date, as an
-			// enrollment's does when its expiry moves.
-			updates["expiry_reminder_sent_at"] = nil
 		}
 	}
 	if in.NotificationEmail != nil {
@@ -890,7 +910,7 @@ func (s *NSSKeyService) countByStatus(ctx context.Context) (map[model.NSSKeyStat
 		Count  int64              `gorm:"column:n"`
 	}
 	err := s.db.WithContext(ctx).Model(&model.NSSKey{}).
-		Select(`CASE WHEN revoked_at IS NOT NULL THEN ? WHEN expires_at <= ? THEN ? ELSE ? END AS status, COUNT(*) AS n`,
+		Select(`CASE WHEN revoked_at IS NOT NULL THEN ? WHEN expires_at IS NOT NULL AND expires_at <= ? THEN ? ELSE ? END AS status, COUNT(*) AS n`,
 			model.NSSKeyStatusRevoked, s.now().UTC(), model.NSSKeyStatusExpired, model.NSSKeyStatusActive).
 		Group("status").
 		Scan(&rows).Error

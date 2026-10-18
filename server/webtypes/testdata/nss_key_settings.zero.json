@@ -1,4 +1,4 @@
 {
-  "default_lifetime_seconds": 0,
+  "max_lifetime_seconds": 0,
   "rotation_grace_seconds": 0
 }

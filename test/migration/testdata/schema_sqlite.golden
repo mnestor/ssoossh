@@ -233,7 +233,7 @@ table nss_keys
   column created_by type=TEXT nullable=false pk=false default=<none>
   column current_generation type=INTEGER nullable=false pk=false default=1
   column description type=TEXT nullable=false pk=false default=''
-  column expires_at type=DATETIME nullable=false pk=false default=<none>
+  column expires_at type=DATETIME nullable=true pk=false default=<none>
   column expiry_reminder_sent_at type=DATETIME nullable=true pk=false default=<none>
   column group_name type=TEXT nullable=false pk=false default=''
   column id type=TEXT nullable=false pk=true default=<none>

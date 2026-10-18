@@ -103,7 +103,6 @@ describe('NSS key detail', () => {
 			'nss-key-rotate',
 			'nss-key-clear-previous',
 			'nss-key-edit-description',
-			'nss-key-edit-expires',
 			'nss-key-edit-email',
 			'nss-key-edit-group'
 		];
@@ -118,7 +117,6 @@ describe('NSS key detail', () => {
 					'nss-key-rotate',
 					'nss-key-clear-previous',
 					'nss-key-edit-description',
-					'nss-key-edit-expires',
 					'nss-key-edit-email'
 				]
 			},
@@ -152,6 +150,20 @@ describe('NSS key detail', () => {
 				expect(controls.filter((control) => screen.queryByTestId(control))).toEqual(shown);
 			});
 		}
+
+		it('should offer no expiry edit when the caller has every permission', async () => {
+			serve(keyFixture({ permissions: ALL }));
+			await loaded();
+
+			expect(screen.queryByTestId('nss-key-edit-expires')).toBeNull();
+		});
+
+		it('should say never when the key never expires', async () => {
+			serve(keyFixture({ expires_at: undefined }));
+			await loaded();
+
+			expect(screen.getByTestId('nss-key-expires')).toHaveTextContent('Never');
+		});
 
 		it('should say the key is read-only when the caller may only view it', async () => {
 			serve(keyFixture());
@@ -265,12 +277,12 @@ describe('NSS key detail', () => {
 		const graceCases: { name: string; settings: Route | Response; want: string }[] = [
 			{
 				name: 'the server keeps a 30 day grace',
-				settings: envelope({ default_lifetime_seconds: 31536000, rotation_grace_seconds: 2592000 }),
+				settings: envelope({ max_lifetime_seconds: 31536000, rotation_grace_seconds: 2592000 }),
 				want: `still accepted until ${formatDateTime('2026-11-17T12:00:00.000Z')} (1mo from now)`
 			},
 			{
 				name: 'the server keeps no grace',
-				settings: envelope({ default_lifetime_seconds: 31536000, rotation_grace_seconds: 0 }),
+				settings: envelope({ max_lifetime_seconds: 31536000, rotation_grace_seconds: 0 }),
 				want: 'The current secret stops working at once'
 			},
 			{

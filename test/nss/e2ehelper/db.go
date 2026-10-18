@@ -133,6 +133,7 @@ func seedKey(ctx context.Context, db *gorm.DB, now time.Time) (id, secret string
 		if err := tx.Where(model.User{ID: creatorID}).FirstOrCreate(&creator).Error; err != nil {
 			return fmt.Errorf("seed the key's creator: %w", err)
 		}
+		expires := now.Add(24 * time.Hour)
 		key := model.NSSKey{
 			ID:                id,
 			CurrentGeneration: 1,
@@ -140,7 +141,7 @@ func seedKey(ctx context.Context, db *gorm.DB, now time.Time) (id, secret string
 			Name:              "nss e2e",
 			Description:       "seeded by test/nss/e2ehelper",
 			CreatedBy:         creatorID,
-			ExpiresAt:         now.Add(24 * time.Hour),
+			ExpiresAt:         &expires,
 			CreatedAt:         now,
 			UpdatedAt:         now,
 		}

@@ -37,9 +37,11 @@ type NSSKey struct {
 	// in both dialects.
 	GroupName string `gorm:"column:group_name"`
 
-	// ExpiresAt is required: every key ends, by default
-	// nss.key_default_lifetime after creation.
-	ExpiresAt time.Time `gorm:"column:expires_at"`
+	// ExpiresAt is when the key stops being accepted, at most
+	// nss.key_max_lifetime after creation and by default exactly that.
+	// Nil when that setting is 0 and the creator chose no date: the key
+	// never expires. Fixed once the key exists.
+	ExpiresAt *time.Time `gorm:"column:expires_at"`
 
 	// NotificationEmail is where the key's mail goes; it defaults to the
 	// creator's address.

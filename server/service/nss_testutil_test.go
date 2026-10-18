@@ -299,7 +299,7 @@ func nssTestConfig() *config.Config {
 		MaxGroupMembers:    2000,
 		RateLimit:          20,
 		RateBurst:          200,
-		KeyDefaultLifetime: 8760 * time.Hour,
+		KeyMaxLifetime:     8760 * time.Hour,
 	}
 	return c
 }

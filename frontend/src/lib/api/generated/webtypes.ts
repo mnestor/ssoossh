@@ -264,7 +264,11 @@ export interface NSSKeyResponse {
 	created_by_username: string;
 	created_at: string;
 	updated_at: string;
-	expires_at: string;
+	/**
+	 * ExpiresAt is when the key stops being accepted, fixed at creation;
+	 * absent for a key that never expires.
+	 */
+	expires_at?: string;
 	/**
 	 * NotificationEmail is where the key's mail goes, empty for nowhere.
 	 */
@@ -314,15 +318,16 @@ export interface NSSKeyResponse {
 /**
  * NSSKeySettingsResponse is GET /api/nss/key-settings: the parts of the
  * nss configuration the key pages state before an operator acts, so the
- * create form can propose an expiry and the rotate dialog can name the day
- * the previous secret stops working.
+ * create form can bound and propose an expiry and the rotate dialog can
+ * name the day the previous secret stops working.
  */
 export interface NSSKeySettingsResponse {
 	/**
-	 * DefaultLifetimeSeconds is nss.key_default_lifetime: a new key's
-	 * expiry when none is given.
+	 * MaxLifetimeSeconds is nss.key_max_lifetime: the latest a new key
+	 * may expire, and its expiry when none is given. 0 sets no limit, and
+	 * a key created without a date then never expires.
 	 */
-	default_lifetime_seconds: number /* int */;
+	max_lifetime_seconds: number /* int */;
 	/**
 	 * RotationGraceSeconds is nss.key_rotation_grace: how long the
 	 * previous secret stays accepted after a rotation.
@@ -351,8 +356,10 @@ export interface NSSKeySecretResponse {
 }
 /**
  * CreateNSSKeyBody creates a key. ExpiresAt defaults to now plus
- * nss.key_default_lifetime and NotificationEmail to the creator's address;
- * an empty NotificationEmail sends the key's mail nowhere.
+ * nss.key_max_lifetime, and a later one is trimmed to that; with the
+ * setting at 0 a key without one never expires. The expiry cannot be
+ * changed afterwards. NotificationEmail defaults to the creator's
+ * address; an empty one sends the key's mail nowhere.
  */
 export interface CreateNSSKeyBody {
 	name: string;
@@ -364,10 +371,10 @@ export interface CreateNSSKeyBody {
 /**
  * UpdateNSSKeyBody changes a key; fields left out are unchanged.
  * GroupName needs the fleet key admin role, the rest the key's own group.
+ * The expiry is not here: it is fixed at creation.
  */
 export interface UpdateNSSKeyBody {
 	description?: string;
-	expires_at?: string;
 	notification_email?: string;
 	group_name?: string;
 }

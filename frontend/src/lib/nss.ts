@@ -67,8 +67,12 @@ export type ExpiryTone = 'past' | 'soon' | 'normal';
 /** SOON_DAYS is how close an expiry has to be before it is flagged. */
 const SOON_DAYS = 30;
 
-/** expiryTone flags an expiry that has passed or falls within 30 days of `now`. */
-export function expiryTone(expiresAt: string, now: Date): ExpiryTone {
+/**
+ * expiryTone flags an expiry that has passed or falls within 30 days of
+ * `now`. A key with no expiry never expires, so it is never flagged.
+ */
+export function expiryTone(expiresAt: string | undefined, now: Date): ExpiryTone {
+	if (!expiresAt) return 'normal';
 	const at = new Date(expiresAt);
 	if (Number.isNaN(at.getTime())) {
 		return 'normal';
@@ -173,15 +177,29 @@ export function localDay(at: Date): string {
 }
 
 /**
- * defaultExpiryDay is the day the create form proposes: `now` plus the
- * server's default lifetime, as a date field value. Null when that day is
- * not after today, since the form only offers tomorrow onwards and an empty
- * field already takes the server's default.
+ * endOfDay is the last second of a date field's day in the reader's zone:
+ * a key "expiring on the 3rd" should still work on the 3rd.
  */
-export function defaultExpiryDay(now: Date, lifetimeSeconds: number): string | null {
+export function endOfDay(day: string): Date {
+	return new Date(`${day}T23:59:59`);
+}
+
+/**
+ * latestExpiryDay is the last day the create form offers under the
+ * server's nss.key_max_lifetime: the latest day whose end falls within
+ * `now` plus the limit, so the server never has to trim a chosen day.
+ * Null when the limit is not a positive number of seconds, since 0 sets
+ * no limit. Under a day's limit it can be today, which the form does not
+ * offer.
+ */
+export function latestExpiryDay(now: Date, lifetimeSeconds: number): string | null {
 	if (!Number.isFinite(lifetimeSeconds) || lifetimeSeconds <= 0) return null;
-	const day = localDay(new Date(now.getTime() + lifetimeSeconds * 1000));
-	return day > localDay(now) ? day : null;
+	const ceiling = new Date(now.getTime() + lifetimeSeconds * 1000);
+	const day = localDay(ceiling);
+	if (endOfDay(day).getTime() <= ceiling.getTime()) return day;
+	const before = new Date(ceiling);
+	before.setDate(before.getDate() - 1);
+	return localDay(before);
 }
 
 /** graceEnd is when a secret rotated out at `now` stops being accepted. */

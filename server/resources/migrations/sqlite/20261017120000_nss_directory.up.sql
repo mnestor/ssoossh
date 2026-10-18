@@ -230,7 +230,9 @@ CREATE TABLE nss_keys (
     -- Named group_name rather than group because GROUP is a reserved word
     -- in both dialects, as ldap_sync_runs.trigger_source avoids TRIGGER.
     group_name                       TEXT NOT NULL DEFAULT '',
-    expires_at                       DATETIME NOT NULL,
+    -- NULL when nss.key_max_lifetime is 0 and the creator chose no
+    -- date: the key never expires. Fixed once the key exists.
+    expires_at                       DATETIME NULL,
     notification_email               TEXT NOT NULL DEFAULT '',
     revoked_at                       DATETIME NULL,
     -- The users.id of whoever revoked the key.

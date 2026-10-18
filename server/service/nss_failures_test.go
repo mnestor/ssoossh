@@ -17,7 +17,6 @@ import (
 func TestNSSServices_ShouldReturnTheErrorWhenTheDatabaseFails(t *testing.T) {
 	t.Parallel()
 
-	expires := nssNow.Add(time.Hour)
 	tests := []struct {
 		name string
 		call func(ctx context.Context, f *nssUsageFixture) error
@@ -35,7 +34,7 @@ func TestNSSServices_ShouldReturnTheErrorWhenTheDatabaseFails(t *testing.T) {
 			return err
 		}},
 		{name: "should fail the update when the key cannot be read", call: func(ctx context.Context, f *nssUsageFixture) error {
-			_, err := f.keys.Update(ctx, nssAdmin, f.key.Key.ID, NSSKeyUpdate{ExpiresAt: &expires}, "")
+			_, err := f.keys.Update(ctx, nssAdmin, f.key.Key.ID, NSSKeyUpdate{Description: ptr("the web tier")}, "")
 			return err
 		}},
 		{name: "should fail the rotation when the key cannot be read", call: func(ctx context.Context, f *nssUsageFixture) error {

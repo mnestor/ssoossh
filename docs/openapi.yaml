@@ -2806,6 +2806,9 @@ components:
         description:
           type: string
         expires_at:
+          description: |-
+            ExpiresAt is when the key stops being accepted, fixed at creation;
+            absent for a key that never expires.
           type: string
         group_name:
           description: |-
@@ -2877,7 +2880,6 @@ components:
       - created_by_username
       - current_generation
       - description
-      - expires_at
       - group_name
       - id
       - name
@@ -2898,10 +2900,11 @@ components:
       type: object
     webtypes.NSSKeySettingsResponse:
       properties:
-        default_lifetime_seconds:
+        max_lifetime_seconds:
           description: |-
-            DefaultLifetimeSeconds is nss.key_default_lifetime: a new key's
-            expiry when none is given.
+            MaxLifetimeSeconds is nss.key_max_lifetime: the latest a new key
+            may expire, and its expiry when none is given. 0 sets no limit, and
+            a key created without a date then never expires.
           type: integer
         rotation_grace_seconds:
           description: |-
@@ -2909,7 +2912,7 @@ components:
             previous secret stays accepted after a rotation.
           type: integer
       required:
-      - default_lifetime_seconds
+      - max_lifetime_seconds
       - rotation_grace_seconds
       type: object
     webtypes.NSSKeyUsageResponse:
@@ -3639,8 +3642,6 @@ components:
     webtypes.UpdateNSSKeyBody:
       properties:
         description:
-          type: string
-        expires_at:
           type: string
         group_name:
           type: string
@@ -5976,8 +5977,8 @@ paths:
   /api/nss/key-settings:
     get:
       description: |-
-        nss.key_default_lifetime and nss.key_rotation_grace in seconds, so the create form can propose
-        an expiry and the rotate dialog can say when the previous secret stops working. Any session:
+        nss.key_max_lifetime and nss.key_rotation_grace in seconds, so the create form can bound and
+        propose an expiry and the rotate dialog can say when the previous secret stops working. Any session:
         the two values decide nothing on their own, and every key action is still authorised per key.
       responses:
         "200":
@@ -6036,7 +6037,9 @@ paths:
       description: |-
         Fleet key admin role and admins only. Returns the key and its secret; the secret is shown
         this once and never again, so the caller must store it now. expires_at defaults to
-        nss.key_default_lifetime from now and notification_email to the creator's address.
+        nss.key_max_lifetime from now, and a later one is trimmed to that; with the setting at 0 a key
+        created without one never expires. The expiry cannot be changed afterwards. notification_email
+        defaults to the creator's address.
       requestBody:
         content:
           application/json:
@@ -6121,9 +6124,9 @@ paths:
       - web
     patch:
       description: |-
-        description, expires_at and notification_email need edit: the fleet key admin role, admins,
-        or the key's group. group_name needs assign_group: the fleet key admin role or admins. Fields
-        left out are unchanged. Moving expires_at re-arms the expiry reminder. A revoked key is a 409.
+        description and notification_email need edit: the fleet key admin role, admins, or the key's
+        group. group_name needs assign_group: the fleet key admin role or admins. Fields left out are
+        unchanged. The expiry is fixed at creation and cannot be changed. A revoked key is a 409.
       parameters:
       - description: Key id
         in: path
@@ -6154,7 +6157,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
-          description: Malformed body, nothing to change, a past expiry or a bad address
+          description: Malformed body, nothing to change or a bad address
         "401":
           content:
             application/json:

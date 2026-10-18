@@ -38,7 +38,7 @@ Every account and group comes from the directory, people and shared or service a
 | [`nss.rate_burst`](#rate_burst) | int | `200` |
 | [`nss.miss_alert_rate`](#miss_alert_rate) | number | `5` |
 | [`nss.usage_retention`](#usage_retention) | duration | `2160h` |
-| [`nss.key_default_lifetime`](#key_default_lifetime) | duration | `8760h` |
+| [`nss.key_max_lifetime`](#key_max_lifetime) | duration | `8760h` |
 | [`nss.key_rotation_grace`](#key_rotation_grace) | duration | `720h` |
 | [`nss.source_allow_list`](#source_allow_list) | list | `empty` |
 | [`nss.privileged_name_alert`](#privileged_name_alert) | list | `root, admin, daemon, bin, sys` |
@@ -255,15 +255,15 @@ nss:
   usage_retention: 2160h
 ```
 
-## `key_default_lifetime`
+## `key_max_lifetime`
 
 `duration`, default `8760h`
 
-How long a new fleet key lives when its creator gives no expiry. Every key expires. Must be greater than zero: a zero lifetime would create keys that are already expired.
+The longest a new fleet key may live, and how long it lives when its creator gives no expiry. A later expiry is trimmed to it. A key's expiry is fixed at creation, so lowering this does not shorten keys that already exist. 0 sets no limit: a key created without an expiry then never expires.
 
 ```yaml
 nss:
-  key_default_lifetime: 8760h
+  key_max_lifetime: 8760h
 ```
 
 ## `key_rotation_grace`

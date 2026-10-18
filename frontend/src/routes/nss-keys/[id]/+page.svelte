@@ -120,7 +120,8 @@
 
 	// ---- Inline edits ---------------------------------------------------
 
-	type Field = 'description' | 'group' | 'expires' | 'email';
+	// The expiry is not here: it is fixed when the key is created.
+	type Field = 'description' | 'group' | 'email';
 	let editing = $state<Field | null>(null);
 	let draft = $state('');
 	let saving = $state(false);
@@ -129,7 +130,6 @@
 	const fieldNames: Record<Field, string> = {
 		description: 'Description',
 		group: 'Group',
-		expires: 'Expiry',
 		email: 'Notification email'
 	};
 
@@ -143,22 +143,12 @@
 				? key.description
 				: field === 'group'
 					? key.group_name
-					: field === 'email'
-						? key.notification_email
-						: dateValue(key.expires_at);
+					: key.notification_email;
 	}
 
 	function cancelEdit() {
 		editing = null;
 		editError = null;
-	}
-
-	/** dateValue is a timestamp as the date field's YYYY-MM-DD, in the reader's zone. */
-	function dateValue(value: string): string {
-		const at = new Date(value);
-		if (Number.isNaN(at.getTime())) return '';
-		const pad = (n: number) => String(n).padStart(2, '0');
-		return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
 	}
 
 	/** saveEdit sends the one field being edited, and only it. */
@@ -170,13 +160,6 @@
 		if (field === 'description') body.description = draft.trim();
 		if (field === 'group') body.group_name = draft.trim();
 		if (field === 'email') body.notification_email = draft.trim();
-		if (field === 'expires') {
-			if (!draft) {
-				editError = 'Choose the day the key expires.';
-				return;
-			}
-			body.expires_at = new Date(`${draft}T23:59:59`).toISOString();
-		}
 		saving = true;
 		editError = null;
 		try {
@@ -413,7 +396,7 @@
 	</button>
 {/snippet}
 
-{#snippet editForm(field: Field, type: 'text' | 'email' | 'date' | 'textarea')}
+{#snippet editForm(field: Field, type: 'text' | 'email' | 'textarea')}
 	<form class="flex w-full flex-col gap-2" onsubmit={saveEdit} data-testid="nss-key-form-{field}">
 		{#if type === 'textarea'}
 			<textarea
@@ -633,16 +616,13 @@
 					{/if}
 				</DetailRow>
 				<DetailRow label="Expires">
-					{#if editing === 'expires'}
-						{@render editForm('expires', 'date')}
-					{:else}
-						<span class="inline-flex flex-wrap items-center gap-2">
-							<span class={expiryClass} data-testid="nss-key-expires">
-								{formatDateTime(key.expires_at)} ({remainingLabel(key.expires_at, now)})
-							</span>
-							{#if mayEdit}{@render editButton('expires')}{/if}
-						</span>
-					{/if}
+					<span class={expiryClass} data-testid="nss-key-expires">
+						{#if key.expires_at}
+							{formatDateTime(key.expires_at)} ({remainingLabel(key.expires_at, now)})
+						{:else}
+							Never
+						{/if}
+					</span>
 				</DetailRow>
 				<DetailRow label="Notification email">
 					{#if editing === 'email'}

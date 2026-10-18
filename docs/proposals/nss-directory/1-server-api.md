@@ -144,7 +144,7 @@ person's own-name certificate principal can never pass `getpwnam` (R23).
 | `previous_secret_hash`, `previous_expires_at` | generation `current-1`, accepted until expiry (default `nss.key_rotation_grace` 720h) |
 | `name`, `description`, `created_by` | |
 | `group` | optional OIDC/LDAP group whose members manage this key |
-| `expires_at` | required, default now + `nss.key_default_lifetime` (8760h) |
+| `expires_at` | at most now + `nss.key_max_lifetime` (8760h), which is also the default; a later date is trimmed. NULL (never expires) only when the setting is 0 and no date is given. Fixed at creation (decided 2026-10-18) |
 | `notification_email` | defaults to creator's address |
 | `revoked_at`, `revoked_by` | |
 
@@ -363,7 +363,7 @@ Session-authenticated; swag-annotated; all mutations audit-logged.
 | `/api/nss/keys` | GET | all keys: `nss_key_group`, admin, SOC, auditor; others: keys whose `group` they are in |
 | `/api/nss/keys` | POST | `nss_key_group`, admin. Returns the secret once |
 | `/api/nss/keys/:id` | GET | as list |
-| `/api/nss/keys/:id` | PATCH | `description`, `expires_at`, `notification_email`: key group members too. `group`: `nss_key_group`, admin only |
+| `/api/nss/keys/:id` | PATCH | `description`, `notification_email`: key group members too. `group`: `nss_key_group`, admin only. The expiry cannot be changed (decided 2026-10-18) |
 | `/api/nss/keys/:id/rotate` | POST | `nss_key_group`, admin, key group members. Returns new secret once |
 | `/api/nss/keys/:id/previous` | DELETE | same as rotate: clears previous secret early |
 | `/api/nss/keys/:id/revoke` | POST | above plus SOC |
@@ -447,7 +447,7 @@ nss:
   rate_burst: 200
   miss_alert_rate: 5           # misses/s per key
   usage_retention: 2160h
-  key_default_lifetime: 8760h
+  key_max_lifetime: 8760h
   key_rotation_grace: 720h
   source_allow_list: []        # CIDRs; empty allows all
   privileged_name_alert: [root, admin, daemon, bin, sys]

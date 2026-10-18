@@ -359,8 +359,8 @@ type NSSKeyExpiring struct {
 	Description string `json:"description,omitempty"`
 	GroupName   string `json:"group_name,omitempty"`
 
-	// ExpiresAt is when the key stops being accepted. Extending it, or
-	// creating a replacement, has to happen before this.
+	// ExpiresAt is when the key stops being accepted. The expiry cannot be
+	// moved, so a replacement key has to reach the hosts before this.
 	ExpiresAt time.Time `json:"expires_at"`
 
 	// Daily is true once the key is inside its final week and reminders have

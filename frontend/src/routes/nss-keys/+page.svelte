@@ -77,9 +77,7 @@
 					(groupFilter === NO_GROUP ? key.group_name === '' : key.group_name === groupFilter)
 			)
 			.sort((a, b) =>
-				sort === 'expiry'
-					? new Date(a.expires_at).getTime() - new Date(b.expires_at).getTime()
-					: a.name.localeCompare(b.name)
+				sort === 'expiry' ? expiryTime(a) - expiryTime(b) : a.name.localeCompare(b.name)
 			)
 	);
 
@@ -121,6 +119,11 @@
 			});
 		return () => controller.abort();
 	});
+
+	/** expiryTime orders keys by expiry, a key that never expires last. */
+	function expiryTime(key: NSSKey): number {
+		return key.expires_at ? new Date(key.expires_at).getTime() : Number.POSITIVE_INFINITY;
+	}
 
 	/** toneClass colours an expiry by how close it is; a revoked key's expiry no longer matters. */
 	function toneClass(key: NSSKey, status: KeyDisplayStatus): string {
@@ -304,14 +307,18 @@
 											{#if status === NSSKeyStatusRevoked}
 												<!-- A revoked key's expiry no longer means anything. -->
 												no longer used
-											{:else}
+											{:else if key.expires_at}
 												{#if expiryTone(key.expires_at, now) === 'soon'}
 													<Icon name="alert-triangle" size="xs" />
 												{/if}
 												{remainingLabel(key.expires_at, now)}
+											{:else}
+												never
 											{/if}
 										</span>
-										<div class="text-xs text-ink-muted">{formatDateTime(key.expires_at)}</div>
+										{#if key.expires_at}
+											<div class="text-xs text-ink-muted">{formatDateTime(key.expires_at)}</div>
+										{/if}
 									</td>
 									<td class="whitespace-nowrap max-sm:hidden" data-testid="nss-key-last-used">
 										{#if key.last_used_at}

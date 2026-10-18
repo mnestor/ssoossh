@@ -210,8 +210,8 @@ func TestNSSKeys_ShouldCreateAKeyWithItsDefaultsWhenOnlyANameIsGiven(t *testing.
 	if key.Name != "web fleet" || key.CurrentGeneration != 1 || key.CreatedBy != ids[nssKeyAdmin.Subject] {
 		t.Errorf("key = %+v, want the trimmed name, generation 1 and the creator's users.id", key)
 	}
-	if !key.ExpiresAt.Equal(nssNow.Add(8760 * time.Hour)) {
-		t.Errorf("expires_at = %v, want now plus nss.key_default_lifetime", key.ExpiresAt)
+	if key.ExpiresAt == nil || !key.ExpiresAt.Equal(nssNow.Add(8760*time.Hour)) {
+		t.Errorf("expires_at = %v, want now plus nss.key_max_lifetime", key.ExpiresAt)
 	}
 	if key.NotificationEmail != "kim@example.org" {
 		t.Errorf("notification_email = %q, want the creator's address", key.NotificationEmail)
@@ -309,16 +309,67 @@ func TestNSSKeys_ShouldKeepTheDefaultsWhenTheCreateRequestSetsThem(t *testing.T)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if !view.Key.ExpiresAt.Equal(expires) || view.Key.NotificationEmail != "" {
+	if view.Key.ExpiresAt == nil || !view.Key.ExpiresAt.Equal(expires) || view.Key.NotificationEmail != "" {
 		t.Errorf("key = %+v, want the given expiry and no address", view.Key)
+	}
+}
+
+func TestNSSKeys_ShouldBoundTheExpiryWhenTheKeyIsCreated(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		maxLifetime   time.Duration
+		asked         *time.Time
+		want          *time.Time
+		wantRequested bool
+	}{
+		{name: "should take the ceiling when no expiry is given", maxLifetime: 8760 * time.Hour, want: nssAt(8760 * time.Hour)},
+		{name: "should keep the expiry when it is inside the ceiling", maxLifetime: 8760 * time.Hour, asked: nssAt(48 * time.Hour), want: nssAt(48 * time.Hour)},
+		{name: "should keep the expiry when it is the ceiling itself", maxLifetime: 8760 * time.Hour, asked: nssAt(8760 * time.Hour), want: nssAt(8760 * time.Hour)},
+		{name: "should trim the expiry to the ceiling when it is later", maxLifetime: 8760 * time.Hour, asked: nssAt(8761 * time.Hour), want: nssAt(8760 * time.Hour), wantRequested: true},
+		{name: "should never expire when the ceiling is 0 and no expiry is given", maxLifetime: 0, want: nil},
+		{name: "should keep any future expiry when the ceiling is 0", maxLifetime: 0, asked: nssAt(87600 * time.Hour), want: nssAt(87600 * time.Hour)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			db := testdb.New(t)
+			seedNSSCallers(t, db)
+			cfg := nssLookupTestConfig()
+			cfg.NSS.KeyMaxLifetime = tt.maxLifetime
+			keys, _ := newTestNSSKeys(t, cfg, db)
+
+			view, _, err := keys.Create(t.Context(), nssAdmin, NSSKeyCreate{Name: "lab", ExpiresAt: tt.asked}, "")
+			if err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+			var stored model.NSSKey
+			if err := db.Where("id = ?", view.Key.ID).Take(&stored).Error; err != nil {
+				t.Fatalf("read the key back: %v", err)
+			}
+			got := stored.ExpiresAt
+			if (got == nil) != (tt.want == nil) || (got != nil && !got.Equal(*tt.want)) {
+				t.Errorf("stored expires_at = %v, want %v", got, tt.want)
+			}
+			if view.Status != model.NSSKeyStatusActive {
+				t.Errorf("status = %q, want active", view.Status)
+			}
+			details := auditDetails(t, db, AuditNSSKeyCreated)
+			if len(details) != 1 {
+				t.Fatalf("nss.key_created rows = %d, want 1", len(details))
+			}
+			if _, recorded := details[0]["requested_expires_at"]; recorded != tt.wantRequested {
+				t.Errorf("requested_expires_at recorded = %v, want %v", recorded, tt.wantRequested)
+			}
+		})
 	}
 }
 
 func TestNSSKeys_ShouldApplyTheChangeWhenTheCallerMayMakeIt(t *testing.T) {
 	t.Parallel()
 
-	later := nssNow.Add(1000 * time.Hour)
-	past := nssNow.Add(-time.Hour)
 	tests := []struct {
 		name        string
 		caller      *Identity
@@ -332,16 +383,6 @@ func TestNSSKeys_ShouldApplyTheChangeWhenTheCallerMayMakeIt(t *testing.T) {
 			in:          NSSKeyUpdate{Description: ptr("the web tier")},
 			check:       func(t *testing.T, key model.NSSKey) { wantEqual(t, "description", key.Description, "the web tier") },
 			wantChanges: []string{"description"},
-		},
-		{
-			name: "should move the expiry and re-arm the reminder when an admin changes it", caller: nssAdmin,
-			in: NSSKeyUpdate{ExpiresAt: &later},
-			check: func(t *testing.T, key model.NSSKey) {
-				if !key.ExpiresAt.Equal(later) || key.ExpiryReminderSentAt != nil {
-					t.Errorf("key = %+v, want the new expiry and the reminder claim cleared", key)
-				}
-			},
-			wantChanges: []string{"expires_at"},
 		},
 		{
 			name: "should change the address when the key admin edits it", caller: nssKeyAdmin,
@@ -362,7 +403,6 @@ func TestNSSKeys_ShouldApplyTheChangeWhenTheCallerMayMakeIt(t *testing.T) {
 		{name: "should refuse an edit when the caller is an auditor", caller: nssAuditor, in: NSSKeyUpdate{Description: ptr("x")}, wantErr: isForbidden},
 		{name: "should hide the key when the caller may not view it", caller: nssPlain, in: NSSKeyUpdate{Description: ptr("x")}, wantErr: isNotFound},
 		{name: "should refuse the change when nothing is sent", caller: nssAdmin, in: NSSKeyUpdate{}, wantErr: isInvalid},
-		{name: "should refuse the change when the expiry is in the past", caller: nssAdmin, in: NSSKeyUpdate{ExpiresAt: &past}, wantErr: isInvalid},
 		{name: "should refuse the change when the address is malformed", caller: nssAdmin, in: NSSKeyUpdate{NotificationEmail: ptr("@@")}, wantErr: isInvalid},
 		{name: "should record nothing when the value is already stored", caller: nssAdmin, in: NSSKeyUpdate{GroupName: ptr("web-admins")}, wantChanges: nil},
 	}
@@ -695,9 +735,11 @@ func TestNSSKeys_ShouldDeriveTheStatusWhenTheKeyIsRead(t *testing.T) {
 		key  model.NSSKey
 		want model.NSSKeyStatus
 	}{
-		{name: "should be active when the key is live", key: model.NSSKey{ExpiresAt: nssNow.Add(time.Hour)}, want: model.NSSKeyStatusActive},
-		{name: "should be expired when expires_at is now", key: model.NSSKey{ExpiresAt: nssNow}, want: model.NSSKeyStatusExpired},
-		{name: "should be revoked when it is revoked, expired or not", key: model.NSSKey{ExpiresAt: nssNow.Add(-time.Hour), RevokedAt: nssAt(-time.Hour)}, want: model.NSSKeyStatusRevoked},
+		{name: "should be active when the key is live", key: model.NSSKey{ExpiresAt: nssAt(time.Hour)}, want: model.NSSKeyStatusActive},
+		{name: "should be active when the key never expires", key: model.NSSKey{}, want: model.NSSKeyStatusActive},
+		{name: "should be expired when expires_at is now", key: model.NSSKey{ExpiresAt: nssAt(0)}, want: model.NSSKeyStatusExpired},
+		{name: "should be revoked when it is revoked, expired or not", key: model.NSSKey{ExpiresAt: nssAt(-time.Hour), RevokedAt: nssAt(-time.Hour)}, want: model.NSSKeyStatusRevoked},
+		{name: "should be revoked when a key that never expires is revoked", key: model.NSSKey{RevokedAt: nssAt(-time.Hour)}, want: model.NSSKeyStatusRevoked},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -913,8 +955,8 @@ func TestNSSKeys_ShouldReturnTheConfiguredLifetimesWhenTheSettingsAreRead(t *tes
 		grace time.Duration
 		want  NSSKeySettings
 	}{
-		{name: "should return both durations when the grace is set", grace: 720 * time.Hour, want: NSSKeySettings{DefaultLifetime: 8760 * time.Hour, RotationGrace: 720 * time.Hour}},
-		{name: "should return a zero grace when rotation ends the previous secret at once", grace: 0, want: NSSKeySettings{DefaultLifetime: 8760 * time.Hour}},
+		{name: "should return both durations when the grace is set", grace: 720 * time.Hour, want: NSSKeySettings{MaxLifetime: 8760 * time.Hour, RotationGrace: 720 * time.Hour}},
+		{name: "should return a zero grace when rotation ends the previous secret at once", grace: 0, want: NSSKeySettings{MaxLifetime: 8760 * time.Hour}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

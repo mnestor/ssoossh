@@ -247,15 +247,23 @@ what that exposes.
 - Every refusal -- unknown id, wrong secret, revoked, expired -- is the same
   401 `nss_unauthorized` with the same body and the same comparisons, so a
   caller learns nothing about which.
-- Every key expires:
-  [`nss.key_default_lifetime`](/ssoossh/reference/config/nss/#key_default_lifetime)
-  (`8760h`) unless its creator sets a date.
+- A key lives at most
+  [`nss.key_max_lifetime`](/ssoossh/reference/config/nss/#key_max_lifetime)
+  (`8760h`), and exactly that unless its creator sets an earlier date. A
+  later date sent to the API is trimmed to it, and the audit event records
+  the date asked for as `requested_expires_at`.
+- The expiry is fixed when the key is created and cannot be changed. To
+  keep a fleet running past it, create a new key and put it on the hosts
+  before the old one expires.
+- Setting `nss.key_max_lifetime` to `0` removes the limit: a key created
+  without a date then never expires. Raising or lowering the setting later
+  does not change keys that already exist.
 
 | Action | Endpoint | Who | Audit |
 | --- | --- | --- | --- |
 | List, view | `GET /api/nss/keys`, `GET /api/nss/keys/:id` | key admins, admin, SOC and auditors see every key; members of a key's group see that key | |
 | Create | `POST /api/nss/keys` | key admins | `nss.key_created` |
-| Edit description, expiry, notification address | `PATCH /api/nss/keys/:id` | key admins, members of the key's group | `nss.key_updated` |
+| Edit description, notification address | `PATCH /api/nss/keys/:id` | key admins, members of the key's group | `nss.key_updated` |
 | Assign the managing group | `PATCH /api/nss/keys/:id` (`group_name`) | key admins | `nss.key_updated` |
 | Rotate | `POST /api/nss/keys/:id/rotate` | key admins, members of the key's group | `nss.key_rotated` |
 | End the previous secret now | `DELETE /api/nss/keys/:id/previous` | the same | `nss.key_previous_cleared` |

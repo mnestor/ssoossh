@@ -6,7 +6,8 @@ import {
 	KeyRotating,
 	can,
 	collisionLabel,
-	defaultExpiryDay,
+	endOfDay,
+	latestExpiryDay,
 	expiryTone,
 	formatPercent,
 	graceEnd,
@@ -122,6 +123,44 @@ describe('expiryTone', () => {
 	for (const { name, at, want } of cases) {
 		it(`should read ${want} when the expiry is ${name}`, () => {
 			expect(expiryTone(at, now)).toBe(want);
+		});
+	}
+
+	it('should read normal when the key never expires', () => {
+		expect(expiryTone(undefined, now)).toBe('normal');
+	});
+});
+
+describe('endOfDay', () => {
+	it("should be the day's last second in the reader's zone", () => {
+		expect(endOfDay('2027-03-01').getTime()).toBe(new Date(2027, 2, 1, 23, 59, 59).getTime());
+	});
+});
+
+describe('latestExpiryDay', () => {
+	// Local times, so the cases read the same in every zone.
+	const from = new Date(2026, 9, 18, 12, 0);
+	const until = (end: Date) => (end.getTime() - from.getTime()) / 1000;
+	const cases: { name: string; seconds: number; want: string | null }[] = [
+		{ name: 'the limit is a year', seconds: 365 * 86400, want: '2027-10-17' },
+		{
+			name: 'the limit ends at the last second of a day',
+			seconds: until(new Date(2026, 9, 20, 23, 59, 59)),
+			want: '2026-10-20'
+		},
+		{
+			name: 'the limit ends a second before that',
+			seconds: until(new Date(2026, 9, 20, 23, 59, 58)),
+			want: '2026-10-19'
+		},
+		{ name: 'the limit is an hour', seconds: 3600, want: '2026-10-17' },
+		{ name: 'there is no limit', seconds: 0, want: null },
+		{ name: 'the limit is negative', seconds: -60, want: null },
+		{ name: 'the limit is not a number', seconds: Number.NaN, want: null }
+	];
+	for (const { name, seconds, want } of cases) {
+		it(`should offer ${want ?? 'no bound'} when ${name}`, () => {
+			expect(latestExpiryDay(from, seconds)).toBe(want);
 		});
 	}
 });
@@ -277,29 +316,6 @@ describe('localDay', () => {
 	it('should pad the month and day when they are single digits', () => {
 		expect(localDay(new Date(2027, 2, 5, 15, 0))).toBe('2027-03-05');
 	});
-});
-
-describe('defaultExpiryDay', () => {
-	const cases: { name: string; seconds: number; want: string | null }[] = [
-		{
-			name: 'the lifetime is a year',
-			seconds: 365 * 86400,
-			want: localDay(new Date(now.getTime() + 365 * 86400 * 1000))
-		},
-		{
-			name: 'the lifetime is a week',
-			seconds: 7 * 86400,
-			want: localDay(new Date(now.getTime() + 7 * 86400 * 1000))
-		},
-		{ name: 'the lifetime ends today', seconds: 60, want: null },
-		{ name: 'the lifetime is zero', seconds: 0, want: null },
-		{ name: 'the lifetime is not a number', seconds: Number.NaN, want: null }
-	];
-	for (const { name, seconds, want } of cases) {
-		it(`should propose ${want ?? 'nothing'} when ${name}`, () => {
-			expect(defaultExpiryDay(now, seconds)).toBe(want);
-		});
-	}
 });
 
 describe('graceEnd', () => {

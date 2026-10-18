@@ -95,8 +95,8 @@ func (k *nssKeyController) shellsHandler(g *gin.Context) {
 // keySettingsHandler handles GET /api/nss/key-settings.
 //
 // @Summary     The fleet key lifetimes
-// @Description nss.key_default_lifetime and nss.key_rotation_grace in seconds, so the create form can propose
-// @Description an expiry and the rotate dialog can say when the previous secret stops working. Any session:
+// @Description nss.key_max_lifetime and nss.key_rotation_grace in seconds, so the create form can bound and
+// @Description propose an expiry and the rotate dialog can say when the previous secret stops working. Any session:
 // @Description the two values decide nothing on their own, and every key action is still authorised per key.
 // @Tags        web
 // @Produce     json
@@ -108,8 +108,8 @@ func (k *nssKeyController) shellsHandler(g *gin.Context) {
 func (k *nssKeyController) keySettingsHandler(g *gin.Context) {
 	settings := k.keys.Settings()
 	respondData(g, webtypes.NSSKeySettingsResponse{
-		DefaultLifetimeSeconds: int(settings.DefaultLifetime / time.Second),
-		RotationGraceSeconds:   int(settings.RotationGrace / time.Second),
+		MaxLifetimeSeconds:   int(settings.MaxLifetime / time.Second),
+		RotationGraceSeconds: int(settings.RotationGrace / time.Second),
 	})
 }
 
@@ -147,7 +147,9 @@ func (k *nssKeyController) listHandler(g *gin.Context) {
 // @Summary     Create a fleet API key
 // @Description Fleet key admin role and admins only. Returns the key and its secret; the secret is shown
 // @Description this once and never again, so the caller must store it now. expires_at defaults to
-// @Description nss.key_default_lifetime from now and notification_email to the creator's address.
+// @Description nss.key_max_lifetime from now, and a later one is trimmed to that; with the setting at 0 a key
+// @Description created without one never expires. The expiry cannot be changed afterwards. notification_email
+// @Description defaults to the creator's address.
 // @Tags        web
 // @Accept      json
 // @Produce     json
@@ -211,16 +213,16 @@ func (k *nssKeyController) getHandler(g *gin.Context) {
 // updateHandler handles PATCH /api/nss/keys/{id}.
 //
 // @Summary     Change a fleet API key
-// @Description description, expires_at and notification_email need edit: the fleet key admin role, admins,
-// @Description or the key's group. group_name needs assign_group: the fleet key admin role or admins. Fields
-// @Description left out are unchanged. Moving expires_at re-arms the expiry reminder. A revoked key is a 409.
+// @Description description and notification_email need edit: the fleet key admin role, admins, or the key's
+// @Description group. group_name needs assign_group: the fleet key admin role or admins. Fields left out are
+// @Description unchanged. The expiry is fixed at creation and cannot be changed. A revoked key is a 409.
 // @Tags        web
 // @Accept      json
 // @Produce     json
 // @Param       id      path string                   true "Key id"
 // @Param       request body webtypes.UpdateNSSKeyBody true "The change"
 // @Success     200 {object} openapidoc.NSSKeyEnvelope "The key after the change"
-// @Failure     400 {object} openapidoc.ErrorEnvelope "Malformed body, nothing to change, a past expiry or a bad address"
+// @Failure     400 {object} openapidoc.ErrorEnvelope "Malformed body, nothing to change or a bad address"
 // @Failure     401 {object} openapidoc.ErrorEnvelope "No valid session"
 // @Failure     403 {object} openapidoc.ErrorEnvelope "The caller may view the key but not make this change"
 // @Failure     404 {object} openapidoc.ErrorEnvelope "No such key the caller may view, or nss_disabled"
@@ -239,7 +241,6 @@ func (k *nssKeyController) updateHandler(g *gin.Context) {
 	}
 	view, err := k.keys.Update(g.Request.Context(), identity, g.Param("id"), service.NSSKeyUpdate{
 		Description:       body.Description,
-		ExpiresAt:         body.ExpiresAt,
 		NotificationEmail: body.NotificationEmail,
 		GroupName:         body.GroupName,
 	}, g.ClientIP())

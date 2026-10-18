@@ -234,7 +234,7 @@ table nss_keys
   column created_by type=text nullable=false default=<none>
   column current_generation type=integer nullable=false default=1
   column description type=text nullable=false default=''::text
-  column expires_at type=timestamp with time zone nullable=false default=<none>
+  column expires_at type=timestamp with time zone nullable=true default=<none>
   column expiry_reminder_sent_at type=timestamp with time zone nullable=true default=<none>
   column group_name type=text nullable=false default=''::text
   column id type=text nullable=false default=<none>

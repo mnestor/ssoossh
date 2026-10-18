@@ -42,7 +42,7 @@ func nssLookupTestConfig() *config.Config {
 		RateBurst:           200,
 		MissAlertRate:       5,
 		UsageRetention:      2160 * time.Hour,
-		KeyDefaultLifetime:  8760 * time.Hour,
+		KeyMaxLifetime:      8760 * time.Hour,
 		KeyRotationGrace:    720 * time.Hour,
 		PrivilegedNameAlert: []string{"root", "admin", "daemon", "bin", "sys"},
 		KeySourceAlert:      1000,
