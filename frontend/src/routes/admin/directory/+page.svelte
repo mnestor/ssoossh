@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
+
 	import { getLDAPStatus, runLDAPSync, probeLDAP } from '#lib/api/endpoints.js';
 	import type {
 		LDAPProbeRequestBody,
@@ -18,8 +20,15 @@
 	import PageSection from '#lib/components/PageSection.svelte';
 	import PageShell from '#lib/components/PageShell.svelte';
 	import SectionLabel from '#lib/components/SectionLabel.svelte';
+	import NSSDirectoryPanels from '#lib/components/NSSDirectoryPanels.svelte';
+	import { session } from '#lib/session.svelte.js';
 
 	let status = $state<LDAPStatusResponse | null>(null);
+	// The NSS panels hang off the directory, and only exist where the server
+	// serves NSS; nss.enabled requires ldap.enabled, so they live inside the
+	// enabled branch below.
+	const nssEnabled = $derived(session.user?.nss_enabled ?? false);
+	let nssMessage = $state('');
 	let statusError = $state<string | null>(null);
 	let statusLoaded = $state(false);
 	// Bumped by Try again; the status load reads it, so a bump re-runs it.
@@ -231,8 +240,20 @@
 	<PageHeading title="Directory">
 		{#snippet sub()}
 			What the LDAP sync last did, and what the directory actually returns for a person.
+			{#if nssEnabled}
+				The fleet keys hosts use for NSS lookups are on the
+				<a
+					href={resolve('/nss-keys')}
+					class="text-accent hover:underline"
+					data-testid="directory-nss-keys-link">NSS keys</a
+				> page.
+			{/if}
 		{/snippet}
 	</PageHeading>
+
+	<div aria-live="polite" aria-atomic="true" class="sr-only" data-testid="directory-nss-status">
+		{nssMessage}
+	</div>
 
 	{#if statusError}
 		<Alert
@@ -772,5 +793,9 @@
 				{/if}
 			</div>
 		</PageSection>
+
+		{#if nssEnabled}
+			<NSSDirectoryPanels onannounce={(message) => (nssMessage = message)} />
+		{/if}
 	{/if}
 </PageShell>

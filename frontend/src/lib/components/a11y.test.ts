@@ -455,7 +455,12 @@ describe('component accessibility roster', () => {
 		// a detail object big enough that a fixture here would be a second,
 		// drifting copy of the one in their own test files. Their own suites
 		// render them; see ApprovalView.test.ts and AdminServiceCodeDetail.test.ts.
+		//
+		// NSSDirectoryPanels — fetches both of its lists on mount, so a render
+		// here would sweep a loading state; the Directory page's own suite
+		// renders it with fixtures (routes/admin/directory/page.test.ts).
 		covered.add('ConsentModal');
+		covered.add('NSSDirectoryPanels');
 		covered.add('ApprovalView');
 		covered.add('AdminServiceCodeDetail');
 
