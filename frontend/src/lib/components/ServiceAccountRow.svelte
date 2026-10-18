@@ -100,7 +100,9 @@
 	}
 </script>
 
-<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- a query on this same page -->
+<!-- href is a resolve()'d route with a query on this same page, not a bare
+     route id. Block form because the report lands on the href line. -->
+<!-- eslint-disable svelte/no-navigation-without-resolve -->
 <a
 	{href}
 	onclick={follow}
@@ -130,3 +132,4 @@
 		{state.label}
 	</span>
 </a>
+<!-- eslint-enable svelte/no-navigation-without-resolve -->
