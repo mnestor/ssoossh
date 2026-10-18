@@ -239,7 +239,27 @@ attribute.
   collides on uid and name with the old row, which still exists (as
   missing, then as a tombstone), so neither is served until the old row is
   purged or ages out. Fail closed, and the reason to configure
-  `ldap.id_attribute`.
+  `ldap.id_attribute`. This holds for accounts only; groups are below.
+- **Renamed or moved groups** (decided 2026-10-18 by the owner). A group
+  renamed or moved with its gid kept is the same group, not a collision.
+  When an entry matches no row by `directory_id` or `dn`, and the row
+  holding its gid sits at another DN, the sync re-anchors that row on the
+  entry if and only if the row's entry has gone: a full sync did not
+  enumerate the row's DN, or (incremental and on-demand reads, the
+  membership search of an account read included) a base-scope read of the
+  row's DN with `nss.group_filter` returns nothing and a search for the gid
+  finds no other entry. A directory error is never "gone"; the entry is
+  then stored as today, and the next read tries again. Two entries carrying
+  the gid, or a row and an entry with different non-empty `directory_id`
+  values, are a collision as before. The re-anchored row keeps its id and
+  gid (so its membership rows), takes the entry's DN, `directory_id`, name
+  and members, loses `missing_since`, the tombstone and the collisions the
+  rename resolves, and the move is audited as `nss.group_renamed` (old and
+  new name and DN, gid, and `detected_by`: `full_sync_absence` or
+  `base_read`). A new name another row holds is still a name collision:
+  the row moves but keeps its old name and is withheld. Accounts keep the
+  strict rule above, because a uid handed to a different person is what
+  the tombstone exists to catch.
 - **Duplicate name** (README R39). POSIX resolves one record per name, so
   two live entries whose mapped name attribute is equal are both withheld
   while it lasts, with `nss_name_collision` at most daily per name. A
@@ -248,6 +268,34 @@ attribute.
   until the directory is fixed or an admin purges the tombstone. User and
   group names are separate namespaces (a private group shares its user's
   name), so uniqueness is per table.
+
+## Directory change audit
+
+(decided 2026-10-18 by the owner) Every change the server makes to the
+stored accounts, groups and memberships is an audit event, recorded in the
+transaction of the write that makes it, so nothing about who joined or
+left a group is lost when a group's membership rows are replaced. Events
+the sync or a read records are the server's (`system`, no actor); those
+an accepted id change or an early purge records carry the admin. An
+account linked to a person has that person as the target. Every detail
+has `table`, the row's `name`, `uid` or `gid`, `dn`, and `via`: one of
+`full_sync`, `incremental_sync`, `on_demand` (a host's lookup), `login`
+(the account read when a login links it), `tombstoned`,
+`id_change_accepted` or `tombstone_purged`.
+
+| Action | When | Detail beyond the common fields |
+| --- | --- | --- |
+| `nss.account_created`, `nss.group_created` | a row stored for the first time | account: `gid`; group: `member_count` (no members event goes with it) |
+| `nss.account_renamed` | a matched account takes the name its entry now carries (matching stays strict) | `old_name`, `new_name`, `old_dn` |
+| `nss.group_renamed` | a group re-anchored on a renamed or moved entry (above), or a matched group whose name changed in place | `old_name`, `new_name`, `old_dn`, `new_dn`, `detected_by` (`full_sync_absence`, `base_read`, `matched`), `name_blocked`, `revived` |
+| `nss.account_missing`, `nss.group_missing` | the first full sync that did not see the row (`missing_since` set) | |
+| `nss.account_tombstoned`, `nss.group_tombstoned` | a missing row tombstoned (`deleted_at` set) | `missing_since` |
+| `nss.account_revived`, `nss.group_revived` | a missing or tombstoned row seen again | `missing_since`, `was_tombstoned` |
+| `nss.group_members_changed` | one write changed one group's member set: a group read, an account read's membership search, a group tombstoned, an accepted uid change re-keying an account, a purged account | `added` and `removed` as `{uid, name}` sorted by uid, each at most 100 long, `added_count`, `removed_count` |
+| `nss.initial_import` | a sync run into an empty table, once per table, in place of an event per created row | `created`; groups also `memberships` |
+
+An event is written only when something changed, so a sync over an
+unchanged directory writes none. `nss.tombstone_purged` is unchanged.
 
 ## Status
 

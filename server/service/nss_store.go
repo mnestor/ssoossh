@@ -195,13 +195,75 @@ type nssStoredAccount struct {
 	created bool
 	// observed are the collisions this store saw, for the alerts.
 	observed []model.NSSCollision
+	// change is what updating a matched row changed, for the audit.
+	change nssRowChange
+	// audit is the events the write recorded.
+	audit nssAuditBatch
 }
+
+// nssRowChange is what updating a matched row changed that the audit
+// records: its name and DN before, whether it took a new name, and
+// whether it was missing or a tombstone.
+type nssRowChange struct {
+	oldName      string
+	oldDN        string
+	renamed      bool
+	missingSince *time.Time
+	deletedAt    *time.Time
+}
+
+// revived reports whether the row was missing or a tombstone.
+func (c nssRowChange) revived() bool { return c.missingSince != nil || c.deletedAt != nil }
 
 // nssStoredGroup is what storing one group entry did.
 type nssStoredGroup struct {
 	row      *model.PosixGroup
 	created  bool
 	observed []model.NSSCollision
+	// renamed is set when the entry re-anchored a stored group renamed or
+	// moved in the directory (reanchorGroup).
+	renamed *nssGroupRename
+	change  nssRowChange
+	audit   nssAuditBatch
+}
+
+// Ways a read learns that a stored group's entry has left the directory,
+// as the nss.group_renamed event records them.
+const (
+	// nssGoneByFullSync is a full sync that enumerated every entry of
+	// nss.group_filter without the row's DN among them.
+	nssGoneByFullSync = "full_sync_absence"
+	// nssGoneByBaseRead is a base-scope read of the row's DN with
+	// nss.group_filter that found nothing, after a search for the gid
+	// found no entry but the new one.
+	nssGoneByBaseRead = "base_read"
+)
+
+// nssGroupGone is a read's evidence that stored groups' entries have left
+// the directory, which is what lets the store re-anchor a group renamed or
+// moved with its gid kept (decided 2026-10-18 by the owner). Accounts never
+// get one: a uid handed to a different entry is what the collision and the
+// tombstone exist to catch. A nil *nssGroupGone is no evidence, and the
+// store then treats every unanchored entry as new.
+type nssGroupGone struct {
+	// via is how the absence was established: nssGoneByFullSync or
+	// nssGoneByBaseRead.
+	via string
+	// gone reports whether the entry at dn is no longer a group the
+	// filter selects.
+	gone func(dn string) bool
+}
+
+// nssGroupRename is one stored group re-anchored on its renamed or moved
+// directory entry, for the audit event.
+type nssGroupRename struct {
+	oldName string
+	oldDN   string
+	via     string
+	// revived is whether the row was a tombstone.
+	revived bool
+	// resolved are the collisions the re-anchoring deleted.
+	resolved []model.NSSCollision
 }
 
 // nssPending works out a row's pending columns after a read: a number the
@@ -251,8 +313,9 @@ func nssPendingSince(since *time.Time, now time.Time, pairs ...[2]*uint32) *time
 // name, and every collision seen is recorded and withholds the rows it
 // involves. contenders are other entries the same read found carrying
 // this entry's uid or name; complete says for which of the two the read
-// saw every such entry. The alerts are raised after the write commits.
-func (s *NSSDirectoryService) storeAccount(ctx context.Context, account *nssAccount, disabled bool, contenders []*nssAccount, complete nssKinds) (*nssStoredAccount, error) {
+// saw every such entry; w is the path, for the audit events recorded with
+// the write. The alerts are raised after the write commits.
+func (s *NSSDirectoryService) storeAccount(ctx context.Context, account *nssAccount, disabled bool, contenders []*nssAccount, complete nssKinds, w nssWrite) (*nssStoredAccount, error) {
 	now := s.now().UTC()
 	out := &nssStoredAccount{}
 	gecosChanged := false
@@ -275,11 +338,15 @@ func (s *NSSDirectoryService) storeAccount(ctx context.Context, account *nssAcco
 		// A fresh struct: GORM does not reset a field the row now holds as
 		// NULL, so re-reading into stored would keep a cleared withheld_at.
 		out.row = &model.PosixUser{}
-		return tx.First(out.row, "id = ?", stored.ID).Error
+		if err := tx.First(out.row, "id = ?", stored.ID).Error; err != nil {
+			return err
+		}
+		return s.recordAccountEvents(tx, w, out)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("store the directory account %s: %w", account.DN, err)
 	}
+	s.flush(&out.audit)
 
 	if gecosChanged {
 		s.log.InfoContext(ctx, "cleaned the rendered gecos value of a directory account before storing it",
@@ -304,7 +371,7 @@ func (s *NSSDirectoryService) writeAccount(ctx context.Context, tx *gorm.DB, acc
 		return nil, nil, false, err
 	}
 	if match != nil {
-		return s.updateAccount(ctx, tx, match.ID, account, disabled, now)
+		return s.updateAccount(ctx, tx, match.ID, account, disabled, now, &out.change)
 	}
 	contended, err := s.heldValues(tx, accountTable(), account.ref(), nil, now)
 	if err != nil || len(contended) > 0 {
@@ -372,12 +439,13 @@ func (s *NSSDirectoryService) insertAccount(ctx context.Context, tx *gorm.DB, a 
 // directory renamed the entry to a name another row holds, so the row
 // keeps its old name and both are withheld), and whether the gecos
 // sanitiser changed a value that differs from the stored one.
-func (s *NSSDirectoryService) updateAccount(ctx context.Context, tx *gorm.DB, id string, a *nssAccount, disabled bool, now time.Time) (*model.PosixUser, []model.NSSCollision, bool, error) {
+func (s *NSSDirectoryService) updateAccount(ctx context.Context, tx *gorm.DB, id string, a *nssAccount, disabled bool, now time.Time, ch *nssRowChange) (*model.PosixUser, []model.NSSCollision, bool, error) {
 	var row model.PosixUser
 	if err := tx.First(&row, "id = ?", id).Error; err != nil {
 		return nil, nil, false, fmt.Errorf("read the matched account: %w", err)
 	}
 	previousGecos := row.Gecos
+	*ch = nssRowChange{oldName: row.Name, oldDN: row.DN, missingSince: row.MissingSince, deletedAt: row.DeletedAt}
 
 	pendingUID := nssPending(row.UID, a.UID, row.PendingUID)
 	pendingGID := nssPending(row.GID, a.GID, row.PendingGID)
@@ -412,6 +480,7 @@ func (s *NSSDirectoryService) updateAccount(ctx context.Context, tx *gorm.DB, id
 			})
 		} else {
 			updates["name"] = a.Name
+			ch.renamed = true
 		}
 	}
 	if a.DN != row.DN {
@@ -435,37 +504,25 @@ func (s *NSSDirectoryService) updateAccount(ctx context.Context, tx *gorm.DB, id
 // for the gid and the group name. With an index it also replaces the
 // group's membership rows with every member that resolves to a stored
 // account; without one (a group an account's membership search found) its
-// members are left as they are.
-func (s *NSSDirectoryService) storeGroup(ctx context.Context, group *nssGroup, contenders []*nssGroup, complete nssKinds, index *nssMemberIndex) (*nssStoredGroup, error) {
+// members are left as they are. gone is the read's evidence for
+// re-anchoring a renamed or moved group (see renameTarget), nil for none;
+// w is the path, for the audit events recorded with the write.
+func (s *NSSDirectoryService) storeGroup(ctx context.Context, group *nssGroup, contenders []*nssGroup, complete nssKinds, index *nssMemberIndex, gone *nssGroupGone, w nssWrite) (*nssStoredGroup, error) {
 	now := s.now().UTC()
 	out := &nssStoredGroup{}
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		stored, contended, err := s.writeGroup(ctx, tx, group, now, out)
-		if err != nil {
-			return err
-		}
-		refs := make([]nssEntryRef, 0, len(contenders))
-		for _, c := range contenders {
-			refs = append(refs, c.ref())
-		}
-		if out.observed, err = s.recordCollisions(tx, groupTable(), group.ref(), groupRowRef(stored), contended, refs, complete, now); err != nil {
-			return err
-		}
-		if stored == nil {
-			return nil
-		}
-		if index != nil {
-			if err := replaceMembersOfGroup(tx, stored.GID, index.resolve(group.Members)); err != nil {
-				return err
-			}
-		}
-		out.row = &model.PosixGroup{}
-		return tx.First(out.row, "id = ?", stored.ID).Error
+		return s.storeGroupTx(ctx, tx, group, contenders, complete, index, gone, w, now, out)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("store the directory group %s: %w", group.DN, err)
 	}
+	s.flush(&out.audit)
 
+	if out.renamed != nil {
+		s.log.InfoContext(ctx, "re-anchored an NSS group renamed or moved in the directory",
+			"gid", out.row.GID, "old_name", out.renamed.oldName, "name", out.row.Name,
+			"old_dn", out.renamed.oldDN, "dn", out.row.DN, "detected_by", out.renamed.via)
+	}
 	s.raiseCollisionAlerts(ctx, groupTable(), out.observed)
 	if out.row != nil && out.row.PendingGID != nil {
 		s.raisePendingAlert(ctx, groupTable(), out.row.ID, out.row.Name, out.row.DN, pendingDetail(out.row.GID, out.row.PendingGID, 0, nil))
@@ -473,14 +530,59 @@ func (s *NSSDirectoryService) storeGroup(ctx context.Context, group *nssGroup, c
 	return out, nil
 }
 
-// writeGroup is storeGroup's row write, as writeAccount is storeAccount's.
-func (s *NSSDirectoryService) writeGroup(ctx context.Context, tx *gorm.DB, group *nssGroup, now time.Time, out *nssStoredGroup) (*model.PosixGroup, []model.NSSCollision, error) {
+// storeGroupTx is storeGroup's transaction.
+func (s *NSSDirectoryService) storeGroupTx(ctx context.Context, tx *gorm.DB, group *nssGroup, contenders []*nssGroup, complete nssKinds, index *nssMemberIndex, gone *nssGroupGone, w nssWrite, now time.Time, out *nssStoredGroup) error {
+	stored, contended, err := s.writeGroup(ctx, tx, group, contenders, gone, now, out)
+	if err != nil {
+		return err
+	}
+	refs := make([]nssEntryRef, 0, len(contenders))
+	for _, c := range contenders {
+		refs = append(refs, c.ref())
+	}
+	if out.observed, err = s.recordCollisions(tx, groupTable(), group.ref(), groupRowRef(stored), contended, refs, complete, now); err != nil {
+		return err
+	}
+	if stored == nil {
+		return nil
+	}
+	var members []uint32
+	if index != nil {
+		members = index.resolve(group.Members)
+	}
+	out.row = &model.PosixGroup{}
+	if err := tx.First(out.row, "id = ?", stored.ID).Error; err != nil {
+		return err
+	}
+	if err := s.finishGroupRename(tx, group, w, now, out); err != nil {
+		return err
+	}
+	if err := s.recordGroupEvents(tx, group, w, len(members), out); err != nil {
+		return err
+	}
+	if index == nil {
+		return nil
+	}
+	return s.replaceGroupMembers(tx, out.row, members, w, out)
+}
+
+// writeGroup is storeGroup's row write, as writeAccount is storeAccount's,
+// except that an entry no row anchors may be a stored group renamed or
+// moved (renameTarget), whose row it then re-anchors.
+func (s *NSSDirectoryService) writeGroup(ctx context.Context, tx *gorm.DB, group *nssGroup, contenders []*nssGroup, gone *nssGroupGone, now time.Time, out *nssStoredGroup) (*model.PosixGroup, []model.NSSCollision, error) {
 	match, err := groupTable().match(tx, s.config.LDAP.IDAttribute != "", group.ref())
 	if err != nil {
 		return nil, nil, err
 	}
 	if match != nil {
-		return s.updateGroup(ctx, tx, match.ID, group, now)
+		return s.updateGroup(ctx, tx, match.ID, group, now, &out.change)
+	}
+	target, err := s.renameTarget(tx, group, contenders, gone)
+	if err != nil {
+		return nil, nil, err
+	}
+	if target != nil {
+		return s.reanchorGroup(ctx, tx, target, group, gone.via, now, out)
 	}
 	contended, err := s.heldValues(tx, groupTable(), group.ref(), nil, now)
 	if err != nil || len(contended) > 0 {
@@ -516,12 +618,13 @@ func (s *NSSDirectoryService) insertGroup(ctx context.Context, tx *gorm.DB, g *n
 }
 
 // updateGroup brings the matched group row id in line with the entry, as
-// updateAccount does.
-func (s *NSSDirectoryService) updateGroup(ctx context.Context, tx *gorm.DB, id string, g *nssGroup, now time.Time) (*model.PosixGroup, []model.NSSCollision, error) {
+// updateAccount does, filling ch.
+func (s *NSSDirectoryService) updateGroup(ctx context.Context, tx *gorm.DB, id string, g *nssGroup, now time.Time, ch *nssRowChange) (*model.PosixGroup, []model.NSSCollision, error) {
 	var row model.PosixGroup
 	if err := tx.First(&row, "id = ?", id).Error; err != nil {
 		return nil, nil, fmt.Errorf("read the matched group: %w", err)
 	}
+	*ch = nssRowChange{oldName: row.Name, oldDN: row.DN, missingSince: row.MissingSince, deletedAt: row.DeletedAt}
 
 	pendingGID := nssPending(row.GID, g.GID, row.PendingGID)
 	updates := map[string]any{
@@ -550,6 +653,7 @@ func (s *NSSDirectoryService) updateGroup(ctx context.Context, tx *gorm.DB, id s
 			})
 		} else {
 			updates["name"] = g.Name
+			ch.renamed = true
 		}
 	}
 	if g.DN != row.DN {
@@ -567,6 +671,202 @@ func (s *NSSDirectoryService) updateGroup(ctx context.Context, tx *gorm.DB, id s
 		return nil, nil, fmt.Errorf("re-read the group row: %w", err)
 	}
 	return &updated, blocked, nil
+}
+
+// gidHolderElsewhere is the stored group a directory group no row anchors
+// may be a rename or move of: the row holding its gid, tombstones
+// included, at another DN, and with no directory_id that says it is
+// another entry (sameEntry). Nil when there is none. A row whose DN was
+// released is anchored by its directory_id alone, so it never qualifies.
+func (s *NSSDirectoryService) gidHolderElsewhere(tx *gorm.DB, g *nssGroup) (*nssRowRef, error) {
+	holder, err := groupTable().holderOf(tx, "gid", g.GID, "")
+	if err != nil || holder == nil {
+		return nil, err
+	}
+	if holder.DN == "" || normalizeDN(holder.DN) == normalizeDN(g.DN) || !sameEntry(holder.DirectoryID, g.DirectoryID) {
+		return nil, nil //nolint:nilnil // no candidate is an answer, not an error.
+	}
+	return holder, nil
+}
+
+// renameCandidate is gidHolderElsewhere for an entry no row anchors, and
+// nil for one a row does: the read-time half of the rename check, which
+// decides whether the directory is worth asking about the holder's DN.
+func (s *NSSDirectoryService) renameCandidate(tx *gorm.DB, g *nssGroup) (*nssRowRef, error) {
+	match, err := groupTable().match(tx, s.config.LDAP.IDAttribute != "", g.ref())
+	if err != nil || match != nil {
+		return nil, err
+	}
+	return s.gidHolderElsewhere(tx, g)
+}
+
+// renameTarget is the stored group that g, an entry no row anchors, is a
+// rename or move of, or nil. It is the gid's holder at another DN
+// (gidHolderElsewhere) when the read's evidence says the holder's entry
+// has gone and no other entry the read found carries the gid: two entries
+// contending for a held gid are a collision, whatever became of the old
+// one.
+func (s *NSSDirectoryService) renameTarget(tx *gorm.DB, g *nssGroup, contenders []*nssGroup, gone *nssGroupGone) (*nssRowRef, error) {
+	if gone == nil {
+		return nil, nil //nolint:nilnil // without evidence nothing is a rename.
+	}
+	for _, c := range contenders {
+		if c.GID == g.GID {
+			return nil, nil //nolint:nilnil // a second entry with the gid is a collision.
+		}
+	}
+	holder, err := s.gidHolderElsewhere(tx, g)
+	if err != nil || holder == nil || !gone.gone(holder.DN) {
+		return nil, err
+	}
+	return holder, nil
+}
+
+// reanchorGroup makes the stored group target follow g, its entry renamed
+// or moved in the directory with the gid kept. The collisions the move
+// resolves are deleted: g contending with target, which is now its own
+// row, and every pair the old entry contended in, since it has gone. Then
+// the row is updated as a matched one would be: it keeps its id and gid
+// (and so its membership rows), takes g's DN, directory_id and name (unless
+// another row holds the name, which is the usual blocked rename), and
+// loses missing_since and any tombstone. out.renamed records it for the
+// audit event.
+func (s *NSSDirectoryService) reanchorGroup(ctx context.Context, tx *gorm.DB, target *nssRowRef, g *nssGroup, via string, now time.Time, out *nssStoredGroup) (*model.PosixGroup, []model.NSSCollision, error) {
+	var resolved []model.NSSCollision
+	if err := tx.Where("kind IN ?", groupTable().kinds()).
+		Where(tx.Where("holder_id = ? AND other_dn = ?", target.ID, g.DN).Or("other_dn = ?", target.DN)).
+		Find(&resolved).Error; err != nil {
+		return nil, nil, fmt.Errorf("read the collisions the rename of %s resolves: %w", target.DN, err)
+	}
+	if err := deleteCollisions(tx, resolved); err != nil {
+		return nil, nil, err
+	}
+	stored, blocked, err := s.updateGroup(ctx, tx, target.ID, g, now, &out.change)
+	if err != nil {
+		return nil, nil, err
+	}
+	out.renamed = &nssGroupRename{
+		oldName: out.change.oldName, oldDN: out.change.oldDN, via: via,
+		revived: out.change.deletedAt != nil, resolved: resolved,
+	}
+	return stored, blocked, nil
+}
+
+// finishGroupRename is a re-anchoring's last step in its transaction, once
+// out.row is the row as stored: the other rows the deleted collisions
+// withheld are served again unless another still names them, and the
+// nss.group_renamed event is recorded with the write. Nothing when the
+// store re-anchored nothing.
+func (s *NSSDirectoryService) finishGroupRename(tx *gorm.DB, group *nssGroup, w nssWrite, now time.Time, out *nssStoredGroup) error {
+	if out.renamed == nil {
+		return nil
+	}
+	affected := map[string]bool{}
+	markAffected(affected, out.renamed.resolved)
+	if err := s.recomputeWithheld(tx, groupTable(), affected, now); err != nil {
+		return err
+	}
+	return s.record(tx, &out.audit, groupRenamedEvent(out.renamed, out.row, group, w.via))
+}
+
+// nssGroupMatched is the detected_by of nss.group_renamed for a group its
+// anchor (directory_id or DN) matched, whose name changed in place.
+const nssGroupMatched = "matched"
+
+// groupRenamedEvent is the nss.group_renamed event for one renamed or
+// re-anchored group, naming the row before and after. new_name is the
+// directory's; name_blocked says another row holds it, so the row kept
+// its old name and is withheld until that clears.
+func groupRenamedEvent(r *nssGroupRename, row *model.PosixGroup, g *nssGroup, via string) AuditEvent {
+	return AuditEvent{
+		Action: AuditNSSGroupRenamed,
+		Detail: map[string]any{
+			"table":        groupTable().table,
+			"gid":          row.GID,
+			"old_name":     r.oldName,
+			"new_name":     g.Name,
+			"old_dn":       r.oldDN,
+			"new_dn":       row.DN,
+			"detected_by":  r.via,
+			"name_blocked": row.Name != g.Name,
+			"revived":      r.revived,
+			"via":          via,
+		},
+	}
+}
+
+// recordGroupEvents records the lifecycle events of one group write:
+// nss.group_created (with the members it is stored with, unless the run is
+// the first import), or for a matched row nss.group_renamed when its name
+// followed the directory in place and nss.group_revived when it was
+// missing or a tombstone.
+func (s *NSSDirectoryService) recordGroupEvents(tx *gorm.DB, group *nssGroup, w nssWrite, memberCount int, out *nssStoredGroup) error {
+	ref := *groupRowRef(out.row)
+	if out.created {
+		if w.importing {
+			return nil
+		}
+		return s.recordRowEvent(tx, &out.audit, groupTable(), AuditNSSGroupCreated, ref, nil, w.via, map[string]any{"member_count": memberCount})
+	}
+	if out.renamed == nil && out.change.renamed {
+		r := &nssGroupRename{oldName: out.change.oldName, oldDN: out.change.oldDN, via: nssGroupMatched, revived: out.change.deletedAt != nil}
+		if err := s.record(tx, &out.audit, groupRenamedEvent(r, out.row, group, w.via)); err != nil {
+			return err
+		}
+	}
+	if !out.change.revived() {
+		return nil
+	}
+	return s.recordRowEvent(tx, &out.audit, groupTable(), AuditNSSGroupRevived, ref, nil, w.via, revivedDetail(out.change.missingSince, out.change.deletedAt))
+}
+
+// recordAccountEvents is recordGroupEvents for an account: created,
+// renamed (nss.account_renamed) and revived.
+func (s *NSSDirectoryService) recordAccountEvents(tx *gorm.DB, w nssWrite, out *nssStoredAccount) error {
+	row := out.row
+	ref := *accountRowRef(row)
+	if out.created {
+		if w.importing {
+			return nil
+		}
+		return s.recordRowEvent(tx, &out.audit, accountTable(), AuditNSSAccountCreated, ref, row.UserID, w.via, map[string]any{"gid": row.GID})
+	}
+	if out.change.renamed {
+		if err := s.recordRowEvent(tx, &out.audit, accountTable(), AuditNSSAccountRenamed, ref, row.UserID, w.via,
+			map[string]any{"old_name": out.change.oldName, "new_name": row.Name, "old_dn": out.change.oldDN}); err != nil {
+			return err
+		}
+	}
+	if !out.change.revived() {
+		return nil
+	}
+	return s.recordRowEvent(tx, &out.audit, accountTable(), AuditNSSAccountRevived, ref, row.UserID, w.via, revivedDetail(out.change.missingSince, out.change.deletedAt))
+}
+
+// replaceGroupMembers makes row's membership rows exactly uids, recording
+// nss.group_members_changed when the set changed. A group created by this
+// write has its members in nss.group_created instead.
+func (s *NSSDirectoryService) replaceGroupMembers(tx *gorm.DB, row *model.PosixGroup, uids []uint32, w nssWrite, out *nssStoredGroup) error {
+	var before nssMembers
+	if !out.created {
+		var err error
+		if before, err = readMembers(tx, "gid = ?", row.GID); err != nil {
+			return err
+		}
+	}
+	if err := replaceMembersOfGroup(tx, row.GID, uids); err != nil {
+		return err
+	}
+	if out.created {
+		return nil
+	}
+	after := nssMembers{}
+	for _, uid := range uids {
+		after.add(row.GID, uid)
+	}
+	return s.recordMemberChanges(tx, &out.audit, memberDeltas(before, after), nssMemberChange{
+		via: w.via, groupNames: map[uint32]string{row.GID: row.Name},
+	})
 }
 
 // heldValues is the collisions a new entry runs into: a row, tombstones

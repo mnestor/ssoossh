@@ -158,6 +158,7 @@ client must render an unknown action rather than assume the list is closed.
 | `ldap.sync_triggered` | An admin running the [directory sync](/ssoossh/operations/ldap/) by hand, with the counts the pass produced. A dry run records `dry_run: true` and no change to go with it |
 | `ldap.probed` | One directory probe, with the filter it sent and how many entries matched. The probe writes nothing, but it makes the server open an outbound connection and read an entry in full, which is worth a record |
 | `admin.diagnostics_run` | One run of the [deployment diagnostics](/ssoossh/operations/diagnostics/), with the status each of the four checks returned. Like the probe it writes nothing and makes the server dial out, so it is recorded for the same reason |
+| `nss.*` | The NSS directory: its [alerts](/ssoossh/operations/nss/#alerts), fleet key administration, and every change the server makes to the accounts, groups and memberships it serves, listed on the [NSS operations page](/ssoossh/operations/nss/#directory-change-events) |
 | `admin.config_viewed` | **No longer emitted.** The effective-config screen is read-only and is reloaded constantly while an operator works, so the event arrived several times a minute and buried the decisions this log exists to record. The action stays defined so older events still read back with a name |
 
 There is no logout event: sessions mostly end by expiry, so an explicit logout

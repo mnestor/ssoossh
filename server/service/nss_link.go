@@ -52,7 +52,7 @@ func (s *NSSDirectoryService) linkLogin(ctx context.Context, conn ldapConn, iden
 	row, err := s.loginRow(ctx, entry)
 	if err == nil && row == nil {
 		filter := s.andFilter(s.config.NSS.UserFilter, s.config.NSS.Attributes.UID, raw)
-		if _, _, err = s.readAccountsOnDemand(ctx, conn, filter, nssKinds{number: true}, func(a *nssAccount) bool { return a.UID == uid }); err == nil {
+		if _, _, err = s.readAccountsOnDemand(ctx, conn, filter, nssKinds{number: true}, nssViaLogin, func(a *nssAccount) bool { return a.UID == uid }); err == nil {
 			row, err = s.loginRow(ctx, entry)
 		}
 	}
