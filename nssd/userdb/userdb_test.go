@@ -1,0 +1,932 @@
+package userdb
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"os"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/mnestor/ssoossh/internal/apitypes"
+	"github.com/mnestor/ssoossh/internal/varlink"
+	"github.com/mnestor/ssoossh/nssd/cache"
+	"github.com/mnestor/ssoossh/nssd/config"
+	"github.com/mnestor/ssoossh/nssd/upstream"
+)
+
+func TestGetUserRecordKeys(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		params  map[string]any
+		wantErr string
+		wantUID float64
+	}{
+		{name: "should find by name when only userName is given", params: p("userName", "alice"), wantUID: 5001},
+		{name: "should find by uid when only uid is given", params: p("uid", 5001), wantUID: 5001},
+		{name: "should find when uid and userName name the same user", params: p("uid", 5001, "userName", "alice"), wantUID: 5001},
+		{name: "should report a conflict when uid and userName name different users", params: p("uid", 5003, "userName", "alice"), wantErr: ErrorConflictingRecordFound},
+		{name: "should refuse to enumerate when neither key is given", params: p(), wantErr: ErrorEnumerationNotSupported},
+		{name: "should not find when the server has no such name", params: p("userName", "nobody"), wantErr: ErrorNoRecordFound},
+		{name: "should not find when the server has no such uid", params: p("uid", 9999), wantErr: ErrorNoRecordFound},
+		{name: "should answer BadService when service is missing", params: map[string]any{"userName": "alice"}, wantErr: ErrorBadService},
+		{name: "should answer BadService when service is someone else's", params: map[string]any{"userName": "alice", "service": "io.systemd.Home"}, wantErr: ErrorBadService},
+		{name: "should refuse fuzzyNames when fuzzy matching is not supported", params: p("fuzzyNames", []string{"ali"}), wantErr: varlink.ErrorInvalidParameter},
+		{name: "should refuse uuid when uuids are not supported", params: p("uuid", "0f3ab"), wantErr: varlink.ErrorInvalidParameter},
+		{name: "should accept a null fuzzyNames when it is absent in effect", params: p("userName", "alice", "fuzzyNames", nil), wantUID: 5001},
+		{name: "should refuse a uid of the wrong type when it is a string", params: p("uid", "5001"), wantErr: varlink.ErrorInvalidParameter},
+		{name: "should refuse a negative uid when it is not a uid", params: p("uid", -1), wantErr: varlink.ErrorInvalidParameter},
+		{name: "should refuse UID_INVALID when it is not a uid", params: p("uid", 4294967295), wantErr: varlink.ErrorInvalidParameter},
+		{name: "should not match when dispositionMask excludes regular", params: p("userName", "alice", "dispositionMask", []string{"system"}), wantErr: ErrorNonMatchingRecordFound},
+		{name: "should match when dispositionMask includes regular", params: p("userName", "alice", "dispositionMask", []string{"system", "regular"}), wantUID: 5001},
+		{name: "should not match when uidMin is above the uid", params: p("userName", "alice", "uidMin", 6000), wantErr: ErrorNonMatchingRecordFound},
+		{name: "should not match when uidMax is below the uid", params: p("userName", "alice", "uidMax", 5000), wantErr: ErrorNonMatchingRecordFound},
+		{name: "should match when the uid is within uidMin and uidMax", params: p("userName", "alice", "uidMin", 5001, "uidMax", 5001), wantUID: 5001},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			f := newFixture(t, nil)
+			r := one(t, f.call(t, MethodGetUserRecord, tt.params, userPeer, false))
+			if tt.wantErr != "" {
+				if r.Error != tt.wantErr {
+					t.Fatalf("got %q %s, want %q", r.Error, r.Parameters, tt.wantErr)
+				}
+				return
+			}
+			rec, _ := decodeRecord(t, r)
+			if rec["uid"] != tt.wantUID {
+				t.Fatalf("got %v", rec)
+			}
+		})
+	}
+}
+
+func TestGetUserRecordShouldNameTheParameterWhenItIsInvalid(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, nil)
+	r := one(t, f.call(t, MethodGetUserRecord, p("fuzzyNames", []string{"a"}), userPeer, false))
+	if string(r.Parameters) != `{"parameter":"fuzzyNames"}` {
+		t.Fatalf("got %s", r.Parameters)
+	}
+	r = one(t, f.call(t, MethodGetUserRecord, p("uid", "x"), userPeer, false))
+	if string(r.Parameters) != `{"parameter":"uid"}` {
+		t.Fatalf("got %s", r.Parameters)
+	}
+}
+
+func TestUserRecordMapping(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		user       string
+		peer       Peer
+		wantShell  string
+		wantLocked bool
+	}{
+		{name: "should map an active user when it is served to a uid 0 peer", user: "alice", peer: rootPeer, wantShell: "/bin/bash"},
+		{name: "should map an active user when it is served to anyone else", user: "alice", peer: userPeer, wantShell: "/bin/bash"},
+		{name: "should lock a disabled user with the disabled shell when it is served", user: "carol", peer: rootPeer, wantShell: "/usr/sbin/nologin", wantLocked: true},
+		{name: "should lock a deleted user with the disabled shell when it is served", user: "dave", peer: userPeer, wantShell: "/usr/sbin/nologin", wantLocked: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			f := newFixture(t, nil)
+			rec, incomplete := decodeRecord(t, one(t, f.call(t, MethodGetUserRecord, p("userName", tt.user), tt.peer, false)))
+			if rec["userName"] != tt.user || rec["shell"] != tt.wantShell || rec["disposition"] != "regular" ||
+				rec["service"] != ServiceName || rec["homeDirectory"] != "/home/"+tt.user || rec["gid"] != rec["uid"] {
+				t.Fatalf("got %v", rec)
+			}
+			if rec["realName"] != "User "+tt.user {
+				t.Fatalf("should sanitise realName when it holds ':', got %q", rec["realName"])
+			}
+			if locked, _ := rec["locked"].(bool); locked != tt.wantLocked {
+				t.Fatalf("got locked %v, want %v", rec["locked"], tt.wantLocked)
+			}
+			if _, has := rec["locked"]; !tt.wantLocked && has {
+				t.Fatal("should omit locked when the user is active")
+			}
+			if _, has := rec["memberOf"]; has {
+				t.Fatal("should never send memberOf")
+			}
+			priv, hasPriv := rec["privileged"].(map[string]any)
+			if tt.peer.UID == 0 {
+				if !hasPriv || incomplete {
+					t.Fatalf("should send privileged and be complete when the peer is uid 0, got %v incomplete=%v", rec, incomplete)
+				}
+				if h, _ := priv["hashedPassword"].([]any); len(h) != 1 || h[0] != "*" {
+					t.Fatalf("got privileged %v", priv)
+				}
+			} else if hasPriv || !incomplete {
+				t.Fatalf("should omit privileged and mark incomplete when the peer is not uid 0, got %v incomplete=%v", rec, incomplete)
+			}
+		})
+	}
+}
+
+func TestLocalShortCircuitShouldNeverAskUpstreamWhenTheNameIsLocal(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		method string
+		params map[string]any
+	}{
+		{name: "should not look up a local user name", method: MethodGetUserRecord, params: p("userName", "bob")},
+		{name: "should not look up a local uid", method: MethodGetUserRecord, params: p("uid", 1001)},
+		{name: "should not look up a uid below min_id", method: MethodGetUserRecord, params: p("uid", 0)},
+		{name: "should not look up a filtered name", method: MethodGetUserRecord, params: p("userName", "root")},
+		{name: "should not look up an invalid name", method: MethodGetUserRecord, params: p("userName", "a:b")},
+		{name: "should not look up an over-long name", method: MethodGetUserRecord, params: p("userName", strings.Repeat("a", 33))},
+		{name: "should not look up a local group name", method: MethodGetGroupRecord, params: p("groupName", "sudo")},
+		{name: "should not look up a gid below min_id", method: MethodGetGroupRecord, params: p("gid", 27)},
+		{name: "should not look up a local user's memberships", method: MethodGetMemberships, params: p("userName", "bob")},
+		{name: "should not look up a local group's members", method: MethodGetMemberships, params: p("groupName", "sudo")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			f := newFixture(t, nil)
+			if got := errorOf(t, f.call(t, tt.method, tt.params, rootPeer, true)); got != ErrorNoRecordFound {
+				t.Fatalf("got %q", got)
+			}
+			if n := f.up.callCount(); n != 0 {
+				t.Fatalf("made %d upstream calls", n)
+			}
+		})
+	}
+}
+
+func TestGetGroupRecordKeys(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		params  map[string]any
+		wantErr string
+	}{
+		{name: "should find by name when only groupName is given", params: p("groupName", "devs")},
+		{name: "should find by gid when only gid is given", params: p("gid", 5100)},
+		{name: "should find when gid and groupName name the same group", params: p("gid", 5100, "groupName", "devs")},
+		{name: "should report a conflict when gid and groupName differ", params: p("gid", 5101, "groupName", "devs"), wantErr: ErrorConflictingRecordFound},
+		{name: "should refuse to enumerate when neither key is given", params: p(), wantErr: ErrorEnumerationNotSupported},
+		{name: "should not find when the server has no such group", params: p("groupName", "nogroup"), wantErr: ErrorNoRecordFound},
+		{name: "should answer BadService when service is missing", params: map[string]any{"groupName": "devs"}, wantErr: ErrorBadService},
+		{name: "should refuse fuzzyNames when fuzzy matching is not supported", params: p("fuzzyNames", []string{"d"}), wantErr: varlink.ErrorInvalidParameter},
+		{name: "should refuse uuid when uuids are not supported", params: p("uuid", "x"), wantErr: varlink.ErrorInvalidParameter},
+		{name: "should refuse a gid of the wrong type when it is a string", params: p("gid", "5100"), wantErr: varlink.ErrorInvalidParameter},
+		{name: "should refuse a negative gid when it is not a gid", params: p("gid", -5), wantErr: varlink.ErrorInvalidParameter},
+		{name: "should not match when gidMin is above the gid", params: p("groupName", "devs", "gidMin", 6000), wantErr: ErrorNonMatchingRecordFound},
+		{name: "should not match when gidMax is below the gid", params: p("groupName", "devs", "gidMax", 10), wantErr: ErrorNonMatchingRecordFound},
+		{name: "should not match when dispositionMask excludes regular", params: p("groupName", "devs", "dispositionMask", []string{"intrinsic"}), wantErr: ErrorNonMatchingRecordFound},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			f := newFixture(t, nil)
+			r := one(t, f.call(t, MethodGetGroupRecord, tt.params, userPeer, false))
+			if tt.wantErr != "" {
+				if r.Error != tt.wantErr {
+					t.Fatalf("got %q, want %q", r.Error, tt.wantErr)
+				}
+				return
+			}
+			rec, incomplete := decodeRecord(t, r)
+			if rec["groupName"] != "devs" || rec["gid"] != float64(5100) || rec["disposition"] != "regular" || rec["service"] != ServiceName || incomplete {
+				t.Fatalf("got %v incomplete=%v", rec, incomplete)
+			}
+			if _, has := rec["members"]; has {
+				t.Fatal("should never send members in the group record")
+			}
+		})
+	}
+}
+
+func TestGetGroupRecordShouldAnswerFromAUserLookupWhenTheUserFilledTheGroup(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, nil)
+	f.call(t, MethodGetUserRecord, p("userName", "alice"), rootPeer, false)
+	before := f.up.callCount()
+	// initgroups: the user's own private group and devs come from the
+	// user answer, by name and by gid.
+	for _, params := range []map[string]any{p("groupName", "devs"), p("gid", 5001), p("groupName", "alice")} {
+		if r := one(t, f.call(t, MethodGetGroupRecord, params, rootPeer, false)); r.Error != "" {
+			t.Fatalf("%v: got %s", params, r.Error)
+		}
+	}
+	if n := f.up.callCount() - before; n != 0 {
+		t.Fatalf("made %d upstream calls for groups a user answer filled", n)
+	}
+}
+
+func TestGetMemberships(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		params  map[string]any
+		more    bool
+		want    []string
+		wantErr string
+	}{
+		{name: "should list the user's groups when userName is given", params: p("userName", "alice"), more: true, want: []string{"alice/alice", "alice/devs", "alice/sudo"}},
+		{name: "should list the group's members when groupName is given", params: p("groupName", "devs"), more: true, want: []string{"alice/devs", "carol/devs"}},
+		{name: "should answer one pair when both name a membership", params: p("userName", "alice", "groupName", "devs"), want: []string{"alice/devs"}},
+		{name: "should not find when both name no membership", params: p("userName", "alice", "groupName", "ops"), wantErr: ErrorNoRecordFound},
+		{name: "should answer a single member without more when there is one", params: p("groupName", "solo"), want: []string{"alice/solo"}},
+		{name: "should ask for more when a stream is needed and more is not set", params: p("groupName", "devs"), wantErr: varlink.ErrorExpectedMore},
+		{name: "should not find when the group has no members", params: p("groupName", "none"), more: true, wantErr: ErrorNoRecordFound},
+		{name: "should not find when the user does not exist", params: p("userName", "nobody"), more: true, wantErr: ErrorNoRecordFound},
+		{name: "should not find when the group does not exist", params: p("groupName", "nogroup"), more: true, wantErr: ErrorNoRecordFound},
+		{name: "should refuse to enumerate when neither key is given", params: p(), more: true, wantErr: ErrorEnumerationNotSupported},
+		{name: "should answer BadService when service is wrong", params: map[string]any{"userName": "alice", "service": "x"}, wantErr: ErrorBadService},
+		{name: "should refuse a name of the wrong type when it is a number", params: p("userName", 5), wantErr: varlink.ErrorInvalidParameter},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			f := newFixture(t, nil)
+			replies := f.call(t, MethodGetMemberships, tt.params, rootPeer, tt.more)
+			if tt.wantErr != "" {
+				if got := errorOf(t, replies); got != tt.wantErr {
+					t.Fatalf("got %q, want %q", got, tt.wantErr)
+				}
+				return
+			}
+			var got []string
+			for i, r := range replies {
+				var m membershipReply
+				if err := json.Unmarshal(r.Parameters, &m); err != nil || r.Error != "" {
+					t.Fatalf("reply %d: %+v, %v", i, r, err)
+				}
+				if r.Continues != (i < len(replies)-1) {
+					t.Fatalf("reply %d: continues %v", i, r.Continues)
+				}
+				got = append(got, m.UserName+"/"+m.GroupName)
+			}
+			if strings.Join(got, ",") != strings.Join(tt.want, ",") {
+				t.Fatalf("got %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGetMembershipsByGroupShouldFetchMembersWhenOnlyAStubIsCached(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, nil)
+	f.call(t, MethodGetUserRecord, p("userName", "alice"), rootPeer, false)
+	before := f.up.callCount()
+	replies := f.call(t, MethodGetMemberships, p("groupName", "devs"), rootPeer, true)
+	if len(replies) != 2 || f.up.callCount() != before+1 {
+		t.Fatalf("got %d replies after %d calls", len(replies), f.up.callCount()-before)
+	}
+	// Now cached with its members.
+	f.call(t, MethodGetMemberships, p("groupName", "devs"), rootPeer, true)
+	if f.up.callCount() != before+1 {
+		t.Fatal("should answer the second time from the cache")
+	}
+}
+
+func TestGetMembershipsShouldDropMembersWhenIgnoreGroupMembersIsSet(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, func(c *config.Config) { c.IgnoreGroupMembers = true })
+	if got := errorOf(t, f.call(t, MethodGetMemberships, p("groupName", "devs"), rootPeer, true)); got != ErrorNoRecordFound {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestCacheFreshness(t *testing.T) {
+	t.Parallel()
+	ttl := 5400 * time.Second
+
+	tests := []struct {
+		name      string
+		advance   time.Duration
+		wantCalls int
+		wantQueue int
+	}{
+		{name: "should answer from the cache when the entry is fresh", advance: ttl/2 - time.Second, wantCalls: 1},
+		{name: "should answer from the cache and queue a refresh when past nowait", advance: ttl / 2, wantCalls: 1, wantQueue: 1},
+		{name: "should fetch again when the entry has expired", advance: ttl, wantCalls: 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			f := newFixture(t, nil)
+			f.call(t, MethodGetUserRecord, p("userName", "alice"), userPeer, false)
+			f.clock.Advance(tt.advance)
+			if r := one(t, f.call(t, MethodGetUserRecord, p("userName", "alice"), userPeer, false)); r.Error != "" {
+				t.Fatalf("got %s", r.Error)
+			}
+			if n := f.up.callCount(); n != tt.wantCalls {
+				t.Fatalf("made %d upstream calls, want %d", n, tt.wantCalls)
+			}
+			if n := f.d.refresher.Pending(); n != tt.wantQueue {
+				t.Fatalf("queued %d refreshes, want %d", n, tt.wantQueue)
+			}
+		})
+	}
+}
+
+func TestNegativeCacheShouldAnswerMissesLocallyWhenWithinTheTimeout(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, nil)
+	for range 3 {
+		if got := errorOf(t, f.call(t, MethodGetUserRecord, p("userName", "nobody"), userPeer, false)); got != ErrorNoRecordFound {
+			t.Fatalf("got %q", got)
+		}
+	}
+	if n := f.up.callCount(); n != 1 {
+		t.Fatalf("made %d upstream calls", n)
+	}
+	f.clock.Advance(15 * time.Second)
+	f.call(t, MethodGetUserRecord, p("userName", "nobody"), userPeer, false)
+	if n := f.up.callCount(); n != 2 {
+		t.Fatalf("should ask again after entry_negative_timeout, made %d calls", n)
+	}
+}
+
+func TestRemovedUserShouldLeaveTheCacheWhenTheServerSaysNotFound(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, nil)
+	f.call(t, MethodGetUserRecord, p("userName", "alice"), userPeer, false)
+	delete(f.up.users, "alice")
+	f.clock.Advance(2 * time.Hour)
+	if got := errorOf(t, f.call(t, MethodGetUserRecord, p("userName", "alice"), userPeer, false)); got != ErrorNoRecordFound {
+		t.Fatalf("got %q", got)
+	}
+	// Later offline, the removed user must not come back from the cache.
+	f.clock.Advance(time.Minute)
+	f.up.setErr(upstream.ErrOffline)
+	if got := errorOf(t, f.call(t, MethodGetUserRecord, p("userName", "alice"), userPeer, false)); got != ErrorServiceNotAvailable {
+		t.Fatalf("got %q", got)
+	}
+	// The same through a uid lookup.
+	f.up.setErr(nil)
+	f.call(t, MethodGetUserRecord, p("userName", "carol"), userPeer, false)
+	delete(f.up.users, "carol")
+	f.clock.Advance(2 * time.Hour)
+	if got := errorOf(t, f.call(t, MethodGetUserRecord, p("uid", 5003), userPeer, false)); got != ErrorNoRecordFound {
+		t.Fatalf("got %q", got)
+	}
+	if e, _ := f.store.UserByName(t.Context(), "carol"); e != nil {
+		t.Fatal("should drop the entry a uid miss names")
+	}
+}
+
+func TestOfflineServing(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		expireOffline time.Duration
+		advance       time.Duration
+		cached        bool
+		err           error
+		want          string
+	}{
+		{name: "should serve an expired entry when the server is offline", advance: 3 * time.Hour, cached: true, err: upstream.ErrOffline, want: ""},
+		{name: "should serve an expired entry when the key is latched", advance: 3 * time.Hour, cached: true, err: upstream.ErrUnauthorized, want: ""},
+		{name: "should serve an expired entry when over the concurrency cap", advance: 3 * time.Hour, cached: true, err: upstream.ErrBusy, want: ""},
+		{name: "should answer ServiceNotAvailable when offline with no entry", err: upstream.ErrOffline, want: ErrorServiceNotAvailable},
+		{name: "should answer ServiceNotAvailable when latched with no entry", err: upstream.ErrUnauthorized, want: ErrorServiceNotAvailable},
+		{name: "should serve within cache_expire_offline when it is set", expireOffline: 24 * time.Hour, advance: 23 * time.Hour, cached: true, err: upstream.ErrOffline, want: ""},
+		{name: "should stop serving past cache_expire_offline when it is set", expireOffline: 24 * time.Hour, advance: 24 * time.Hour, cached: true, err: upstream.ErrOffline, want: ErrorServiceNotAvailable},
+		{name: "should not cache an invalid answer when the server refuses the name", err: upstream.ErrInvalid, want: ErrorNoRecordFound},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			f := newFixture(t, func(c *config.Config) { c.CacheExpireOffline = tt.expireOffline })
+			if tt.cached {
+				f.call(t, MethodGetUserRecord, p("userName", "alice"), userPeer, false)
+			}
+			f.clock.Advance(tt.advance)
+			f.up.setErr(tt.err)
+			if got := one(t, f.call(t, MethodGetUserRecord, p("userName", "alice"), userPeer, false)).Error; got != tt.want {
+				t.Fatalf("got %q, want %q", got, tt.want)
+			}
+			if errors.Is(tt.err, upstream.ErrInvalid) && f.d.negative.Len() != 0 {
+				t.Fatal("should not negative-cache an invalid answer")
+			}
+		})
+	}
+}
+
+func TestStaleFlagShouldForceAFetchWhenTheEntryIsMarked(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, nil)
+	f.call(t, MethodGetUserRecord, p("userName", "alice"), userPeer, false)
+	n, err := f.d.Invalidate(t.Context(), cache.Selector{Users: true, Name: "alice"})
+	if err != nil || n != 1 {
+		t.Fatalf("got %d, %v", n, err)
+	}
+	f.call(t, MethodGetUserRecord, p("userName", "alice"), userPeer, false)
+	if f.up.callCount() != 2 {
+		t.Fatalf("should refetch a stale entry, made %d calls", f.up.callCount())
+	}
+}
+
+func TestSlowUpstreamShouldAnswerServiceNotAvailableWhenTheDeadlinePasses(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, nil)
+	f.up.block = make(chan struct{})
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	call := varlink.Call{Method: MethodGetUserRecord, Parameters: mustJSON(t, p("userName", "alice"))}
+	if got := errorOf(t, f.callCtx(t, ctx, call, userPeer)); got != ErrorServiceNotAvailable {
+		t.Fatalf("got %q", got)
+	}
+	// The fetch completes into the cache after the caller has gone.
+	close(f.up.block)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if e, _ := f.store.UserByName(t.Context(), "alice"); e != nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the fetch never completed into the cache")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if r := one(t, f.call(t, MethodGetUserRecord, p("userName", "alice"), userPeer, false)); r.Error != "" || f.up.callCount() != 1 {
+		t.Fatalf("should answer the next call from the cache, got %q after %d calls", r.Error, f.up.callCount())
+	}
+}
+
+func TestSSHDFreshness(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		peer      Peer
+		advance   time.Duration
+		upErr     error
+		remove    bool
+		wantCalls int
+		wantErr   string
+	}{
+		{name: "should refresh when sshd asks and the entry is older than login_soft_ttl", peer: sshdPeer, advance: 61 * time.Second, wantCalls: 2},
+		{name: "should not refresh when sshd asks and the entry is younger than login_soft_ttl", peer: sshdPeer, advance: 59 * time.Second, wantCalls: 1},
+		{name: "should not refresh when a uid 0 peer is not sshd", peer: rootPeer, advance: 61 * time.Second, wantCalls: 1},
+		{name: "should answer from the cache when the login refresh cannot reach the server", peer: sshdPeer, advance: 61 * time.Second, upErr: upstream.ErrOffline, wantCalls: 2},
+		{name: "should answer not found when the login refresh says the user is gone", peer: sshdPeer, advance: 61 * time.Second, remove: true, wantCalls: 2, wantErr: ErrorNoRecordFound},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			f := newFixture(t, nil)
+			f.call(t, MethodGetUserRecord, p("userName", "alice"), userPeer, false)
+			f.clock.Advance(tt.advance)
+			f.up.setErr(tt.upErr)
+			if tt.remove {
+				delete(f.up.users, "alice")
+			}
+			if got := one(t, f.call(t, MethodGetUserRecord, p("userName", "alice"), tt.peer, false)).Error; got != tt.wantErr {
+				t.Fatalf("got %q, want %q", got, tt.wantErr)
+			}
+			if n := f.up.callCount(); n != tt.wantCalls {
+				t.Fatalf("made %d upstream calls, want %d", n, tt.wantCalls)
+			}
+		})
+	}
+}
+
+func TestSSHDFreshnessShouldAnswerFromTheCacheWhenTheRefreshIsSlow(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, func(c *config.Config) { c.LoginRefreshTimeout = 20 * time.Millisecond })
+	f.call(t, MethodGetUserRecord, p("userName", "alice"), userPeer, false)
+	f.clock.Advance(2 * time.Minute)
+	f.up.block = make(chan struct{})
+	defer close(f.up.block)
+	start := time.Now()
+	if r := one(t, f.call(t, MethodGetUserRecord, p("userName", "alice"), sshdPeer, false)); r.Error != "" {
+		t.Fatalf("got %q", r.Error)
+	}
+	if time.Since(start) > 2*time.Second {
+		t.Fatal("should give up on the refresh at login_refresh_timeout")
+	}
+}
+
+func TestDisabledUserServedToSSHDShouldBeLoggedWhenItHappens(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, nil)
+	f.call(t, MethodGetUserRecord, p("userName", "carol"), sshdPeer, false)
+	if !strings.Contains(f.logs.String(), "serving a disabled account to sshd") {
+		t.Fatalf("got logs %s", f.logs)
+	}
+}
+
+func TestRefreshChangingIDsShouldBeLoggedWhenTheServerMovesAUser(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, nil)
+	f.call(t, MethodGetUserRecord, p("userName", "alice"), userPeer, false)
+	f.up.users["alice"].UID = 6001
+	f.up.users["alice"].GID = 6001
+	f.up.groups["devs"].GID = 6100
+	f.clock.Advance(2 * time.Hour)
+	rec, _ := decodeRecord(t, one(t, f.call(t, MethodGetUserRecord, p("userName", "alice"), userPeer, false)))
+	if rec["uid"] != float64(6001) {
+		t.Fatalf("should apply the change, got %v", rec)
+	}
+	logs := f.logs.String()
+	if !strings.Contains(logs, "a refresh changed a cached user's ids") || !strings.Contains(logs, "old_uid=5001") || !strings.Contains(logs, "uid=6001") {
+		t.Fatalf("got logs %s", logs)
+	}
+	f.call(t, MethodGetMemberships, p("groupName", "devs"), userPeer, true)
+	if !strings.Contains(f.logs.String(), "a refresh changed a cached group's gid") {
+		t.Fatalf("should log a group's gid change too, got %s", f.logs)
+	}
+}
+
+func TestPolicyShouldApplyOnReadWhenOverridesChange(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, nil)
+	f.call(t, MethodGetUserRecord, p("userName", "alice"), userPeer, false)
+	if err := os.WriteFile(f.paths.Overrides, []byte("alice:\n  home: /srv/alice\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f.d.ReloadPolicy()
+	rec, _ := decodeRecord(t, one(t, f.call(t, MethodGetUserRecord, p("userName", "alice"), userPeer, false)))
+	if rec["homeDirectory"] != "/srv/alice" || f.up.callCount() != 1 {
+		t.Fatalf("should apply an override to a cached entry without a fetch, got %v after %d calls", rec, f.up.callCount())
+	}
+	// An override that breaks the sanity rules hides the cached user.
+	if err := os.WriteFile(f.paths.Overrides, []byte("alice:\n  uid: 10\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f.d.ReloadPolicy()
+	if got := errorOf(t, f.call(t, MethodGetUserRecord, p("userName", "alice"), userPeer, false)); got != ErrorNoRecordFound {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestPolicyShouldRefuseAndNegativeCacheWhenTheServerAnswerFails(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, func(c *config.Config) { c.RequireGroups = []string{"admins"} })
+	for range 2 {
+		if got := errorOf(t, f.call(t, MethodGetUserRecord, p("userName", "alice"), userPeer, false)); got != ErrorNoRecordFound {
+			t.Fatalf("got %q", got)
+		}
+	}
+	if f.up.callCount() != 1 || !strings.Contains(f.logs.String(), "refusing a user from the server") {
+		t.Fatalf("made %d calls; logs %s", f.up.callCount(), f.logs)
+	}
+}
+
+func TestMismatchedAnswerShouldBeRefusedWhenTheServerSendsAnotherRecord(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, nil)
+	f.up.users["mallory"] = userResp("alice", 5001, apitypes.NSSStatusActive)
+	if got := errorOf(t, f.call(t, MethodGetUserRecord, p("userName", "mallory"), userPeer, false)); got != ErrorNoRecordFound {
+		t.Fatalf("got %q", got)
+	}
+	f.up.groups["evil"] = &apitypes.NSSGroupResponse{Name: "devs", GID: 5100}
+	if got := errorOf(t, f.call(t, MethodGetGroupRecord, p("groupName", "evil"), userPeer, false)); got != ErrorNoRecordFound {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestGroupResolutionFailures(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, nil)
+	f.up.groups["low"] = &apitypes.NSSGroupResponse{Name: "low2", GID: 5200}
+	f.up.groups["low2"] = &apitypes.NSSGroupResponse{Name: "low2", GID: 5200, Members: []string{"bob"}}
+	// bob is local, so the only member is dropped.
+	if got := errorOf(t, f.call(t, MethodGetMemberships, p("groupName", "low2"), userPeer, true)); got != ErrorNoRecordFound {
+		t.Fatalf("got %q", got)
+	}
+	f.up.setErr(upstream.ErrInvalid)
+	if got := errorOf(t, f.call(t, MethodGetGroupRecord, p("groupName", "fresh"), userPeer, false)); got != ErrorNoRecordFound {
+		t.Fatalf("got %q", got)
+	}
+	f.up.setErr(upstream.ErrOffline)
+	if got := errorOf(t, f.call(t, MethodGetGroupRecord, p("groupName", "fresh2"), userPeer, false)); got != ErrorServiceNotAvailable {
+		t.Fatalf("got %q", got)
+	}
+	// An expired group with members is served offline.
+	f.up.setErr(nil)
+	f.call(t, MethodGetMemberships, p("groupName", "devs"), userPeer, true)
+	f.clock.Advance(3 * time.Hour)
+	f.up.setErr(upstream.ErrOffline)
+	if replies := f.call(t, MethodGetMemberships, p("groupName", "devs"), userPeer, true); len(replies) != 2 {
+		t.Fatalf("got %+v", replies)
+	}
+	// A removed group leaves the cache.
+	f.up.setErr(nil)
+	delete(f.up.groups, "devs")
+	if got := errorOf(t, f.call(t, MethodGetGroupRecord, p("gid", 5100), userPeer, false)); got != ErrorNoRecordFound {
+		t.Fatalf("got %q", got)
+	}
+	// A group the policy refuses is negative-cached.
+	f.up.groups["sysgrp"] = &apitypes.NSSGroupResponse{Name: "sysgrp", GID: 5300}
+	if err := os.WriteFile(f.paths.Group, []byte("sysgrp:x:5300:\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := errorOf(t, f.call(t, MethodGetGroupRecord, p("gid", 5300), userPeer, false)); got != ErrorNoRecordFound {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestGroupFreshnessShouldQueueARefreshWhenPastNowait(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, nil)
+	f.call(t, MethodGetMemberships, p("groupName", "devs"), userPeer, true)
+	f.clock.Advance(46 * time.Minute)
+	f.call(t, MethodGetGroupRecord, p("groupName", "devs"), userPeer, false)
+	if f.d.refresher.Pending() != 1 {
+		t.Fatalf("queued %d", f.d.refresher.Pending())
+	}
+	// A cached group the policy now refuses is not served.
+	if err := os.WriteFile(f.paths.Group, []byte("devs:x:5100:\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f.d.ReloadPolicy()
+	if got := errorOf(t, f.call(t, MethodGetGroupRecord, p("gid", 5100), userPeer, false)); got != ErrorNoRecordFound {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestRefreshUser(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, nil)
+
+	if r := one(t, f.call(t, MethodRefreshUser, p("userName", "alice"), userPeer, false)); r.Error != "" || string(r.Parameters) != "{}" {
+		t.Fatalf("should reply at once with nothing, got %+v", r)
+	}
+	if f.d.refresher.Pending() != 1 || f.up.callCount() != 0 {
+		t.Fatal("should queue a background refresh, not fetch inline")
+	}
+	// Debounced per name for login_soft_ttl.
+	f.call(t, MethodRefreshUser, p("userName", "alice"), userPeer, false)
+	f.clock.Advance(59 * time.Second)
+	f.call(t, MethodRefreshUser, map[string]any{"userName": "alice"}, userPeer, false)
+	if f.d.refresher.Pending() != 1 {
+		t.Fatalf("should debounce within login_soft_ttl, queued %d", f.d.refresher.Pending())
+	}
+	// Oneway: acted on, never answered.
+	f.clock.Advance(2 * time.Second)
+	if replies := f.callCtx(t, t.Context(), varlink.Call{Method: MethodRefreshUser, Parameters: mustJSON(t, p("userName", "carol")), Oneway: true}, userPeer); len(replies) != 0 {
+		t.Fatalf("should not answer a oneway call, got %+v", replies)
+	}
+	if f.d.refresher.Pending() != 2 {
+		t.Fatalf("queued %d", f.d.refresher.Pending())
+	}
+	// Refused names are ignored quietly.
+	f.call(t, MethodRefreshUser, p("userName", "bob"), userPeer, false)
+	if f.d.refresher.Pending() != 2 {
+		t.Fatal("should ignore a local name")
+	}
+	if got := errorOf(t, f.call(t, MethodRefreshUser, map[string]any{"userName": "a", "service": "x"}, userPeer, false)); got != ErrorBadService {
+		t.Fatalf("got %q", got)
+	}
+	if got := errorOf(t, f.call(t, MethodRefreshUser, map[string]any{}, userPeer, false)); got != varlink.ErrorInvalidParameter {
+		t.Fatalf("got %q", got)
+	}
+	if got := errorOf(t, f.call(t, MethodRefreshUser, map[string]any{"userName": 1}, userPeer, false)); got != varlink.ErrorInvalidParameter {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestRefreshUserDebounceShouldStayBoundedWhenFlooded(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, nil)
+	for i := range maxDebounce {
+		f.d.debounce["u"+time.Duration(i).String()] = f.clock.Now()
+	}
+	if f.d.takeDebounce("newname") {
+		t.Fatal("should drop a request when every debounce entry is recent")
+	}
+	f.clock.Advance(time.Hour)
+	if !f.d.takeDebounce("newname") || len(f.d.debounce) != 1 {
+		t.Fatalf("should prune aged entries, have %d", len(f.d.debounce))
+	}
+}
+
+func TestBackgroundWork(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, func(c *config.Config) { c.RefreshRate = 1000; c.RefreshExpiredInterval = time.Hour })
+	f.call(t, MethodGetUserRecord, p("userName", "alice"), userPeer, false)
+	f.call(t, MethodGetMemberships, p("groupName", "devs"), userPeer, true)
+	f.clock.Advance(50 * time.Minute)
+
+	// One sweep pass queues the user and the member-bearing group, not
+	// the stubs the user filled.
+	f.d.sweep(t.Context())
+	if f.d.refresher.Pending() != 2 {
+		t.Fatalf("queued %d", f.d.refresher.Pending())
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() { f.d.Run(ctx); close(done) }()
+	deadline := time.Now().Add(5 * time.Second)
+	for f.up.callCount() < 4 {
+		if time.Now().After(deadline) {
+			t.Fatalf("background refreshes did not run, %d calls", f.up.callCount())
+		}
+		time.Sleep(time.Millisecond)
+	}
+	cancel()
+	<-done
+}
+
+func TestRefreshShouldIgnoreUnknownKeysWhenOneIsQueued(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, nil)
+	f.d.refresh(t.Context(), "nonsense")
+	f.up.setErr(upstream.ErrOffline)
+	f.d.refresh(t.Context(), "user/uid/5001")
+	f.d.refresh(t.Context(), "group/gid/5100")
+	if !strings.Contains(f.logs.String(), "background refresh failed") {
+		t.Fatalf("got logs %s", f.logs)
+	}
+}
+
+func TestSweepShouldLogWhenTheStoreFails(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, nil)
+	f.d.store = failingStore{}
+	f.d.sweep(t.Context())
+	if !strings.Contains(f.logs.String(), "cannot list the user cache") || !strings.Contains(f.logs.String(), "cannot list the group cache") {
+		t.Fatalf("got logs %s", f.logs)
+	}
+}
+
+func TestGetInfo(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, nil)
+	var got infoReply
+	if err := json.Unmarshal(one(t, f.call(t, MethodGetInfo, nil, userPeer, false)).Parameters, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Product != "ssoosshd-nss" || len(got.Interfaces) != 3 || got.Interfaces[1] != InterfaceUserDatabase {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestUnknownMethods(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		method string
+		want   string
+		params string
+	}{
+		{name: "should answer MethodNotFound when the interface is known", method: InterfaceUserDatabase + ".Frobnicate", want: varlink.ErrorMethodNotFound, params: `{"method":"io.systemd.UserDatabase.Frobnicate"}`},
+		{name: "should answer MethodNotFound for introspection when it is not implemented", method: InterfaceVarlink + ".GetInterfaceDescription", want: varlink.ErrorMethodNotFound},
+		{name: "should answer InterfaceNotFound when the interface is unknown", method: "io.systemd.Hostname.Describe", want: varlink.ErrorInterfaceNotFound, params: `{"interface":"io.systemd.Hostname"}`},
+		{name: "should answer InterfaceNotFound when the method has no interface", method: "Describe", want: varlink.ErrorInterfaceNotFound},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			f := newFixture(t, nil)
+			r := one(t, f.call(t, tt.method, nil, userPeer, false))
+			if r.Error != tt.want || (tt.params != "" && string(r.Parameters) != tt.params) {
+				t.Fatalf("got %q %s", r.Error, r.Parameters)
+			}
+		})
+	}
+}
+
+func TestAdmin(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, nil)
+	ctx := t.Context()
+	f.call(t, MethodGetUserRecord, p("userName", "alice"), userPeer, false)
+	f.call(t, MethodGetUserRecord, p("userName", "nobody"), userPeer, false)
+
+	s := f.d.Status(ctx)
+	if s.Cache.Users != 1 || s.Cache.Groups != 2 || s.NegativeEntries != 1 || s.Upstream.State != upstream.StateOnline || s.CacheMode != config.CacheModePersistent {
+		t.Fatalf("got %+v", s)
+	}
+
+	tests := []struct {
+		name string
+		sel  cache.Selector
+		want int
+	}{
+		{name: "should mark one user when named", sel: cache.Selector{Users: true, Name: "alice"}, want: 1},
+		{name: "should mark one group when named", sel: cache.Selector{Groups: true, Name: "devs"}, want: 1},
+		{name: "should mark everything when nothing is named", sel: cache.Selector{Users: true, Groups: true}, want: 3},
+	}
+	for _, tt := range tests {
+		n, err := f.d.Invalidate(ctx, tt.sel)
+		if err != nil || n != tt.want {
+			t.Fatalf("%s: got %d, %v", tt.name, n, err)
+		}
+	}
+	if f.d.negative.Len() != 0 {
+		t.Fatal("should forget the misses when everything is invalidated")
+	}
+
+	f.d.Reset()
+	if f.up.resets != 1 {
+		t.Fatal("should reset the upstream on SIGHUP")
+	}
+
+	f.d.store = failingStore{}
+	if s := f.d.Status(ctx); s.CacheError == "" {
+		t.Fatal("should report a store that cannot count")
+	}
+	if _, err := f.d.Invalidate(ctx, cache.Selector{Users: true}); err == nil {
+		t.Fatal("should report a store that cannot mark")
+	}
+}
+
+func TestBrokenStoreShouldCostUpstreamCallsNotAnswersWhenItFails(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, nil)
+	f.d.store = failingStore{}
+	if r := one(t, f.call(t, MethodGetUserRecord, p("userName", "alice"), userPeer, false)); r.Error != "" {
+		t.Fatalf("got %q", r.Error)
+	}
+	if r := one(t, f.call(t, MethodGetGroupRecord, p("groupName", "devs"), userPeer, false)); r.Error != "" {
+		t.Fatalf("got %q", r.Error)
+	}
+	delete(f.up.users, "alice")
+	delete(f.up.groups, "devs")
+	f.call(t, MethodGetUserRecord, p("userName", "alice"), userPeer, false)
+	f.call(t, MethodGetGroupRecord, p("groupName", "devs"), userPeer, false)
+	for _, want := range []string{"cannot read the user cache", "cannot write the user cache", "cannot write the group cache", "cannot read the group cache"} {
+		if !strings.Contains(f.logs.String(), want) {
+			t.Fatalf("should log %q, got %s", want, f.logs)
+		}
+	}
+}
+
+func TestCorruptEntryShouldNotBeServedWhenItDoesNotDecode(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, nil)
+	now := f.clock.Now()
+	if err := f.store.PutUser(t.Context(), cache.UserEntry{Name: "alice", UID: 5001, GID: 5001, Data: []byte("{"), FetchedAt: now, ExpiresAt: now.Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.store.PutGroup(t.Context(), cache.GroupEntry{Name: "devs", GID: 5100, Members: true, Data: []byte("{"), FetchedAt: now, ExpiresAt: now.Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	if got := errorOf(t, f.call(t, MethodGetUserRecord, p("userName", "alice"), userPeer, false)); got != ErrorServiceNotAvailable {
+		t.Fatalf("got %q", got)
+	}
+	if got := errorOf(t, f.call(t, MethodGetGroupRecord, p("groupName", "devs"), userPeer, false)); got != ErrorServiceNotAvailable {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestKeysShouldRoundTripWhenParsed(t *testing.T) {
+	t.Parallel()
+	for _, k := range []userKey{{name: "alice"}, {uid: 5001, byUID: true}} {
+		if got, ok := parseUserKey(k.String()); !ok || got != k {
+			t.Fatalf("got %+v", got)
+		}
+	}
+	for _, k := range []groupKey{{name: "devs"}, {gid: 5100, byGID: true}} {
+		if got, ok := parseGroupKey(k.String()); !ok || got != k {
+			t.Fatalf("got %+v", got)
+		}
+	}
+	if _, ok := parseUserKey("user/uid/x"); ok {
+		t.Fatal("should refuse a bad uid")
+	}
+	if _, ok := parseGroupKey("other"); ok {
+		t.Fatal("should refuse another kind")
+	}
+}
+
+// failingStore fails every call.
+type failingStore struct{}
+
+// errStore is failingStore's error.
+var errStore = errors.New("disk on fire")
+
+// The methods below implement cache.Store, every one of them failing.
+
+func (failingStore) UserByName(context.Context, string) (*cache.UserEntry, error) {
+	return nil, errStore
+}
+func (failingStore) UserByUID(context.Context, uint32) (*cache.UserEntry, error) {
+	return nil, errStore
+}
+func (failingStore) PutUser(context.Context, cache.UserEntry) error { return errStore }
+func (failingStore) DeleteUser(context.Context, string) error       { return errStore }
+func (failingStore) GroupByName(context.Context, string) (*cache.GroupEntry, error) {
+	return nil, errStore
+}
+func (failingStore) GroupByGID(context.Context, uint32) (*cache.GroupEntry, error) {
+	return nil, errStore
+}
+func (failingStore) PutGroup(context.Context, cache.GroupEntry) error { return errStore }
+func (failingStore) DeleteGroup(context.Context, string) error        { return errStore }
+func (failingStore) MarkStale(context.Context, cache.Selector) (int, error) {
+	return 0, errStore
+}
+func (failingStore) Users(context.Context) ([]cache.UserEntry, error)   { return nil, errStore }
+func (failingStore) Groups(context.Context) ([]cache.GroupEntry, error) { return nil, errStore }
+func (failingStore) Counts(context.Context) (cache.Counts, error)       { return cache.Counts{}, errStore }
+func (failingStore) Close() error                                       { return nil }

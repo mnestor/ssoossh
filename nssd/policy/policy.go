@@ -1,0 +1,488 @@
+// Package policy holds ssoosshd-nss's host-side rules: the local
+// short-circuit against /etc/passwd and /etc/group, the sanity rules every
+// upstream answer must pass, host overrides, and the home and shell
+// resolution, all from Part 3 of docs/proposals/nss-directory ("Request
+// path" step 4 and "Policy and sanity rules").
+//
+// The daemon runs the full set twice: on the upstream answer before it is
+// cached, so a failing entry is negative-cached, and again on every read,
+// so an edit to nss.yaml's lists, /etc/passwd or the override file applies
+// to cached entries at once, with no cache flush.
+package policy
+
+import (
+	"errors"
+	"fmt"
+	"log/slog"
+	"path"
+	"slices"
+	"strconv"
+	"strings"
+	"sync"
+
+	"github.com/mnestor/ssoossh/internal/apitypes"
+	"github.com/mnestor/ssoossh/internal/posixname"
+	"github.com/mnestor/ssoossh/nssd/config"
+)
+
+// ErrRejected wraps every reason a name, id or record is not served. The
+// daemon answers NoRecordFound for all of them.
+var ErrRejected = errors.New("refused by host policy")
+
+// rejected builds an ErrRejected with a reason for the log.
+func rejected(format string, args ...any) error {
+	return fmt.Errorf("%w: "+format, append([]any{ErrRejected}, args...)...)
+}
+
+// Paths are the host files the policy reads.
+type Paths struct {
+	// Passwd is /etc/passwd.
+	Passwd string
+	// Group is /etc/group.
+	Group string
+	// Shells is /etc/shells.
+	Shells string
+	// Overrides is the host override file.
+	Overrides string
+}
+
+// DefaultPaths returns the system's files.
+func DefaultPaths() Paths {
+	return Paths{
+		Passwd:    "/etc/passwd",
+		Group:     "/etc/group",
+		Shells:    "/etc/shells",
+		Overrides: config.DefaultOverridesPath,
+	}
+}
+
+// Engine applies the policy. It is safe for concurrent use.
+type Engine struct {
+	cfg    *config.Config
+	log    *slog.Logger
+	passwd *watched[localDB]
+	group  *watched[localDB]
+	shells *watched[[]string]
+
+	// overridesFile re-reads the override file on change; lastGood is
+	// what the last successful read gave, kept when a later edit fails to
+	// parse so one typo does not take every overridden user away.
+	overridesFile *watched[config.Overrides]
+	overridesMu   sync.Mutex
+	lastGood      config.Overrides
+	lastErr       string
+}
+
+// New returns an Engine over cfg and the files in paths.
+func New(cfg *config.Config, paths Paths, log *slog.Logger) *Engine {
+	return &Engine{
+		cfg:           cfg,
+		log:           log,
+		passwd:        newWatched(paths.Passwd, readLocalDB),
+		group:         newWatched(paths.Group, readLocalDB),
+		shells:        newWatched(paths.Shells, readShells),
+		overridesFile: newWatched(paths.Overrides, config.LoadOverrides),
+		lastGood:      config.Overrides{},
+	}
+}
+
+// Reload makes the next lookup re-read every host file, for SIGHUP and
+// the admin socket's reload after `ssoosshd-nss override` edits the file.
+func (e *Engine) Reload() {
+	e.passwd.invalidate()
+	e.group.invalidate()
+	e.shells.invalidate()
+	e.overridesFile.invalidate()
+}
+
+// CheckUserName is the short-circuit for a user name: the name rules, then
+// filter_users, then /etc/passwd. A refused name never reaches the server.
+func (e *Engine) CheckUserName(name string) error {
+	if err := posixname.Valid(name); err != nil {
+		return fmt.Errorf("%w: %w", ErrRejected, err)
+	}
+	if slices.Contains(e.cfg.FilterUsers, name) {
+		return rejected("user %q is in filter_users", name)
+	}
+	local, err := e.passwd.get()
+	if err != nil {
+		// Fail closed: a host that cannot read its own passwd cannot tell
+		// a directory name from a local one.
+		return rejected("cannot read the local users: %v", err)
+	}
+	if local.hasName(name) {
+		return rejected("user %q is a local account", name)
+	}
+	return nil
+}
+
+// CheckUID is the short-circuit for a uid: min_id..max_id, then
+// /etc/passwd.
+func (e *Engine) CheckUID(uid uint32) error {
+	if !e.cfg.InRange(uid) {
+		return rejected("uid %d is outside min_id..max_id", uid)
+	}
+	local, err := e.passwd.get()
+	if err != nil {
+		return rejected("cannot read the local users: %v", err)
+	}
+	if local.hasID(uid) {
+		return rejected("uid %d belongs to a local account", uid)
+	}
+	return nil
+}
+
+// CheckGroupName is the short-circuit for a group name.
+func (e *Engine) CheckGroupName(name string) error {
+	if err := posixname.Valid(name); err != nil {
+		return fmt.Errorf("%w: %w", ErrRejected, err)
+	}
+	if slices.Contains(e.cfg.FilterGroups, name) {
+		return rejected("group %q is in filter_groups", name)
+	}
+	local, err := e.group.get()
+	if err != nil {
+		return rejected("cannot read the local groups: %v", err)
+	}
+	if local.hasName(name) {
+		return rejected("group %q is a local group", name)
+	}
+	return nil
+}
+
+// CheckGID is the short-circuit for a gid.
+func (e *Engine) CheckGID(gid uint32) error {
+	if !e.cfg.InRange(gid) {
+		return rejected("gid %d is outside min_id..max_id", gid)
+	}
+	local, err := e.group.get()
+	if err != nil {
+		return rejected("cannot read the local groups: %v", err)
+	}
+	if local.hasID(gid) {
+		return rejected("gid %d belongs to a local group", gid)
+	}
+	return nil
+}
+
+// User is a user answer after policy: what the userdb record is built
+// from.
+type User struct {
+	// Name is the login name, verbatim.
+	Name string
+	// UID and GID are after overrides and override_gid.
+	UID, GID uint32
+	// RealName is the sanitised gecos.
+	RealName string
+	// Home and Shell are resolved.
+	Home, Shell string
+	// Locked is set for a disabled or deleted account.
+	Locked bool
+	// Status is the server's status.
+	Status string
+	// Groups are the memberships worth answering GetMemberships with:
+	// valid names not in filter_groups. Local groups such as sudo stay,
+	// because initgroups resolves them through files (README U12).
+	Groups []string
+}
+
+// User applies the whole policy to a user answer: host override, then the
+// sanity rules, then gid, home and shell resolution. An error wraps
+// ErrRejected and says why.
+func (e *Engine) User(resp *apitypes.NSSUserResponse) (User, error) {
+	if resp == nil {
+		return User{}, rejected("the server sent no user record")
+	}
+	name := resp.Name
+	if err := posixname.Valid(name); err != nil {
+		return User{}, fmt.Errorf("%w: server name: %w", ErrRejected, err)
+	}
+
+	// The override goes first so the sanity rules below see, and can
+	// refuse, the values it sets: an override uid below min_id fails the
+	// range rule like a server uid would.
+	uid, gid, home, shell, prefOK := resp.UID, resp.GID, deref(resp.Home), deref(resp.Shell), true
+	if o, ok := e.overrides()[name]; ok {
+		if o.UID != nil {
+			uid = *o.UID
+		}
+		if o.GID != nil {
+			gid = *o.GID
+		}
+		if o.Home != "" {
+			home = o.Home
+		}
+		if o.Shell != "" {
+			// A host override is the most specific intent there is, so
+			// it beats the user's own shell_pref too; only the global
+			// override_shell still wins over it.
+			shell, prefOK = o.Shell, false
+		}
+	}
+
+	if err := e.sanity(name, uid, gid, resp.Groups); err != nil {
+		return User{}, err
+	}
+	// override_gid applies after the range rule, so it may name a shared
+	// group below min_id such as gid 100 "users". It is never 0: that
+	// value means unset.
+	if e.cfg.OverrideGID != 0 {
+		gid = e.cfg.OverrideGID
+	}
+
+	resolvedHome, err := e.home(name, uid, deref(resp.Home), home)
+	if err != nil {
+		return User{}, err
+	}
+	u := User{Name: name, UID: uid, GID: gid, Home: resolvedHome, Status: resp.Status}
+	u.RealName, _ = posixname.SanitizeGECOS(resp.Gecos, name)
+	u.Groups = e.membershipNames(resp.Groups)
+
+	switch resp.Status {
+	case apitypes.NSSStatusActive:
+		pref := ""
+		if prefOK {
+			pref = deref(resp.ShellPref)
+		}
+		u.Shell = e.shell(pref, shell)
+	default:
+		// disabled, deleted, and anything this daemon does not know yet,
+		// which fails closed: locked, with the disabled shell, which is
+		// exempt from the shells check (README R4).
+		u.Shell, u.Locked = e.cfg.DisabledShell, true
+	}
+	return u, nil
+}
+
+// sanity applies the rules every served user must pass, in the order the
+// proposal lists them.
+func (e *Engine) sanity(name string, uid, gid uint32, groups []apitypes.NSSMembership) error {
+	if slices.Contains(e.cfg.FilterUsers, name) {
+		return rejected("user %q is in filter_users", name)
+	}
+	if !e.cfg.InRange(uid) {
+		return rejected("user %q: uid %d is outside min_id..max_id", name, uid)
+	}
+	if !e.cfg.InRange(gid) {
+		return rejected("user %q: gid %d is outside min_id..max_id", name, gid)
+	}
+	local, err := e.passwd.get()
+	if err != nil {
+		return rejected("cannot read the local users: %v", err)
+	}
+	if local.hasName(name) {
+		return rejected("user %q is a local account", name)
+	}
+	// A directory uid that a local account already uses would hand that
+	// account's files to the directory user.
+	if local.hasID(uid) {
+		return rejected("user %q: uid %d belongs to a local account", name, uid)
+	}
+	if len(e.cfg.RequireGroups) > 0 && !slices.ContainsFunc(groups, func(m apitypes.NSSMembership) bool {
+		return slices.Contains(e.cfg.RequireGroups, m.Name)
+	}) {
+		return rejected("user %q is in none of require_groups", name)
+	}
+	return nil
+}
+
+// membershipNames returns the group names worth listing for a user.
+func (e *Engine) membershipNames(groups []apitypes.NSSMembership) []string {
+	names := make([]string, 0, len(groups))
+	for _, m := range groups {
+		if posixname.Valid(m.Name) != nil || slices.Contains(e.cfg.FilterGroups, m.Name) || slices.Contains(names, m.Name) {
+			continue
+		}
+		names = append(names, m.Name)
+	}
+	return names
+}
+
+// Group is a group answer after policy.
+type Group struct {
+	// Name is the group name, verbatim.
+	Name string
+	// GID is the group id.
+	GID uint32
+	// Members are the member names worth answering GetMemberships with;
+	// nil when ignore_group_members is set.
+	Members []string
+}
+
+// Group applies the policy to a group answer.
+func (e *Engine) Group(resp *apitypes.NSSGroupResponse) (Group, error) {
+	if resp == nil {
+		return Group{}, rejected("the server sent no group record")
+	}
+	if err := e.CheckGroupName(resp.Name); err != nil {
+		return Group{}, err
+	}
+	if err := e.CheckGID(resp.GID); err != nil {
+		return Group{}, err
+	}
+	g := Group{Name: resp.Name, GID: resp.GID}
+	if e.cfg.IgnoreGroupMembers {
+		return g, nil
+	}
+	if resp.MembersTruncated {
+		e.log.Warn("the server truncated a group's member list", "group", resp.Name, "members", len(resp.Members))
+	}
+	local, err := e.passwd.get()
+	if err != nil {
+		return Group{}, rejected("cannot read the local users: %v", err)
+	}
+	for _, m := range resp.Members {
+		// A local account or a filtered name is never made a member from
+		// the directory: GetMemberships by that user's name answers
+		// NoRecordFound (README U8), and the group's own list agrees.
+		if posixname.Valid(m) != nil || slices.Contains(e.cfg.FilterUsers, m) || local.hasName(m) || slices.Contains(g.Members, m) {
+			continue
+		}
+		g.Members = append(g.Members, m)
+	}
+	return g, nil
+}
+
+// GroupStub checks a membership taken from a user answer before it fills
+// the group cache: the same rules as a group answer, without members.
+func (e *Engine) GroupStub(m apitypes.NSSMembership) error {
+	if err := e.CheckGroupName(m.Name); err != nil {
+		return err
+	}
+	return e.CheckGID(m.GID)
+}
+
+// home resolves the home directory: override_homedir, then the server's
+// (or the host override's) home, then fallback_homedir. The first that is
+// a valid absolute path after expansion wins. serverHome is what %h
+// expands to.
+func (e *Engine) home(name string, uid uint32, serverHome, home string) (string, error) {
+	candidates := []string{
+		e.expand(e.cfg.OverrideHomedir, name, uid, serverHome),
+		home,
+		e.expand(e.cfg.FallbackHomedir, name, uid, serverHome),
+	}
+	for _, c := range candidates {
+		if c != "" && config.ValidPath(c) {
+			return c, nil
+		}
+	}
+	return "", rejected("user %q has no absolute home directory", name)
+}
+
+// expand substitutes %u (name), %U (uid), %d (domain), %h (the server's
+// home) and %% in a homedir template. An unknown sequence is kept as
+// written. A template that uses %h when the server sent no home expands to
+// nothing, so "%h/x" never becomes "/x".
+func (e *Engine) expand(template, name string, uid uint32, serverHome string) string {
+	if template == "" || (serverHome == "" && strings.Contains(strings.ReplaceAll(template, "%%", ""), "%h")) {
+		return ""
+	}
+	var b strings.Builder
+	for i := 0; i < len(template); i++ {
+		if template[i] != '%' || i+1 == len(template) {
+			b.WriteByte(template[i])
+			continue
+		}
+		i++
+		switch template[i] {
+		case 'u':
+			b.WriteString(name)
+		case 'U':
+			b.WriteString(strconv.FormatUint(uint64(uid), 10))
+		case 'd':
+			b.WriteString(e.cfg.Domain)
+		case 'h':
+			b.WriteString(serverHome)
+		case '%':
+			b.WriteByte('%')
+		default:
+			b.WriteByte('%')
+			b.WriteByte(template[i])
+		}
+	}
+	return b.String()
+}
+
+// shell resolves an active account's shell, first acceptable wins:
+// override_shell, then shell_pref (by shell_map, then by basename in
+// /etc/shells), then the server's (or host override's) shell, then
+// shell_fallback. The fallback is the operator's own last resort and is
+// used even if it is not otherwise acceptable, rather than refusing the
+// account outright.
+func (e *Engine) shell(pref, shell string) string {
+	shells, err := e.shells.get()
+	if err != nil {
+		e.log.Error("cannot read /etc/shells; only allowed_shells can match", "error", err)
+		shells = nil
+	}
+	candidates := []string{e.cfg.OverrideShell, e.resolvePref(pref, shells), shell}
+	for _, c := range candidates {
+		if c != "" && e.acceptable(c, shells) {
+			return c
+		}
+	}
+	return e.cfg.ShellFallback
+}
+
+// resolvePref turns a shell name into a path: shell_map first, then the
+// first /etc/shells entry with that basename.
+func (e *Engine) resolvePref(pref string, shells []string) string {
+	if pref == "" {
+		return ""
+	}
+	if p, ok := e.cfg.ShellMap[pref]; ok {
+		return p
+	}
+	for _, s := range shells {
+		if path.Base(s) == pref {
+			return s
+		}
+	}
+	return ""
+}
+
+// acceptable reports whether a shell may be served: a valid path, listed
+// in allowed_shells (or in /etc/shells when that list is empty), and not
+// in vetoed_shells.
+func (e *Engine) acceptable(shell string, shells []string) bool {
+	if !config.ValidPath(shell) || slices.Contains(e.cfg.VetoedShells, shell) {
+		return false
+	}
+	if len(e.cfg.AllowedShells) > 0 {
+		return slices.Contains(e.cfg.AllowedShells, shell)
+	}
+	return slices.Contains(shells, shell)
+}
+
+// overrides returns the current host overrides. An override file that
+// fails to read keeps the last good overrides in force and is logged once
+// per failure, not per lookup.
+func (e *Engine) overrides() config.Overrides {
+	current, err := e.overridesFile.get()
+	e.overridesMu.Lock()
+	defer e.overridesMu.Unlock()
+	if err != nil {
+		if msg := err.Error(); msg != e.lastErr {
+			e.log.Error("cannot read the host override file; keeping the last good overrides", "error", err)
+			e.lastErr = msg
+		}
+		return e.lastGood
+	}
+	e.lastGood, e.lastErr = current, ""
+	return current
+}
+
+// Overrides returns the overrides in force, for `override list` and
+// status.
+func (e *Engine) Overrides() config.Overrides {
+	return e.overrides()
+}
+
+// deref returns *s, or "" for nil.
+func deref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}

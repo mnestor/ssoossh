@@ -41,7 +41,7 @@ define BUILDALL
 	RELEASE=false goreleaser build --clean --snapshot=${DIRTY}
 endef
 
-# $(1) -- component directory (server, client, internal)
+# $(1) -- component directory (server, client, internal, nssd)
 # $(2) -- CGO_ENABLED for the test run. Inside the recipe rather than in
 # front of $(call ...) at the call site: each line of a define is its own
 # shell, so a prefix there would only reach the mkdir.
@@ -177,10 +177,10 @@ frontend-clean: ## Remove the built web UI
 
 ##@ Test
 
-.PHONY: test test-server test-client test-internal test-race cover cover-ci frontend-test csp-check
+.PHONY: test test-server test-client test-internal test-nssd test-race cover cover-ci frontend-test csp-check
 # server/frontend embeds server/frontend/dist. The unit suite includes tests
 # that assert on real UI assets, so the UI has to exist first.
-test: $(FRONTEND_DIST) test-server test-client test-internal ## Unit tests per component, with coverage
+test: $(FRONTEND_DIST) test-server test-client test-internal test-nssd ## Unit tests per component, with coverage
 
 # server and internal need cgo for the same reason `build` does: the HSM
 # key source binds libpkcs11. client has no such dependency.
@@ -192,6 +192,11 @@ test-client:
 
 test-internal:
 	$(call TESTCOMPONENT,internal,1)
+
+# The NSS daemon ships built with CGO_ENABLED=0 (pure-Go SQLite), so its
+# tests run that way too.
+test-nssd:
+	$(call TESTCOMPONENT,nssd,0)
 
 # CGO_ENABLED is explicit because -race requires cgo and the devcontainer
 # sets CGO_ENABLED=0 by default.
