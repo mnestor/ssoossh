@@ -1281,7 +1281,7 @@ No rulings are open.
 The tokens and this spec are ahead of the components. Remove a line when its
 change lands.
 
-- The Login shell preference section is not built.
+Nothing is outstanding.
 
 ## References
 
