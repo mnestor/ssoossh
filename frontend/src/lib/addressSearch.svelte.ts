@@ -33,6 +33,9 @@ export function writeAddressSearch(search: string): void {
 	const { pathname, state } = untrack(() => ({ pathname: page.url.pathname, state: page.state }));
 	void (async () => {
 		try {
+			// A shallow, replace navigation that only changes the query string on
+			// the current pathname, not a route id resolve() could check.
+			// eslint-disable-next-line svelte/no-navigation-without-resolve
 			await goto(`${pathname}${search}`, { shallow: true, replace: true, state });
 		} catch {
 			// The router refused (it has not started, or a navigation

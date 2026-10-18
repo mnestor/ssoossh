@@ -151,6 +151,10 @@
 							     target rule's inline-link exemption applies. -->
 							{#if key === 'source_ip' && sourceHref}
 								<dd class="break-all">
+									<!-- sourceHref builds a same-page query (?source_ip=…),
+									     not a route id, so resolve() does not apply. Block
+									     form because the report lands on the href line. -->
+									<!-- eslint-disable svelte/no-navigation-without-resolve -->
 									<a
 										href={sourceHref(value)}
 										onclick={(e) => followSource(e, value)}
@@ -158,6 +162,7 @@
 										data-testid="audit-source-link"
 										>{value}<span class="sr-only">, show only events from this address</span></a
 									>
+									<!-- eslint-enable svelte/no-navigation-without-resolve -->
 								</dd>
 							{:else}
 								<dd class="break-all text-ink">{value}</dd>

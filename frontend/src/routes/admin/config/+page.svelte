@@ -195,7 +195,11 @@
 							{#each section.settings as setting (setting.key)}
 								<div class="flex flex-col gap-0.5 py-1.5 sm:flex-row sm:items-baseline sm:gap-4">
 									<dt class="font-mono text-xs break-all text-ink-muted sm:w-88 sm:shrink-0">
-										<!-- The key links to its reference entry, which says what it governs. -->
+										<!-- The key links to its reference entry, which says what it
+										     governs. configDocsURL is an external docs-site URL, not
+										     an app route, so resolve() does not apply. Block form
+										     because the report lands on the href line. -->
+										<!-- eslint-disable svelte/no-navigation-without-resolve -->
 										<a
 											href={configDocsURL(setting.key)}
 											target="_blank"
@@ -206,6 +210,7 @@
 												>(reference, opens in a new tab)</span
 											></a
 										>
+										<!-- eslint-enable svelte/no-navigation-without-resolve -->
 									</dt>
 									<dd class="flex items-baseline gap-2 font-mono text-xs break-all">
 										{#if setting.value === ''}

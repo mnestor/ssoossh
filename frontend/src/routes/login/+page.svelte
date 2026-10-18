@@ -127,8 +127,9 @@
 		{#if session.signedIn}
 			<div class="flex w-full flex-col items-center gap-3">
 				<!-- Not resolve()d: this is a caller-supplied path, not a route id
-				     known at build time. isInternalPath is what keeps it same-origin. -->
-				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
+				     known at build time. isInternalPath is what keeps it same-origin.
+				     Block form because the report lands on the href line. -->
+				<!-- eslint-disable svelte/no-navigation-without-resolve -->
 				<a
 					class="inline-flex min-h-target w-full items-center justify-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-ink transition duration-100 hover:bg-accent-hover"
 					href={returnTo}
@@ -137,6 +138,7 @@
 					Continue
 					<Icon name="arrow-right" size="sm" />
 				</a>
+				<!-- eslint-enable svelte/no-navigation-without-resolve -->
 				<p class="text-xs text-ink-muted">
 					Not you?
 					<button
