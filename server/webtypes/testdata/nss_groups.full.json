@@ -1,0 +1,15 @@
+{
+  "groups": [
+    {
+      "id": "1e2d3c4b-5a69-4788-9a0b-1c2d3e4f5a6b",
+      "name": "engineering",
+      "gid": 5000,
+      "dn": "cn=engineering,ou=groups,dc=example,dc=net",
+      "state": "missing",
+      "member_count": 12,
+      "last_synced_at": "2026-08-14T09:30:00+02:00"
+    }
+  ],
+  "total": 7,
+  "next_cursor": "8d0f3c2a-1b4e-4c6d-9a7f-0e1d2c3b4a59"
+}

@@ -559,6 +559,22 @@ components:
       - NSSCollisionKindUserName
       - NSSCollisionKindGID
       - NSSCollisionKindGroupName
+    model.NSSEntryState:
+      enum:
+      - withheld
+      - tombstone
+      - disabled
+      - missing
+      - pending
+      - active
+      type: string
+      x-enum-varnames:
+      - NSSEntryStateWithheld
+      - NSSEntryStateTombstone
+      - NSSEntryStateDisabled
+      - NSSEntryStateMissing
+      - NSSEntryStatePending
+      - NSSEntryStateActive
     model.NSSKeyPermission:
       enum:
       - view
@@ -584,6 +600,16 @@ components:
       - NSSKeyStatusActive
       - NSSKeyStatusExpired
       - NSSKeyStatusRevoked
+    model.NSSNotServedReason:
+      enum:
+      - withheld
+      - past_retention
+      - private_group_clash
+      type: string
+      x-enum-varnames:
+      - NSSNotServedWithheld
+      - NSSNotServedPastRetention
+      - NSSNotServedPrivateGroupClash
     model.NSSRotationBucket:
       description: |-
         Bucket is switched (last presented the current secret), not_switched
@@ -597,6 +623,16 @@ components:
       - NSSRotationBucketSwitched
       - NSSRotationBucketNotSwitched
       - NSSRotationBucketGone
+    model.PosixStatus:
+      enum:
+      - active
+      - disabled
+      - deleted
+      type: string
+      x-enum-varnames:
+      - PosixStatusActive
+      - PosixStatusDisabled
+      - PosixStatusDeleted
     openapidoc.AccountHoldersEnvelope:
       properties:
         data:
@@ -777,6 +813,24 @@ components:
       required:
       - data
       type: object
+    openapidoc.NSSAccountDetailEnvelope:
+      properties:
+        data:
+          $ref: '#/components/schemas/webtypes.NSSAccountDetailResponse'
+        error:
+          type: string
+      required:
+      - data
+      type: object
+    openapidoc.NSSAccountsEnvelope:
+      properties:
+        data:
+          $ref: '#/components/schemas/webtypes.NSSAccountsResponse'
+        error:
+          type: string
+      required:
+      - data
+      type: object
     openapidoc.NSSCollisionsEnvelope:
       properties:
         data:
@@ -786,10 +840,37 @@ components:
       required:
       - data
       type: object
+    openapidoc.NSSGroupDetailEnvelope:
+      properties:
+        data:
+          $ref: '#/components/schemas/webtypes.NSSGroupDetailResponse'
+        error:
+          type: string
+      required:
+      - data
+      type: object
     openapidoc.NSSGroupEnvelope:
       properties:
         data:
           $ref: '#/components/schemas/apitypes.NSSGroupResponse'
+        error:
+          type: string
+      required:
+      - data
+      type: object
+    openapidoc.NSSGroupMembersEnvelope:
+      properties:
+        data:
+          $ref: '#/components/schemas/webtypes.NSSGroupMembersResponse'
+        error:
+          type: string
+      required:
+      - data
+      type: object
+    openapidoc.NSSGroupsEnvelope:
+      properties:
+        data:
+          $ref: '#/components/schemas/webtypes.NSSGroupsResponse'
         error:
           type: string
       required:
@@ -2705,6 +2786,148 @@ components:
       - name
       - uid
       type: object
+    webtypes.NSSAccountDetailResponse:
+      properties:
+        created_at:
+          type: string
+        deleted_at:
+          type: string
+        dir_disabled:
+          description: |-
+            DirDisabled is the directory's own disabled flag
+            (nss.disabled_filter).
+          type: boolean
+        directory_id:
+          description: |-
+            DirectoryID is the ldap.id_attribute value, absent when that is
+            unset.
+          type: string
+        dn:
+          description: |-
+            DN is the entry's DN from the last read; empty once another entry
+            took the DN (the row is then matched by DirectoryID alone).
+          type: string
+        gecos:
+          type: string
+        gid:
+          description: GID is the stored primary gid, before nss.auto_private_groups.
+          type: integer
+        groups:
+          description: |-
+            Groups is every stored membership row for the uid, by gid, whether or
+            not the group is served. The primary group is not among them unless
+            a membership row names it.
+          items:
+            $ref: '#/components/schemas/webtypes.NSSStoredMembershipResponse'
+          type: array
+          uniqueItems: false
+        home:
+          description: |-
+            Home and Shell are the directory's attributes as stored, before the
+            nss.default_home and nss.default_shell fallbacks.
+          type: string
+        id:
+          type: string
+        last_synced_at:
+          type: string
+        missing_since:
+          type: string
+        name:
+          type: string
+        not_served:
+          $ref: '#/components/schemas/model.NSSNotServedReason'
+        pending_gid:
+          type: integer
+        pending_since:
+          type: string
+        pending_uid:
+          type: integer
+        person:
+          $ref: '#/components/schemas/webtypes.NSSLinkedPersonResponse'
+        served:
+          $ref: '#/components/schemas/webtypes.NSSServedAccountResponse'
+        shell:
+          type: string
+        shell_pref:
+          description: ShellPref is the linked person's own choice from nss.allowed_shells.
+          type: string
+        state:
+          $ref: '#/components/schemas/model.NSSEntryState'
+        uid:
+          type: integer
+        updated_at:
+          type: string
+        withheld_at:
+          type: string
+        withheld_reason:
+          description: WithheldReason sums up the collisions that withhold the row.
+          type: string
+      required:
+      - created_at
+      - dir_disabled
+      - gid
+      - groups
+      - id
+      - last_synced_at
+      - name
+      - state
+      - uid
+      - updated_at
+      type: object
+    webtypes.NSSAccountSummaryResponse:
+      properties:
+        dn:
+          type: string
+        gecos:
+          type: string
+        gid:
+          description: GID is the stored primary gid, before nss.auto_private_groups.
+          type: integer
+        id:
+          description: |-
+            ID is the row id, the list's cursor. The account's own pages are
+            addressed by UID.
+          type: string
+        last_synced_at:
+          description: |-
+            LastSyncedAt is the last sync or on-demand read that reached the
+            directory for this entry.
+          type: string
+        name:
+          type: string
+        state:
+          $ref: '#/components/schemas/model.NSSEntryState'
+        uid:
+          type: integer
+      required:
+      - dn
+      - gid
+      - id
+      - last_synced_at
+      - name
+      - state
+      - uid
+      type: object
+    webtypes.NSSAccountsResponse:
+      properties:
+        accounts:
+          items:
+            $ref: '#/components/schemas/webtypes.NSSAccountSummaryResponse'
+          type: array
+          uniqueItems: false
+        next_cursor:
+          description: |-
+            NextCursor is the after for the following page: the id of this
+            page's last row, absent on the last page.
+          type: string
+        total:
+          description: Total is how many stored accounts match the search, across
+            all pages.
+          type: integer
+      required:
+      - accounts
+      - total
+      type: object
     webtypes.NSSCollisionEntryResponse:
       description: |-
         Holder is the stored row holding the value; Other the entry
@@ -2774,6 +2997,139 @@ components:
           uniqueItems: false
       required:
       - collisions
+      type: object
+    webtypes.NSSGroupDetailResponse:
+      properties:
+        created_at:
+          type: string
+        deleted_at:
+          type: string
+        directory_id:
+          type: string
+        dn:
+          type: string
+        gid:
+          type: integer
+        id:
+          type: string
+        last_synced_at:
+          type: string
+        member_count:
+          description: MemberCount is the stored membership rows, served or not.
+          type: integer
+        missing_since:
+          type: string
+        name:
+          type: string
+        not_served:
+          $ref: '#/components/schemas/model.NSSNotServedReason'
+        pending_gid:
+          type: integer
+        pending_since:
+          type: string
+        served:
+          $ref: '#/components/schemas/webtypes.NSSServedGroupResponse'
+        state:
+          $ref: '#/components/schemas/model.NSSEntryState'
+        updated_at:
+          type: string
+        withheld_at:
+          type: string
+        withheld_reason:
+          description: WithheldReason sums up the collisions that withhold the row.
+          type: string
+      required:
+      - created_at
+      - gid
+      - id
+      - last_synced_at
+      - member_count
+      - name
+      - state
+      - updated_at
+      type: object
+    webtypes.NSSGroupMemberResponse:
+      properties:
+        name:
+          description: |-
+            Name and State describe the stored account with that uid, and are
+            absent when no stored account has it (such a member is never
+            served).
+          type: string
+        state:
+          $ref: '#/components/schemas/model.NSSEntryState'
+        uid:
+          type: integer
+      required:
+      - uid
+      type: object
+    webtypes.NSSGroupMembersResponse:
+      properties:
+        members:
+          items:
+            $ref: '#/components/schemas/webtypes.NSSGroupMemberResponse'
+          type: array
+          uniqueItems: false
+        next_cursor:
+          description: |-
+            NextCursor is the after for the following page: this page's last
+            uid, absent on the last page.
+          type: string
+        total:
+          description: Total is the group's membership rows, across all pages.
+          type: integer
+      required:
+      - members
+      - total
+      type: object
+    webtypes.NSSGroupSummaryResponse:
+      properties:
+        dn:
+          type: string
+        gid:
+          type: integer
+        id:
+          description: |-
+            ID is the row id, the list's cursor. The group's own pages are
+            addressed by GID.
+          type: string
+        last_synced_at:
+          type: string
+        member_count:
+          description: MemberCount is the stored membership rows, served or not.
+          type: integer
+        name:
+          type: string
+        state:
+          $ref: '#/components/schemas/model.NSSEntryState'
+      required:
+      - dn
+      - gid
+      - id
+      - last_synced_at
+      - member_count
+      - name
+      - state
+      type: object
+    webtypes.NSSGroupsResponse:
+      properties:
+        groups:
+          items:
+            $ref: '#/components/schemas/webtypes.NSSGroupSummaryResponse'
+          type: array
+          uniqueItems: false
+        next_cursor:
+          description: |-
+            NextCursor is the after for the following page: the id of this
+            page's last row, absent on the last page.
+          type: string
+        total:
+          description: Total is how many stored groups match the search, across all
+            pages.
+          type: integer
+      required:
+      - groups
+      - total
       type: object
     webtypes.NSSKeyListResponse:
       properties:
@@ -2959,6 +3315,24 @@ components:
       - misses
       - source_ip
       type: object
+    webtypes.NSSLinkedPersonResponse:
+      description: |-
+        Person is the ssoossh user linked to this entry at login. Absent for
+        shared and service accounts and for anyone who has not logged in.
+      properties:
+        disabled_at:
+          type: string
+        display_name:
+          type: string
+        user_id:
+          description: UserID addresses the person's admin page, /admin/users/{id}.
+          type: string
+        username:
+          type: string
+      required:
+      - user_id
+      - username
+      type: object
     webtypes.NSSPendingGroupIDChange:
       properties:
         dn:
@@ -3093,6 +3467,75 @@ components:
       - lookups
       - source_ip
       type: object
+    webtypes.NSSServedAccountResponse:
+      description: |-
+        Served is what a host's lookup by this uid gets now. Absent when the
+        lookup finds nothing; NotServed then says why.
+      properties:
+        gecos:
+          type: string
+        gid:
+          description: GID is the primary gid after nss.auto_private_groups.
+          type: integer
+        groups:
+          description: Groups is every membership served, primary first.
+          items:
+            $ref: '#/components/schemas/webtypes.NSSServedMembershipResponse'
+          type: array
+          uniqueItems: false
+        home:
+          type: string
+        name:
+          type: string
+        shell:
+          type: string
+        shell_pref:
+          type: string
+        status:
+          $ref: '#/components/schemas/model.PosixStatus'
+        uid:
+          type: integer
+      required:
+      - gid
+      - groups
+      - name
+      - status
+      - uid
+      type: object
+    webtypes.NSSServedGroupResponse:
+      description: |-
+        Served is what a host's group lookup by this gid gets now. Absent
+        when the lookup finds nothing; NotServed then says why.
+      properties:
+        gid:
+          type: integer
+        member_count:
+          description: |-
+            MemberCount is how many member names the host receives, after
+            nss.max_group_members.
+          type: integer
+        members_truncated:
+          description: MembersTruncated is true when nss.max_group_members cut the
+            list.
+          type: boolean
+        name:
+          type: string
+      required:
+      - gid
+      - member_count
+      - members_truncated
+      - name
+      type: object
+    webtypes.NSSServedMembershipResponse:
+      properties:
+        gid:
+          type: integer
+        name:
+          type: string
+      required:
+      - gid
+      - name
+      type: object
     webtypes.NSSShellsResponse:
       properties:
         allowed_shells:
@@ -3102,6 +3545,20 @@ components:
           uniqueItems: false
       required:
       - allowed_shells
+      type: object
+    webtypes.NSSStoredMembershipResponse:
+      properties:
+        gid:
+          type: integer
+        name:
+          description: |-
+            Name and State describe the stored group with that gid, and are
+            absent when no stored group has it.
+          type: string
+        state:
+          $ref: '#/components/schemas/model.NSSEntryState'
+      required:
+      - gid
       type: object
     webtypes.NSSSyncCountsResponse:
       properties:
@@ -4338,6 +4795,131 @@ paths:
       summary: List uid, gid and name collisions (admin only)
       tags:
       - admin
+  /api/admin/nss/groups:
+    get:
+      description: |-
+        One page of the posix_groups rows, ordered by name then id, each with its derived state and
+        its count of stored membership rows. Private groups are never stored, so are not listed.
+        q matches a case-insensitive substring of the name or DN, and also the exact gid when it is a number.
+        Uses cursor-based pagination (not offset): pass the previous page's next_cursor as after.
+        Reads only the database: never the directory, and never writes.
+      parameters:
+      - description: 'Row id to start after (cursor): the previous page''s next_cursor'
+        in: query
+        name: after
+        schema:
+          type: string
+      - description: Page size (default 25, max 100)
+        example: 25
+        in: query
+        name: limit
+        schema:
+          type: integer
+      - description: Search term matched against name and DN, or an exact gid
+        example: engineering
+        in: query
+        name: q
+        schema:
+          type: string
+      - description: State filter; omitted returns every state
+        in: query
+        name: state
+        schema:
+          enum:
+          - withheld
+          - tombstone
+          - missing
+          - pending
+          - active
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.NSSGroupsEnvelope'
+          description: One page of groups
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Invalid paging/search parameters, an unknown state, an after
+            that names no group, or offset
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authenticated
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authorized as auditor
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: NSS is disabled
+      security:
+      - sessionCookie: []
+      summary: List the stored NSS groups (auditor and above)
+      tags:
+      - admin
+  /api/admin/nss/groups/{gid}:
+    get:
+      description: |-
+        The posix_groups row with this gid as stored, its count of stored membership rows, and what
+        a host's lookup by the gid is served now, built by the lookup code itself, with the member
+        names counted after nss.max_group_members (absent with not_served saying why when the
+        lookup finds nothing). The members are paged from /api/admin/nss/groups/{gid}/members.
+        Reads only the database: where a host's miss would ask the directory, this does not.
+      parameters:
+      - description: The group's stored gid
+        in: path
+        name: gid
+        required: true
+        schema:
+          type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.NSSGroupDetailEnvelope'
+          description: The group
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: The gid is not a number
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authenticated
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authorized as auditor
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No stored group has that gid, or NSS is disabled
+      security:
+      - sessionCookie: []
+      summary: Read one stored NSS group (auditor and above)
+      tags:
+      - admin
   /api/admin/nss/groups/{gid}/accept-id-change:
     post:
       description: |-
@@ -4393,6 +4975,67 @@ paths:
       security:
       - sessionCookie: []
       summary: Accept a group's pending gid (admin only)
+      tags:
+      - admin
+  /api/admin/nss/groups/{gid}/members:
+    get:
+      description: |-
+        One page of the posix_group_members rows for this gid, ordered by uid, each with the stored
+        account of that uid and its state when there is one (a member with no stored account is
+        never served). The cursor is the last uid of the previous page. Reads only the database.
+      parameters:
+      - description: The group's stored gid
+        in: path
+        name: gid
+        required: true
+        schema:
+          type: integer
+      - description: 'Uid to start after (cursor): the previous page''s next_cursor'
+        in: query
+        name: after
+        schema:
+          type: string
+      - description: Page size (default 25, max 100)
+        example: 25
+        in: query
+        name: limit
+        schema:
+          type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.NSSGroupMembersEnvelope'
+          description: One page of members
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: The gid is not a number, invalid paging parameters, an after
+            that is not a uid, or offset
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authenticated
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authorized as auditor
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No stored group has that gid, or NSS is disabled
+      security:
+      - sessionCookie: []
+      summary: List a stored NSS group's membership rows (auditor and above)
       tags:
       - admin
   /api/admin/nss/groups/{gid}/tombstone:
@@ -4482,6 +5125,130 @@ paths:
       security:
       - sessionCookie: []
       summary: List pending uid and gid changes (admin only)
+      tags:
+      - admin
+  /api/admin/nss/users:
+    get:
+      description: |-
+        One page of the posix_users rows, ordered by name then id, each with its derived state.
+        q matches a case-insensitive substring of the name or DN, and also the exact uid when it is a number.
+        Uses cursor-based pagination (not offset): pass the previous page's next_cursor as after.
+        Reads only the database: never the directory, and never writes.
+      parameters:
+      - description: 'Row id to start after (cursor): the previous page''s next_cursor'
+        in: query
+        name: after
+        schema:
+          type: string
+      - description: Page size (default 25, max 100)
+        example: 25
+        in: query
+        name: limit
+        schema:
+          type: integer
+      - description: Search term matched against name and DN, or an exact uid
+        example: ada
+        in: query
+        name: q
+        schema:
+          type: string
+      - description: State filter; omitted returns every state
+        in: query
+        name: state
+        schema:
+          enum:
+          - withheld
+          - tombstone
+          - disabled
+          - missing
+          - pending
+          - active
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.NSSAccountsEnvelope'
+          description: One page of accounts
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Invalid paging/search parameters, an unknown state, an after
+            that names no account, or offset
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authenticated
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authorized as auditor
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: NSS is disabled
+      security:
+      - sessionCookie: []
+      summary: List the stored NSS accounts (auditor and above)
+      tags:
+      - admin
+  /api/admin/nss/users/{uid}:
+    get:
+      description: |-
+        The posix_users row with this uid as stored, the ssoossh user linked to it, every stored
+        membership row for the uid, and what a host's lookup by the uid is served now, built by
+        the lookup code itself (absent with not_served saying why when the lookup finds nothing).
+        Reads only the database: where a host's miss would ask the directory, this does not.
+      parameters:
+      - description: The account's stored uid
+        in: path
+        name: uid
+        required: true
+        schema:
+          type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.NSSAccountDetailEnvelope'
+          description: The account
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: The uid is not a number
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authenticated
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authorized as auditor
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No stored account has that uid, or NSS is disabled
+      security:
+      - sessionCookie: []
+      summary: Read one stored NSS account (auditor and above)
       tags:
       - admin
   /api/admin/nss/users/{uid}/accept-id-change:

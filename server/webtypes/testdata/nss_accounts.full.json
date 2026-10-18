@@ -1,0 +1,16 @@
+{
+  "accounts": [
+    {
+      "id": "8d0f3c2a-1b4e-4c6d-9a7f-0e1d2c3b4a59",
+      "name": "ada.lovelace",
+      "uid": 10001,
+      "gid": 10001,
+      "gecos": "Ada Lovelace",
+      "dn": "uid=ada.lovelace,ou=people,dc=example,dc=net",
+      "state": "pending",
+      "last_synced_at": "2026-08-14T09:30:00+02:00"
+    }
+  ],
+  "total": 42,
+  "next_cursor": "8d0f3c2a-1b4e-4c6d-9a7f-0e1d2c3b4a59"
+}

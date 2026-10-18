@@ -17,21 +17,25 @@ import (
 
 // NewNSSAdminController registers the NSS directory's admin routes under
 // /api/admin/nss: the pending uid and gid changes and their acceptance,
-// the collisions report, and the early purge of a tombstone.
+// the collisions report, the early purge of a tombstone, and the
+// read-only directory viewer.
 //
-// Admin only, every route: accepting a changed number re-owns files on
-// every host, and a purge hands a number and a name on. nss is nil when
-// nss.enabled is off, which every route answers with a 404 naming the
-// setting.
+// Admin only, every route but the viewer's: accepting a changed number
+// re-owns files on every host, and a purge hands a number and a name on.
+// The viewer only reads, so auditors (and so SOC and admins) see it, as
+// they see the user directory. nss and viewer are nil when nss.enabled is
+// off, which every route answers with a 404 naming the setting.
 func NewNSSAdminController(
 	group *gin.RouterGroup,
 	db *gorm.DB,
 	nss service.NSSDirectoryAdmin,
+	viewer service.NSSDirectoryViewer,
 	sessionAuthMiddleware gin.HandlerFunc,
 	adminAuthMiddleware gin.HandlerFunc,
+	auditorAuthMiddleware gin.HandlerFunc,
 	csrfMiddleware gin.HandlerFunc,
 ) {
-	a := &nssAdminController{db: db, nss: nss}
+	a := &nssAdminController{db: db, nss: nss, viewer: viewer}
 
 	// One group: the CSRF middleware exempts safe methods, so the reads
 	// share it with the mutations.
@@ -42,18 +46,39 @@ func NewNSSAdminController(
 	adminGroup.GET("/collisions", a.collisionsHandler)
 	adminGroup.DELETE("/users/:uid/tombstone", a.purgeUserHandler)
 	adminGroup.DELETE("/groups/:gid/tombstone", a.purgeGroupHandler)
+
+	// The viewer: reads only, so no CSRF check, as the auditor routes in
+	// admin.go.
+	auditorGroup := group.Group("/admin/nss", sessionAuthMiddleware, auditorAuthMiddleware)
+	auditorGroup.GET("/users", a.listAccountsHandler)
+	auditorGroup.GET("/users/:uid", a.accountHandler)
+	auditorGroup.GET("/groups", a.listGroupsHandler)
+	auditorGroup.GET("/groups/:gid", a.groupHandler)
+	auditorGroup.GET("/groups/:gid/members", a.groupMembersHandler)
 }
 
 // nssAdminController handles the NSS directory's admin routes. The
-// mutations are audited by the service, in their own transactions.
+// mutations are audited by the service, in their own transactions; the
+// reads are not, as the user directory's are not.
 type nssAdminController struct {
-	db  *gorm.DB
-	nss service.NSSDirectoryAdmin
+	db     *gorm.DB
+	nss    service.NSSDirectoryAdmin
+	viewer service.NSSDirectoryViewer
 }
 
 // enabled answers a 404 and reports false when NSS is disabled.
 func (a *nssAdminController) enabled(g *gin.Context) bool {
-	if a.nss != nil {
+	return nssEnabled(g, a.nss != nil)
+}
+
+// viewerEnabled is enabled for the viewer's routes.
+func (a *nssAdminController) viewerEnabled(g *gin.Context) bool {
+	return nssEnabled(g, a.viewer != nil)
+}
+
+// nssEnabled answers the disabled 404 unless on, and reports on.
+func nssEnabled(g *gin.Context, on bool) bool {
+	if on {
 		return true
 	}
 	handleError(g, &errorresponses.NotFoundError{Resource: "the NSS directory (nss.enabled is false)"})

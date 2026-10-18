@@ -1,0 +1,25 @@
+{
+  "id": "1e2d3c4b-5a69-4788-9a0b-1c2d3e4f5a6b",
+  "name": "engineering",
+  "gid": 5000,
+  "directory_id": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
+  "dn": "cn=engineering,ou=groups,dc=example,dc=net",
+  "pending_gid": 20002,
+  "pending_since": "2026-08-12T09:30:00+02:00",
+  "missing_since": "2026-08-12T09:30:00+02:00",
+  "deleted_at": "2026-08-13T09:30:00+02:00",
+  "withheld_at": "2026-08-13T09:30:00+02:00",
+  "withheld_reason": "gid 5000 is also carried by cn=eng,ou=legacy,dc=example,dc=net",
+  "state": "withheld",
+  "member_count": 2400,
+  "created_at": "2026-07-15T09:30:00+02:00",
+  "updated_at": "2026-08-14T09:30:00+02:00",
+  "last_synced_at": "2026-08-14T09:30:00+02:00",
+  "served": {
+    "name": "engineering",
+    "gid": 5000,
+    "member_count": 2000,
+    "members_truncated": true
+  },
+  "not_served": "past_retention"
+}

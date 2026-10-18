@@ -1,0 +1,11 @@
+{
+  "members": [
+    {
+      "uid": 10001,
+      "name": "ada.lovelace",
+      "state": "disabled"
+    }
+  ],
+  "total": 12,
+  "next_cursor": "10001"
+}
