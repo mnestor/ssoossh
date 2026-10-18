@@ -6,6 +6,7 @@ import {
 	isAdminRoute,
 	isCurrent,
 	isFocusRoute,
+	nssKeysNav,
 	primaryNav,
 	accountNav
 } from './nav';
@@ -150,5 +151,15 @@ describe('adminNavFor', () => {
 		expect(adminNav.filter((item) => item.adminOnly).map((item) => item.href)).toEqual(
 			adminOnlyHrefs
 		);
+	});
+});
+
+describe('nssKeysNav', () => {
+	it('should point at the fleet key list outside the admin area', () => {
+		expect(nssKeysNav().href).toBe('/nss-keys');
+	});
+
+	it('should keep the fleet key list out of the admin group', () => {
+		expect(adminNav.some((item) => item.href === '/nss-keys')).toBe(false);
 	});
 });

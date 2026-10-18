@@ -54,6 +54,12 @@ describe('request', () => {
 		expect(firstCall(fetchMock).init.body).toBe('{"hostname":"db1"}');
 	});
 
+	it('should send the DELETE method when one is asked for', async () => {
+		const fetchMock = stubFetch(jsonResponse({ data: null }));
+		await request('/nss/keys/nss_k7m4qp2x/previous', { method: 'DELETE' });
+		expect(firstCall(fetchMock).init.method).toBe('DELETE');
+	});
+
 	it('should omit the content-type header when there is no body', async () => {
 		const fetchMock = stubFetch(jsonResponse({ data: null }));
 		await request('/users/me');

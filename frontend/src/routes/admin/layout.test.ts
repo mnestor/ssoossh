@@ -42,6 +42,9 @@ function signedInUser(isAuditor: boolean) {
 		is_admin: false,
 		is_soc: false,
 		is_auditor: isAuditor,
+		is_nss_key_admin: false,
+		nss_enabled: false,
+		posix: null,
 		detail_level: 'advanced' as const
 	};
 }

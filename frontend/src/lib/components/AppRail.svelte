@@ -7,7 +7,9 @@
 	import RailGroup from './RailGroup.svelte';
 	import RailItem from './RailItem.svelte';
 	import RailUserMenu from './RailUserMenu.svelte';
-	import { adminNavFor, isAdminRoute, isCurrent, primaryNav } from '#lib/nav.js';
+	import { adminNavFor, isAdminRoute, isCurrent, nssKeysNav, primaryNav } from '#lib/nav.js';
+	import { showNSSKeys } from '#lib/nss.js';
+	import { nssAccess } from '#lib/nssAccess.svelte.js';
 	import { rail } from '#lib/rail.svelte.js';
 	import { session } from '#lib/session.svelte.js';
 
@@ -42,6 +44,12 @@
 	let { orgName, signingOut = false, collapsed: forceCollapsed, onsignout }: Props = $props();
 
 	const collapsed = $derived(forceCollapsed ?? rail.collapsed);
+
+	// NSS keys shows where the server serves them, to the roles that see
+	// every key, and to anyone a key's group names; the last needs one read
+	// of the key list, which nssAccess makes once per identity.
+	$effect(() => nssAccess.check(session.user));
+	const nssItem = $derived(showNSSKeys(session.user, nssAccess.hasKeys) ? nssKeysNav() : null);
 	const isAuditor = $derived(session.user?.is_auditor ?? false);
 	// The admin group as this viewer may use it: an admin-only section is
 	// left out for SOC and auditors rather than offered and then refused.
@@ -162,6 +170,17 @@
 				onnavigate={navigated}
 			/>
 		{/each}
+
+		{#if nssItem}
+			<RailItem
+				href={nssItem.href}
+				label={nssItem.label}
+				icon={nssItem.icon}
+				current={isCurrent(nssItem.href, page.url.pathname)}
+				{collapsed}
+				onnavigate={navigated}
+			/>
+		{/if}
 
 		{#if isAuditor}
 			<div class="my-2 border-t border-border-subtle" class:mx-1.5={!collapsed}></div>

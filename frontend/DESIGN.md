@@ -390,6 +390,12 @@ vocabulary; an unmapped name renders a visible red `?`.
   collapsed admin row has no visual parent), `adjustments-horizontal`
   Config, `address-book` Directory, `braces` Claims echo, `logs` Audit log,
   `activity-heartbeat` Diagnostics, `user-cog` Preferences.
+- **NSS fleet keys** (`KeyStatusBadge`, the rail): `server-2` the fleet a
+  key serves (the NSS keys destination and an active key), `rotate` a key
+  whose previous secret is still accepted, `server-off` a revoked key,
+  `clock-cancel` an expired one (time ran out, as for a request).
+- **Files and edits:** `download` a file to save (the rotation report's
+  CSV), `pencil` a value changed in place.
 - **Account, theme and chrome:** `user-circle` identity, `logout`, `sun` /
   `moon` / `device-laptop` theme states (a laptop, because a monitor is what
   a console certificate is), `menu-2` drawer trigger, `layout-sidebar` rail
@@ -612,6 +618,11 @@ rounded-md border-border-control bg-surface px-3 text-base`, `text-base`
 - **StatusBadge**: request or certificate status as a chip: glyph plus
   capitalised word, `rounded`, `text-xs font-semibold`, coloured by status.
   The signing spinner is the only animated glyph.
+- **KeyStatusBadge**: a fleet key's state in the same chip shape: `active`
+  (`granted`), `rotating` (`trimmed`: the old secret is about to stop),
+  `expired` (`ink-muted`, a settled fact) and `revoked` (`danger`).
+  `rotating` is derived in the browser from a live `previous_expires_at`;
+  the server reports `active`.
 - **OptionDiffList**: granted against trimmed options, trimmed struck
   through.
 
@@ -632,6 +643,19 @@ rounded-md border-border-control bg-surface px-3 text-base`, `text-base`
   - It captures `document.activeElement` before opening and restores it on
     teardown, because callers dismiss it by unmounting and the caret would
     otherwise land on `<body>`.
+  - A typed mode (`confirmText`), for an ending whose target is easy to
+    mistake for the next row: revoking a fleet key (type the key id),
+    accepting a changed uid or gid and purging a tombstone (type the name).
+    The value to type is in the label, in mono; the button wakes on an exact
+    match, surrounding blanks forgiven. These actions take no server
+    reason, so the mode is used with `reasonless`.
+- **SecretPanel**: a fleet key's secret, the once the server sends it (after
+  a create or a rotation). The two-line `nss.key` file first, ready to paste,
+  then the key id and secret, each with its own copy button; a warning that
+  it cannot be shown again; and Done held until "I have stored this secret"
+  is ticked, with the reason beside it. The secret is only ever a prop: the
+  page drops it on Done, and a navigation away before the box is ticked
+  asks first.
 - **ConsentModal**: the blocking sign-in notice, typically a government
   system-use warning that a reader must accept before anything works. No
   visible title (the notice is the deployment's own approved wording; the
@@ -1257,7 +1281,7 @@ No rulings are open.
 The tokens and this spec are ahead of the components. Remove a line when its
 change lands.
 
-- The Login shell preference section is not built.
+Nothing is outstanding.
 
 ## References
 
