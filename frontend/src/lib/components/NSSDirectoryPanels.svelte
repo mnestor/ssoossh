@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
+
 	import { ApiError } from '#lib/api/client.js';
 	import {
 		acceptNSSGroupIDChange,
@@ -213,6 +215,17 @@
 		}
 	}
 
+	/**
+	 * entryHref is the viewer page of a stored account or group, by the
+	 * number its route is keyed by: /admin/nss/accounts/<uid> or
+	 * /admin/nss/groups/<gid>.
+	 */
+	function entryHref(account: boolean, number: number): string {
+		return account
+			? resolve('/admin/nss/accounts/[uid]', { uid: String(number) })
+			: resolve('/admin/nss/groups/[gid]', { gid: String(number) });
+	}
+
 	/** A tombstone that can be purged: a stored row the directory no longer has. */
 	interface Purge {
 		account: boolean;
@@ -264,10 +277,20 @@
 	}
 </script>
 
-{#snippet entry(side: NSSCollisionEntry, role: string)}
+{#snippet entry(side: NSSCollisionEntry, role: string, account: boolean)}
 	<div class="flex min-w-0 flex-col gap-0.5">
 		<span class="inline-flex flex-wrap items-center gap-1.5">
-			<span class="font-mono text-ink">{side.name}</span>
+			<!-- A stored side opens its viewer page; a refused one has no row
+			     to open, so it stays plain text. -->
+			{#if side.stored}
+				<a
+					href={entryHref(account, side.number)}
+					class="font-mono text-accent hover:underline"
+					data-testid="collision-{role}-link">{side.name}</a
+				>
+			{:else}
+				<span class="font-mono text-ink">{side.name}</span>
+			{/if}
 			<span class="text-xs text-ink-muted tabular-nums">({side.number})</span>
 			{#if side.tombstone}
 				<span
@@ -289,6 +312,7 @@
 	title="Pending id changes"
 	description="Accounts and groups whose directory entry now carries a different uid or gid. Hosts keep the stored number until you accept the change."
 	testid="nss-pending"
+	id="pending-id-changes"
 >
 	{#if pendingGone}
 		<p class="text-dense text-ink-muted">The NSS directory is off on this server.</p>
@@ -324,7 +348,13 @@
 							<td>
 								<div class="flex min-w-0 flex-col gap-0.5">
 									<span class="inline-flex items-center gap-1.5">
-										<span class="font-mono text-ink">{row.name}</span>
+										<!-- Every pending row is stored, so its name opens its
+										     viewer page by the stored number. -->
+										<a
+											href={entryHref(row.kind === 'account', row.number)}
+											class="font-mono text-accent hover:underline"
+											data-testid="nss-pending-link">{row.name}</a
+										>
 										<span class="text-xs text-ink-muted">{row.kind}</span>
 									</span>
 									<span class="font-mono text-xs break-all text-ink-muted">{row.dn}</span>
@@ -369,6 +399,7 @@
 	title="Collisions"
 	description="Two directory entries contending for one uid, gid or name. Neither is served until one of them changes."
 	testid="nss-collisions"
+	id="collisions"
 >
 	{#if collisionsGone}
 		<p class="text-dense text-ink-muted">The NSS directory is off on this server.</p>
@@ -407,8 +438,10 @@
 								{collisionNoun(collision.kind)}
 								<span class="font-mono text-ink">{collision.value}</span>
 							</td>
-							<td>{@render entry(collision.holder, 'holder')}</td>
-							<td>{@render entry(collision.other, 'other')}</td>
+							<td
+								>{@render entry(collision.holder, 'holder', isAccountCollision(collision.kind))}</td
+							>
+							<td>{@render entry(collision.other, 'other', isAccountCollision(collision.kind))}</td>
 							<td class="whitespace-nowrap" title={formatDateTime(collision.first_seen_at)}>
 								{relativeTime(collision.first_seen_at)}
 							</td>

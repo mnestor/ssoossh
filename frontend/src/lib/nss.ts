@@ -3,12 +3,22 @@ import {
 	NSSCollisionKindGroupName,
 	NSSCollisionKindUID,
 	NSSCollisionKindUserName,
+	NSSEntryStateActive,
+	NSSEntryStateDisabled,
+	NSSEntryStateMissing,
+	NSSEntryStatePending,
+	NSSEntryStateTombstone,
+	NSSEntryStateWithheld,
 	NSSKeyStatusActive,
 	NSSKeyStatusExpired,
 	NSSKeyStatusRevoked,
+	NSSNotServedPastRetention,
+	NSSNotServedPrivateGroupClash,
+	NSSNotServedWithheld,
 	NSSRotationBucketGone,
 	NSSRotationBucketNotSwitched,
 	NSSRotationBucketSwitched,
+	type NSSEntryState,
 	type NSSKeyPermission,
 	type NSSKeyStatus,
 	type NSSRotationBucket
@@ -245,4 +255,133 @@ export function keyAlerts(
 	if (key.miss_rate_alert_at) alerts.push({ kind: 'misses', at: key.miss_rate_alert_at });
 	if (key.key_source_alert_at) alerts.push({ kind: 'sources', at: key.key_source_alert_at });
 	return alerts.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+}
+
+// ---- The stored entry viewer ---------------------------------------------
+//
+// The admin directory viewer (/admin/nss) shows each stored account and group
+// with a state and, beside it, what a host's lookup is served now. The served
+// verdict is never worked out here: it is the server's `served` and
+// `not_served`, built by the lookup code itself. What lives here is only how
+// the server's words are said.
+
+/** EntryKind is which of the two stored lists an entry belongs to. */
+export type EntryKind = 'account' | 'group';
+
+/** entryStateLabels names each state in the words its badge and filter use. */
+const entryStateLabels: Record<NSSEntryState, string> = {
+	[NSSEntryStateActive]: 'Active',
+	[NSSEntryStateDisabled]: 'Disabled',
+	[NSSEntryStateMissing]: 'Missing',
+	[NSSEntryStatePending]: 'Pending',
+	[NSSEntryStateWithheld]: 'Withheld',
+	[NSSEntryStateTombstone]: 'Tombstone'
+};
+
+/**
+ * entryStates lists the states one kind of entry can be in, in the order the
+ * filter offers them: the served states, then the ones that need a look.
+ * Disabled is never set on a group.
+ */
+export function entryStates(kind: EntryKind): NSSEntryState[] {
+	const all: NSSEntryState[] = [
+		NSSEntryStateActive,
+		NSSEntryStateDisabled,
+		NSSEntryStateMissing,
+		NSSEntryStatePending,
+		NSSEntryStateWithheld,
+		NSSEntryStateTombstone
+	];
+	return kind === 'group' ? all.filter((state) => state !== NSSEntryStateDisabled) : all;
+}
+
+/** entryStateLabel is a state's word, or the raw value for one this build does not know. */
+export function entryStateLabel(state: string): string {
+	return entryStateLabels[state as NSSEntryState] ?? state;
+}
+
+/**
+ * parseEntryState reads a state filter from the address. A value the kind
+ * cannot be in is dropped, not refused, as every list does.
+ */
+export function parseEntryState(value: string | null, kind: EntryKind): NSSEntryState | '' {
+	return entryStates(kind).find((state) => state === value) ?? '';
+}
+
+/**
+ * entryStateMeaning is what a state means for what hosts get, said once
+ * for the state section of a detail page. Config keys are left as text;
+ * ConfigProse sets them in mono.
+ */
+export function entryStateMeaning(state: string, kind: EntryKind): string {
+	const number = kind === 'account' ? 'uid or gid' : 'gid';
+	switch (state) {
+		case NSSEntryStateWithheld:
+			return 'Part of a collision over a number or a name. Lookups treat it as not found until one of the entries changes in the directory.';
+		case NSSEntryStateTombstone:
+			return kind === 'account'
+				? 'Missing from the directory for longer than nss.tombstone_after. Served as deleted until nss.tombstone_retention ends, then not at all.'
+				: 'Missing from the directory for longer than nss.tombstone_after. Served with no members until nss.tombstone_retention ends, then not at all.';
+		case NSSEntryStateDisabled:
+			return "Locked by the directory's disabled flag or by the linked person's disable. Still served, with nss.disabled_shell as its shell.";
+		case NSSEntryStateMissing:
+			return 'The last full sync did not see it in the directory. Served as before until it becomes a tombstone.';
+		case NSSEntryStatePending:
+			return `The directory now gives a different ${number}. Hosts keep the stored number until an admin accepts the change or the directory reverts.`;
+		default:
+			return '';
+	}
+}
+
+/**
+ * notServedReason says why a host's lookup finds nothing, from the server's
+ * not_served and, for a withheld row, its withheld_reason. A reason this
+ * build does not know is shown as sent rather than guessed at.
+ */
+export function notServedReason(reason: string, kind: EntryKind, withheldReason = ''): string {
+	switch (reason) {
+		case NSSNotServedWithheld:
+			return withheldReason
+				? `Withheld by a collision: ${withheldReason.trim().replace(/\.$/, '')}.`
+				: `Withheld by a collision over its ${kind === 'account' ? 'uid' : 'gid'} or name.`;
+		case NSSNotServedPastRetention:
+			return 'A tombstone older than nss.tombstone_retention, waiting for the purge to remove it.';
+		case NSSNotServedPrivateGroupClash:
+			return `nss.auto_private_groups is "true" and a directory group already holds this account's private group gid or name.`;
+		case '':
+			return 'The server gave no reason.';
+		default:
+			return `The server's reason: ${reason}.`;
+	}
+}
+
+/** A run of prose, set in mono when it is a config key. */
+export interface ProseSegment {
+	text: string;
+	key: boolean;
+}
+
+/**
+ * splitConfigKeys cuts prose into plain text and the config keys inside it
+ * (`nss.tombstone_retention`, `ldap.id_attribute`), so a page can set the
+ * keys in mono (DESIGN.md, "Where the mono goes") from one sentence.
+ */
+export function splitConfigKeys(text: string): ProseSegment[] {
+	return text
+		.split(/((?:nss|ldap)\.[a-z_]+(?:\.[a-z_]+)*)/)
+		.filter((part) => part !== '')
+		.map((part) => ({ text: part, key: /^(?:nss|ldap)\./.test(part) }));
+}
+
+/**
+ * parseEntryNumber reads a uid or gid from a route segment: a plain decimal
+ * that fits in 32 bits, or null for anything else, which no stored entry
+ * can be addressed by.
+ */
+export function parseEntryNumber(raw: string | undefined): number | null {
+	if (!raw || !/^\d{1,10}$/.test(raw)) {
+		return null;
+	}
+	const value = Number(raw);
+	return value <= 0xffffffff ? value : null;
 }

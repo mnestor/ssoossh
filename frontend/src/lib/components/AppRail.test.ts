@@ -423,4 +423,43 @@ describe('app rail', () => {
 			);
 		});
 	});
+
+	describe('NSS directory entry', () => {
+		const cases: { name: string; user: Parameters<typeof userFixture>[0]; shown: boolean }[] = [
+			{ name: 'an auditor', user: { is_auditor: true }, shown: true },
+			{ name: 'SOC', user: { is_soc: true, is_auditor: true }, shown: true },
+			{ name: 'an admin', user: { is_admin: true, is_soc: true, is_auditor: true }, shown: true },
+			{
+				name: 'an admin while NSS is off',
+				user: { is_admin: true, is_soc: true, is_auditor: true, nss_enabled: false },
+				shown: false
+			}
+		];
+
+		for (const { name, user, shown } of cases) {
+			it(`should ${shown ? 'offer' : 'not offer'} the NSS directory when the viewer is ${name}`, async () => {
+				routeFetch({});
+				session.user = userFixture(user);
+				session.resolved = true;
+
+				render(AppRail, { onsignout: () => {} });
+				await settle();
+
+				expect(railLinkLabels().includes('NSS directory')).toBe(shown);
+			});
+		}
+
+		it('should mark the NSS directory current on a stored account page', () => {
+			resetFakePage('http://localhost/admin/nss/accounts/10001');
+			session.user = userFixture({ is_auditor: true });
+			session.resolved = true;
+
+			render(AppRail, { onsignout: () => {} });
+
+			expect(screen.getByRole('link', { name: 'NSS directory' })).toHaveAttribute(
+				'aria-current',
+				'page'
+			);
+		});
+	});
 });

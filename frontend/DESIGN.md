@@ -388,8 +388,10 @@ vocabulary; an unmapped name renders a visible red `?`.
   Admin group, `users` Users, `file-certificate` Certificates, `circle-key`
   Service codes (admin, a different enclosure of the same noun, because a
   collapsed admin row has no visual parent), `adjustments-horizontal`
-  Config, `address-book` Directory, `braces` Claims echo, `logs` Audit log,
-  `activity-heartbeat` Diagnostics, `user-cog` Preferences.
+  Config, `address-book` Directory, `database-search` NSS directory (the
+  stored accounts and groups, looked up: a new object, so a new noun),
+  `braces` Claims echo, `logs` Audit log, `activity-heartbeat` Diagnostics,
+  `user-cog` Preferences.
 - **NSS fleet keys** (`KeyStatusBadge`, the rail): `server-2` the fleet a
   key serves (the NSS keys destination and an active key), `rotate` a key
   whose previous secret is still accepted, `server-off` a revoked key,
@@ -623,6 +625,15 @@ rounded-md border-border-control bg-surface px-3 text-base`, `text-base`
   `expired` (`ink-muted`, a settled fact) and `revoked` (`danger`).
   `rotating` is derived in the browser from a live `previous_expires_at`;
   the server reports `active`.
+- **NSSStateBadge**: a stored NSS account's or group's state in the same chip
+  shape, the word alone (six states would each need a glyph): `active`
+  (`granted`), `missing` and `pending` (`trimmed`: served, but want a look),
+  `disabled` and `withheld` (`danger`: locked or hidden), `tombstone`
+  (`ink-muted`, a settled fact).
+- **NSSServedVerdict**: whether hosts are served a stored entry, as a
+  `Served` (`granted`) or `Not served` (`danger`) chip and a sentence with
+  the reason. Built only from the server's `served` and `not_served`, never
+  from the state beside it.
 - **OptionDiffList**: granted against trimmed options, trimmed struck
   through.
 
@@ -1040,10 +1051,46 @@ beneath it.
   Keys render in mono.
 - **Directory** (`/admin/directory`, admin only): LDAP sync status and the
   last pass's counts, Sync now (dry run by default) and the read-only Probe.
+  With NSS on, a Stored entries section counting the stored accounts and
+  groups with links into the NSS directory (it loads and fails on its own),
+  then the Pending id changes and Collisions panels, whose stored entries
+  link to their NSS directory pages. Its sections carry ids (`#sync`,
+  `#probe`, `#pending-id-changes`, `#collisions`) that the page scrolls to
+  once its status has loaded.
   The rail leaves it out for SOC and auditors, and its own layout shows them
   the `AccessDenied` card on a direct visit. The probe's three views (entry as returned, field
   mapping, merge and allowlist) are a segmented toggle group, not tabs; a
   mapped attribute carries a "mapped" label, not a colour.
+- **NSS directory** (`/admin/nss`, auditor and above, only with NSS on;
+  the rail entry carries `nssOnly`): a read-only viewer of the stored NSS
+  accounts and groups. `/admin/nss` redirects to the accounts.
+  - **Lists** (`/admin/nss/accounts`, `/admin/nss/groups`, `wide`): one
+    `NSSEntryList` for both, with an Accounts / Groups segmented switch of
+    links in the heading's `action` slot (`aria-current` on the one
+    showing). Search (name, DN, or an exact uid or gid) and a State select
+    ("Any state", and no Disabled for groups), server-side and in the
+    address (`?q=`, `?state=`); `.data-table` with the name as the link,
+    numbers right-aligned, Gecos dropped below `sm`, the state badge and
+    the last sync; Load more. No back chip: the lists are the section's top.
+    "Nothing stored yet" names the filter the sync stores from;
+    "nothing matches" offers Clear filters and, for a search, says a host
+    lookup that misses still asks the directory, pointing at the Probe.
+  - **Detail pages** (`/admin/nss/accounts/<uid>`, `/admin/nss/groups/<gid>`,
+    `wide`): no actions. The identity strip carries the state badge, the
+    name, the numbers, `CopyableId` with the uid or gid, and the
+    `NSSServedVerdict` ahead of every raw field, because the worst case is
+    an admin concluding the wrong way and fixing the wrong layer. Then
+    "What hosts get" (replaced by "Nothing" when not served), "Stored
+    entry", "Entry state" (only off active, every mark the row carries) and
+    the memberships or the paged members. Related accounts, groups and the
+    linked person are links. The back chip returns to the list with the
+    filters it was opened from (`?back=`, a query string only). A 404 says
+    no stored entry has that number and that a host lookup would still ask
+    the directory; a group's also links the account with that uid, since
+    private groups are never stored.
+  - **Admin-only references:** the Probe, Sync, Pending id changes and
+    Collisions live on the admin-only Directory, so `NSSDirectoryRef` links
+    to them for admins and says "An admin can ..." to everyone else.
 - **Claims echo** (`/admin/identity/echo`, admin only, gated like the
   Directory): re-authenticates
   with `prompt=login` and renders the decoded ID token, each claim annotated

@@ -6,12 +6,17 @@ import {
 	approveRequest,
 	clearNSSKeyPrevious,
 	createNSSKey,
+	getNSSAccount,
 	getNSSCollisions,
+	getNSSGroup,
 	getNSSKey,
 	getNSSKeySettings,
 	getNSSKeyUsage,
 	getNSSPendingIDChanges,
 	getNSSRotationReport,
+	listNSSAccounts,
+	listNSSGroupMembers,
+	listNSSGroups,
 	listNSSKeys,
 	listNSSShells,
 	nssRotationReportCSVURL,
@@ -238,6 +243,48 @@ describe('NSS endpoints', () => {
 			call: () => purgeNSSGroupTombstone(5000),
 			method: 'DELETE',
 			url: '/api/admin/nss/groups/5000/tombstone'
+		},
+		{
+			name: 'list the stored accounts',
+			call: () => listNSSAccounts(),
+			method: 'GET',
+			url: '/api/admin/nss/users'
+		},
+		{
+			name: 'search the stored accounts',
+			call: () => listNSSAccounts({ q: 'bob smith', state: 'withheld', after: 'c1', limit: 25 }),
+			method: 'GET',
+			url: '/api/admin/nss/users?q=bob+smith&state=withheld&after=c1&limit=25'
+		},
+		{
+			name: 'read one stored account',
+			call: () => getNSSAccount(10001),
+			method: 'GET',
+			url: '/api/admin/nss/users/10001'
+		},
+		{
+			name: 'list the stored groups',
+			call: () => listNSSGroups({ limit: 1 }),
+			method: 'GET',
+			url: '/api/admin/nss/groups?limit=1'
+		},
+		{
+			name: 'search the stored groups',
+			call: () => listNSSGroups({ q: '5000', state: 'tombstone' }),
+			method: 'GET',
+			url: '/api/admin/nss/groups?q=5000&state=tombstone'
+		},
+		{
+			name: 'read one stored group',
+			call: () => getNSSGroup(5000),
+			method: 'GET',
+			url: '/api/admin/nss/groups/5000'
+		},
+		{
+			name: "page a group's members",
+			call: () => listNSSGroupMembers(5000, { after: '10001', limit: 50 }),
+			method: 'GET',
+			url: '/api/admin/nss/groups/5000/members?after=10001&limit=50'
 		}
 	];
 

@@ -52,8 +52,11 @@
 	const nssItem = $derived(showNSSKeys(session.user, nssAccess.hasKeys) ? nssKeysNav() : null);
 	const isAuditor = $derived(session.user?.is_auditor ?? false);
 	// The admin group as this viewer may use it: an admin-only section is
-	// left out for SOC and auditors rather than offered and then refused.
-	const adminItems = $derived(adminNavFor(session.user?.is_admin ?? false));
+	// left out for SOC and auditors rather than offered and then refused,
+	// and the NSS directory wherever the server does not serve NSS.
+	const adminItems = $derived(
+		adminNavFor(session.user?.is_admin ?? false, session.user?.nss_enabled ?? false)
+	);
 
 	// The identity is the label on its own row rather than a heading above
 	// one: on a tool that issues credentials, "as whom" is the question the

@@ -7,6 +7,9 @@ import {
 	can,
 	collisionLabel,
 	endOfDay,
+	entryStateLabel,
+	entryStateMeaning,
+	entryStates,
 	latestExpiryDay,
 	renewedExpiry,
 	expiryTone,
@@ -19,8 +22,12 @@ import {
 	localDay,
 	missRate,
 	needsKeyCheck,
+	notServedReason,
 	nssKeyFile,
-	showNSSKeys
+	parseEntryNumber,
+	parseEntryState,
+	showNSSKeys,
+	splitConfigKeys
 } from './nss';
 
 const now = new Date('2026-10-18T12:00:00Z');
@@ -420,6 +427,130 @@ describe('keyAlerts', () => {
 	for (const { name, key, want } of cases) {
 		it(`should list ${want.join(' then ') || 'nothing'} when ${name}`, () => {
 			expect(keyAlerts(key).map((alert) => alert.kind)).toEqual(want);
+		});
+	}
+});
+
+describe('entryStates', () => {
+	it('should offer all six states for accounts', () => {
+		expect(entryStates('account')).toHaveLength(6);
+	});
+
+	// The groups list answers 400 for state=disabled.
+	it('should leave disabled out for groups', () => {
+		expect(entryStates('group')).not.toContain(enums.NSSEntryStateDisabled);
+	});
+});
+
+describe('parseEntryState', () => {
+	const cases: { value: string | null; kind: 'account' | 'group'; want: string }[] = [
+		{ value: 'withheld', kind: 'account', want: 'withheld' },
+		{ value: 'disabled', kind: 'account', want: 'disabled' },
+		{ value: 'disabled', kind: 'group', want: '' },
+		{ value: 'Withheld', kind: 'account', want: '' },
+		{ value: '', kind: 'group', want: '' },
+		{ value: null, kind: 'group', want: '' }
+	];
+
+	for (const { value, kind, want } of cases) {
+		it(`should read ${JSON.stringify(value)} as ${JSON.stringify(want)} when the list is the ${kind}s`, () => {
+			expect(parseEntryState(value, kind)).toBe(want);
+		});
+	}
+});
+
+describe('entryStateLabel', () => {
+	it('should capitalise a known state', () => {
+		expect(entryStateLabel('tombstone')).toBe('Tombstone');
+	});
+
+	it('should pass an unknown state through as sent', () => {
+		expect(entryStateLabel('quarantined')).toBe('quarantined');
+	});
+});
+
+describe('entryStateMeaning', () => {
+	it('should say a group tombstone is served with no members', () => {
+		expect(entryStateMeaning('tombstone', 'group')).toContain('Served with no members');
+	});
+
+	it('should say an account tombstone is served as deleted', () => {
+		expect(entryStateMeaning('tombstone', 'account')).toContain('Served as deleted');
+	});
+
+	it('should name only the gid for a pending group', () => {
+		expect(entryStateMeaning('pending', 'group')).toContain('a different gid.');
+	});
+
+	it('should say nothing for the active state', () => {
+		expect(entryStateMeaning('active', 'account')).toBe('');
+	});
+});
+
+describe('notServedReason', () => {
+	const cases: { reason: string; withheld?: string; kind: 'account' | 'group'; want: string }[] = [
+		{
+			reason: 'withheld',
+			withheld: 'uid clash with bob2.',
+			kind: 'account',
+			want: 'Withheld by a collision: uid clash with bob2.'
+		},
+		{ reason: 'withheld', kind: 'group', want: 'Withheld by a collision over its gid or name.' },
+		{
+			reason: 'past_retention',
+			kind: 'account',
+			want: 'A tombstone older than nss.tombstone_retention, waiting for the purge to remove it.'
+		},
+		{
+			reason: 'private_group_clash',
+			kind: 'account',
+			want: `nss.auto_private_groups is "true" and a directory group already holds this account's private group gid or name.`
+		},
+		{ reason: '', kind: 'group', want: 'The server gave no reason.' },
+		{ reason: 'new_reason', kind: 'group', want: "The server's reason: new_reason." }
+	];
+
+	for (const { reason, withheld, kind, want } of cases) {
+		it(`should say "${want}" when the reason is ${JSON.stringify(reason)}`, () => {
+			expect(notServedReason(reason, kind, withheld)).toBe(want);
+		});
+	}
+});
+
+describe('splitConfigKeys', () => {
+	it('should set each config key apart from the prose around it', () => {
+		expect(splitConfigKeys('Served until nss.tombstone_retention ends.')).toEqual([
+			{ text: 'Served until ', key: false },
+			{ text: 'nss.tombstone_retention', key: true },
+			{ text: ' ends.', key: false }
+		]);
+	});
+
+	it('should leave prose with no key whole', () => {
+		expect(splitConfigKeys('Nothing to see.')).toEqual([{ text: 'Nothing to see.', key: false }]);
+	});
+
+	it('should return nothing for empty prose', () => {
+		expect(splitConfigKeys('')).toEqual([]);
+	});
+});
+
+describe('parseEntryNumber', () => {
+	const cases: { raw: string | undefined; want: number | null }[] = [
+		{ raw: '10001', want: 10001 },
+		{ raw: '0', want: 0 },
+		{ raw: '4294967295', want: 4294967295 },
+		{ raw: '4294967296', want: null },
+		{ raw: '-1', want: null },
+		{ raw: '1e3', want: null },
+		{ raw: 'bob', want: null },
+		{ raw: '', want: null },
+		{ raw: undefined, want: null }
+	];
+
+	for (const { raw, want } of cases) {
+		it(`should read ${JSON.stringify(raw)} as ${want} when it is a route segment`, () => {
+			expect(parseEntryNumber(raw)).toBe(want);
 		});
 	}
 });

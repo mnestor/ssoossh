@@ -11,6 +11,7 @@ import Alert from './Alert.svelte';
 import AppRail from './AppRail.svelte';
 import AuditTimeline from './AuditTimeline.svelte';
 import BrandMark from './BrandMark.svelte';
+import ConfigProse from './ConfigProse.svelte';
 import Button from './Button.svelte';
 import CertRow from './CertRow.svelte';
 import ConfirmModal from './ConfirmModal.svelte';
@@ -28,6 +29,11 @@ import KeyStatusBadge from './KeyStatusBadge.svelte';
 import ListStatus from './ListStatus.svelte';
 import LoadingBlock from './LoadingBlock.svelte';
 import LoadMoreFooter from './LoadMoreFooter.svelte';
+import NSSDirectoryRef from './NSSDirectoryRef.svelte';
+import NSSEntryMarks from './NSSEntryMarks.svelte';
+import NSSServedVerdict from './NSSServedVerdict.svelte';
+import NSSStateBadge from './NSSStateBadge.svelte';
+import NSSViewSwitch from './NSSViewSwitch.svelte';
 import MonoChip from './MonoChip.svelte';
 import OptionDiffList from './OptionDiffList.svelte';
 import PageHeading from './PageHeading.svelte';
@@ -182,6 +188,7 @@ const cases: [string, any, Record<string, unknown>][] = [
 			}
 		}
 	],
+	['ConfigProse', ConfigProse, { text: 'Served until nss.tombstone_retention ends.' }],
 	['BrandMark', BrandMark, { size: 22 }],
 	['Button (primary)', Button, { children: text('Approve') }],
 	['Button (ghost)', Button, { variant: 'ghost', children: text('Cancel') }],
@@ -326,6 +333,33 @@ const cases: [string, any, Record<string, unknown>][] = [
 	// the gate and the aria-hidden.
 	['LoadingBlock', LoadingBlock, { shape: 'lines', label: 'Loading your account…' }],
 	['MonoChip', MonoChip, { children: text('10.1.2.9') }],
+	['NSSDirectoryRef', NSSDirectoryRef, { section: 'probe' }],
+	[
+		'NSSEntryMarks',
+		NSSEntryMarks,
+		{
+			kind: 'account',
+			state: 'withheld',
+			withheldAt: '2026-08-20T12:00:00Z',
+			withheldReason: 'uid 10001 is also carried by uid=bob2',
+			uid: 10001,
+			gid: 5000,
+			pendingUid: 20001,
+			pendingSince: '2026-08-21T12:00:00Z'
+		}
+	],
+	[
+		'NSSServedVerdict (served)',
+		NSSServedVerdict,
+		{ kind: 'account', served: true, status: 'disabled' }
+	],
+	[
+		'NSSServedVerdict (not served)',
+		NSSServedVerdict,
+		{ kind: 'group', served: false, reason: 'past_retention' }
+	],
+	['NSSStateBadge', NSSStateBadge, { state: 'pending' }],
+	['NSSViewSwitch', NSSViewSwitch, { current: 'groups' }],
 	['OptionDiffList', OptionDiffList, { entries: [], emptyLabel: 'Nothing was trimmed' }],
 	['PageHeading', PageHeading, { title: 'Certificate history' }],
 	[
@@ -459,8 +493,14 @@ describe('component accessibility roster', () => {
 		// NSSDirectoryPanels: fetches both of its lists on mount, so a render
 		// here would sweep a loading state; the Directory page's own suite
 		// renders it with fixtures (routes/admin/directory/page.test.ts).
+		//
+		// NSSEntryList and NSSStoredEntries: the same, each fetches on mount;
+		// the viewer's list pages and the Directory page render them with
+		// fixtures (routes/admin/nss/*, routes/admin/directory/page.nss.test.ts).
 		covered.add('ConsentModal');
 		covered.add('NSSDirectoryPanels');
+		covered.add('NSSEntryList');
+		covered.add('NSSStoredEntries');
 		covered.add('ApprovalView');
 		covered.add('AdminServiceCodeDetail');
 

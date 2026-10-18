@@ -95,6 +95,7 @@ describe('nav model', () => {
 			'Service codes',
 			'Config',
 			'Directory',
+			'NSS directory',
 			'Claims echo',
 			'Audit log',
 			'Diagnostics'
@@ -119,8 +120,8 @@ describe('nav model', () => {
 });
 
 describe('adminNavFor', () => {
-	it('should offer every admin section when the viewer is an admin', () => {
-		expect(adminNavFor(true)).toEqual(adminNav);
+	it('should offer every admin section when the viewer is an admin and NSS is on', () => {
+		expect(adminNavFor(true, true)).toEqual(adminNav);
 	});
 
 	// Issues #136 and #161, and SSOOSSH.md for Config: SOC and auditors are
@@ -144,13 +145,48 @@ describe('adminNavFor', () => {
 	}
 
 	it('should keep every section not marked admin-only when the viewer is not an admin', () => {
-		expect(adminNavFor(false)).toEqual(adminNav.filter((item) => !item.adminOnly));
+		expect(adminNavFor(false, true)).toEqual(adminNav.filter((item) => !item.adminOnly));
 	});
 
 	it('should mark only Config, the Directory, Claims echo and Diagnostics as admin-only', () => {
 		expect(adminNav.filter((item) => item.adminOnly).map((item) => item.href)).toEqual(
 			adminOnlyHrefs
 		);
+	});
+});
+
+// The NSS directory viewer is read at auditor level, so every admin-area
+// role is offered it, but only where the server serves NSS.
+describe('adminNavFor and the NSS directory', () => {
+	const cases: { name: string; isAdmin: boolean; nssEnabled: boolean; want: boolean }[] = [
+		{ name: 'an admin with NSS on', isAdmin: true, nssEnabled: true, want: true },
+		{ name: 'SOC or an auditor with NSS on', isAdmin: false, nssEnabled: true, want: true },
+		{ name: 'an admin with NSS off', isAdmin: true, nssEnabled: false, want: false },
+		{ name: 'SOC or an auditor with NSS off', isAdmin: false, nssEnabled: false, want: false }
+	];
+
+	for (const { name, isAdmin, nssEnabled, want } of cases) {
+		it(`should ${want ? 'offer' : 'leave out'} the NSS directory when the viewer is ${name}`, () => {
+			expect(adminNavFor(isAdmin, nssEnabled).some((item) => item.href === '/admin/nss')).toBe(
+				want
+			);
+		});
+	}
+
+	it('should leave out the NSS directory when the NSS flag is not given', () => {
+		expect(adminNavFor(true).some((item) => item.href === '/admin/nss')).toBe(false);
+	});
+
+	it('should keep the Directory as the current section on its own page only', () => {
+		expect(isCurrent('/admin/directory', '/admin/nss/accounts')).toBe(false);
+	});
+
+	it('should mark the NSS directory current on an account page', () => {
+		expect(isCurrent('/admin/nss', '/admin/nss/accounts/10001')).toBe(true);
+	});
+
+	it('should mark the NSS directory current on a group page', () => {
+		expect(isCurrent('/admin/nss', '/admin/nss/groups/5000')).toBe(true);
 	});
 });
 
