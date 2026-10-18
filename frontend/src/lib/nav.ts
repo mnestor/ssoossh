@@ -57,6 +57,15 @@ export function primaryNav(): NavItem[] {
 	];
 }
 
+/**
+ * nssKeysNav is the fleet key destination. Top level rather than in the
+ * admin group: a key's own group manages it without an admin role, so the
+ * entry is shown by showNSSKeys in #lib/nss, not by the admin gate.
+ */
+export function nssKeysNav(): NavItem {
+	return { href: resolve('/nss-keys'), label: 'NSS keys', icon: 'server-2' };
+}
+
 /** adminNav is the admin group, shown to auditors and above. Entries marked
  * adminOnly are for admins alone; the rail reads adminNavFor, not this list.
  * See the file header on why these are plain hrefs. */

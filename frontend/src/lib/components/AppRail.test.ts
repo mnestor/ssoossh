@@ -3,8 +3,10 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import AppRail from './AppRail.svelte';
+import { nssAccess } from '#lib/nssAccess.svelte.js';
 import { rail } from '#lib/rail.svelte.js';
 import { session } from '#lib/session.svelte.js';
+import { envelope, keyFixture, routeFetch, settle, userFixture } from '#lib/testing/nss.js';
 import { resetFakePage } from '#lib/testing/page.svelte.js';
 
 // Test methodology: render the rail directly with the session singleton put
@@ -58,6 +60,7 @@ beforeEach(() => {
 	});
 	resetFakePage('http://localhost/dashboard');
 	session.clear();
+	nssAccess.clear();
 	rail.collapsed = false;
 	rail.drawerOpen = false;
 	rail.adminOpen = true;
@@ -340,5 +343,84 @@ describe('app rail', () => {
 		await userEvent.click(screen.getByRole('link', { name: 'History' }));
 
 		expect(rail.drawerOpen).toBe(false);
+	});
+
+	describe('NSS keys entry', () => {
+		const cases: {
+			name: string;
+			user: Parameters<typeof userFixture>[0];
+			keys: number;
+			shown: boolean;
+		}[] = [
+			{ name: 'a fleet key admin', user: { is_nss_key_admin: true }, keys: 0, shown: true },
+			{ name: 'an auditor', user: { is_auditor: true }, keys: 0, shown: true },
+			{
+				name: 'an admin',
+				user: { is_admin: true, is_soc: true, is_auditor: true, is_nss_key_admin: true },
+				keys: 0,
+				shown: true
+			},
+			{ name: 'a member of a key group', user: {}, keys: 1, shown: true },
+			{ name: 'someone no key names', user: {}, keys: 0, shown: false },
+			{
+				name: 'a fleet key admin while NSS is off',
+				user: { is_nss_key_admin: true, nss_enabled: false },
+				keys: 1,
+				shown: false
+			}
+		];
+
+		for (const { name, user, keys, shown } of cases) {
+			it(`should ${shown ? 'offer' : 'not offer'} NSS keys when the viewer is ${name}`, async () => {
+				routeFetch({
+					'GET /api/nss/keys': envelope({
+						keys: Array.from({ length: keys }, () => keyFixture()),
+						can_create: false
+					})
+				});
+				session.user = userFixture(user);
+				session.resolved = true;
+
+				render(AppRail, { onsignout: () => {} });
+				await settle();
+
+				expect(railLinkLabels().includes('NSS keys')).toBe(shown);
+			});
+		}
+
+		it('should not ask for the key list when the role of the viewer already decides', async () => {
+			const calls = routeFetch({});
+			session.user = userFixture({ is_nss_key_admin: true });
+			session.resolved = true;
+
+			render(AppRail, { onsignout: () => {} });
+			await settle();
+
+			expect(calls).toHaveLength(0);
+		});
+
+		it('should hide the entry when the key list cannot be read', async () => {
+			routeFetch({ 'GET /api/nss/keys': envelope(null, 500, 'boom') });
+			session.user = userFixture();
+			session.resolved = true;
+
+			render(AppRail, { onsignout: () => {} });
+			await settle();
+
+			expect(railLinkLabels().includes('NSS keys')).toBe(false);
+		});
+
+		it('should mark NSS keys current on a key page', async () => {
+			resetFakePage('http://localhost/nss-keys/nss_k7m4qp2x');
+			session.user = userFixture({ is_nss_key_admin: true });
+			session.resolved = true;
+
+			render(AppRail, { onsignout: () => {} });
+
+			expect(screen.getByRole('link', { name: 'NSS keys' })).toHaveAttribute(
+				'aria-current',
+				'page'
+			);
+		});
 	});
 });
