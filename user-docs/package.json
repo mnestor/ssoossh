@@ -11,13 +11,13 @@
     "build:a11y": "npm run build && npm run a11y"
   },
   "dependencies": {
-    "@astrojs/starlight": "0.42.5",
+    "@astrojs/starlight": "0.42.6",
     "@fontsource/ibm-plex-mono": "^5.3.0",
     "@fontsource/ibm-plex-sans": "^5.3.0",
-    "astro": "7.3.5",
+    "astro": "7.3.8",
     "astro-mermaid": "^2.1.0",
     "mermaid": "^11.17.2",
-    "starlight-openapi": "^0.26.3"
+    "starlight-openapi": "^0.27.0"
   },
   "overrides": {
     "form-data": "^4.0.6",
@@ -27,7 +27,7 @@
     }
   },
   "devDependencies": {
-    "axe-core": "^4.13.0",
-    "jsdom": "^30.1.1"
+    "axe-core": "^4.14.0",
+    "jsdom": "^30.1.2"
   }
 }
