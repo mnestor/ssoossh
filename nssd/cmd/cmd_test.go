@@ -518,9 +518,10 @@ func TestCommandShouldExposeTheRealTreeWhenAskedForManPages(t *testing.T) {
 		{name: "should carry the status command", path: []string{"status"}},
 		{name: "should carry the lookup command", path: []string{"lookup"}},
 	}
+	// Serial: cobra's Find merges persistent flags into the shared tree,
+	// so parallel subtests race on it.
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			want := "ssoosshd-nss"
 			if len(tt.path) > 0 {
 				want = tt.path[len(tt.path)-1]
