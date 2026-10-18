@@ -4,9 +4,12 @@ import type {
   CertificateRequestStatus,
   DetailLevel,
   NSSCollisionKind,
+  NSSEntryState,
   NSSKeyPermission,
   NSSKeyStatus,
-  NSSRotationBucket
+  NSSNotServedReason,
+  NSSRotationBucket,
+  PosixStatus
 } from './enums';
 
 //////////
@@ -199,6 +202,285 @@ export interface NSSPurgedTombstoneResponse {
 	 * Number is the uid or gid the row held.
 	 */
 	number: number /* uint32 */;
+}
+/**
+ * NSSAccountsResponse is one page of the stored accounts, ordered by name.
+ */
+export interface NSSAccountsResponse {
+	accounts: NSSAccountSummaryResponse[];
+	/**
+	 * Total is how many stored accounts match the search, across all pages.
+	 */
+	total: number /* int64 */;
+	/**
+	 * NextCursor is the after for the following page: the id of this
+	 * page's last row, absent on the last page.
+	 */
+	next_cursor?: string;
+}
+/**
+ * NSSAccountSummaryResponse is one stored account in the list.
+ */
+export interface NSSAccountSummaryResponse {
+	/**
+	 * ID is the row id, the list's cursor. The account's own pages are
+	 * addressed by UID.
+	 */
+	id: string;
+	name: string;
+	uid: number /* uint32 */;
+	/**
+	 * GID is the stored primary gid, before nss.auto_private_groups.
+	 */
+	gid: number /* uint32 */;
+	gecos?: string;
+	dn: string;
+	state: NSSEntryState;
+	/**
+	 * LastSyncedAt is the last sync or on-demand read that reached the
+	 * directory for this entry.
+	 */
+	last_synced_at: string;
+}
+/**
+ * NSSAccountDetailResponse is one stored account: the row, its stored
+ * group memberships, and what a host is served for it.
+ */
+export interface NSSAccountDetailResponse {
+	id: string;
+	name: string;
+	uid: number /* uint32 */;
+	/**
+	 * GID is the stored primary gid, before nss.auto_private_groups.
+	 */
+	gid: number /* uint32 */;
+	/**
+	 * DirectoryID is the ldap.id_attribute value, absent when that is
+	 * unset.
+	 */
+	directory_id?: string;
+	/**
+	 * DN is the entry's DN from the last read; empty once another entry
+	 * took the DN (the row is then matched by DirectoryID alone).
+	 */
+	dn: string;
+	/**
+	 * Home and Shell are the directory's attributes as stored, before the
+	 * nss.default_home and nss.default_shell fallbacks.
+	 */
+	home?: string;
+	shell?: string;
+	/**
+	 * ShellPref is the linked person's own choice from nss.allowed_shells.
+	 */
+	shell_pref?: string;
+	gecos?: string;
+	/**
+	 * DirDisabled is the directory's own disabled flag
+	 * (nss.disabled_filter).
+	 */
+	dir_disabled: boolean;
+	/**
+	 * Person is the ssoossh user linked to this entry at login. Absent for
+	 * shared and service accounts and for anyone who has not logged in.
+	 */
+	person?: NSSLinkedPersonResponse;
+	pending_uid?: number /* uint32 */;
+	pending_gid?: number /* uint32 */;
+	pending_since?: string;
+	missing_since?: string;
+	deleted_at?: string;
+	withheld_at?: string;
+	/**
+	 * WithheldReason sums up the collisions that withhold the row.
+	 */
+	withheld_reason?: string;
+	state: NSSEntryState;
+	created_at: string;
+	updated_at: string;
+	last_synced_at: string;
+	/**
+	 * Groups is every stored membership row for the uid, by gid, whether or
+	 * not the group is served. The primary group is not among them unless
+	 * a membership row names it.
+	 */
+	groups: NSSStoredMembershipResponse[];
+	/**
+	 * Served is what a host's lookup by this uid gets now. Absent when the
+	 * lookup finds nothing; NotServed then says why.
+	 */
+	served?: NSSServedAccountResponse;
+	not_served?: NSSNotServedReason;
+}
+/**
+ * NSSLinkedPersonResponse is the ssoossh user an account is linked to.
+ */
+export interface NSSLinkedPersonResponse {
+	/**
+	 * UserID addresses the person's admin page, /admin/users/{id}.
+	 */
+	user_id: string;
+	username: string;
+	display_name?: string;
+	disabled_at?: string;
+}
+/**
+ * NSSStoredMembershipResponse is one membership row of a stored account.
+ */
+export interface NSSStoredMembershipResponse {
+	gid: number /* uint32 */;
+	/**
+	 * Name and State describe the stored group with that gid, and are
+	 * absent when no stored group has it.
+	 */
+	name?: string;
+	state?: NSSEntryState;
+}
+/**
+ * NSSServedAccountResponse is the record a host's user lookup receives,
+ * field for field the /api/nss/user/* response.
+ */
+export interface NSSServedAccountResponse {
+	name: string;
+	uid: number /* uint32 */;
+	/**
+	 * GID is the primary gid after nss.auto_private_groups.
+	 */
+	gid: number /* uint32 */;
+	/**
+	 * Groups is every membership served, primary first.
+	 */
+	groups: NSSServedMembershipResponse[];
+	home?: string;
+	shell?: string;
+	shell_pref?: string;
+	gecos?: string;
+	status: PosixStatus;
+}
+/**
+ * NSSServedMembershipResponse is one group in a served account's groups.
+ */
+export interface NSSServedMembershipResponse {
+	gid: number /* uint32 */;
+	name: string;
+}
+/**
+ * NSSGroupsResponse is one page of the stored groups, ordered by name.
+ * Private groups (nss.auto_private_groups) are never stored, so they are
+ * not here; each appears on its account.
+ */
+export interface NSSGroupsResponse {
+	groups: NSSGroupSummaryResponse[];
+	/**
+	 * Total is how many stored groups match the search, across all pages.
+	 */
+	total: number /* int64 */;
+	/**
+	 * NextCursor is the after for the following page: the id of this
+	 * page's last row, absent on the last page.
+	 */
+	next_cursor?: string;
+}
+/**
+ * NSSGroupSummaryResponse is one stored group in the list.
+ */
+export interface NSSGroupSummaryResponse {
+	/**
+	 * ID is the row id, the list's cursor. The group's own pages are
+	 * addressed by GID.
+	 */
+	id: string;
+	name: string;
+	gid: number /* uint32 */;
+	dn: string;
+	state: NSSEntryState;
+	/**
+	 * MemberCount is the stored membership rows, served or not.
+	 */
+	member_count: number /* int64 */;
+	last_synced_at: string;
+}
+/**
+ * NSSGroupDetailResponse is one stored group: the row and what a host is
+ * served for it. Its members are paged separately, from
+ * /api/admin/nss/groups/{gid}/members.
+ */
+export interface NSSGroupDetailResponse {
+	id: string;
+	name: string;
+	gid: number /* uint32 */;
+	directory_id?: string;
+	dn: string;
+	pending_gid?: number /* uint32 */;
+	pending_since?: string;
+	missing_since?: string;
+	deleted_at?: string;
+	withheld_at?: string;
+	/**
+	 * WithheldReason sums up the collisions that withhold the row.
+	 */
+	withheld_reason?: string;
+	state: NSSEntryState;
+	/**
+	 * MemberCount is the stored membership rows, served or not.
+	 */
+	member_count: number /* int64 */;
+	created_at: string;
+	updated_at: string;
+	last_synced_at: string;
+	/**
+	 * Served is what a host's group lookup by this gid gets now. Absent
+	 * when the lookup finds nothing; NotServed then says why.
+	 */
+	served?: NSSServedGroupResponse;
+	not_served?: NSSNotServedReason;
+}
+/**
+ * NSSServedGroupResponse is the record a host's group lookup receives,
+ * with the member names counted rather than listed (the members endpoint
+ * lists them).
+ */
+export interface NSSServedGroupResponse {
+	name: string;
+	gid: number /* uint32 */;
+	/**
+	 * MemberCount is how many member names the host receives, after
+	 * nss.max_group_members.
+	 */
+	member_count: number /* int */;
+	/**
+	 * MembersTruncated is true when nss.max_group_members cut the list.
+	 */
+	members_truncated: boolean;
+}
+/**
+ * NSSGroupMembersResponse is one page of a stored group's membership rows,
+ * ordered by uid.
+ */
+export interface NSSGroupMembersResponse {
+	members: NSSGroupMemberResponse[];
+	/**
+	 * Total is the group's membership rows, across all pages.
+	 */
+	total: number /* int64 */;
+	/**
+	 * NextCursor is the after for the following page: this page's last
+	 * uid, absent on the last page.
+	 */
+	next_cursor?: string;
+}
+/**
+ * NSSGroupMemberResponse is one membership row of a stored group.
+ */
+export interface NSSGroupMemberResponse {
+	uid: number /* uint32 */;
+	/**
+	 * Name and State describe the stored account with that uid, and are
+	 * absent when no stored account has it (such a member is never
+	 * served).
+	 */
+	name?: string;
+	state?: NSSEntryState;
 }
 
 //////////

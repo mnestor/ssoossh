@@ -110,6 +110,67 @@ export const PosixStatusDisabled = "disabled";
 export const PosixStatusDeleted = "deleted";
 export type PosixStatus = typeof PosixStatusActive | typeof PosixStatusDisabled | typeof PosixStatusDeleted;
 /**
+ * NSSEntryState is the one condition the admin directory viewer shows for
+ * a stored account or group. Several marks can hold at once (a withheld
+ * row can also have a pending change); the state is the one that most
+ * decides what a host is served, in the order below. Never stored: derived
+ * from the row's marks each time it is read.
+ */
+/**
+ * NSSEntryStateWithheld is a row part of a uid, gid or name collision.
+ * Lookups treat it as not found.
+ */
+export const NSSEntryStateWithheld = "withheld";
+/**
+ * NSSEntryStateTombstone is a row whose entry has been missing for
+ * longer than nss.tombstone_after. An account is served as deleted and
+ * a group with no members until nss.tombstone_retention ends, then
+ * neither is served.
+ */
+export const NSSEntryStateTombstone = "tombstone";
+/**
+ * NSSEntryStateDisabled is an account the directory's disabled flag or
+ * the linked person's disable has locked: served with
+ * nss.disabled_shell. Never set on a group.
+ */
+export const NSSEntryStateDisabled = "disabled";
+/**
+ * NSSEntryStateMissing is a row a full sync did not see. Still served
+ * as before until it becomes a tombstone.
+ */
+export const NSSEntryStateMissing = "missing";
+/**
+ * NSSEntryStatePending is a row whose directory entry now carries a
+ * different uid or gid. Served with the stored numbers until an admin
+ * accepts the change or the directory reverts.
+ */
+export const NSSEntryStatePending = "pending";
+/**
+ * NSSEntryStateActive is a row served as stored.
+ */
+export const NSSEntryStateActive = "active";
+export type NSSEntryState = typeof NSSEntryStateWithheld | typeof NSSEntryStateTombstone | typeof NSSEntryStateDisabled | typeof NSSEntryStateMissing | typeof NSSEntryStatePending | typeof NSSEntryStateActive;
+/**
+ * NSSNotServedReason says why a host's lookup of a stored account or
+ * group finds nothing, for the admin directory viewer.
+ */
+export type NSSNotServedReason = string;
+/**
+ * NSSNotServedWithheld is a row withheld by a collision.
+ */
+export const NSSNotServedWithheld: NSSNotServedReason = "withheld";
+/**
+ * NSSNotServedPastRetention is a tombstone older than
+ * nss.tombstone_retention that the purge has not removed yet.
+ */
+export const NSSNotServedPastRetention: NSSNotServedReason = "past_retention";
+/**
+ * NSSNotServedPrivateGroupClash is an account nss.auto_private_groups
+ * "true" cannot serve, because a directory group already holds its
+ * private group's gid or name.
+ */
+export const NSSNotServedPrivateGroupClash: NSSNotServedReason = "private_group_clash";
+/**
  * NSSKeyStatus is the state a fleet API key is in. Never stored: it is
  * derived from the key's revocation and expiry each time the key is read,
  * so a key that passes its expires_at is expired without a job having to

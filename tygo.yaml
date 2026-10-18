@@ -70,9 +70,12 @@ packages:
         CertificateRequestStatus,
         DetailLevel,
         NSSCollisionKind,
+        NSSEntryState,
         NSSKeyPermission,
         NSSKeyStatus,
-        NSSRotationBucket
+        NSSNotServedReason,
+        NSSRotationBucket,
+        PosixStatus
       } from './enums';
     type_mappings:
       model.CertificateType: "CertificateType"
@@ -81,4 +84,7 @@ packages:
       model.NSSKeyStatus: "NSSKeyStatus"
       model.NSSKeyPermission: "NSSKeyPermission"
       model.NSSRotationBucket: "NSSRotationBucket"
+      model.NSSEntryState: "NSSEntryState"
+      model.NSSNotServedReason: "NSSNotServedReason"
+      model.PosixStatus: "PosixStatus"
       model.NSSCollisionKind: "NSSCollisionKind"
