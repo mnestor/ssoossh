@@ -455,22 +455,23 @@ func TestNSSSELinuxSourceShouldDeclareTheModuleItIsNamedFor(t *testing.T) {
 func TestNSSClientRefreshShouldNameTheDaemonsSocketAndMethod(t *testing.T) {
 	t.Parallel()
 
-	src, err := os.ReadFile(filepath.Join(repoRoot(t), "client/cmd/host_refresh.go"))
-	if err != nil {
-		t.Fatalf("read the client's refresh: %v", err)
-	}
 	tests := []struct {
 		name string
+		file string
 		want string
 	}{
-		{name: "should dial the daemon's userdb socket", want: `nssUserdbSocket = "` + config.UserdbSocket + `"`},
-		{name: "should call the daemon's RefreshUser method", want: `nssRefreshMethod = "` + userdb.MethodRefreshUser + `"`},
+		{name: "should dial the daemon's userdb socket", file: "client/cmd/host_refresh.go", want: `nssUserdbSocket = "` + config.UserdbSocket + `"`},
+		{name: "should call the daemon's RefreshUser method", file: "client/cmd/host_refresh_linux.go", want: `nssRefreshMethod = "` + userdb.MethodRefreshUser + `"`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+			src, err := os.ReadFile(filepath.Join(repoRoot(t), tt.file))
+			if err != nil {
+				t.Fatalf("read %s: %v", tt.file, err)
+			}
 			if !strings.Contains(string(src), tt.want) {
-				t.Errorf("client/cmd/host_refresh.go lacks %s", tt.want)
+				t.Errorf("%s lacks %s", tt.file, tt.want)
 			}
 		})
 	}

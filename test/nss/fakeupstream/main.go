@@ -144,9 +144,12 @@ func run(ctx context.Context, log *slog.Logger, listen, out string, hosts []stri
 	}
 	go func() {
 		<-ctx.Done()
-		shutdown, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		// ctx is already done; the shutdown gets a bound of its own.
+		shutdown, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 		defer cancel()
-		_ = srv.Shutdown(shutdown)
+		if err := srv.Shutdown(shutdown); err != nil {
+			log.Warn("shut down", "error", err)
+		}
 	}()
 	log.Info("fakeupstream serving", "addr", ln.Addr().String(), "out", out)
 	if err := srv.ServeTLS(ln, "", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -155,66 +158,75 @@ func run(ctx context.Context, log *slog.Logger, listen, out string, hosts []stri
 	return nil
 }
 
+// handler serves the fake's directory.
+type handler struct {
+	dir directory
+	log *slog.Logger
+}
+
 // newHandler serves the four lookups behind the fleet key check, in the
 // order the real server checks them: the key first, then the path.
 func newHandler(dir directory, log *slog.Logger) http.Handler {
+	h := handler{dir: dir, log: log}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/nss/user/name/{name}", func(w http.ResponseWriter, r *http.Request) {
-		for _, u := range dir.users {
-			if u.Name == r.PathValue("name") {
-				send(w, http.StatusOK, apitypes.Envelope[apitypes.NSSUserResponse]{Data: u})
-				return
-			}
-		}
-		notFound(w)
-	})
-	mux.HandleFunc("GET /api/nss/user/uid/{uid}", func(w http.ResponseWriter, r *http.Request) {
-		for _, u := range dir.users {
-			if strconv.FormatUint(uint64(u.UID), 10) == r.PathValue("uid") {
-				send(w, http.StatusOK, apitypes.Envelope[apitypes.NSSUserResponse]{Data: u})
-				return
-			}
-		}
-		notFound(w)
-	})
-	mux.HandleFunc("GET /api/nss/group/name/{name}", func(w http.ResponseWriter, r *http.Request) {
-		for _, g := range dir.groups {
-			if g.Name == r.PathValue("name") {
-				send(w, http.StatusOK, apitypes.Envelope[apitypes.NSSGroupResponse]{Data: g})
-				return
-			}
-		}
-		notFound(w)
-	})
-	mux.HandleFunc("GET /api/nss/group/gid/{gid}", func(w http.ResponseWriter, r *http.Request) {
-		for _, g := range dir.groups {
-			if strconv.FormatUint(uint64(g.GID), 10) == r.PathValue("gid") {
-				send(w, http.StatusOK, apitypes.Envelope[apitypes.NSSGroupResponse]{Data: g})
-				return
-			}
-		}
-		notFound(w)
-	})
+	mux.HandleFunc("GET /api/nss/user/name/{name}", h.user(func(u apitypes.NSSUserResponse, v string) bool { return u.Name == v }, "name"))
+	mux.HandleFunc("GET /api/nss/user/uid/{uid}", h.user(func(u apitypes.NSSUserResponse, v string) bool {
+		return strconv.FormatUint(uint64(u.UID), 10) == v
+	}, "uid"))
+	mux.HandleFunc("GET /api/nss/group/name/{name}", h.group(func(g apitypes.NSSGroupResponse, v string) bool { return g.Name == v }, "name"))
+	mux.HandleFunc("GET /api/nss/group/gid/{gid}", h.group(func(g apitypes.NSSGroupResponse, v string) bool {
+		return strconv.FormatUint(uint64(g.GID), 10) == v
+	}, "gid"))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		log.Info("request", "method", r.Method, "path", r.URL.Path, "key_id", r.Header.Get(apitypes.HeaderNSSKeyID))
 		if r.Header.Get(apitypes.HeaderNSSKeyID) != keyID || r.Header.Get(apitypes.HeaderNSSKeySecret) != keySecret {
-			send(w, http.StatusUnauthorized, apitypes.Envelope[any]{Error: "unauthorized", ErrorCode: apitypes.ErrorCodeNSSUnauthorized})
+			h.send(w, http.StatusUnauthorized, apitypes.Envelope[any]{Error: "unauthorized", ErrorCode: apitypes.ErrorCodeNSSUnauthorized})
 			return
 		}
 		mux.ServeHTTP(w, r)
 	})
 }
 
+// user answers the first user match reports for the path value key, or
+// the authoritative miss.
+func (h handler) user(match func(apitypes.NSSUserResponse, string) bool, key string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		for _, u := range h.dir.users {
+			if match(u, r.PathValue(key)) {
+				h.send(w, http.StatusOK, apitypes.Envelope[apitypes.NSSUserResponse]{Data: u})
+				return
+			}
+		}
+		h.notFound(w)
+	}
+}
+
+// group answers the first group match reports for the path value key, or
+// the authoritative miss.
+func (h handler) group(match func(apitypes.NSSGroupResponse, string) bool, key string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		for _, g := range h.dir.groups {
+			if match(g, r.PathValue(key)) {
+				h.send(w, http.StatusOK, apitypes.Envelope[apitypes.NSSGroupResponse]{Data: g})
+				return
+			}
+		}
+		h.notFound(w)
+	}
+}
+
 // notFound is the authoritative miss the daemon may negative-cache.
-func notFound(w http.ResponseWriter) {
-	send(w, http.StatusNotFound, apitypes.Envelope[any]{Error: "not found", ErrorCode: apitypes.ErrorCodeNSSNotFound})
+func (h handler) notFound(w http.ResponseWriter) {
+	h.send(w, http.StatusNotFound, apitypes.Envelope[any]{Error: "not found", ErrorCode: apitypes.ErrorCodeNSSNotFound})
 }
 
 // send writes body as JSON with status.
-func send(w http.ResponseWriter, status int, body any) {
+func (h handler) send(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(body)
+	if err := json.NewEncoder(w).Encode(body); err != nil {
+		h.log.Warn("write a response", "error", err)
+	}
 }
 
 // newCertificates makes a CA and a server certificate it signed, for

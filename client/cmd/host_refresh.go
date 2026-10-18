@@ -5,15 +5,13 @@ import (
 )
 
 // The ssoosshd-nss contract `host principals` uses: the daemon's userdb
-// socket and the one-way method that asks it to refresh a user. Spelled
-// out here rather than imported, because the client never imports the
-// daemon's packages; test/packaging checks both against nssd.
+// socket here, and the one-way method that asks it to refresh a user in
+// host_refresh_linux.go. Spelled out rather than imported, because the
+// client never imports the daemon's packages; test/packaging checks both
+// against nssd.
 const (
 	// nssUserdbSocket is where ssoosshd-nss.socket listens.
 	nssUserdbSocket = "/run/systemd/userdb/com.github.mnestor.ssoossh"
-	// nssRefreshMethod asks the daemon to refresh one user in the
-	// background.
-	nssRefreshMethod = "com.github.mnestor.ssoossh.NSS.RefreshUser"
 	// nssRefreshTimeout bounds the whole call, connect and write. sshd
 	// waits on this command before every certificate login, so the call
 	// may cost a login this much at most and never more.
@@ -37,10 +35,4 @@ type nssRefresh struct {
 // newNSSRefresh returns the refresh for the installed daemon.
 func newNSSRefresh() nssRefresh {
 	return nssRefresh{socket: nssUserdbSocket, timeout: nssRefreshTimeout}
-}
-
-// nssRefreshParams are RefreshUser's parameters.
-type nssRefreshParams struct {
-	// UserName is the account sshd is about to resolve.
-	UserName string `json:"userName"`
 }

@@ -22,5 +22,24 @@ func (r nssRefresh) send(ctx context.Context, user string) {
 		return
 	}
 	defer func() { _ = c.Close() }()
-	_ = c.CallOneway(ctx, nssRefreshMethod, nssRefreshParams{UserName: user})
+	if err := c.CallOneway(ctx, nssRefreshMethod, nssRefreshParams{UserName: user}); err != nil {
+		// Dropped like the dial error: a refresh that did not go out
+		// costs one stale login, never the answer sshd is waiting for.
+		return
+	}
+}
+
+// The ssoosshd-nss method `host principals` calls, and its parameters.
+// The socket is in host_refresh.go; test/packaging checks both against
+// nssd.
+const (
+	// nssRefreshMethod asks the daemon to refresh one user in the
+	// background.
+	nssRefreshMethod = "com.github.mnestor.ssoossh.NSS.RefreshUser"
+)
+
+// nssRefreshParams are RefreshUser's parameters.
+type nssRefreshParams struct {
+	// UserName is the account sshd is about to resolve.
+	UserName string `json:"userName"`
 }
