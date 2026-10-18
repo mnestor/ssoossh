@@ -1,0 +1,84 @@
+[Unit]
+Description=ssoossh NSS daemon: directory users and groups through systemd userdb
+Documentation=man:ssoosshd-nss(8) https://github.com/mnestor/ssoossh
+# Socket-activated: ssoosshd-nss.socket owns the listening socket and starts
+# this service on the first lookup. There is deliberately no ordering after
+# network-online.target. The daemon opens its cache and answers from it
+# before any upstream call, and a lookup that arrives during boot would
+# otherwise wait for the network to come up.
+Requires=ssoosshd-nss.socket
+After=ssoosshd-nss.socket
+# Pinned rather than inherited from system.conf, so the RestartSec reasoning
+# below holds on every host: more than 5 starts within 10 s is the limit.
+StartLimitIntervalSec=10s
+StartLimitBurst=5
+
+[Service]
+# The ssoosshd-nss package installs the binary at /usr/sbin/ssoosshd-nss and
+# the configuration at /etc/ssoossh/nss.yaml, the daemon's default.
+ExecStart=/usr/sbin/ssoosshd-nss run
+Restart=always
+# Long enough that a crash loop never reaches the start limit above. A
+# service past its start limit fails its socket unit too, and every lookup
+# is then a quick "not found" until someone runs `systemctl reset-failed`
+# (measured on systemd 252 and 257). While the service waits to restart,
+# systemd queues socket-triggered starts behind that wait instead of
+# starting at once, so starts are at least RestartSec apart: 3 s allows at
+# most 4 starts in any 10 s window, under the burst of 5, and a broken
+# configuration retries every 3 s until it is fixed. Lookups made during
+# one restart wait about this long; the caller's own timeout is 45 s.
+RestartSec=3s
+
+# The daemon must never resolve users through itself. nss-systemd skips
+# the userdb services this variable names, and the daemon is built with
+# CGO_ENABLED=0, so it never calls NSS anyway; this keeps that true if it
+# ever does.
+Environment=SYSTEMD_BYPASS_USERDB=com.github.mnestor.ssoossh
+
+# /run/ssoossh-nss holds the admin socket (/run/ssoossh-nss/admin.sock) and
+# /var/lib/ssoossh-nss the persistent cache (/var/lib/ssoossh-nss/cache.db).
+# Not /run/ssoossh and /var/lib/ssoossh: ssoosshd.service and
+# ssoossh-agent.service already own those, as user ssoossh at mode 0750, and
+# systemd would fight this unit, which runs as root at 0700, over their
+# owner and mode on a host running both.
+RuntimeDirectory=ssoossh-nss
+RuntimeDirectoryMode=0700
+StateDirectory=ssoossh-nss
+StateDirectoryMode=0700
+UMask=0077
+
+# --- sandboxing -----------------------------------------------------------
+# Runs as root: the fleet key and nss.yaml are root-only files, and the
+# daemon must see the uid of every peer. It needs no capability at all.
+# The one check that looked as though it would, telling sshd apart from
+# other root callers, reads /proc/<pid>/cgroup, which needs none, so the
+# bounding set stays empty. (readlink of /proc/<pid>/exe would need
+# CAP_SYS_PTRACE against a full-capability sshd, which is why the daemon
+# does not use it.)
+CapabilityBoundingSet=
+NoNewPrivileges=true
+ProtectSystem=strict
+# Read, never written by the daemon. `ssoosshd-nss override` edits
+# nss-overrides.yaml from an administrator's shell, outside this sandbox,
+# and signals the daemon to re-read it.
+ReadOnlyPaths=/etc/ssoossh
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+# AF_UNIX for the userdb and admin sockets, AF_INET and AF_INET6 for the
+# HTTPS connection to ssoosshd and for DNS.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+# Not ProtectProc=invisible: the daemon reads other processes'
+# /proc/<pid>/cgroup to recognise sshd, which that would hide.
+
+[Install]
+# The socket starts the service, so the socket is what to enable; this makes
+# `systemctl enable ssoosshd-nss.service` enable the socket as well.
+Also=ssoosshd-nss.socket
