@@ -123,3 +123,32 @@ type NSSAlert struct {
 
 // TableName overrides GORM's default pluralization to match the migration.
 func (NSSAlert) TableName() string { return "nss_alerts" }
+
+// NSS audit reference kinds: what NSSAuditRef.RowID names.
+const (
+	// NSSAuditRefAccount is a posix_users.id.
+	NSSAuditRefAccount = "account"
+	// NSSAuditRefGroup is a posix_groups.id.
+	NSSAuditRefGroup = "group"
+)
+
+// NSSAuditRef ties one audit event to one stored NSS account or group it
+// concerns, so the viewer's history of that row reads an index rather than
+// matching JSON (decided 2026-10-18 by the owner). Like the indexed columns
+// of AuditEvent it is a grouping key, never authoritative: the payload is.
+//
+// RowID is the row's random id, which survives a rename and an accepted
+// uid or gid change where the name and the number do not. It has no
+// foreign key, so a purged row's history stays until its events age out.
+// EventID does: the ref is deleted with its event by the audit sweep.
+// CreatedAt copies the event's, so a page orders and seeks on this table
+// alone.
+type NSSAuditRef struct {
+	EventID   string    `gorm:"column:event_id;primaryKey"`
+	Kind      string    `gorm:"column:kind;primaryKey;index:idx_nss_audit_refs_row,priority:1"`
+	RowID     string    `gorm:"column:row_id;primaryKey;index:idx_nss_audit_refs_row,priority:2"`
+	CreatedAt time.Time `gorm:"column:created_at;index:idx_nss_audit_refs_row,priority:3"`
+}
+
+// TableName overrides GORM's default pluralization to match the migration.
+func (NSSAuditRef) TableName() string { return "nss_audit_refs" }

@@ -640,7 +640,7 @@ func (s *NSSDirectoryService) storeMembershipsOf(ctx context.Context, account *m
 			after.add(gid, account.UID)
 		}
 		return s.recordMemberChanges(tx, &batch, memberDeltas(before, after), nssMemberChange{
-			via: via, userNames: map[uint32]string{account.UID: account.Name},
+			via: via, userNames: map[uint32]string{account.UID: account.Name}, userIDs: map[uint32]string{account.UID: account.ID},
 		})
 	})
 	if err != nil {

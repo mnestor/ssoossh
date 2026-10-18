@@ -149,19 +149,40 @@ type nssMemberRef struct {
 }
 
 // nssMemberChange is what one recordMemberChanges call is about: the path,
-// the admin behind it (nil for the server), and names for uids and gids
-// whose rows the write itself removed or re-keyed.
+// the admin behind it (nil for the server), and the names and row ids of
+// uids and gids whose rows the write itself removed or re-keyed, so a
+// lookup by the number no longer finds them.
 type nssMemberChange struct {
 	via        string
 	actor      *AuditSubject
 	userNames  map[uint32]string
 	groupNames map[uint32]string
+	userIDs    map[uint32]string
+	groupIDs   map[uint32]string
 }
 
 // recordMemberChanges records one nss.group_members_changed per gid in
 // deltas, sorted by gid, with the first nssMemberListCap added and removed
-// members of each and the full counts.
+// members of each and the full counts. Each event refers to the group and
+// to every added and removed account that is stored, past the cap too, so
+// a large change still shows on each member's history.
 func (s *NSSDirectoryService) recordMemberChanges(tx *gorm.DB, b *nssAuditBatch, deltas map[uint32]nssMemberDelta, c nssMemberChange) error {
+	if len(deltas) == 0 {
+		return nil
+	}
+	var uids []uint32
+	for _, d := range deltas {
+		uids = append(uids, d.added...)
+		uids = append(uids, d.removed...)
+	}
+	userIDs, err := nssRowIDs(tx, accountTable(), uids, c.userIDs)
+	if err != nil {
+		return err
+	}
+	groupIDs, err := nssRowIDs(tx, groupTable(), slices.Collect(maps.Keys(deltas)), c.groupIDs)
+	if err != nil {
+		return err
+	}
 	for _, gid := range slices.Sorted(maps.Keys(deltas)) {
 		d := deltas[gid]
 		added, removed := capUIDs(d.added), capUIDs(d.removed)
@@ -169,19 +190,14 @@ func (s *NSSDirectoryService) recordMemberChanges(tx *gorm.DB, b *nssAuditBatch,
 		if err != nil {
 			return err
 		}
-		name := c.groupNames[gid]
-		if name == "" {
-			var rows []string
-			if err := tx.Model(&model.PosixGroup{}).Where("gid = ?", gid).Limit(1).Pluck("name", &rows).Error; err != nil {
-				return fmt.Errorf("read the name of gid %d: %w", gid, err)
-			}
-			if len(rows) > 0 {
-				name = rows[0]
-			}
+		name, err := groupName(tx, gid, c.groupNames)
+		if err != nil {
+			return err
 		}
 		if err := s.record(tx, b, AuditEvent{
-			Action: AuditNSSGroupMembersChanged,
-			Actor:  c.actor,
+			Action:  AuditNSSGroupMembersChanged,
+			Actor:   c.actor,
+			NSSRefs: memberChangeRefs(gid, d, groupIDs, userIDs),
 			Detail: map[string]any{
 				"table":         groupTable().table,
 				"name":          name,
@@ -197,6 +213,68 @@ func (s *NSSDirectoryService) recordMemberChanges(tx *gorm.DB, b *nssAuditBatch,
 		}
 	}
 	return nil
+}
+
+// groupName is the name of gid, the hint first, else the stored group's,
+// else "".
+func groupName(tx *gorm.DB, gid uint32, hints map[uint32]string) (string, error) {
+	if name := hints[gid]; name != "" {
+		return name, nil
+	}
+	var rows []string
+	if err := tx.Model(&model.PosixGroup{}).Where("gid = ?", gid).Limit(1).Pluck("name", &rows).Error; err != nil {
+		return "", fmt.Errorf("read the name of gid %d: %w", gid, err)
+	}
+	if len(rows) == 0 {
+		return "", nil
+	}
+	return rows[0], nil
+}
+
+// memberChangeRefs is what one group's nss.group_members_changed refers
+// to: the group and every added and removed account, each when stored.
+func memberChangeRefs(gid uint32, d nssMemberDelta, groupIDs, userIDs map[uint32]string) []NSSAuditRef {
+	refs := make([]NSSAuditRef, 0, 1+len(d.added)+len(d.removed))
+	if id, ok := groupIDs[gid]; ok {
+		refs = append(refs, groupTable().auditRef(id))
+	}
+	for _, uid := range slices.Concat(d.added, d.removed) {
+		if id, ok := userIDs[uid]; ok {
+			refs = append(refs, accountTable().auditRef(id))
+		}
+	}
+	return refs
+}
+
+// nssRowIDs is the stored row id of each of numbers in t that has a row,
+// hints first, read in batches of nssBatchSize.
+func nssRowIDs(tx *gorm.DB, t nssTable, numbers []uint32, hints map[uint32]string) (map[uint32]string, error) {
+	out := maps.Clone(hints)
+	if out == nil {
+		out = map[uint32]string{}
+	}
+	var missing []uint32
+	for _, n := range numbers {
+		if _, ok := out[n]; !ok {
+			missing = append(missing, n)
+		}
+	}
+	slices.Sort(missing)
+	missing = slices.Compact(missing)
+	for chunk := range slices.Chunk(missing, nssBatchSize) {
+		var rows []struct {
+			ID     string `gorm:"column:id"`
+			Number uint32 `gorm:"column:number"`
+		}
+		if err := tx.Table(t.table).Select("id, "+t.numberColumn+" AS number").
+			Where(t.numberColumn+" IN ?", chunk).Find(&rows).Error; err != nil {
+			return nil, fmt.Errorf("read the %s row ids: %w", t.label, err)
+		}
+		for _, r := range rows {
+			out[r.Number] = r.ID
+		}
+	}
+	return out, nil
 }
 
 // capUIDs is the first nssMemberListCap of uids.
@@ -258,7 +336,7 @@ func (s *NSSDirectoryService) recordRowEvent(tx *gorm.DB, b *nssAuditBatch, t ns
 		"via":          via,
 	}
 	maps.Copy(detail, extra)
-	event := AuditEvent{Action: action, Detail: detail}
+	event := AuditEvent{Action: action, Detail: detail, NSSRefs: []NSSAuditRef{t.auditRef(row.ID)}}
 	if t.numberColumn == "uid" {
 		event.Target = accountTarget(tx, userID)
 	}

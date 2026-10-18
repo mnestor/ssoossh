@@ -588,7 +588,7 @@ func (s *NSSDirectoryService) tombstone(ctx context.Context, t nssTable, row nss
 			return err
 		}
 		return s.recordMemberChanges(tx, &batch, memberDeltas(before, nssMembers{}), nssMemberChange{
-			via: nssViaTombstoned, groupNames: map[uint32]string{row.Number: row.Name},
+			via: nssViaTombstoned, groupNames: map[uint32]string{row.Number: row.Name}, groupIDs: map[uint32]string{row.Number: row.ID},
 		})
 	})
 	if err != nil {

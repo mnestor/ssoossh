@@ -876,6 +876,15 @@ components:
       required:
       - data
       type: object
+    openapidoc.NSSHistoryEnvelope:
+      properties:
+        data:
+          $ref: '#/components/schemas/webtypes.AuditEventsResponse'
+        error:
+          type: string
+      required:
+      - data
+      type: object
     openapidoc.NSSKeyEnvelope:
       properties:
         data:
@@ -4977,6 +4986,70 @@ paths:
       summary: Accept a group's pending gid (admin only)
       tags:
       - admin
+  /api/admin/nss/groups/{gid}/audit:
+    get:
+      description: |-
+        The audit events about the posix_groups row with this gid, newest first: its lifecycle
+        (created, renamed, missing, tombstoned, revived, purged), every change to its members,
+        its collisions, and pending and accepted gid changes.
+        The history belongs to the row, so it follows a rename or an accepted gid change.
+        Uses cursor-based pagination (not offset), as /api/admin/users/{id}/audit does.
+      parameters:
+      - description: The group's stored gid
+        in: path
+        name: gid
+        required: true
+        schema:
+          type: integer
+      - description: 'Audit event ID to start after (cursor): the previous page''s
+          next_cursor; must be on this group''s history'
+        in: query
+        name: after
+        schema:
+          type: string
+      - description: Page size (default 25, max 100)
+        example: 25
+        in: query
+        name: limit
+        schema:
+          type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.NSSHistoryEnvelope'
+          description: Audit events
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: The gid is not a number, invalid paging parameters, an after
+            that names no event on this history, or offset
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authenticated
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authorized as auditor
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No stored group has that gid, or NSS is disabled
+      security:
+      - sessionCookie: []
+      summary: View a stored NSS group's audit history (auditor and above)
+      tags:
+      - admin
   /api/admin/nss/groups/{gid}/members:
     get:
       description: |-
@@ -5308,6 +5381,70 @@ paths:
       security:
       - sessionCookie: []
       summary: Accept an account's pending uid or gid (admin only)
+      tags:
+      - admin
+  /api/admin/nss/users/{uid}/audit:
+    get:
+      description: |-
+        The audit events about the posix_users row with this uid, newest first: its lifecycle
+        (created, renamed, missing, tombstoned, revived, purged), the group membership changes that
+        added or removed it, its collisions, pending and accepted uid changes, and shell changes.
+        The history belongs to the row, so it follows a rename or an accepted uid change.
+        Uses cursor-based pagination (not offset), as /api/admin/users/{id}/audit does.
+      parameters:
+      - description: The account's stored uid
+        in: path
+        name: uid
+        required: true
+        schema:
+          type: integer
+      - description: 'Audit event ID to start after (cursor): the previous page''s
+          next_cursor; must be on this account''s history'
+        in: query
+        name: after
+        schema:
+          type: string
+      - description: Page size (default 25, max 100)
+        example: 25
+        in: query
+        name: limit
+        schema:
+          type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.NSSHistoryEnvelope'
+          description: Audit events
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: The uid is not a number, invalid paging parameters, an after
+            that names no event on this history, or offset
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authenticated
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authorized as auditor
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No stored account has that uid, or NSS is disabled
+      security:
+      - sessionCookie: []
+      summary: View a stored NSS account's audit history (auditor and above)
       tags:
       - admin
   /api/admin/nss/users/{uid}/tombstone:

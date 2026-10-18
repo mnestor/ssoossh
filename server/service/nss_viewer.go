@@ -24,13 +24,16 @@ import (
 //
 // Nothing here calls the directory refresher, writes a row or reads LDAP:
 // where a host's lookup would ask the directory on a miss, the viewer
-// reports the miss the database gives.
+// reports the miss the database gives. The two history reads emit an
+// admin.audit_viewed line to the shipped log, which writes no row.
 type NSSDirectoryViewer interface {
 	Accounts(ctx context.Context, filter NSSViewerFilter) (*NSSAccountPage, error)
 	Account(ctx context.Context, uid uint32) (*NSSAccountView, error)
 	Groups(ctx context.Context, filter NSSViewerFilter) (*NSSGroupPage, error)
 	Group(ctx context.Context, gid uint32) (*NSSGroupView, error)
 	GroupMembers(ctx context.Context, gid uint32, params paging.Params) (*NSSGroupMemberPage, error)
+	AccountHistory(ctx context.Context, uid uint32, params paging.Params, actor *AuditSubject) (*AuditPage, error)
+	GroupHistory(ctx context.Context, gid uint32, params paging.Params, actor *AuditSubject) (*AuditPage, error)
 }
 
 // NSSViewerFilter is one list request: the page window and search term,
@@ -549,4 +552,53 @@ func stringValue(p *string) string {
 		return ""
 	}
 	return *p
+}
+
+// AccountHistory is one page of the audit events about the stored account
+// with uid, newest first, as the per-user timeline pages: every event that
+// refers to its row (see AuditService.ListForNSSRow), so the history
+// follows the row through renames and an accepted uid change. A
+// NotFoundError when no row has the uid. The read is recorded as
+// admin.audit_viewed by actor, which reaches the shipped log only.
+func (s *NSSLookupService) AccountHistory(ctx context.Context, uid uint32, params paging.Params, actor *AuditSubject) (*AuditPage, error) {
+	id, err := s.storedRowID(ctx, accountTable(), uid)
+	if err != nil {
+		return nil, err
+	}
+	return s.history(ctx, model.NSSAuditRefAccount, id, params, actor, map[string]any{"scope": "nss_account_timeline", "uid": uid})
+}
+
+// GroupHistory is AccountHistory for the stored group with gid.
+func (s *NSSLookupService) GroupHistory(ctx context.Context, gid uint32, params paging.Params, actor *AuditSubject) (*AuditPage, error) {
+	id, err := s.storedRowID(ctx, groupTable(), gid)
+	if err != nil {
+		return nil, err
+	}
+	return s.history(ctx, model.NSSAuditRefGroup, id, params, actor, map[string]any{"scope": "nss_group_timeline", "gid": gid})
+}
+
+// storedRowID is the id of the row of t with number, or a NotFoundError.
+func (s *NSSLookupService) storedRowID(ctx context.Context, t nssTable, number uint32) (string, error) {
+	var ids []string
+	if err := s.db.WithContext(ctx).Table(t.table).Where(t.numberColumn+" = ?", number).Limit(1).Pluck("id", &ids).Error; err != nil {
+		return "", fmt.Errorf("read the NSS %s with %s %d: %w", t.label, t.numberColumn, number, err)
+	}
+	if len(ids) == 0 {
+		return "", &errorresponses.NotFoundError{Resource: fmt.Sprintf("the NSS %s with %s %d", t.label, t.numberColumn, number)}
+	}
+	return ids[0], nil
+}
+
+// history reads one page of a row's events and records the view. With no
+// auditor wired there is nothing to read, so the page is empty.
+func (s *NSSLookupService) history(ctx context.Context, kind, rowID string, params paging.Params, actor *AuditSubject, detail map[string]any) (*AuditPage, error) {
+	if s.auditor == nil {
+		return &AuditPage{Events: []AuditEventRecord{}}, nil
+	}
+	page, err := s.auditor.ListForNSSRow(ctx, kind, rowID, params.After, params.Limit)
+	if err != nil {
+		return nil, err
+	}
+	s.auditor.Record(ctx, AuditEvent{Action: AuditAdminAuditViewed, Actor: actor, Detail: detail})
+	return page, nil
 }

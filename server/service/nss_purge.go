@@ -98,15 +98,17 @@ func errNSSDisabled() error {
 	return &errorresponses.NotFoundError{Resource: "the NSS directory (nss.enabled is false)"}
 }
 
-// purgeEvent is the nss.tombstone_purged event for one row: System when
-// actor is nil (the retention sweep), the admin's otherwise.
-func (s *NSSDirectoryService) purgeEvent(actor *AuditSubject, detail map[string]any) AuditEvent {
+// purgeEvent is the nss.tombstone_purged event for row id of t: System
+// when actor is nil (the retention sweep), the admin's otherwise. Its ref
+// outlives the row, so the history stays until the events age out.
+func (s *NSSDirectoryService) purgeEvent(t nssTable, id string, actor *AuditSubject, detail map[string]any) AuditEvent {
 	return AuditEvent{
 		Action:     AuditNSSTombstonePurged,
 		Actor:      actor,
 		System:     actor == nil,
 		Detail:     detail,
 		OccurredAt: s.now(),
+		NSSRefs:    []NSSAuditRef{t.auditRef(id)},
 	}
 }
 
@@ -114,7 +116,7 @@ func (s *NSSDirectoryService) purgeEvent(actor *AuditSubject, detail map[string]
 // its collisions, and records the purge, in one transaction. The rows its
 // collisions withheld are served again unless another holds them.
 func (s *NSSDirectoryService) purgeAccount(ctx context.Context, row *model.PosixUser, actor *AuditSubject) error {
-	event := s.purgeEvent(actor, map[string]any{
+	event := s.purgeEvent(accountTable(), row.ID, actor, map[string]any{
 		"table": "posix_users", "name": row.Name, "uid": row.UID, "gid": row.GID, "dn": row.DN,
 		"deleted_at": row.DeletedAt,
 	})
@@ -127,7 +129,9 @@ func (s *NSSDirectoryService) purgeAccount(ctx context.Context, row *model.Posix
 		if result.RowsAffected == 0 {
 			return &errorresponses.NotFoundError{Resource: fmt.Sprintf("tombstoned NSS account with uid %d", row.UID)}
 		}
-		if err := s.dropMembers(tx, &batch, "uid = ?", row.UID, actor, map[uint32]string{row.UID: row.Name}, nil); err != nil {
+		if err := s.dropMembers(tx, &batch, "uid = ?", row.UID, nssMemberChange{
+			actor: actor, userNames: map[uint32]string{row.UID: row.Name}, userIDs: map[uint32]string{row.UID: row.ID},
+		}); err != nil {
 			return err
 		}
 		if err := s.dropCollisionsOf(tx, accountTable(), row.ID); err != nil {
@@ -145,7 +149,7 @@ func (s *NSSDirectoryService) purgeAccount(ctx context.Context, row *model.Posix
 
 // purgeGroup is purgeAccount for a group.
 func (s *NSSDirectoryService) purgeGroup(ctx context.Context, row *model.PosixGroup, actor *AuditSubject) error {
-	event := s.purgeEvent(actor, map[string]any{
+	event := s.purgeEvent(groupTable(), row.ID, actor, map[string]any{
 		"table": "posix_groups", "name": row.Name, "gid": row.GID, "dn": row.DN, "deleted_at": row.DeletedAt,
 	})
 	var batch nssAuditBatch
@@ -157,7 +161,9 @@ func (s *NSSDirectoryService) purgeGroup(ctx context.Context, row *model.PosixGr
 		if result.RowsAffected == 0 {
 			return &errorresponses.NotFoundError{Resource: fmt.Sprintf("tombstoned NSS group with gid %d", row.GID)}
 		}
-		if err := s.dropMembers(tx, &batch, "gid = ?", row.GID, actor, nil, map[uint32]string{row.GID: row.Name}); err != nil {
+		if err := s.dropMembers(tx, &batch, "gid = ?", row.GID, nssMemberChange{
+			actor: actor, groupNames: map[uint32]string{row.GID: row.Name}, groupIDs: map[uint32]string{row.GID: row.ID},
+		}); err != nil {
 			return err
 		}
 		if err := s.dropCollisionsOf(tx, groupTable(), row.ID); err != nil {
@@ -175,8 +181,9 @@ func (s *NSSDirectoryService) purgeGroup(ctx context.Context, row *model.PosixGr
 
 // dropMembers deletes the membership rows matching where for a purge and
 // records nss.group_members_changed for each group that lost members. The
-// purged row is already gone, so its name comes from the names given.
-func (s *NSSDirectoryService) dropMembers(tx *gorm.DB, b *nssAuditBatch, where string, value uint32, actor *AuditSubject, userNames, groupNames map[uint32]string) error {
+// purged row is already gone, so its name and id come from c, whose via
+// is set here.
+func (s *NSSDirectoryService) dropMembers(tx *gorm.DB, b *nssAuditBatch, where string, value uint32, c nssMemberChange) error {
 	before, err := readMembers(tx, where, value)
 	if err != nil {
 		return err
@@ -184,9 +191,8 @@ func (s *NSSDirectoryService) dropMembers(tx *gorm.DB, b *nssAuditBatch, where s
 	if err := tx.Where(where, value).Delete(&model.PosixGroupMember{}).Error; err != nil {
 		return err
 	}
-	return s.recordMemberChanges(tx, b, memberDeltas(before, nssMembers{}), nssMemberChange{
-		via: nssViaTombstonePurged, actor: actor, userNames: userNames, groupNames: groupNames,
-	})
+	c.via = nssViaTombstonePurged
+	return s.recordMemberChanges(tx, b, memberDeltas(before, nssMembers{}), c)
 }
 
 // dropCollisionsOf deletes every collision naming the row id of t, which

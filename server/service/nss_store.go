@@ -49,6 +49,16 @@ func groupTable() nssTable {
 	}
 }
 
+// auditRef is the nss_audit_refs entry naming row id of this table on an
+// audit event.
+func (t nssTable) auditRef(id string) NSSAuditRef {
+	kind := model.NSSAuditRefGroup
+	if t.numberColumn == "uid" {
+		kind = model.NSSAuditRefAccount
+	}
+	return NSSAuditRef{Kind: kind, RowID: id}
+}
+
 // kinds lists the table's two collision kinds.
 func (t nssTable) kinds() []model.NSSCollisionKind {
 	return []model.NSSCollisionKind{t.numberKind, t.nameKind}
@@ -779,7 +789,8 @@ const nssGroupMatched = "matched"
 // its old name and is withheld until that clears.
 func groupRenamedEvent(r *nssGroupRename, row *model.PosixGroup, g *nssGroup, via string) AuditEvent {
 	return AuditEvent{
-		Action: AuditNSSGroupRenamed,
+		Action:  AuditNSSGroupRenamed,
+		NSSRefs: []NSSAuditRef{groupTable().auditRef(row.ID)},
 		Detail: map[string]any{
 			"table":        groupTable().table,
 			"gid":          row.GID,
@@ -865,7 +876,7 @@ func (s *NSSDirectoryService) replaceGroupMembers(tx *gorm.DB, row *model.PosixG
 		after.add(row.GID, uid)
 	}
 	return s.recordMemberChanges(tx, &out.audit, memberDeltas(before, after), nssMemberChange{
-		via: w.via, groupNames: map[uint32]string{row.GID: row.Name},
+		via: w.via, groupNames: map[uint32]string{row.GID: row.Name}, groupIDs: map[uint32]string{row.GID: row.ID},
 	})
 }
 

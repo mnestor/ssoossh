@@ -201,6 +201,14 @@ table nss_alerts
   column last_raised_at type=DATETIME nullable=false pk=false default=<none>
   column subject type=TEXT nullable=false pk=true default=<none>
   index sqlite_autoindex_nss_alerts_1 unique=true columns=kind,subject
+table nss_audit_refs
+  column created_at type=DATETIME nullable=false pk=false default=<none>
+  column event_id type=TEXT nullable=false pk=true default=<none>
+  column kind type=TEXT nullable=false pk=true default=<none>
+  column row_id type=TEXT nullable=false pk=true default=<none>
+  fk event_id -> audit_events.id on_delete=NO ACTION on_update=CASCADE
+  index idx_nss_audit_refs_row unique=false columns=kind,row_id,created_at,event_id
+  index sqlite_autoindex_nss_audit_refs_1 unique=true columns=event_id,kind,row_id
 table nss_collisions
   column first_seen_at type=DATETIME nullable=false pk=false default=<none>
   column holder_id type=TEXT nullable=false pk=true default=<none>
