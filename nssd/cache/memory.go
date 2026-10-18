@@ -138,19 +138,23 @@ func (m *MemoryStore) MarkStale(_ context.Context, sel Selector) (int, error) {
 	return n, nil
 }
 
-// markStale applies mark to the entry named name, or to every entry when
-// name is empty, and returns how many it marked.
+// markStale applies mark to the entry named name, found by its key, or to
+// every entry when name is empty, and returns how many it marked.
 func markStale[E any](entries map[string]E, name string, mark func(*E)) int {
-	n := 0
-	for key, e := range entries {
-		if name != "" && key != name {
-			continue
+	if name != "" {
+		e, ok := entries[name]
+		if !ok {
+			return 0
 		}
 		mark(&e)
-		entries[key] = e
-		n++
+		entries[name] = e
+		return 1
 	}
-	return n
+	for key, e := range entries {
+		mark(&e)
+		entries[key] = e
+	}
+	return len(entries)
 }
 
 // Users implements Store.

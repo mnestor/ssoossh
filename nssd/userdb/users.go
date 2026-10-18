@@ -239,14 +239,24 @@ func (d *Daemon) forgetUser(ctx context.Context, key userKey) {
 	if err := d.store.DeleteUser(ctx, entry.Name); err != nil {
 		d.log.Error("cannot drop a user from the cache", "user", entry.Name, "error", err)
 	}
+	// The user is in no group any more, as far as this host is concerned:
+	// a cached member list still naming them is refetched.
+	d.staleGroupsForUser(ctx, entry.Name, 0, nil, nil, entry)
 }
 
 // storeUser caches a user answer that passed the policy, together with a
 // group entry for each membership, and logs a uid or gid change of a name
 // already cached: the server only moves an id after an admin accepted it
-// (README R38), but every host it reaches should say so.
+// (README R38), but every host it reaches should say so. A cached group
+// whose member list the change in memberships contradicts is marked stale
+// (staleGroupsForUser).
 func (d *Daemon) storeUser(ctx context.Context, resp *apitypes.NSSUserResponse) {
-	if old, err := d.store.UserByName(ctx, resp.Name); err == nil && old != nil && (old.UID != resp.UID || old.GID != resp.GID) {
+	old, err := d.store.UserByName(ctx, resp.Name)
+	if err != nil {
+		// A failed read only costs the comparisons below.
+		old = nil
+	}
+	if old != nil && (old.UID != resp.UID || old.GID != resp.GID) {
 		d.log.Warn("a refresh changed a cached user's ids",
 			"user", resp.Name, "old_uid", old.UID, "uid", resp.UID, "old_gid", old.GID, "gid", resp.GID)
 	}
@@ -268,11 +278,126 @@ func (d *Daemon) storeUser(ctx context.Context, resp *apitypes.NSSUserResponse) 
 	d.negative.Delete(userKey{name: resp.Name}.String())
 	d.negative.Delete(userKey{uid: resp.UID, byUID: true}.String())
 
+	served := make([]apitypes.NSSMembership, 0, len(resp.Groups))
 	for _, m := range resp.Groups {
 		if d.policy.GroupStub(m) == nil {
 			d.storeGroupStub(ctx, m, now)
+			served = append(served, m)
 		}
 	}
+	d.staleGroupsForUser(ctx, resp.Name, resp.GID, served, resp.Groups, old)
+}
+
+// staleGroupsForUser keeps cached group member lists coherent with a fresh
+// user record, without asking the server: the record's memberships are
+// compared with those of old, the cached entry it replaced, and
+//
+//   - each group joined (every served one when nothing was cached) whose
+//     cached member list lacks the user, and
+//   - each group left whose cached member list still names the user
+//
+// is marked stale, so its next lookup refetches it. Only the joined and
+// left groups are looked at, by name, so a membership that has not
+// changed is never weighed again: a lasting disagreement (a group the
+// server adds to a user's list without a membership row, such as the
+// directory primary group under auto_private_groups) costs one refetch,
+// not one per fetch. served are the memberships that passed the policy and
+// filled the group cache, current all the record's memberships; a
+// membership the policy drops is not joined but not left either. The
+// primary group is never joined: the server lists a group's explicit
+// members only, as /etc/group does, so it says nothing about the list.
+// Left groups matter most, since a removed member lingering in a cached
+// list is the direction that grants too much.
+func (d *Daemon) staleGroupsForUser(ctx context.Context, user string, primaryGID uint32, served, current []apitypes.NSSMembership, old *cache.UserEntry) {
+	if d.cfg.IgnoreGroupMembers {
+		// No member list is served, so none can disagree.
+		return
+	}
+	prev, hadPrev := entryMemberships(old)
+	for _, m := range served {
+		if m.GID == primaryGID || (hadPrev && hasMembership(prev, m.Name)) {
+			continue
+		}
+		d.staleGroupIf(ctx, m.Name, user, false, "a fresh user record joins the group but its cached member list lacks the user")
+	}
+	for _, m := range prev {
+		if !hasMembership(current, m.Name) {
+			d.staleGroupIf(ctx, m.Name, user, true, "a fresh user record leaves the group but its cached member list still names the user")
+		}
+	}
+}
+
+// staleGroupIf marks the cached group named group stale when its member
+// list names user (listed) or lacks user (!listed). A stub knows no
+// members and an entry already stale needs nothing, so both are left
+// alone, and so is a truncated list that lacks the user, since the cap
+// may be what left the user out.
+func (d *Daemon) staleGroupIf(ctx context.Context, group, user string, listed bool, why string) {
+	e, err := d.store.GroupByName(ctx, group)
+	if err != nil {
+		d.log.Error("cannot read the group cache", "group", group, "error", err)
+		return
+	}
+	if e == nil || !e.Members || e.Stale {
+		return
+	}
+	var g apitypes.NSSGroupResponse
+	if err := json.Unmarshal(e.Data, &g); err != nil {
+		// groupFromEntry reports an entry that does not decode.
+		return
+	}
+	if slices.Contains(g.Members, user) != listed || (!listed && g.MembersTruncated) {
+		return
+	}
+	d.markStale(ctx, cache.Selector{Groups: true, Name: group}, why, "group", group, "user", user)
+}
+
+// staleUserIf marks the cached user named user stale when its memberships
+// disagree with a fresh group record that says user is (member) or is not
+// (!member) in group, so the user's group list (initgroups, `id`) is
+// refetched on its next lookup. A user not cached, or already stale, needs
+// nothing; one that does not decode is marked, since a refetch replaces it.
+func (d *Daemon) staleUserIf(ctx context.Context, user, group string, member bool, why string) {
+	e, err := d.store.UserByName(ctx, user)
+	if err != nil {
+		d.log.Error("cannot read the user cache", "user", user, "error", err)
+		return
+	}
+	if e == nil || e.Stale {
+		return
+	}
+	if groups, ok := entryMemberships(e); ok && hasMembership(groups, group) == member {
+		return
+	}
+	d.markStale(ctx, cache.Selector{Users: true, Name: user}, why, "user", user, "group", group)
+}
+
+// markStale marks the entries sel picks stale and logs it at debug with
+// why and attrs; a store that fails is logged at error.
+func (d *Daemon) markStale(ctx context.Context, sel cache.Selector, why string, attrs ...any) {
+	if _, err := d.store.MarkStale(ctx, sel); err != nil {
+		d.log.Error("cannot mark a cache entry stale", append(attrs, "error", err)...)
+		return
+	}
+	d.log.Debug("marked a cache entry stale", append(attrs, "reason", why)...)
+}
+
+// entryMemberships decodes a cached user's memberships, as the server sent
+// them. ok is false when there is no entry or it does not decode.
+func entryMemberships(e *cache.UserEntry) (groups []apitypes.NSSMembership, ok bool) {
+	if e == nil {
+		return nil, false
+	}
+	var resp apitypes.NSSUserResponse
+	if err := json.Unmarshal(e.Data, &resp); err != nil {
+		return nil, false
+	}
+	return resp.Groups, true
+}
+
+// hasMembership reports whether groups has a membership named name.
+func hasMembership(groups []apitypes.NSSMembership, name string) bool {
+	return slices.ContainsFunc(groups, func(m apitypes.NSSMembership) bool { return m.Name == name })
 }
 
 // storeGroupStub caches a group's name and gid from a user's memberships.

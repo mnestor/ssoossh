@@ -243,11 +243,16 @@ func (d *Daemon) forgetGroup(ctx context.Context, key groupKey) {
 	}
 }
 
-// storeGroup caches a group answer that passed the policy.
+// storeGroup caches a group answer that passed the policy. A cached user
+// whose group list the change in members contradicts is marked stale
+// (staleUsersForGroup).
 func (d *Daemon) storeGroup(ctx context.Context, resp *apitypes.NSSGroupResponse) {
-	if old, err := d.store.GroupByName(ctx, resp.Name); err == nil {
-		d.warnGroupMoved(old, resp.Name, resp.GID)
+	old, err := d.store.GroupByName(ctx, resp.Name)
+	if err != nil {
+		// A failed read only costs the comparisons below.
+		old = nil
 	}
+	d.warnGroupMoved(old, resp.Name, resp.GID)
 	data, err := json.Marshal(resp)
 	if err != nil {
 		// not covered: NSSGroupResponse always marshals.
@@ -264,4 +269,37 @@ func (d *Daemon) storeGroup(ctx context.Context, resp *apitypes.NSSGroupResponse
 	}
 	d.negative.Delete(groupKey{name: resp.Name}.String())
 	d.negative.Delete(groupKey{gid: resp.GID, byGID: true}.String())
+	d.staleUsersForGroup(ctx, old, resp)
+}
+
+// staleUsersForGroup keeps cached users' group lists coherent with a fresh
+// group record, without asking the server: each user added to or removed
+// from the member list, compared with old, the cached entry it replaced,
+// is marked stale when the user's cached memberships do not already say
+// the same (staleUserIf). A stub or no previous entry knows no members to
+// compare with, and members that did not change are never looked at.
+func (d *Daemon) staleUsersForGroup(ctx context.Context, old *cache.GroupEntry, resp *apitypes.NSSGroupResponse) {
+	if old == nil || !old.Members {
+		return
+	}
+	var prev apitypes.NSSGroupResponse
+	if err := json.Unmarshal(old.Data, &prev); err != nil {
+		return
+	}
+	before := make(map[string]bool, len(prev.Members))
+	for _, m := range prev.Members {
+		before[m] = true
+	}
+	after := make(map[string]bool, len(resp.Members))
+	for _, m := range resp.Members {
+		after[m] = true
+		if !before[m] {
+			d.staleUserIf(ctx, m, resp.Name, true, "a fresh group record adds the user but the user's cached groups lack it")
+		}
+	}
+	for _, m := range prev.Members {
+		if !after[m] {
+			d.staleUserIf(ctx, m, resp.Name, false, "a fresh group record drops the user but the user's cached groups still have it")
+		}
+	}
 }
