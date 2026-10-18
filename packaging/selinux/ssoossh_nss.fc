@@ -1,0 +1,18 @@
+# File contexts for ssoosshd-nss. See ssoossh_nss.te.
+#
+# Paths are written for both the EL9 and the EL10 policy. EL9 aliases /run
+# to /var/run (file_contexts.subs_dist "/run /var/run") and EL10 the other
+# way round, and EL10 also aliases /usr/sbin to /usr/bin, so each path below
+# matches on both: the binary through /usr/s?bin, the runtime directory
+# through one line per spelling.
+
+/usr/s?bin/ssoosshd-nss	--	gen_context(system_u:object_r:ssoosshd_nss_exec_t,s0)
+
+/etc/ssoossh/nss\.yaml	--	gen_context(system_u:object_r:ssoosshd_nss_conf_t,s0)
+/etc/ssoossh/nss\.key	--	gen_context(system_u:object_r:ssoosshd_nss_conf_t,s0)
+/etc/ssoossh/nss-overrides\.yaml	--	gen_context(system_u:object_r:ssoosshd_nss_conf_t,s0)
+
+/var/lib/ssoossh-nss(/.*)?	gen_context(system_u:object_r:ssoosshd_nss_var_lib_t,s0)
+
+/run/ssoossh-nss(/.*)?	gen_context(system_u:object_r:ssoosshd_nss_var_run_t,s0)
+/var/run/ssoossh-nss(/.*)?	gen_context(system_u:object_r:ssoosshd_nss_var_run_t,s0)

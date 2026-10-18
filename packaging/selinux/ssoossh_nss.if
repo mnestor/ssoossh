@@ -1,0 +1,59 @@
+## <summary>ssoosshd-nss, the ssoossh NSS daemon (a systemd userdb service).</summary>
+
+########################################
+## <summary>
+##	Execute ssoosshd-nss in its domain.
+## </summary>
+## <param name="domain">
+##	<summary>
+##	Domain allowed to transition.
+##	</summary>
+## </param>
+#
+interface(`ssoossh_nss_domtrans',`
+	gen_require(`
+		type ssoosshd_nss_t, ssoosshd_nss_exec_t;
+	')
+
+	corecmd_search_bin($1)
+	domtrans_pattern($1, ssoosshd_nss_exec_t, ssoosshd_nss_t)
+')
+
+########################################
+## <summary>
+##	Connect to ssoosshd-nss over a unix stream socket. Every
+##	nsswitch_domain may already; this is for a domain that resolves
+##	users without being one.
+## </summary>
+## <param name="domain">
+##	<summary>
+##	Domain allowed access.
+##	</summary>
+## </param>
+#
+interface(`ssoossh_nss_stream_connect',`
+	gen_require(`
+		type ssoosshd_nss_t;
+	')
+
+	allow $1 ssoosshd_nss_t:unix_stream_socket connectto;
+')
+
+########################################
+## <summary>
+##	Read the ssoosshd-nss configuration, the fleet key included.
+## </summary>
+## <param name="domain">
+##	<summary>
+##	Domain allowed access.
+##	</summary>
+## </param>
+#
+interface(`ssoossh_nss_read_config',`
+	gen_require(`
+		type ssoosshd_nss_conf_t;
+	')
+
+	files_search_etc($1)
+	read_files_pattern($1, ssoosshd_nss_conf_t, ssoosshd_nss_conf_t)
+')

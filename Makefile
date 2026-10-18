@@ -175,6 +175,23 @@ server-linux-pkcs11-build-local: $(FRONTEND_DIST) ## Build ssoosshd with PKCS#11
 frontend-clean: ## Remove the built web UI
 	rm -rf server/frontend/dist
 
+# The ssoossh-nss-selinux policy module (packaging/selinux/), built into
+# build/selinux/ssoossh_nss.pp for the nfpm "nss-selinux" package. Needs
+# selinux-policy-devel, so on a host without it the script builds in an
+# almalinux:9 container (docker). goreleaser's release run fails on that
+# package until this has run; `make linux` and `make binaries` build no
+# packages and do not need it.
+.PHONY: selinux-nss selinux-nss-check
+selinux-nss: ## Build the ssoosshd-nss SELinux module (docker when no selinux-policy-devel)
+	scripts/build-nss-selinux.sh
+
+# What the policy CI job asks: the module builds against EL9's headers and
+# links into both EL9's and EL10's targeted policy, in containers, without
+# loading anything. Loading it and watching the AVCs needs a real host.
+selinux-nss-check: ## Build the SELinux module and link it into the EL9 and EL10 policies
+	scripts/build-nss-selinux.sh --check
+	SELINUX_IMAGE=almalinux:10 scripts/build-nss-selinux.sh --link
+
 ##@ Test
 
 .PHONY: test test-server test-client test-internal test-nssd test-race cover cover-ci frontend-test csp-check
