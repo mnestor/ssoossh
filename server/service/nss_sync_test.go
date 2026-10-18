@@ -681,3 +681,76 @@ func TestNSSFullSync_ShouldMarkNothingMissingWhenAnEntryCouldNotBeWritten(t *tes
 		t.Errorf("bob missing_since = %v, want nothing marked missing after a failed write", bob.MissingSince)
 	}
 }
+
+func TestNSSIncrementalSync_ShouldRebuildAGroupsMembersWhenTheGroupChanged(t *testing.T) {
+	t.Parallel()
+
+	old := map[string][]string{"modifyTimestamp": {"20261017110000Z"}}
+	h := newNSSHarness(t, nil)
+	h.dir.put(nssAccountEntry("", "ada", 1, 1, old))
+	h.dir.put(nssAccountEntry("", "bob", 2, 2, old))
+	ops := nssGroupEntry("ops", 700, "ada", "bob")
+	ops.Attributes = append(ops.Attributes, &ldap.EntryAttribute{Name: "modifyTimestamp", Values: []string{"20261017110000Z"}})
+	h.dir.put(ops)
+	h.fullSync(t)
+
+	h.clock.advance(15 * time.Minute)
+	ops = nssGroupEntry("ops", 700, "bob")
+	ops.Attributes = append(ops.Attributes, &ldap.EntryAttribute{Name: "modifyTimestamp", Values: []string{"20261017120500Z"}})
+	h.dir.put(ops)
+	result, err := h.svc.IncrementalSync(t.Context())
+	if err != nil {
+		t.Fatalf("IncrementalSync() error = %v", err)
+	}
+	if result.Full || result.Groups.Seen != 1 || result.Accounts.Seen != 0 {
+		t.Errorf("result = %+v, want an incremental run reading only the changed group", result)
+	}
+	if got := h.members(t, 700); !reflect.DeepEqual(got, []uint32{2}) {
+		t.Errorf("members = %v, want ada dropped", got)
+	}
+}
+
+func TestNSSFullSync_ShouldWithholdBothWhenAGroupIsRenamedOntoAHeldName(t *testing.T) {
+	t.Parallel()
+
+	h := newNSSHarness(t, nil)
+	h.dir.put(nssGroupEntry("ops", 700))
+	h.dir.put(nssGroupEntry("dev", 701))
+	h.fullSync(t)
+
+	renamed := nssGroupEntry("ops", 701)
+	renamed.DN = "cn=dev,ou=groups,dc=test"
+	h.dir.put(renamed)
+	h.clock.advance(time.Hour)
+	h.fullSync(t)
+
+	ops, dev := h.groupByName(t, "ops"), h.groupByName(t, "dev")
+	if ops.WithheldAt == nil || dev.WithheldAt == nil {
+		t.Errorf("ops withheld %v, dev withheld %v; want both", ops.WithheldAt, dev.WithheldAt)
+	}
+
+	// The directory takes the rename back: both are served again.
+	h.dir.put(nssGroupEntry("dev", 701))
+	h.clock.advance(time.Hour)
+	h.fullSync(t)
+	if n := h.count(t, &model.PosixGroup{}, "withheld_at IS NOT NULL"); n != 0 {
+		t.Errorf("withheld groups = %d, want none once the rename is undone", n)
+	}
+}
+
+func TestNSSFullSync_ShouldServeTheGroupAgainWhenTheGidCollisionResolves(t *testing.T) {
+	t.Parallel()
+
+	h := newNSSHarness(t, nil)
+	h.dir.put(nssGroupEntry("ops", 700))
+	h.dir.put(nssGroupEntry("ops2", 700))
+	h.fullSync(t)
+
+	h.dir.put(nssGroupEntry("ops2", 702))
+	h.clock.advance(time.Hour)
+	result := h.fullSync(t)
+
+	if h.groupByName(t, "ops").WithheldAt != nil || result.Groups.Created != 1 {
+		t.Errorf("groups = %+v, want ops served and ops2 stored with its new gid", result.Groups)
+	}
+}

@@ -344,3 +344,25 @@ func TestNSSMembersAreDNs_ShouldDecideByTheAttributeNameWhenAsked(t *testing.T) 
 		})
 	}
 }
+
+func TestNSSParseGroup_ShouldReadEachFieldFromItsOwnAttributeWhenEveryKeyIsRemapped(t *testing.T) {
+	t.Parallel()
+
+	svc := newNSSParser(t, func(c *config.Config) {
+		c.NSS.Attributes.GroupName = "groupLabel"
+		c.NSS.Attributes.GroupGID = "groupNumber"
+		c.NSS.Attributes.GroupMember = "uniqueMember"
+		c.LDAP.IDAttribute = "entryUUID"
+	})
+	got, err := svc.parseGroup(nssEntry("cn=x,dc=test", map[string][]string{
+		"groupLabel": {"ops"}, "groupNumber": {"700"}, "uniqueMember": {"uid=a,dc=test"},
+		"cn": {"wrong"}, "gidNumber": {"1"}, "memberUid": {"wrong"}, "entryUUID": {"g-1"},
+	}))
+	if err != nil {
+		t.Fatalf("parseGroup() error = %v", err)
+	}
+	want := &nssGroup{DN: "cn=x,dc=test", DirectoryID: "g-1", Name: "ops", GID: 700, Members: []string{"uid=a,dc=test"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("parseGroup() = %+v, want %+v", got, want)
+	}
+}
