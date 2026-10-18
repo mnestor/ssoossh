@@ -44,6 +44,12 @@ policy_module(ssoossh_nss, 1.0.0)
 type ssoosshd_nss_t;
 type ssoosshd_nss_exec_t;
 init_daemon_domain(ssoosshd_nss_t, ssoosshd_nss_exec_t)
+# The unit sets NoNewPrivileges=true, and under no_new_privs the kernel
+# refuses init_t's transition into a domain unless the policy allows
+# nnp_transition. Without this (measured on AlmaLinux 9.8) the exec fails
+# the bounded transition, the daemon runs as init_t and dies at its first
+# write, and systemd restarts it for ever.
+init_nnp_daemon_domain(ssoosshd_nss_t)
 
 ## nss.yaml, the fleet key nss.key and nss-overrides.yaml. A type of its
 ## own so no other confined domain can read the fleet key.
@@ -81,6 +87,18 @@ allow nsswitch_domain ssoosshd_nss_t:unix_stream_socket connectto;
 # Local policy
 #
 
+# The Go runtime at start: it reads
+# /sys/kernel/mm/transparent_hugepage/hpage_pmd_size (sysfs_t) to size its
+# heap, and the process's cgroup cpu.max under /sys/fs/cgroup (cgroup_t)
+# to set GOMAXPROCS. Both denied on AlmaLinux 9.8 without these.
+dev_read_sysfs(ssoosshd_nss_t)
+fs_search_cgroup_dirs(ssoosshd_nss_t)
+fs_read_cgroup_files(ssoosshd_nss_t)
+# Go's net package reads /proc/sys/net/core/somaxconn (sysctl_net_t) for
+# the listen backlog of the admin socket. It falls back to 128 when
+# denied, but the denial was logged at every start on AlmaLinux 9.8.
+kernel_read_net_sysctls(ssoosshd_nss_t)
+
 # The userdb socket systemd passes, the connections it accepts, and the
 # admin socket the daemon binds itself.
 allow ssoosshd_nss_t self:unix_stream_socket create_stream_socket_perms;
@@ -109,6 +127,9 @@ allow ssoosshd_nss_t passwd_file_t:file read_file_perms;
 files_search_var_lib(ssoosshd_nss_t)
 manage_dirs_pattern(ssoosshd_nss_t, ssoosshd_nss_var_lib_t, ssoosshd_nss_var_lib_t)
 manage_files_pattern(ssoosshd_nss_t, ssoosshd_nss_var_lib_t, ssoosshd_nss_var_lib_t)
+# SQLite in WAL mode maps cache.db-shm, the WAL index, into memory. Denied
+# on AlmaLinux 9.8 without this, and the cache does not open.
+allow ssoosshd_nss_t ssoosshd_nss_var_lib_t:file map;
 
 # The admin socket in /run/ssoossh-nss. systemd creates the directory
 # (RuntimeDirectory=); the daemon replaces a stale socket and binds a new

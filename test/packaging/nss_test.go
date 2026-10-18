@@ -7,8 +7,10 @@ import (
 	"reflect"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mnestor/ssoossh/nssd/config"
 	"github.com/mnestor/ssoossh/nssd/userdb"
@@ -471,5 +473,40 @@ func TestNSSClientRefreshShouldNameTheDaemonsSocketAndMethod(t *testing.T) {
 				t.Errorf("client/cmd/host_refresh.go lacks %s", tt.want)
 			}
 		})
+	}
+}
+
+// should give up on a daemon that cannot start within the start limit's
+// window: while the service fails and restarts, every lookup on the host
+// waits behind the socket, local users included, and only the start limit
+// failing the socket turns those waits into a quick not-found.
+func TestNSSServiceShouldReachItsStartLimitWhenTheDaemonCannotStart(t *testing.T) {
+	t.Parallel()
+
+	service, err := os.ReadFile(filepath.Join(repoRoot(t), "deploy/ssoosshd-nss.service"))
+	if err != nil {
+		t.Fatalf("read the service unit: %v", err)
+	}
+	value := func(key string) string {
+		m := regexp.MustCompile(`(?m)^` + key + `=(\S+)$`).FindSubmatch(service)
+		if m == nil {
+			t.Fatalf("the service unit sets no %s", key)
+		}
+		return string(m[1])
+	}
+	restart, err := time.ParseDuration(value("RestartSec"))
+	if err != nil {
+		t.Fatalf("RestartSec: %v", err)
+	}
+	window, err := time.ParseDuration(value("StartLimitIntervalSec"))
+	if err != nil {
+		t.Fatalf("StartLimitIntervalSec: %v", err)
+	}
+	burst, err := strconv.Atoi(value("StartLimitBurst"))
+	if err != nil {
+		t.Fatalf("StartLimitBurst: %v", err)
+	}
+	if took := time.Duration(burst) * restart; took >= window {
+		t.Errorf("%d starts %v apart take %v, not under the %v window: a failing daemon never reaches the limit", burst, restart, took, window)
 	}
 }
