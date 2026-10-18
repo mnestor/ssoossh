@@ -131,6 +131,12 @@ func (s *Server) handle(ctx context.Context, conn net.Conn) {
 	vc := varlink.NewServerConn(conn)
 
 	for {
+		if ctx.Err() != nil {
+			// Shutting down: the last call on this connection was
+			// answered, and no new one starts here. The peer's next call
+			// goes to the socket, which systemd holds for the next daemon.
+			return
+		}
 		if err := conn.SetReadDeadline(time.Now().Add(s.readTimeout)); err != nil {
 			// not covered: setting a deadline fails only on a closed
 			// connection.
@@ -145,7 +151,11 @@ func (s *Server) handle(ctx context.Context, conn net.Conn) {
 			// not covered: as above.
 			return
 		}
-		callCtx, cancel := context.WithTimeout(ctx, s.answerWait)
+		// A call already read is answered even when shutdown begins
+		// during it, still within the answer deadline: cancelling it with
+		// the server would turn a lookup in flight across a restart into
+		// a not-found for the caller.
+		callCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), s.answerWait)
 		err = s.daemon.Handle(callCtx, call, peer, vc)
 		cancel()
 		if err != nil {

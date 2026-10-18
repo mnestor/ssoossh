@@ -155,6 +155,37 @@ func TestServeShouldAnswerServiceNotAvailableWhenUpstreamIsSlow(t *testing.T) {
 	}
 }
 
+func TestServeShouldAnswerACallInFlightWhenShutdownBegins(t *testing.T) {
+	t.Parallel()
+	f := start(t, nil, func(c *config.Config) { c.SocketAnswerDeadline = 2 * time.Second })
+	release := f.nss.blockCalls()
+
+	done := make(chan error, 1)
+	var reply json.RawMessage
+	c := f.dial(t)
+	go func() {
+		done <- c.Call(context.Background(), userdb.MethodGetUserRecord, params("userName", "alice"), &reply)
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for f.nss.count() < 1 {
+		if time.Now().After(deadline) {
+			t.Fatal("the lookup never reached upstream")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	// Shutdown begins while the call waits on upstream, which then answers.
+	f.cancel()
+	release()
+
+	if err := <-done; err != nil {
+		t.Fatalf("Call() error = %v, want the record answered despite the shutdown", err)
+	}
+	if got := recordOf(t, reply)["userName"]; got != "alice" {
+		t.Fatalf("userName = %v, want alice", got)
+	}
+}
+
 func TestServeShouldRefuseAtOnceWhenTheUpstreamCapIsFull(t *testing.T) {
 	t.Parallel()
 	f := start(t, nil, func(c *config.Config) { c.SocketAnswerDeadline = 2 * time.Second; c.LoginRefreshTimeout = time.Second })
