@@ -273,12 +273,12 @@ describe('Rotation report', () => {
 			});
 		}
 
-		it('should say the not switched hosts resolve no accounts when the grace is over', async () => {
+		it('should say the not switched hosts resolve no new accounts when the grace is over', async () => {
 			serve(envelope(reportFixture(rows, ended)));
 			render(Page);
 
 			expect(await screen.findByTestId('rotation-not_switched')).toHaveTextContent(
-				'Last presented an older secret, which is no longer accepted.'
+				'Last presented an older secret, which is no longer accepted. These serve only what they had cached and resolve no new accounts until they have the current one.'
 			);
 		});
 	});

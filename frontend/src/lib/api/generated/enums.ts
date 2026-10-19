@@ -236,8 +236,8 @@ export type NSSKeyPermission = typeof NSSKeyPermissionView | typeof NSSKeyPermis
 export const NSSRotationBucketSwitched = "switched";
 /**
  * NSSRotationBucketNotSwitched is an address whose latest lookup
- * presented an older secret: it stops resolving accounts when the
- * grace ends.
+ * presented an older secret: when the grace ends it resolves no new
+ * accounts and serves only what it had cached.
  */
 export const NSSRotationBucketNotSwitched = "not_switched";
 /**

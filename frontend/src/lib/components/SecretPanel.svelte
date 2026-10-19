@@ -174,8 +174,8 @@
 
 			{#if previousExpiresAt}
 				<p class="text-dense text-ink" data-testid="{testid}-grace">
-					The previous secret is accepted until {formatDateTime(previousExpiresAt)}. Hosts still
-					presenting it after that stop resolving accounts.
+					The previous secret is accepted until {formatDateTime(previousExpiresAt)}. After that,
+					hosts still presenting it resolve no new accounts and serve only what they had cached.
 				</p>
 			{/if}
 

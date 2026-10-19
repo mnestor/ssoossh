@@ -200,8 +200,8 @@
 			bucket: NSSRotationBucketNotSwitched,
 			title: 'Not switched',
 			description: ended
-				? 'Last presented an older secret, which is no longer accepted. These resolve no accounts until they have the current one.'
-				: 'Last presented an older secret. These stop resolving accounts when the previous secret ends.'
+				? 'Last presented an older secret, which is no longer accepted. These serve only what they had cached and resolve no new accounts until they have the current one.'
+				: 'Last presented an older secret. When the previous secret ends, these serve only what they had cached and resolve no new accounts.'
 		},
 		{
 			bucket: NSSRotationBucketSwitched,

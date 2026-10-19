@@ -256,7 +256,7 @@ describe('NSS key detail', () => {
 			await loaded();
 
 			expect(screen.getByTestId('nss-key-expired')).toHaveTextContent(
-				'Hosts using it resolve no accounts. Rotating issues a new secret and renews the expiry; the old secret is not accepted again.'
+				'The server refuses it, so hosts using it serve only the accounts they already cached, until their cache_expire_offline runs out, and resolve no new ones. Rotating issues a new secret and renews the expiry; the old secret is not accepted again.'
 			);
 		});
 

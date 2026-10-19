@@ -689,8 +689,9 @@
 
 		{#if expired}
 			<Alert variant="warning" title="This key has expired" testid="nss-key-expired">
-				Hosts using it resolve no accounts. Rotating issues a new secret and renews the expiry; the
-				old secret is not accepted again.
+				The server refuses it, so hosts using it serve only the accounts they already cached, until
+				their cache_expire_offline runs out, and resolve no new ones. Rotating issues a new secret
+				and renews the expiry; the old secret is not accepted again.
 			</Alert>
 		{/if}
 
@@ -969,7 +970,8 @@
 		{#if graceLive && key.previous_expires_at}
 			<p class="mt-2 text-trimmed" data-testid="nss-key-rotate-replaces">
 				The secret now accepted as previous, until {formatDateTime(key.previous_expires_at)}, stops
-				working at once. Hosts still on it stop resolving accounts.
+				working at once. Hosts still on it resolve no new accounts and serve only what they had
+				cached.
 			</p>
 		{/if}
 	</ConfirmModal>
@@ -1035,7 +1037,7 @@
 		returnFocus={focusRevoked}
 	>
 		Both the current and the previous secret stop being accepted now. Every host using
-		<span class="font-mono">{key.name}</span> stops resolving directory accounts until it gets a new key.
-		This cannot be undone.
+		<span class="font-mono">{key.name}</span> resolves no new directory accounts, and serves only what
+		it had cached, until it gets a new key. This cannot be undone.
 	</ConfirmModal>
 {/if}

@@ -7196,7 +7196,7 @@ paths:
     get:
       description: |-
         Per source address, whether it has switched to the current secret since the last rotation:
-        switched, not_switched (still presenting the previous secret, so it stops resolving accounts
+        switched, not_switched (still presenting the previous secret, so it resolves no new accounts
         when the grace ends) or gone (not seen since the rotation). With format=csv the rows come as
         a CSV download instead. Whoever may view the key.
       parameters:
