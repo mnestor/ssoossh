@@ -23,7 +23,7 @@ before choosing them on Debian or Ubuntu.
 | `ssoosshd-pkcs11` | the server built to load a PKCS#11 module |
 | `pam-ssoossh` | the PAM module, for `sudo`, console login and `sshd` (EL 8, 9 and 10, Debian, Ubuntu) |
 | `pam-ssoossh-selinux` | SELinux policy for the PAM module (EL 8 and 9) |
-| `ssoosshd-nss` | the NSS daemon, directory users and groups for a host through systemd userdb (deb and rpm) |
+| `ssoossh-nss` | the NSS daemon, directory users and groups for a host through systemd userdb (deb and rpm) |
 | `ssoossh-nss-selinux` | SELinux policy for the NSS daemon (EL 9 and 10) |
 | `ssoossh-release` | the repository definition and signing key |
 
@@ -46,10 +46,10 @@ distribution already ships. See
 
 ## The NSS daemon
 
-`ssoosshd-nss` is for hosts that should resolve directory users without
+`ssoossh-nss` is for hosts that should resolve directory users without
 provisioning them; see [Directory users on a host](/ssoossh/hosts/nss/). It
-installs `/usr/sbin/ssoosshd-nss`, the units `ssoosshd-nss.socket` and
-`ssoosshd-nss.service` (neither enabled), the man pages, and
+installs `/usr/sbin/ssoossh-nss`, the units `ssoossh-nss.socket` and
+`ssoossh-nss.service` (neither enabled), the man pages, and
 `/etc/ssoossh/nss.yaml`, root-only and kept on upgrade, with every option
 commented out. It never ships the fleet key file, never enables a unit and
 never edits `nsswitch.conf`. Uninstalling stops and disables both units, and

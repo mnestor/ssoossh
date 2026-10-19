@@ -390,7 +390,7 @@ Where this differs from sssd, and why:
   is left out.
 - `hybrid` with gid equal to uid and a directory group of the account's
   name (another gid): sssd answers `getgrgid` with the private group and
-  `getgrnam` with the directory group. `ssoosshd-nss` caches a group stub
+  `getgrnam` with the directory group. `ssoossh-nss` caches a group stub
   by name from the groups list, so a host would then answer `getgrnam`
   with the private gid; the private group is left out and the gid stays
   unnamed.

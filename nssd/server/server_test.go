@@ -54,7 +54,7 @@ func TestServeShouldAnswerSeveralCallsWhenTheyShareAConnection(t *testing.T) {
 		t.Fatalf("should answer BadService and keep the connection, got %v", err)
 	}
 	var info map[string]any
-	if err := c.Call(ctx, userdb.MethodGetInfo, nil, &info); err != nil || info["product"] != "ssoosshd-nss" {
+	if err := c.Call(ctx, userdb.MethodGetInfo, nil, &info); err != nil || info["product"] != "ssoossh-nss" {
 		t.Fatalf("got %v, %v", info, err)
 	}
 }

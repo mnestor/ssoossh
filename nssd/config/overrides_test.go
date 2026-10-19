@@ -117,7 +117,7 @@ func TestWriteOverridesShouldRoundTripWhenWrittenThenLoaded(t *testing.T) {
 		t.Fatalf("got %+v, %v", got, err)
 	}
 	data, _ := os.ReadFile(path)
-	if !strings.HasPrefix(string(data), "# ssoosshd-nss host overrides") || strings.Index(string(data), "alice") > strings.Index(string(data), "bob") {
+	if !strings.HasPrefix(string(data), "# ssoossh-nss host overrides") || strings.Index(string(data), "alice") > strings.Index(string(data), "bob") {
 		t.Fatalf("should write a header and sorted names, got:\n%s", data)
 	}
 

@@ -414,16 +414,16 @@ flowchart LR
       A caller on the host, such as sshd or sudo, runs glibc, which loads
       nss-systemd from systemd. nss-systemd connects over varlink to the
       socket com.github.mnestor.ssoossh in /run/systemd/userdb/, which
-      systemd holds for ssoosshd-nss. ssoosshd-nss, running as root with no
+      systemd holds for ssoossh-nss. ssoossh-nss, running as root with no
       capabilities, answers from its cache or asks ssoosshd over pinned
       HTTPS with the fleet key. ssoosshd answers from its posix tables,
-      which the directory sync fills from LDAP. Only ssoosshd-nss and
+      which the directory sync fills from LDAP. Only ssoossh-nss and
       ssoosshd are ssoossh code; nothing of ours runs inside the caller.
     }
     subgraph Caller["Every resolving process (not ours)"]
         G["glibc"] --> M["nss-systemd"]
     end
-    M -->|"varlink, AF_UNIX<br/>/run/systemd/userdb/com.github.mnestor.ssoossh"| D["ssoosshd-nss<br/>nssd/, cmd/ssoosshd-nss"]
+    M -->|"varlink, AF_UNIX<br/>/run/systemd/userdb/com.github.mnestor.ssoossh"| D["ssoossh-nss<br/>nssd/, cmd/ssoossh-nss"]
     D -->|"pinned HTTPS, fleet key"| S["ssoosshd<br/>/api/nss/*"]
     S --> T[("posix_users, posix_groups")]
     L["LDAP"] -->|"directory sync"| T
@@ -432,8 +432,8 @@ flowchart LR
 | Piece | Where | What it does |
 | --- | --- | --- |
 | `nss-systemd` | systemd | the NSS module glibc loads; queries every socket in `/run/systemd/userdb/` in parallel and turns JSON user and group records into `struct passwd` and `struct group` |
-| `ssoosshd-nss.socket` | `deploy/` | systemd holds the userdb socket, so lookups queue across a daemon restart instead of failing |
-| `ssoosshd-nss` | `nssd/`, `cmd/ssoosshd-nss` | implements systemd's `io.systemd.UserDatabase` (`GetUserRecord`, `GetGroupRecord`, `GetMemberships`), `org.varlink.service.GetInfo`, and its own `com.github.mnestor.ssoossh.NSS.RefreshUser`; the cache, the host policy, the upstream client |
+| `ssoossh-nss.socket` | `deploy/` | systemd holds the userdb socket, so lookups queue across a daemon restart instead of failing |
+| `ssoossh-nss` | `nssd/`, `cmd/ssoossh-nss` | implements systemd's `io.systemd.UserDatabase` (`GetUserRecord`, `GetGroupRecord`, `GetMemberships`), `org.varlink.service.GetInfo`, and its own `com.github.mnestor.ssoossh.NSS.RefreshUser`; the cache, the host policy, the upstream client |
 | `internal/varlink` | shared | the NUL-framed JSON codec, used by the daemon and by `ssoossh host principals` for its one-way refresh hint |
 | `internal/api` | shared | the HTTPS client, with SPKI pinning and the fleet key headers |
 | `/api/nss/*` | `server/` | the lookup endpoints, the fleet keys, and the directory sync behind them |

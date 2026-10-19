@@ -4,7 +4,7 @@ package config
 
 import "os"
 
-// fileOwnerUID reports no owner. not covered: ssoosshd-nss runs only on
+// fileOwnerUID reports no owner. not covered: ssoossh-nss runs only on
 // Linux; this file exists so the module still builds for Windows.
 func fileOwnerUID(os.FileInfo) (uint32, bool) { return 0, false }
 

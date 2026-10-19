@@ -1,4 +1,4 @@
-// Package upstream is ssoosshd-nss's side of the HTTPS lookups: it wraps
+// Package upstream is ssoossh-nss's side of the HTTPS lookups: it wraps
 // internal/api's NSS calls with the state Part 3 of
 // docs/proposals/nss-directory gives them ("Request path", Upstream): the
 // offline state with exponential backoff, the 401 latch, Retry-After on
@@ -457,7 +457,7 @@ func (c *Client) apiConfig() api.Config {
 		KeySecret:      c.key.Secret,
 		RequestTimeout: c.cfg.Timeout,
 		DialTimeout:    connectTimeout,
-		UserAgent:      "ssoosshd-nss/" + version.Version,
+		UserAgent:      "ssoossh-nss/" + version.Version,
 	}
 	if c.cfg.TLSSystemRoots() {
 		cfg.TLSSystemRoots = true

@@ -28,7 +28,7 @@ const (
 // healthChecks is the HTTP/2 configuration NewClient installs.
 //
 // It goes on every ordinary-call client, the CLI's included, rather than
-// on ssoosshd-nss's alone: those calls are short and have no stream to
+// on ssoossh-nss's alone: those calls are short and have no stream to
 // keep, so a ping only ever finds a dead connection sooner, and one
 // transport setup is simpler to reason about than two. It does not go on
 // the events stream's transport (AwaitCertificate builds its own with
@@ -40,7 +40,7 @@ func healthChecks() *http.HTTP2Config {
 	return &http.HTTP2Config{SendPingTimeout: pingAfter, PingTimeout: pingTimeout}
 }
 
-// IdleCloser is a client that pools connections. ssoosshd-nss calls it
+// IdleCloser is a client that pools connections. ssoossh-nss calls it
 // after an attempt that got no answer, so the retry dials a fresh
 // connection rather than reusing one that may be dead. HTTPClient
 // implements it.

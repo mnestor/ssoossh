@@ -53,7 +53,7 @@ func pathValue(g *gin.Context, name string) string {
 // @Description Resolves a login name, matched byte for byte, to the account a host serves: uid, primary gid
 // @Description (after nss.auto_private_groups), every group with its name, home, shell, gecos and a status
 // @Description derived on read. A disabled or deleted account is served with nss.disabled_shell. Called by
-// @Description ssoosshd-nss with a fleet key. 404 nss_not_found is the one answer a host may cache as a miss.
+// @Description ssoossh-nss with a fleet key. 404 nss_not_found is the one answer a host may cache as a miss.
 // @Tags        nss
 // @Produce     json
 // @Param       name path string true "The login name, by the relaxed POSIX rules nss-systemd applies"
@@ -76,7 +76,7 @@ func (n *nssLookupController) userByNameHandler(g *gin.Context) {
 // userByUIDHandler handles GET /api/nss/user/uid/{uid}.
 //
 // @Summary     Look a POSIX user up by uid
-// @Description The same answer as the lookup by name, for a uid. Called by ssoosshd-nss with a fleet key.
+// @Description The same answer as the lookup by name, for a uid. Called by ssoossh-nss with a fleet key.
 // @Tags        nss
 // @Produce     json
 // @Param       uid path int true "The uid, a decimal uint32"
@@ -105,7 +105,7 @@ func (n *nssLookupController) userByUIDHandler(g *gin.Context) {
 // @Description Resolves a group name, matched byte for byte, to its gid and member names, capped at
 // @Description nss.max_group_members with members_truncated set when the cap applies. An account's private
 // @Description group under nss.auto_private_groups resolves too, with no members. A tombstoned group resolves
-// @Description with no members. Called by ssoosshd-nss with a fleet key.
+// @Description with no members. Called by ssoossh-nss with a fleet key.
 // @Tags        nss
 // @Produce     json
 // @Param       name path string true "The group name, by the relaxed POSIX rules nss-systemd applies"
@@ -128,7 +128,7 @@ func (n *nssLookupController) groupByNameHandler(g *gin.Context) {
 // groupByGIDHandler handles GET /api/nss/group/gid/{gid}.
 //
 // @Summary     Look a POSIX group up by gid
-// @Description The same answer as the lookup by name, for a gid. Called by ssoosshd-nss with a fleet key.
+// @Description The same answer as the lookup by name, for a gid. Called by ssoossh-nss with a fleet key.
 // @Tags        nss
 // @Produce     json
 // @Param       gid path int true "The gid, a decimal uint32"

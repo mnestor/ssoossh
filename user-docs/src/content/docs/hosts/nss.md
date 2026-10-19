@@ -1,11 +1,11 @@
 ---
-title: Directory users on a host (ssoosshd-nss)
+title: Directory users on a host (ssoossh-nss)
 description: Resolve directory users and groups on a Linux host through systemd userdb, with nothing provisioned per host.
 sidebar:
   order: 9
 ---
 
-`ssoosshd-nss` gives a Linux host its users and groups from the directory
+`ssoossh-nss` gives a Linux host its users and groups from the directory
 `ssoosshd` already reads. `getent passwd alice`, `id alice`, `ls -l` and an
 `sshd` login all resolve a directory account by name or number -- uid,
 primary gid, every group membership, home, shell and display name -- without
@@ -28,12 +28,12 @@ covers `nss.enabled`, the directory sync and the fleet keys a host presents.
 
 ```mermaid
 flowchart LR
-    accTitle: How a host resolves a directory user through ssoosshd-nss
+    accTitle: How a host resolves a directory user through ssoossh-nss
     accDescr {
       A process on the host, such as sshd, sudo or ls, calls glibc, which
       loads nss-systemd, the NSS module systemd ships. nss-systemd queries
       every socket in /run/systemd/userdb/, among them
-      com.github.mnestor.ssoossh, which systemd holds for ssoosshd-nss. The
+      com.github.mnestor.ssoossh, which systemd holds for ssoossh-nss. The
       daemon answers from its cache when it can and otherwise asks ssoosshd
       over HTTPS, pinned to a private CA or a public key and authenticated by
       the fleet key. ssoosshd answers from the POSIX rows its directory sync
@@ -41,14 +41,14 @@ flowchart LR
     }
     Caller["sshd, sudo, id, ls"] --> Glibc["glibc"]
     Glibc --> Mod["nss-systemd<br/>(systemd's module)"]
-    Mod -->|"varlink on /run/systemd/userdb/<br/>com.github.mnestor.ssoossh"| Daemon["ssoosshd-nss<br/>cache and host policy"]
+    Mod -->|"varlink on /run/systemd/userdb/<br/>com.github.mnestor.ssoossh"| Daemon["ssoossh-nss<br/>cache and host policy"]
     Daemon -->|"pinned HTTPS + fleet key"| Server["ssoosshd<br/>/api/nss/*"]
     Server --> Dir[("POSIX rows from<br/>the directory sync")]
 ```
 
 The module that runs inside `sudo`, `sshd` and every other caller is
 `nss-systemd`, which systemd ships and most hosts already load. ssoossh
-installs no NSS module of its own. `ssoosshd-nss` implements systemd's
+installs no NSS module of its own. `ssoossh-nss` implements systemd's
 documented `io.systemd.UserDatabase` interface; the
 [architecture page](/ssoossh/internals/architecture/#the-nss-directory-beside-the-pipeline)
 says why.
@@ -104,7 +104,7 @@ back.
 You do not have to remember any of this. The daemon reads
 `/etc/nsswitch.conf` at every start and logs an error for each of the three
 lines that lacks `systemd` ("nsswitch.conf will not consult this daemon;
-directory users will look missing"), and `ssoosshd-nss status` reports the
+directory users will look missing"), and `ssoossh-nss status` reports the
 same and exits non-zero. A missing entry otherwise looks exactly like
 missing users. The package never edits the file: whether the host consults
 userdb is your decision.
@@ -115,13 +115,13 @@ From the [package repository](/ssoossh/packages/):
 
 ```bash
 # RHEL, Alma, Rocky, Fedora: ssoossh-nss-selinux comes with it as a weak dependency
-sudo dnf install ssoosshd-nss
+sudo dnf install ssoossh-nss
 
 # Debian, Ubuntu: pulls in libnss-systemd
-sudo apt install ssoosshd-nss
+sudo apt install ssoossh-nss
 ```
 
-The package installs the daemon at `/usr/sbin/ssoosshd-nss`, its two units,
+The package installs the daemon at `/usr/sbin/ssoossh-nss`, its two units,
 the man pages and an example `/etc/ssoossh/nss.yaml` with every option
 commented out at its default. It enables nothing, starts nothing and never
 touches `nsswitch.conf`: as shipped the daemon refuses to start, because it
@@ -184,7 +184,7 @@ on the same key keeps matching; list the next key's pin beside the current
 one before the server moves to it. With pins alone the key is the whole
 check. Set `tls_ca_file` to a CA bundle (or to `system`) instead to verify the
 chain and the server name, or set both, and the certificate must chain to that
-CA *and* carry a pinned key. Connections are TLS 1.3 only. `ssoosshd-nss
+CA *and* carry a pinned key. Connections are TLS 1.3 only. `ssoossh-nss
 status` names the trust in force on its `trust:` line, and when the pin does
 not match, its error names the digest the server presented.
 
@@ -316,15 +316,15 @@ URL.
 **4. Enable the socket, not the service.**
 
 ```bash
-sudo systemctl enable --now ssoosshd-nss.socket
+sudo systemctl enable --now ssoossh-nss.socket
 ```
 
 systemd holds `/run/systemd/userdb/com.github.mnestor.ssoossh` and starts the
-daemon at the first lookup. `systemctl enable ssoosshd-nss.service` enables
+daemon at the first lookup. `systemctl enable ssoossh-nss.service` enables
 the socket too. Then check it:
 
 ```bash
-sudo ssoosshd-nss status
+sudo ssoossh-nss status
 getent passwd alice
 id alice
 ```
@@ -332,7 +332,7 @@ id alice
 ## SELinux on EL hosts
 
 On an enforcing RHEL, Alma, Rocky or Fedora host, install
-`ssoossh-nss-selinux` (dnf does, as a weak dependency of `ssoosshd-nss`).
+`ssoossh-nss-selinux` (dnf does, as a weak dependency of `ssoossh-nss`).
 Without it the daemon runs as `unconfined_service_t`, and **no confined
 caller can reach its socket**: systemd labels the listening socket with the
 daemon's domain, and `nsswitch_domain`, the attribute every confined
@@ -341,11 +341,11 @@ user-resolving domain carries, may not connect to that type. `sshd` logs
 `systemd-userwork` makes the per-group lookups of `initgroups`, a directory
 user's supplementary groups drop out with no error at all.
 
-The module gives the daemon its own domain, `ssoosshd_nss_t`, labels its
+The module gives the daemon its own domain, `ssoossh_nss_t`, labels its
 files, and adds the one rule every caller needs:
 
 ```text
-allow nsswitch_domain ssoosshd_nss_t:unix_stream_socket connectto;
+allow nsswitch_domain ssoossh_nss_t:unix_stream_socket connectto;
 ```
 
 It loads at priority 200 (the vendor slot, so a site module of the same name
@@ -360,7 +360,7 @@ elsewhere needs its port labelled:
 sudo semanage port -a -t http_port_t -p tcp 9443
 ```
 
-`ps -eZ | grep ssoosshd-nss` should show `ssoosshd_nss_t`. The policy source
+`ps -eZ | grep ssoossh-nss` should show `ssoossh_nss_t`. The policy source
 ships under `/usr/share/doc/ssoossh-nss-selinux/` for a site that builds its
 own.
 
@@ -398,7 +398,7 @@ enable-cache passwd no
 enable-cache group  no
 ```
 
-`ssoosshd-nss status` warns whenever a process named `nscd` or `unscd` is
+`ssoossh-nss status` warns whenever a process named `nscd` or `unscd` is
 running. It cannot see their configuration, so it warns either way.
 
 ## What to expect
@@ -411,7 +411,7 @@ persistent mode across a reboot. So an outage costs only the names this host
 has never resolved. A daemon that cannot start is restarted a few times and
 then given up on (five starts within a minute); after that every lookup is a
 quick not found until the cause is fixed and
-`systemctl reset-failed ssoosshd-nss.socket ssoosshd-nss.service` brings the
+`systemctl reset-failed ssoossh-nss.socket ssoossh-nss.service` brings the
 socket back.
 
 **A first login while the server is slow can fail once.** Every call is
@@ -491,7 +491,7 @@ server is unreachable.
 **`sudo` in an open session uses the host cache.** Only `sshd` triggers the
 synchronous refresh; `sudo`, `su` and everything else are answered from the
 cache, and the session's own group list was set at login. To make a change
-take effect now, `sudo ssoosshd-nss cache -u alice` marks the entry stale.
+take effect now, `sudo ssoossh-nss cache -u alice` marks the entry stale.
 
 **Local accounts always win.** A name or id present in `/etc/passwd` or
 `/etc/group` is never served and never sent to the server, and a directory
@@ -533,7 +533,7 @@ host.** When the directory has `users` with gid 2005 and `/etc/group` has
 
 The members get neither gid 2005 nor gid 100, `ls -l` shows files owned by
 gid 2005 as the number, and the local `users` keeps its own members.
-`ssoosshd-nss status` lists the collisions met since the daemon started
+`ssoossh-nss status` lists the collisions met since the daemon started
 (twenty, then a count of the rest):
 
 ```text
@@ -570,9 +570,9 @@ host policy only. `nss.yaml` refuses unknown keys, so a file that still sets
 One user can be given a different uid, gid, home or shell on this host only:
 
 ```bash
-sudo ssoosshd-nss override set alice --shell /bin/zsh --home /data/alice
-sudo ssoosshd-nss override list
-sudo ssoosshd-nss override unset alice
+sudo ssoossh-nss override set alice --shell /bin/zsh --home /data/alice
+sudo ssoossh-nss override list
+sudo ssoossh-nss override unset alice
 ```
 
 The overrides live in `/etc/ssoossh/nss-overrides.yaml`, keyed by account
@@ -690,35 +690,35 @@ in use (`max_id: 524287` keeps the whole range out). An id outside
 
 | Command | What it does |
 | --- | --- |
-| `ssoosshd-nss status` | the connection state (online, offline, unauthorized or rate limited), the server, the trust in force (system store, CA file, key pin, or a trust root and a pin), the key id, the cache counts and the last error, from the running daemon, with any group name collisions and groups refused by `min_id..max_id` (twenty of each, then a count); then the `nsswitch.conf` check and the nscd warning. Exits non-zero when the daemon does not answer or a check fails |
-| `ssoosshd-nss lookup user NAME` | asks the userdb socket exactly as `nss-systemd` does and prints the JSON reply; `group NAME` and `memberships NAME` likewise |
-| `ssoosshd-nss cache -u NAME` | marks cached entries stale, like `sss_cache`: `-u`/`-g` one user or group, `-U`/`-G` every user or group, `-E` everything. Nothing is deleted, and a stale entry is still served while the server is unreachable |
-| `ssoosshd-nss override list\|set\|unset` | the host overrides, above |
-| `ssoosshd-nss run` | the daemon itself, which the service unit starts |
+| `ssoossh-nss status` | the connection state (online, offline, unauthorized or rate limited), the server, the trust in force (system store, CA file, key pin, or a trust root and a pin), the key id, the cache counts and the last error, from the running daemon, with any group name collisions and groups refused by `min_id..max_id` (twenty of each, then a count); then the `nsswitch.conf` check and the nscd warning. Exits non-zero when the daemon does not answer or a check fails |
+| `ssoossh-nss lookup user NAME` | asks the userdb socket exactly as `nss-systemd` does and prints the JSON reply; `group NAME` and `memberships NAME` likewise |
+| `ssoossh-nss cache -u NAME` | marks cached entries stale, like `sss_cache`: `-u`/`-g` one user or group, `-U`/`-G` every user or group, `-E` everything. Nothing is deleted, and a stale entry is still served while the server is unreachable |
+| `ssoossh-nss override list\|set\|unset` | the host overrides, above |
+| `ssoossh-nss run` | the daemon itself, which the service unit starts |
 
 `status`, `cache` and `override set`/`unset` talk to the running daemon over
 its admin socket, `/run/ssoossh-nss/admin.sock`, which only root may use.
 The daemon reads `nss.yaml` once, at start: restart the service after
-editing it. A SIGHUP (`sudo systemctl kill -s HUP ssoosshd-nss.service`)
+editing it. A SIGHUP (`sudo systemctl kill -s HUP ssoossh-nss.service`)
 re-reads the host files and the fleet key and clears the offline backoff,
 the unauthorized latch and the collisions and refused groups that `status`
 lists; replacing the key file clears the latch on its own.
-The daemon logs JSON lines to the journal (`journalctl -u ssoosshd-nss`).
+The daemon logs JSON lines to the journal (`journalctl -u ssoossh-nss`).
 
 ## Troubleshooting
 
 Work from the host outwards:
 
 ```bash
-sudo ssoosshd-nss status                 # is the daemon up, online, and consulted?
-sudo ssoosshd-nss lookup user alice      # what does the daemon itself answer?
+sudo ssoossh-nss status                 # is the daemon up, online, and consulted?
+sudo ssoossh-nss lookup user alice      # what does the daemon itself answer?
 userdbctl user alice                     # what does systemd's userdb see?
 getent passwd alice; id alice            # what does glibc see?
-journalctl -u ssoosshd-nss -n 50
+journalctl -u ssoossh-nss -n 50
 ```
 
 `userdbctl` is not everywhere: EL9 and Ubuntu 20.04 and 22.04 do not ship
-it. `ssoosshd-nss lookup` asks the same socket and is always there.
+it. `ssoossh-nss lookup` asks the same socket and is always there.
 
 | Symptom | Look at |
 | --- | --- |
@@ -733,7 +733,7 @@ it. `ssoosshd-nss lookup` asks the same socket and is always there.
 | A directory user lacks a directory group on one host, or files show a bare gid | a local group with the same name: `status` lists it under `collisions`, and the journal has the warning. Rename one of the two ([memberships match on gid](#what-to-expect)) |
 | A directory user lacks a group whose gid is below `min_id` | expected: `status` lists it under `refused`; such a gid is never served |
 | A removed group still works for someone already logged in | expected: see [what to expect](#what-to-expect) |
-| Lookups hang for 45 s | the daemon is failing to start; `systemctl status ssoosshd-nss` |
+| Lookups hang for 45 s | the daemon is failing to start; `systemctl status ssoossh-nss` |
 | Directory users are intermittently not found, and the journal has `userdb connections over socket_max_connections refused` | something holds many connections open: the line's `last_uid` names the uid. If it is legitimate load, raise `socket_max_connections`, and the unit's limits with it |
 
 The server side of a refused lookup (a revoked key, an address outside the

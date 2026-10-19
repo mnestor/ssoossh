@@ -66,7 +66,7 @@ func autoPrivateGroupsHook(from, to reflect.Type, data any) (any, error) {
 }
 
 // NSSConfig configures the NSS directory: POSIX accounts and groups read
-// from LDAP and served over /api/nss/* to the ssoosshd-nss daemon on each
+// from LDAP and served over /api/nss/* to the ssoossh-nss daemon on each
 // host, so a host resolves the same names and numbers the certificates
 // are issued for. Disabled by default. See
 // docs/proposals/nss-directory/README.md.

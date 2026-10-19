@@ -43,7 +43,7 @@ func newHostPrincipalsCommand(mappingFileFunc func() string) simplecobra.Command
 			"rather than by refusing to answer, so " +
 			"this host stays consistent with pam_ssoossh, which falls back to the same " +
 			"rule when it cannot read the map. On Linux it first sends this host's " +
-			"ssoosshd-nss, when one is listening, a one-way hint to refresh the account " +
+			"ssoossh-nss, when one is listening, a one-way hint to refresh the account " +
 			"over its local socket: 50 ms at most, no answer read, every failure ignored.",
 	}
 	// checkArity has already required exactly one argument.

@@ -1,6 +1,6 @@
 name: nss-integration
 
-# ssoosshd-nss against a real nss-systemd: the daemon, a fake ssoosshd
+# ssoossh-nss against a real nss-systemd: the daemon, a fake ssoosshd
 # (test/nss/fakeupstream) with a test CA, and glibc lookups, in Debian 12
 # containers. Job one has no systemd: the daemon binds the userdb socket
 # itself. Job two boots systemd as PID 1 and installs the shipped units, to
@@ -16,8 +16,8 @@ on:
       - 'internal/varlink/**'
       - 'internal/api/**'
       - 'internal/apitypes/nss.go'
-      - 'cmd/ssoosshd-nss/**'
-      - 'deploy/ssoosshd-nss.*'
+      - 'cmd/ssoossh-nss/**'
+      - 'deploy/ssoossh-nss.*'
       - 'test/nss/**'
       - 'scripts/nss-integration.sh'
       - 'scripts/nss-e2e.sh'
@@ -62,10 +62,10 @@ jobs:
           GOARCH: amd64
           GOFLAGS: -buildvcs=false
         run: |
-          GOFIPS140=v1.0.0 go build -trimpath -o build/nss-it/ssoosshd-nss ./cmd/ssoosshd-nss
+          GOFIPS140=v1.0.0 go build -trimpath -o build/nss-it/ssoossh-nss ./cmd/ssoossh-nss
           go build -trimpath -o build/nss-it/nss-fakeupstream ./test/nss/fakeupstream
           mkdir -p build/nss-e2e
-          cp build/nss-it/ssoosshd-nss build/nss-e2e/ssoosshd-nss
+          cp build/nss-it/ssoossh-nss build/nss-e2e/ssoossh-nss
           GOFIPS140=v1.0.0 go build -trimpath -tags exclude_frontend -o build/nss-e2e/ssoosshd ./cmd/ssoosshd
           go build -trimpath -o build/nss-e2e/e2ehelper ./test/nss/e2ehelper
 
@@ -124,7 +124,7 @@ jobs:
         run: scripts/nss-integration.sh systemd
 
   e2e:
-    name: nss end to end (OpenLDAP, ssoosshd, ssoosshd-nss)
+    name: nss end to end (OpenLDAP, ssoosshd, ssoossh-nss)
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 15

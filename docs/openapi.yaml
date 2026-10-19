@@ -6965,7 +6965,7 @@ paths:
       - web
   /api/nss/group/gid/{gid}:
     get:
-      description: The same answer as the lookup by name, for a gid. Called by ssoosshd-nss
+      description: The same answer as the lookup by name, for a gid. Called by ssoossh-nss
         with a fleet key.
       parameters:
       - description: The gid, a decimal uint32
@@ -7031,7 +7031,7 @@ paths:
         Resolves a group name, matched byte for byte, to its gid and member names, capped at
         nss.max_group_members with members_truncated set when the cap applies. An account's private
         group under nss.auto_private_groups resolves too, with no members. A tombstoned group resolves
-        with no members. Called by ssoosshd-nss with a fleet key.
+        with no members. Called by ssoossh-nss with a fleet key.
       parameters:
       - description: The group name, by the relaxed POSIX rules nss-systemd applies
         in: path
@@ -7561,7 +7561,7 @@ paths:
         Resolves a login name, matched byte for byte, to the account a host serves: uid, primary gid
         (after nss.auto_private_groups), every group with its name, home, shell, gecos and a status
         derived on read. A disabled or deleted account is served with nss.disabled_shell. Called by
-        ssoosshd-nss with a fleet key. 404 nss_not_found is the one answer a host may cache as a miss.
+        ssoossh-nss with a fleet key. 404 nss_not_found is the one answer a host may cache as a miss.
       parameters:
       - description: The login name, by the relaxed POSIX rules nss-systemd applies
         in: path
@@ -7622,7 +7622,7 @@ paths:
       - nss
   /api/nss/user/uid/{uid}:
     get:
-      description: The same answer as the lookup by name, for a uid. Called by ssoosshd-nss
+      description: The same answer as the lookup by name, for a uid. Called by ssoossh-nss
         with a fleet key.
       parameters:
       - description: The uid, a decimal uint32
@@ -7967,6 +7967,6 @@ tags:
   name: web
 - description: Browser-facing OIDC redirects
   name: auth
-- description: Called by the ssoosshd-nss host daemon, authenticated by a fleet API
+- description: Called by the ssoossh-nss host daemon, authenticated by a fleet API
     key
   name: nss

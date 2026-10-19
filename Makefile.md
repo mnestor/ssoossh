@@ -53,15 +53,15 @@ the matching `lint-*`) and the internal check halves
 | `make server-linux-build-local` | Build ssoosshd for a local `docker build` (see Dockerfile) |
 | `make server-linux-pkcs11-build-local` | Build ssoosshd with PKCS#11 for a local `docker build` (see Dockerfile.pkcs11) |
 | `make frontend-clean` | Remove the built web UI |
-| `make selinux-nss` | Build the ssoosshd-nss SELinux module (docker when no selinux-policy-devel) |
+| `make selinux-nss` | Build the ssoossh-nss SELinux module (docker when no selinux-policy-devel) |
 | `make selinux-nss-check` | Build the SELinux module and link it into the EL9 and EL10 policies |
 
 ### Test
 
 | Target | What it does |
 | --- | --- |
-| `make nss-integration` | Run the ssoosshd-nss integration jobs in docker |
-| `make nss-e2e` | Run the NSS end-to-end job (OpenLDAP, ssoosshd, ssoosshd-nss) in docker |
+| `make nss-integration` | Run the ssoossh-nss integration jobs in docker |
+| `make nss-e2e` | Run the NSS end-to-end job (OpenLDAP, ssoosshd, ssoossh-nss) in docker |
 | `make test` | Unit tests per component, with coverage |
 | `make test-race` | Unit tests under -race |
 | `make cover` | Coverage HTML report at .coverage/coverage.html |

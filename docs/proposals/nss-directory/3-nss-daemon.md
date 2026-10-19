@@ -1,4 +1,4 @@
-# Part 3: NSS daemon `ssoosshd-nss`
+# Part 3: NSS daemon `ssoossh-nss`
 
 **Repo:** `mnestor/ssoossh`. **Depends on:** Part 1 wire JSON. **Implements:**
 systemd's `io.systemd.UserDatabase` varlink interface; stock `nss-systemd`
@@ -6,7 +6,7 @@ is the glibc side (README U1). Shared context in [README.md](README.md).
 
 ## Scope
 
-- New Linux-only binary `cmd/ssoosshd-nss`.
+- New Linux-only binary `cmd/ssoossh-nss`.
 - Daemon code in a new top-level `/nssd` (README R18), importing
   only `internal/`, never `server/` or `client/`.
 - A userdb service on `/run/systemd/userdb/com.github.mnestor.ssoossh`,
@@ -17,7 +17,7 @@ is the glibc side (README U1). Shared context in [README.md](README.md).
   methods (none exist today; README R3). SRV discovery was dropped on
   2026-10-19: `server` is required; failover is the load balancer's behind
   one URL; `%d` went with it.
-- Packaging: one `ssoosshd-nss` `.deb`/`.rpm` via this repo's nfpm holding
+- Packaging: one `ssoossh-nss` `.deb`/`.rpm` via this repo's nfpm holding
   the daemon and its `.socket` and `.service` units. No `.apk`: musl
   cannot load NSS modules and has no systemd (README U2).
 - SELinux policy for the daemon and its socket, shipped as
@@ -42,7 +42,7 @@ missing entry is not mistaken for missing users.
 
 | Path | Purpose |
 | --- | --- |
-| `cmd/ssoosshd-nss/main.go` | entrypoint only; `//go:build linux` |
+| `cmd/ssoossh-nss/main.go` | entrypoint only; `//go:build linux` |
 | `nssd/config` | `/etc/ssoossh/nss.yaml` load + validate (viper), override file |
 | `nssd/upstream` | wraps `internal/api` NSS calls, offline state, 401 latch, concurrency cap |
 | `nssd/cache` | memory and SQLite stores behind one interface, TTL logic, singleflight |
@@ -61,7 +61,7 @@ implementing package.
 
 **Socket.** `AF_UNIX` `SOCK_STREAM` at
 `/run/systemd/userdb/com.github.mnestor.ssoossh`, mode 0666, created and
-held by `ssoosshd-nss.socket`. The service name, which callers must send in
+held by `ssoossh-nss.socket`. The service name, which callers must send in
 every call, is `com.github.mnestor.ssoossh`. When `LISTEN_FDS` is unset
 (development, tests) the daemon binds a path given by `--listen` itself.
 
@@ -329,7 +329,7 @@ name per `login_soft_ttl`, and all `RefreshUser` refreshes share the
 (below).
 
 **Upstream.** Concurrency cap 8; beyond it, `ServiceNotAvailable`. Connect
-timeout 2 s, total `timeout`. `User-Agent: ssoosshd-nss/<version>`. On 401:
+timeout 2 s, total `timeout`. `User-Agent: ssoossh-nss/<version>`. On 401:
 latch `unauthorized`, stop fetching, log at error once per minute, serve
 cache as if offline until `cache_expire_offline`; latch clears on SIGHUP or
 key file change. Offline: exponential backoff from `offline_timeout`, serve
@@ -481,11 +481,11 @@ concurrently and works in memory mode.
 
 | Command | Behaviour |
 | --- | --- |
-| `ssoosshd-nss run` | default; the daemon |
-| `ssoosshd-nss cache -E \| -u NAME \| -g NAME \| -U \| -G` | `sss_cache` equivalent: mark stale, never delete |
-| `ssoosshd-nss override list \| set USER --uid --gid --home --shell \| unset USER` | edits `nss-overrides.yaml` atomically, signals reload |
-| `ssoosshd-nss status` | online/offline/unauthorized, server, key id, cache counts, last error, group name collisions and groups refused by the id range since the start or the last SIGHUP (twenty of each, then a count), `nsswitch.conf` check, and a warning when nscd or unscd is running (README R26) |
-| `ssoosshd-nss lookup user NAME \| group NAME \| memberships NAME` | calls the userdb socket exactly as `nss-systemd` does; for debugging |
+| `ssoossh-nss run` | default; the daemon |
+| `ssoossh-nss cache -E \| -u NAME \| -g NAME \| -U \| -G` | `sss_cache` equivalent: mark stale, never delete |
+| `ssoossh-nss override list \| set USER --uid --gid --home --shell \| unset USER` | edits `nss-overrides.yaml` atomically, signals reload |
+| `ssoossh-nss status` | online/offline/unauthorized, server, key id, cache counts, last error, group name collisions and groups refused by the id range since the start or the last SIGHUP (twenty of each, then a count), `nsswitch.conf` check, and a warning when nscd or unscd is running (README R26) |
+| `ssoossh-nss lookup user NAME \| group NAME \| memberships NAME` | calls the userdb socket exactly as `nss-systemd` does; for debugging |
 
 `userdbctl user NAME` and `getent passwd NAME` exercise the full path
 through systemd.
@@ -500,7 +500,7 @@ still never touches the network.
 
 ## systemd units
 
-`ssoosshd-nss.socket`:
+`ssoossh-nss.socket`:
 
 ```ini
 [Unit]
@@ -515,15 +515,15 @@ SocketMode=0666
 WantedBy=sockets.target
 ```
 
-`ssoosshd-nss.service`:
+`ssoossh-nss.service`:
 
 ```ini
 [Unit]
-Requires=ssoosshd-nss.socket
-After=ssoosshd-nss.socket
+Requires=ssoossh-nss.socket
+After=ssoossh-nss.socket
 
 [Service]
-ExecStart=/usr/sbin/ssoosshd-nss run
+ExecStart=/usr/sbin/ssoossh-nss run
 Restart=always
 Environment=SYSTEMD_BYPASS_USERDB=com.github.mnestor.ssoossh
 RuntimeDirectory=ssoossh
@@ -550,14 +550,14 @@ capability (see "Peer is sshd").
 
 ## Packaging
 
-**nfpm `ssoosshd-nss`:**
+**nfpm `ssoossh-nss`:**
 
 | Content | Destination |
 | --- | --- |
-| daemon binary | `/usr/sbin/ssoosshd-nss` |
-| units | `/usr/lib/systemd/system/ssoosshd-nss.{socket,service}`, not enabled |
+| daemon binary | `/usr/sbin/ssoossh-nss` |
+| units | `/usr/lib/systemd/system/ssoossh-nss.{socket,service}`, not enabled |
 | example config | `/etc/ssoossh/nss.yaml`, 0600, `config\|noreplace` |
-| `ssoosshd-nss(8)` | man page |
+| `ssoossh-nss(8)` | man page |
 
 Dependencies: deb `systemd (>= 245)` and `libnss-systemd` (its postinst
 adds `systemd` to `nsswitch.conf`); rpm `systemd >= 245` plus whichever
@@ -570,11 +570,11 @@ enables units. `/etc/ssoossh/nss.key` is never shipped.
 **`ssoossh-nss-selinux` (rpm):** policy source in
 `packaging/selinux/ssoossh_nss.{te,fc,if}` (README R19):
 
-- `ssoosshd_nss_t` domain for `/usr/sbin/ssoosshd-nss`
-  (`ssoosshd_nss_exec_t`); config `ssoosshd_nss_conf_t`
+- `ssoossh_nss_t` domain for `/usr/sbin/ssoossh-nss`
+  (`ssoossh_nss_exec_t`); config `ssoossh_nss_conf_t`
   (`/etc/ssoossh/nss.yaml`, `nss.key`, `nss-overrides.yaml`); state
-  `ssoosshd_nss_var_lib_t` (`/var/lib/ssoossh(/.*)?`); runtime
-  `ssoosshd_nss_var_run_t` (`/run/ssoossh(/.*)?`); outbound TCP 443 and
+  `ssoossh_nss_var_lib_t` (`/var/lib/ssoossh(/.*)?`); runtime
+  `ssoossh_nss_var_run_t` (`/run/ssoossh(/.*)?`); outbound TCP 443 and
   DNS; read `/etc/passwd`, `/etc/group`, `/etc/shells`,
   `/etc/nsswitch.conf`; read `/proc/<pid>/exe` of `sshd_t`.
 - `nsswitch_domain` may `connectto` the userdb socket. Which domain that
@@ -635,12 +635,12 @@ the proposal is the only description.
 | Page (`user-docs/src/content/docs/`) | Content |
 | --- | --- |
 | `project/roadmap.md` (line 69 today) | Still says "four parts ... an NSS daemon and an NSS module". Change to three parts and the userdb design when the first daemon PR lands; remove the entry when NSS ships |
-| `hosts/nss.md` (new) | Platform floor (systemd 245+, glibc, `systemd` on `passwd:`/`group:`; RHEL 8 and musl unsupported), install, enabling `ssoosshd-nss.socket`, `nss.yaml` reference, fleet key file, SELinux package; `pam_mkhomedir` or `oddjob-mkhomedir` in sshd's PAM session stack (pam_ssoossh is `auth` only and an ephemeral host has no home directories); nscd or unscd must not cache passwd or group, or they cache a U5 miss (README R26) |
+| `hosts/nss.md` (new) | Platform floor (systemd 245+, glibc, `systemd` on `passwd:`/`group:`; RHEL 8 and musl unsupported), install, enabling `ssoossh-nss.socket`, `nss.yaml` reference, fleet key file, SELinux package; `pam_mkhomedir` or `oddjob-mkhomedir` in sshd's PAM session stack (pam_ssoossh is `auth` only and an ephemeral host has no home directories); nscd or unscd must not cache passwd or group, or they cache a U5 miss (README R26) |
 | `hosts/nss.md`, behaviour | A directory outage shows as "user not found" (README U3); a first login while the server is slow can fail once (U5); disabled users are `locked` with `nologin` (U6); the `UsePAM no` outcome of open check 1 (U7); group changes reach a host on the next sshd login or at cache expiry |
-| `hosts/nss.md`, troubleshooting | `ssoosshd-nss status`, `ssoosshd-nss lookup`, `userdbctl user NAME`, `getent passwd NAME` |
+| `hosts/nss.md`, troubleshooting | `ssoossh-nss status`, `ssoossh-nss lookup`, `userdbctl user NAME`, `getent passwd NAME` |
 | `concepts/security-model.md` | Fleet key exposure model; never write deny rules (sudoers `!%group`) against directory groups (README threat model item 6, U9) |
 | `operations/` (new NSS page) | Server side: `nss.*` config, fleet keys, rotation report, roles. `reference/config` regenerates from `make confdocs` |
-| `packages.md` | The `ssoosshd-nss` and `ssoossh-nss-selinux` packages and their dependencies |
+| `packages.md` | The `ssoossh-nss` and `ssoossh-nss-selinux` packages and their dependencies |
 | `internals/architecture.md` | The daemon, the userdb socket, and why there is no NSS module of our own |
 | `project/decisions.md` | Declined on purpose: an NSS module of our own, HTTP inside an NSS module, the sssd proxy provider |
 

@@ -1,13 +1,13 @@
 #!/bin/sh
 # Runs the NSS end-to-end job (test/nss/e2e) in docker, the same way CI's
 # nss-integration workflow does: a throwaway OpenLDAP, the real ssoosshd
-# over HTTPS with sqlite, NSS and LDAP on, and the real ssoosshd-nss behind
+# over HTTPS with sqlite, NSS and LDAP on, and the real ssoossh-nss behind
 # nss-systemd on a Debian 12 host, each in its own container on a private
 # network.
 #
 #   scripts/nss-e2e.sh
 #
-# Builds ssoosshd (without the web UI), ssoosshd-nss and the test helper
+# Builds ssoosshd (without the web UI), ssoossh-nss and the test helper
 # for linux/amd64 into build/nss-e2e/, builds the image
 # ssoossh-nss-e2e:debian12 from test/nss/e2e/Dockerfile, and runs three
 # --rm containers on the network ssoossh-nss-e2e-<pid>. The containers and
@@ -33,7 +33,7 @@ fi
 # never loads. NSS_IT_PREBUILT=1 uses binaries already in build/nss-e2e/,
 # which is how CI runs it.
 if [ "${NSS_IT_PREBUILT:-}" = 1 ]; then
-	for f in ssoosshd ssoosshd-nss e2ehelper; do
+	for f in ssoosshd ssoossh-nss e2ehelper; do
 		[ -f "$bin/$f" ] || {
 			echo "nss-e2e: NSS_IT_PREBUILT=1 but $bin/$f is missing" >&2
 			exit 1
@@ -43,7 +43,7 @@ if [ "${NSS_IT_PREBUILT:-}" = 1 ]; then
 else
 	mkdir -p "$bin"
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOFIPS140=v1.0.0 go build -trimpath -tags exclude_frontend -o "$bin/ssoosshd" ./cmd/ssoosshd
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOFIPS140=v1.0.0 go build -trimpath -o "$bin/ssoosshd-nss" ./cmd/ssoosshd-nss
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOFIPS140=v1.0.0 go build -trimpath -o "$bin/ssoossh-nss" ./cmd/ssoossh-nss
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o "$bin/e2ehelper" ./test/nss/e2ehelper
 fi
 docker build -q -t "$image" test/nss/e2e >/dev/null

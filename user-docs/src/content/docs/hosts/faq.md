@@ -28,7 +28,7 @@ time. See [Installing pam_ssoossh](/ssoossh/hosts/pam/install/).
 
 ### Do directory users need an account on every host?
 
-Not with [`ssoosshd-nss`](/ssoossh/hosts/nss/). It resolves directory users
+Not with [`ssoossh-nss`](/ssoossh/hosts/nss/). It resolves directory users
 and groups through systemd userdb, so `getent`, `id` and `sshd` see the
 account with nothing provisioned per host. It decides only what a name's uid,
 groups, home and shell are; who may log in is still the certificate's

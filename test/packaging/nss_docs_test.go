@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// nssDocsPage is the user documentation's host page for ssoosshd-nss. Its
+// nssDocsPage is the user documentation's host page for ssoossh-nss. Its
 // "nss.yaml reference" section documents every option with its default, in
 // tables whose rows start with the option name and the default, each in
 // backticks.

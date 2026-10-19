@@ -387,7 +387,7 @@ func (s *NSSLookupService) primaryGroup(ctx context.Context, user *model.PosixUs
 		}
 		// sssd would still answer getgrgid with the private group while
 		// getgrnam finds the directory group of that name. Here the groups
-		// list carries both, and ssoosshd-nss caches a group stub by name
+		// list carries both, and ssoossh-nss caches a group stub by name
 		// from it, so a host would then answer getgrnam with the private
 		// gid: the private group is left out and the account keeps its
 		// unnamed gid.

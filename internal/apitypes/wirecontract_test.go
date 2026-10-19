@@ -181,7 +181,7 @@ func fullFixtures() map[string]any {
 
 		"ca_response": apitypes.CAResponse{CA: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleCAKey ssoossh-ca"},
 
-		// The NSS lookups. The consumer is ssoosshd-nss, which ships from
+		// The NSS lookups. The consumer is ssoossh-nss, which ships from
 		// this repository but not always in step with the server, so the
 		// goldens pin the shape a mixed-version fleet has to agree on. The
 		// three nullable fields are set here and null in the zero golden,

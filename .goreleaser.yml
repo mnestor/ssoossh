@@ -206,14 +206,14 @@ builds:
       - arm64
     ldflags: *build-ldflags
 
-  # The NSS daemon, Linux only (cmd/ssoosshd-nss is build-tagged linux). No
+  # The NSS daemon, Linux only (cmd/ssoossh-nss is build-tagged linux). No
   # env of its own on purpose: it inherits the global CGO_ENABLED=0, so it
   # links statically like the default server build (its SQLite cache is the
   # same pure-Go driver), and the global GOFIPS140, so it is built with the
   # same FIPS 140-3 module as the server. test/packaging pins both.
   - id: nss-linux-build
-    binary: ssoosshd-nss
-    dir: ./cmd/ssoosshd-nss
+    binary: ssoossh-nss
+    dir: ./cmd/ssoossh-nss
     flags: *flags
     goos:
       - linux
@@ -480,11 +480,11 @@ nfpms:
         dst: /usr/share/doc/ssoosshd/THIRD-PARTY-LICENSES.md
       # One page per cobra subcommand — see the client package above for
       # why these are globs and why the .5 page is not. One glob per
-      # top-level subcommand rather than ssoosshd*.8, which would also match
-      # ssoosshd-nss*.8: those pages belong to the ssoosshd-nss package, and
-      # two packages owning one path cannot be installed together. A new
-      # subcommand needs a line here; test/packaging names the page that
-      # nothing ships until it has one.
+      # top-level subcommand rather than a blanket ssoosshd*.8: a new
+      # subcommand needs a line here, and test/packaging names the page that
+      # nothing ships until it has one. The ssoossh-nss daemon's pages ship
+      # in the ssoossh-nss package and no longer share the ssoosshd prefix,
+      # so a blanket glob here could not sweep them in anyway.
       - src: docs/man/ssoosshd.8
         dst: /usr/share/man/man8/ssoosshd.8
       - src: docs/man/ssoosshd-serve*.8
@@ -586,11 +586,11 @@ nfpms:
         dst: /usr/share/doc/ssoosshd/THIRD-PARTY-LICENSES.md
       # One page per cobra subcommand — see the client package above for
       # why these are globs and why the .5 page is not. One glob per
-      # top-level subcommand rather than ssoosshd*.8, which would also match
-      # ssoosshd-nss*.8: those pages belong to the ssoosshd-nss package, and
-      # two packages owning one path cannot be installed together. A new
-      # subcommand needs a line here; test/packaging names the page that
-      # nothing ships until it has one.
+      # top-level subcommand rather than a blanket ssoosshd*.8: a new
+      # subcommand needs a line here, and test/packaging names the page that
+      # nothing ships until it has one. The ssoossh-nss daemon's pages ship
+      # in the ssoossh-nss package and no longer share the ssoosshd prefix,
+      # so a blanket glob here could not sweep them in anyway.
       - src: docs/man/ssoosshd.8
         dst: /usr/share/man/man8/ssoosshd.8
       - src: docs/man/ssoosshd-serve*.8
@@ -624,8 +624,8 @@ nfpms:
   # deb and rpm only. No apk: musl cannot load NSS modules and Alpine has no
   # systemd, so there is nothing there for this daemon to plug into.
   - id: nss
-    package_name: ssoosshd-nss
-    file_name_template: 'ssoosshd-nss_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}{{ with .Mips }}_{{ . }}{{ end }}{{ if not (eq .Amd64 "v1") }}{{ .Amd64 }}{{ end }}'
+    package_name: ssoossh-nss
+    file_name_template: 'ssoossh-nss_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}{{ with .Mips }}_{{ . }}{{ end }}{{ if not (eq .Amd64 "v1") }}{{ .Amd64 }}{{ end }}'
     license: *license
     maintainer: *maintainer
     homepage: *website
@@ -640,6 +640,17 @@ nfpms:
       preremove: packaging/linux/nss-preremove.sh
       postremove: packaging/linux/nss-postremove.sh
     formats: *nfpmFormats
+    # ssoosshd-nss was this package's name through v1.5.0. The binary, its
+    # units and its man pages are now ssoossh-nss, so on upgrade the package
+    # manager must drop the old package rather than leave both installed with
+    # two socket units binding the same userdb socket. conflicts + replaces
+    # say so; provides keeps anything that depended on the old name satisfied.
+    conflicts:
+      - ssoosshd-nss
+    replaces:
+      - ssoosshd-nss
+    provides:
+      - ssoosshd-nss
     rpm:
       signature:
         key_file: private.pgp
@@ -674,12 +685,12 @@ nfpms:
     contents:
       # Installed, deliberately not enabled; see nss-postinstall.sh. Modes
       # are explicit for the reason the server package gives.
-      - src: deploy/ssoosshd-nss.socket
-        dst: /usr/lib/systemd/system/ssoosshd-nss.socket
+      - src: deploy/ssoossh-nss.socket
+        dst: /usr/lib/systemd/system/ssoossh-nss.socket
         file_info:
           mode: 0644
-      - src: deploy/ssoosshd-nss.service
-        dst: /usr/lib/systemd/system/ssoosshd-nss.service
+      - src: deploy/ssoossh-nss.service
+        dst: /usr/lib/systemd/system/ssoossh-nss.service
         file_info:
           mode: 0644
       # Every option at its default, commented out, so installing changes
@@ -694,17 +705,17 @@ nfpms:
           group: root
           mode: 0600
       - src: LICENSE
-        dst: /usr/share/doc/ssoosshd-nss/LICENSE
+        dst: /usr/share/doc/ssoossh-nss/LICENSE
       - src: NOTICE
-        dst: /usr/share/doc/ssoosshd-nss/NOTICE
+        dst: /usr/share/doc/ssoossh-nss/NOTICE
       - src: THIRD-PARTY-LICENSES.md
-        dst: /usr/share/doc/ssoosshd-nss/THIRD-PARTY-LICENSES.md
+        dst: /usr/share/doc/ssoossh-nss/THIRD-PARTY-LICENSES.md
       # The root page and one per subcommand. The server packages leave
       # these out of their own ssoosshd* globs.
-      - src: docs/man/ssoosshd-nss*.8
+      - src: docs/man/ssoossh-nss*.8
         dst: /usr/share/man/man8/
 
-  # The SELinux policy for ssoosshd-nss: its own domain, the labels of its
+  # The SELinux policy for ssoossh-nss: its own domain, the labels of its
   # files, and the one rule every confined caller needs to reach its userdb
   # socket. Source in packaging/selinux/.
   #
@@ -721,7 +732,7 @@ nfpms:
     license: *license
     maintainer: *maintainer
     homepage: *website
-    description: "SELinux policy for ssoosshd-nss, the ssoossh NSS daemon"
+    description: "SELinux policy for ssoossh-nss, the ssoossh NSS daemon"
     meta: true
     formats:
       - rpm

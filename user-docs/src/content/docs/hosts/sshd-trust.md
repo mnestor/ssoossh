@@ -133,7 +133,7 @@ directly; see [below](#checking-the-mapping-actually-loaded). Edit the mapping w
 add`, `list` and `remove`.
 
 On Linux it also sends a one-way refresh hint for the account to
-[`ssoosshd-nss`](/ssoossh/hosts/nss/)'s local userdb socket, so a directory
+[`ssoossh-nss`](/ssoossh/hosts/nss/)'s local userdb socket, so a directory
 user's groups are fresh at this login. It waits at most 50 ms, reads no
 answer, and ignores every failure, including there being no daemon at all.
 

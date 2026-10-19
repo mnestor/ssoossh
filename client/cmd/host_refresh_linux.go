@@ -18,7 +18,7 @@ func (r nssRefresh) send(ctx context.Context, user string) {
 	defer cancel()
 	c, err := varlink.Dial(ctx, r.socket)
 	if err != nil {
-		// The usual case on a host without ssoosshd-nss: no socket.
+		// The usual case on a host without ssoossh-nss: no socket.
 		return
 	}
 	defer func() { _ = c.Close() }()
@@ -29,7 +29,7 @@ func (r nssRefresh) send(ctx context.Context, user string) {
 	}
 }
 
-// The ssoosshd-nss method `host principals` calls, and its parameters.
+// The ssoossh-nss method `host principals` calls, and its parameters.
 // The socket is in host_refresh.go; test/packaging checks both against
 // nssd.
 const (

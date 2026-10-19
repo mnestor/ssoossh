@@ -764,7 +764,7 @@ func TestGetInfo(t *testing.T) {
 	if err := json.Unmarshal(one(t, f.call(t, MethodGetInfo, nil, userPeer, false)).Parameters, &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Product != "ssoosshd-nss" || len(got.Interfaces) != 3 || got.Interfaces[1] != InterfaceUserDatabase {
+	if got.Product != "ssoossh-nss" || len(got.Interfaces) != 3 || got.Interfaces[1] != InterfaceUserDatabase {
 		t.Fatalf("got %+v", got)
 	}
 }

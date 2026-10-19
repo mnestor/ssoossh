@@ -1,5 +1,5 @@
 #!/bin/sh
-# Builds the ssoosshd-nss SELinux policy module, packaging/selinux/
+# Builds the ssoossh-nss SELinux policy module, packaging/selinux/
 # ssoossh_nss.{te,fc,if}, into build/selinux/ssoossh_nss.pp, where the
 # ssoossh-nss-selinux package (.goreleaser.yml, nfpm "nss-selinux") takes it
 # from.
