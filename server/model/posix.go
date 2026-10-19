@@ -58,6 +58,12 @@ type PosixUser struct {
 	PendingGID   *uint32    `gorm:"column:pending_gid"`
 	PendingSince *time.Time `gorm:"column:pending_since"`
 
+	// PendingNotifiedAt is when the admins were mailed about the change
+	// now pending, nil until they are. It is cleared with PendingSince and
+	// whenever a different number turns pending, so a new change mails
+	// again.
+	PendingNotifiedAt *time.Time `gorm:"column:pending_notified_at"`
+
 	// Home and Shell are the mapped attributes, following the directory.
 	// Nil when the entry has none.
 	Home  *string `gorm:"column:home"`
@@ -121,6 +127,9 @@ type PosixGroup struct {
 	// and PendingSince the first sync that saw it.
 	PendingGID   *uint32    `gorm:"column:pending_gid"`
 	PendingSince *time.Time `gorm:"column:pending_since"`
+
+	// PendingNotifiedAt is as PosixUser.PendingNotifiedAt.
+	PendingNotifiedAt *time.Time `gorm:"column:pending_notified_at"`
 
 	// Name is the mapped group name attribute. A separate namespace from
 	// PosixUser.Name: a private group shares its user's name.

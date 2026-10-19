@@ -317,6 +317,33 @@ func nssPendingSince(since *time.Time, now time.Time, pairs ...[2]*uint32) *time
 	}
 }
 
+// nssPendingRenewed reports whether a read turns a number pending that was
+// not pending before: a first pending value, or a different one. The admins
+// were not told about such a value, so the row's pending_notified_at is
+// cleared and the change is mailed as new.
+func nssPendingRenewed(pairs ...[2]*uint32) bool {
+	for _, p := range pairs {
+		next, prev := p[0], p[1]
+		if next != nil && (prev == nil || *prev != *next) {
+			return true
+		}
+	}
+	return false
+}
+
+// nssPendingUpdates adds the pending clock and the mail marker to updates
+// for a read whose new and previous pending values are pairs: the clock as
+// nssPendingSince works it out, and pending_notified_at cleared when
+// nothing is pending any more or a number turned newly pending. A pending
+// change the admins were already told about keeps its marker.
+func nssPendingUpdates(updates map[string]any, since *time.Time, now time.Time, pairs ...[2]*uint32) {
+	next := nssPendingSince(since, now, pairs...)
+	updates["pending_since"] = next
+	if next == nil || nssPendingRenewed(pairs...) {
+		updates["pending_notified_at"] = nil
+	}
+}
+
 // storeAccount writes one account entry the way every path writes it: the
 // matched row follows the directory in everything but its frozen uid and
 // gid (a differing value waits in pending_uid or pending_gid), a new entry
@@ -506,12 +533,12 @@ func (s *NSSDirectoryService) updateAccount(ctx context.Context, tx *gorm.DB, id
 		"dir_disabled":   disabled,
 		"pending_uid":    pendingUID,
 		"pending_gid":    pendingGID,
-		"pending_since":  nssPendingSince(row.PendingSince, now, [2]*uint32{pendingUID, row.PendingUID}, [2]*uint32{pendingGID, row.PendingGID}),
 		"missing_since":  nil,
 		"deleted_at":     nil,
 		"last_synced_at": now,
 		"updated_at":     now,
 	}
+	nssPendingUpdates(updates, row.PendingSince, now, [2]*uint32{pendingUID, row.PendingUID}, [2]*uint32{pendingGID, row.PendingGID})
 	if a.DirectoryID != "" {
 		updates["directory_id"] = a.DirectoryID
 	}
@@ -679,12 +706,12 @@ func (s *NSSDirectoryService) updateGroup(ctx context.Context, tx *gorm.DB, id s
 	pendingGID := nssPending(row.GID, g.GID, row.PendingGID)
 	updates := map[string]any{
 		"pending_gid":    pendingGID,
-		"pending_since":  nssPendingSince(row.PendingSince, now, [2]*uint32{pendingGID, row.PendingGID}),
 		"missing_since":  nil,
 		"deleted_at":     nil,
 		"last_synced_at": now,
 		"updated_at":     now,
 	}
+	nssPendingUpdates(updates, row.PendingSince, now, [2]*uint32{pendingGID, row.PendingGID})
 	if g.DirectoryID != "" {
 		updates["directory_id"] = g.DirectoryID
 	}

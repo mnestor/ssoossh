@@ -18,6 +18,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/mail"
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/notify"
@@ -641,8 +642,16 @@ func TestPreferencesForIdentity_shouldResolveTheUserBySubject(t *testing.T) {
 	if settings.Address != f.user.Email {
 		t.Errorf("Address = %q, want %q", settings.Address, f.user.Email)
 	}
-	if len(settings.Kinds) != len(optionalDefinitions()) {
-		t.Errorf("got %d kinds, want %d", len(settings.Kinds), len(optionalDefinitions()))
+	// A session without the admin role is offered every optional kind but
+	// the admin-only ones.
+	want := 0
+	for _, def := range optionalDefinitions() {
+		if !def.AdminOnly {
+			want++
+		}
+	}
+	if len(settings.Kinds) != want {
+		t.Errorf("got %d kinds, want %d", len(settings.Kinds), want)
 	}
 	if !settings.MailEnabled {
 		t.Error("MailEnabled is false, want it to mirror the server configuration")
@@ -1179,5 +1188,43 @@ func TestNotificationNSSKeyHandle_shouldLogTheKeyIDAndNotTheAddress(t *testing.T
 	}
 	if strings.Contains(logged, "fleet@example.com") {
 		t.Errorf("the send log carries the key's address: %s", logged)
+	}
+}
+
+// The admin-only kinds are offered only to a session holding the admin
+// role, read from the session's own groups.
+func TestPreferencesForIdentity_shouldOfferTheAdminOnlyKindsOnlyToAnAdmin(t *testing.T) {
+	tests := []struct {
+		name   string
+		admin  *config.AdminConfig
+		groups []string
+		want   bool
+	}{
+		{name: "should offer the admin-only kinds when the session holds the admin group", admin: &config.AdminConfig{RequireGroup: "ssh-admins"}, groups: []string{"ssh-admins"}, want: true},
+		{name: "should leave the admin-only kinds out when the session does not hold the admin group", admin: &config.AdminConfig{RequireGroup: "ssh-admins"}, groups: []string{"soc"}},
+		{name: "should leave the admin-only kinds out when no role configuration is attached", groups: []string{"ssh-admins"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newNotificationFixture(t)
+			f.svc.SetAdminConfig(tc.admin)
+
+			settings, err := f.svc.PreferencesForIdentity(context.Background(), &Identity{Subject: f.user.Subject, Groups: tc.groups})
+			if err != nil {
+				t.Fatalf("PreferencesForIdentity: %v", err)
+			}
+			offered := map[notify.Kind]bool{}
+			for _, k := range settings.Kinds {
+				offered[k.Kind] = true
+			}
+			for _, kind := range []notify.Kind{notify.KindNSSIDChangePending, notify.KindNSSIDChangeReminder} {
+				if offered[kind] != tc.want {
+					t.Errorf("%s offered = %v, want %v", kind, offered[kind], tc.want)
+				}
+			}
+			if !offered[notify.KindServiceEnrollmentCreated] {
+				t.Error("a kind everyone gets was left out")
+			}
+		})
 	}
 }

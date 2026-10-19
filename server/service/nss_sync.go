@@ -138,6 +138,9 @@ func (s *NSSDirectoryService) sync(ctx context.Context, full bool) (*NSSSyncResu
 	}
 
 	s.setBaseline(start)
+	// One mail per admin for everything this run made pending, before the
+	// single-flight guard is released, so the sweep cannot split the batch.
+	s.mailNewSyncChanges(ctx)
 	result.FinishedAt = s.now().UTC()
 	s.log.InfoContext(ctx, "nss directory sync completed",
 		"full", result.Full,

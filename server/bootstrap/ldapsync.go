@@ -100,8 +100,13 @@ func (d *DirectorySync) open(c *config.Config) error {
 		if err != nil {
 			return err
 		}
-		d.ldap.SetNotifier(service.NewNotificationService(db, handler.InlinePublisher(), true,
-			c.LDAP.Enabled, c.CertOptions.Service.AllowUserAccounts))
+		notifications := service.NewNotificationService(db, handler.InlinePublisher(), true,
+			c.LDAP.Enabled, c.CertOptions.Service.AllowUserAccounts)
+		notifications.SetAdminConfig(&c.Admin)
+		d.ldap.SetNotifier(notifications)
+		// The NSS full sync mails the admins the id changes it made
+		// pending, inline like the rest.
+		d.nss.SetNotifications(notifications, notifications)
 	}
 	return nil
 }

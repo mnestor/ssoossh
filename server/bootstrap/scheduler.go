@@ -38,6 +38,13 @@ const (
 	nssTombstonePurgeJobName  = "nss-tombstone-purge"
 )
 
+// NSS pending id change mail job names: the sweep that mails new changes
+// from on-demand and login reads, and the weekly reminder.
+const (
+	nssIDChangeMailJobName     = "nss-id-change-mail"
+	nssIDChangeReminderJobName = "nss-id-change-reminder"
+)
+
 // nssTombstonePurgeInterval is how often the NSS tombstone purge runs.
 // Retention is measured in days, so an hour late is nothing, and the sweep
 // is one indexed query when nothing is due.
@@ -142,6 +149,32 @@ func (a *app) registerNSSDirectoryJobs(ctx context.Context) error {
 		}
 		slog.DebugContext(ctx, "registered an NSS directory job",
 			slog.String("job", job.name), slog.Duration("interval", job.interval))
+	}
+	return a.registerNSSIDChangeMailJobs(ctx)
+}
+
+// registerNSSIDChangeMailJobs schedules the admin mail about pending uid
+// and gid changes when mail is on: the sweep every
+// service.NSSIDChangeMailInterval for the changes on-demand and login reads
+// make (a sync run mails its own), and the weekly reminder on its fixed
+// cadence, Monday at 09:00 server time. Every instance runs both; each
+// change and each week's reminder is claimed in the database, so one
+// instance sends it.
+func (a *app) registerNSSIDChangeMailJobs(ctx context.Context) error {
+	if !a.config.Mail.Enabled {
+		slog.DebugContext(ctx, "NSS id change mail not registered: mail is disabled")
+		return nil
+	}
+	nss := a.svc.nss
+	if err := a.scheduler.RegisterJob(ctx, nssIDChangeMailJobName, gocron.DurationJob(service.NSSIDChangeMailInterval),
+		nss.SweepPendingIDChangeMail, service.RegisterJobOpts{}); err != nil {
+		return fmt.Errorf("failed to register the NSS id change mail: %w", err)
+	}
+	weekly := gocron.WeeklyJob(1, gocron.NewWeekdays(service.NSSIDChangeReminderWeekday),
+		gocron.NewAtTimes(gocron.NewAtTime(service.NSSIDChangeReminderHour, 0, 0)))
+	if err := a.scheduler.RegisterJob(ctx, nssIDChangeReminderJobName, weekly,
+		nss.SweepPendingIDChangeReminder, service.RegisterJobOpts{}); err != nil {
+		return fmt.Errorf("failed to register the NSS id change reminder: %w", err)
 	}
 	return nil
 }
