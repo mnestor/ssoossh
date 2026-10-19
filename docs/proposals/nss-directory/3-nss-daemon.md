@@ -208,11 +208,29 @@ No `members`; `nss-systemd` fetches them through `GetMemberships`.
   `VerifyConnection` checks the leaf SPKI against pins. `Proxy: nil` on the
   transport (do not use `http.ProxyFromEnvironment`). Existing callers keep
   current behaviour when unset.
+- `Config.TLSSystemRoots` *(added 2026-10-19)*: the same pinned mode (TLS
+  1.3 minimum, no proxy, pins checked when set) with the host's system
+  trust store as the trust root, loaded with `x509.SystemCertPool` when the
+  client is built (the daemon's first lookup), so an empty or unreadable
+  store fails with an error naming the store, not as a handshake that
+  looks like the server's fault. Mutually
+  exclusive with `TLSCAFile` and `SkipVerifySSL`. `nss.yaml` spells it
+  `tls_ca_file: system`; `nssd/upstream` translates the word, so
+  `internal/api` has no magic file name. The trust choice stays
+  mandatory: empty `tls_ca_file` with no pin is still a config error, so
+  an empty file never silently means the weakest mode. Unlike a CA file,
+  the system pool honours `SSL_CERT_FILE` and `SSL_CERT_DIR` from the
+  daemon's environment (the unit's, under systemd). Every CA the host
+  trusts can answer for the server, so the daemon logs a warning at start
+  when no pin is set as well, and `status` names the trust on its `trust:`
+  line. With SRV discovery and no pin, a spoofed record can name a host
+  any public CA certified, which passes; see the user docs.
 - `Config.Headers` or a dedicated `KeyID/KeySecret` pair sent on NSS calls
   only; secret redacted in `traceRequest`/`logHeaders`.
 - `DiscoverServer(ctx, domain)`: `net.Resolver.LookupSRV("ssoossh", "tcp",
   domain)`, RFC 2782 priority/weight order. Pin unchanged: a spoofed SRV
-  points at a server that fails the pin.
+  points at a server that fails the pin (or a private CA; not the system
+  store or a public CA's roots alone, see `Config.TLSSystemRoots`).
 - `GetNSSUser(ctx, byName|byUID)`, `GetNSSGroup(ctx, byName|byGID)`
   returning typed structs in `internal/apitypes`; distinguish 404, 401, 429
   (honour `Retry-After`), other.
@@ -224,7 +242,7 @@ Root 0600; environment not consulted. Option names follow `sssd.conf(5)`.
 ```yaml
 server: ""                        # https URL; empty -> SRV via dns_discovery_domain
 dns_discovery_domain: ""          # empty -> host's domain
-tls_ca_file: ""                   # one of these two is required
+tls_ca_file: ""                   # one of these two is required; a path or "system"
 tls_spki_pin: []
 api_key_file: /etc/ssoossh/nss.key  # 0600, line 1 key_id, line 2 key_secret
 timeout: 5s

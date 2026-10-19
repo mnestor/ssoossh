@@ -157,9 +157,11 @@ that root does not own. Blank lines around the two are ignored; a third line
 is an error. Error messages give the line count, never the content.
 
 **3. Point it at the server.** In `/etc/ssoossh/nss.yaml`, set `server` and
-one trust root: a key pin, as below, or a CA bundle in `tls_ca_file` (see
+one trust root: a key pin, as below, a CA bundle in `tls_ca_file`, or
+`tls_ca_file: system` for the host's own trust store (see
 [Server certificates from a public CA](#server-certificates-from-a-public-ca)).
-The daemon only trusts what you name there, and proxy variables are ignored:
+There is no default: with neither set the daemon refuses to start. It trusts
+only what you name there, and proxy variables are ignored:
 
 ```yaml
 server: https://ssh.example.com
@@ -180,10 +182,11 @@ openssl s_client -connect ssh.example.com:443 -servername ssh.example.com </dev/
 A pin names the server's key, not its certificate, so a certificate renewed
 on the same key keeps matching; list the next key's pin beside the current
 one before the server moves to it. With pins alone the key is the whole
-check. Set `tls_ca_file` to a CA bundle instead to verify the chain and the
-server name, or set both, and the certificate must chain to that CA *and*
-carry a pinned key. Connections are TLS 1.3 only. When the pin does not match,
-the error in `ssoosshd-nss status` names the digest the server presented.
+check. Set `tls_ca_file` to a CA bundle (or to `system`) instead to verify the
+chain and the server name, or set both, and the certificate must chain to that
+CA *and* carry a pinned key. Connections are TLS 1.3 only. `ssoosshd-nss
+status` names the trust in force on its `trust:` line, and when the pin does
+not match, its error names the digest the server presented.
 
 #### Server certificates from a public CA
 
@@ -280,14 +283,39 @@ tls_ca_file: /etc/ssoossh/isrg-roots.pem
 **The system trust store** is the weakest choice: every CA the host trusts,
 including any TLS-inspection root a company installs, can then answer for the
 server, and so decide which uid a name maps to on this host. If you accept
-that, point `tls_ca_file` at the distribution's bundle:
-`/etc/ssl/certs/ca-certificates.crt` on Debian and Ubuntu,
-`/etc/pki/tls/certs/ca-bundle.crt` on EL and Fedora. Restart the daemon after
-the distribution updates it.
+that, say so explicitly:
+
+```yaml
+server: https://ssh.example.com
+tls_ca_file: system
+```
+
+`system` is a word, not a path, and only in lower case; `System` is refused.
+The daemon logs a warning at every start while it is set without a pin, and
+`status` shows `trust: system store (any CA this host trusts)`. The chain and
+the server name are checked against the store Go finds on the host, TLS 1.3
+is still the minimum, and proxy variables are still ignored. Add
+`tls_spki_pin` as well and both must hold.
+
+Unlike a CA file, `system` honours `SSL_CERT_FILE` and `SSL_CERT_DIR` from the
+daemon's own environment, which replace the distribution's bundle. Under
+systemd that is the unit's environment, not your shell's; the shipped unit
+sets neither, so a drop-in that sets one changes what the daemon trusts.
+
+Pointing `tls_ca_file` at the distribution's bundle path
+(`/etc/ssl/certs/ca-certificates.crt` on Debian and Ubuntu,
+`/etc/pki/tls/certs/ca-bundle.crt` on EL and Fedora) still works and trusts
+the same CAs, but `system` finds the bundle on any distribution. Either way,
+the store is read once, when the daemon starts: restart it after the
+distribution updates the store.
 
 Leave `server` empty to discover it from the `_ssoossh._tcp` SRV records of
-`dns_discovery_domain` (the host's own domain when that is empty). The pin
-still applies, so a spoofed record leads to a server that fails it.
+`dns_discovery_domain` (the host's own domain when that is empty). A key pin
+or a private CA still applies, so a spoofed record leads to a server that
+fails it. A public CA's roots or `tls_ca_file: system` alone do not protect
+discovery: the name checked is the one the record names, and a public CA
+certifies any name its owner controls. With either, set `server`, or add a
+pin.
 
 **4. Enable the socket, not the service.**
 
@@ -576,7 +604,7 @@ three in step.
 | --- | --- | --- |
 | `server` | `""` | the `ssoosshd` https URL; empty discovers it from the `_ssoossh._tcp` SRV records of `dns_discovery_domain` |
 | `dns_discovery_domain` | `""` | the domain SRV discovery queries, and what `%d` expands to; empty means the host's own (what follows the first dot of the hostname, else the first `domain` or `search` entry of `/etc/resolv.conf`) |
-| `tls_ca_file` | `""` | a CA bundle (PEM) the server's certificate must chain to: a private CA, a public CA's roots, or the system bundle ([public CAs](#server-certificates-from-a-public-ca)); this or `tls_spki_pin` is required |
+| `tls_ca_file` | `""` | a CA bundle (PEM) the server's certificate must chain to, a private CA or a public CA's roots, or `system` (exactly, lower case) for the host's system trust store, which also honours `SSL_CERT_FILE` and `SSL_CERT_DIR` from the daemon's environment ([public CAs](#server-certificates-from-a-public-ca)); this or `tls_spki_pin` is required |
 | `tls_spki_pin` | `[]` | base64 SHA-256 digests of the server's SubjectPublicKeyInfo; with `tls_ca_file` as well, both must hold |
 | `api_key_file` | `/etc/ssoossh/nss.key` | the fleet key: line 1 the key id, line 2 the secret, root-only |
 | `timeout` | `5s` | bounds one upstream lookup, retries included. Each attempt but the last gets at most half of what is left, and no more than `socket_answer_deadline` less a second (1.5 s by default), so a retry still answers the caller in time |
@@ -667,7 +695,7 @@ in use (`max_id: 524287` keeps the whole range out). An id outside
 
 | Command | What it does |
 | --- | --- |
-| `ssoosshd-nss status` | the connection state (online, offline, unauthorized or rate limited), the server, the key id, the cache counts and the last error, from the running daemon, with any group name collisions and groups refused by `min_id..max_id` (twenty of each, then a count); then the `nsswitch.conf` check and the nscd warning. Exits non-zero when the daemon does not answer or a check fails |
+| `ssoosshd-nss status` | the connection state (online, offline, unauthorized or rate limited), the server, the trust in force (system store, CA file, key pin, or a trust root and a pin), the key id, the cache counts and the last error, from the running daemon, with any group name collisions and groups refused by `min_id..max_id` (twenty of each, then a count); then the `nsswitch.conf` check and the nscd warning. Exits non-zero when the daemon does not answer or a check fails |
 | `ssoosshd-nss lookup user NAME` | asks the userdb socket exactly as `nss-systemd` does and prints the JSON reply; `group NAME` and `memberships NAME` likewise |
 | `ssoosshd-nss cache -u NAME` | marks cached entries stale, like `sss_cache`: `-u`/`-g` one user or group, `-U`/`-G` every user or group, `-E` everything. Nothing is deleted, and a stale entry is still served while the server is unreachable |
 | `ssoosshd-nss override list\|set\|unset` | the host overrides, above |
