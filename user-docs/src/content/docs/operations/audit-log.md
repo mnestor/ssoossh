@@ -138,7 +138,7 @@ client must render an unknown action rather than assume the list is closed.
 
 | Action | Notes |
 | --- | --- |
-| `auth.login` | Snapshots the groups the identity carried. Since membership is never persisted as authorization, this is the only durable record of what access an identity held on a given day |
+| `auth.login` | Snapshots the groups the identity carried. Since membership is never persisted as authorization, this is the only durable record of what access an identity held on a given day. With [`ldap.authoritative_role_groups`](/ssoossh/reference/config/ldap/#authoritative_role_groups) on, the snapshot is the narrowed list, and `detail.role_groups_removed_by_directory` names any role group the claim carried that the directory no longer lists |
 | `auth.login_denied` | A disabled account attempting to log in, which otherwise vanishes entirely |
 | `cert.requested`, `cert.approved`, `cert.denied` | |
 | `cert.code_resolved` | A console code typed into the web UI and resolved to its request |
@@ -153,6 +153,7 @@ client must render an unknown action rather than assume the list is closed.
 | `user.disabled`, `user.enabled` | |
 | `user.auto_disabled` | A system action, so it carries no actor. Raised by the [LDAP sync](/ssoossh/operations/ldap/) |
 | `user.disable_refused` | An admin or SOC analyst tried to disable their own account and the server refused. Actor and target are the same account, the reason is the server's own text, and `source_ip` is the address the server observed (through `http.trusted_proxies`), never one the client supplied. The account is left untouched. Only the self-disable refusal is recorded; other refused admin actions are not |
+| `user.role_narrowed_by_directory` | A system action, so it carries no actor. With [`ldap.authoritative_role_groups`](/ssoossh/reference/config/ldap/#authoritative_role_groups) on, a successful directory read (a login or the sync, named in `detail.trigger`) stopped listing a role group the user holds through OIDC, named in `detail.groups`; the role stops counting from the next request. One event per read that changes the rows, not one per request |
 | `admin.enrollment_viewed` | One event per enrollment code opened. Not shipped-log only, unlike the two below: a code is a bearer credential, and it is one event per credential rather than one per screen |
 | `admin.user_viewed`, `admin.audit_viewed` | **Shipped log only.** An auditor working through the directory generates one per user opened and one per page of the feed, and within a session they outnumber the decisions this log exists to record. They keep their archive line -- "who looked at this account" is a real question -- and lose the table copy the web UI renders. `admin.audit_viewed` also wrote a new row on every read of the feed, which shifted the window under the UI's "load more" while the feed paged by offset |
 | `ldap.sync_triggered` | An admin running the [directory sync](/ssoossh/operations/ldap/) by hand, with the counts the pass produced. A dry run records `dry_run: true` and no change to go with it |

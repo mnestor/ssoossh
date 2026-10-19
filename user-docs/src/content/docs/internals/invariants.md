@@ -57,24 +57,36 @@ minimally-privileged process.
 ## Identity
 
 **Group membership never appears in a certificate, and persisted group rows
-are never an authorization input.** Authorization -- admin, SOC, auditor, and
-the certificate policy gates -- is evaluated from the session identity only.
-Groups can change between sessions, so `model.User` keys history to a stable
-subject identifier rather than storing claims.
+never grant anything.** Authorization -- admin, SOC, auditor, fleet key admin,
+and the certificate policy gates -- is evaluated from the session identity
+only. Roles and policy come from the session identity, never from database
+rows, with one narrowing exception: with `ldap.authoritative_role_groups` on,
+a role group (admin, SOC, auditor, fleet key admin) counts for a
+directory-linked user only while the latest directory read still lists it, so
+the sync can take a role away between logins, effective on the next request.
+The directory never grants a role. Groups can change between sessions, so
+`model.User` keys history to a stable subject identifier rather than storing
+claims.
 
 `user_groups` is a snapshot for notification fan-out and display: it answers
 "who should this reach", never "may this caller do this". It was added by
 directory sync (see [LDAP enrichment](/ssoossh/operations/ldap/)), which
 retired the older, stronger wording that group membership is never persisted
 at all. What survives is the half that was load-bearing: nothing reads those
-rows to make a decision.
+rows to grant anything. The one decision they feed is the narrowing above,
+which can only remove a role group the session's claim already carries, and
+only when an operator opts in (see
+[Authoritative role groups](/ssoossh/operations/ldap/#authoritative-role-groups)).
 
 **Roles come from the session; account lists come from the database.** The two
 halves of an identity are refreshed on opposite schedules, deliberately:
 
 - *Groups* are read at login and never re-read, which is what makes the
   session lifetime the revocation window for a role. Nothing stored can grant
-  one.
+  one. With `ldap.authoritative_role_groups` on, every request narrows them:
+  a role group the latest directory read for a linked user no longer lists
+  stops counting on that request, and counts again once a read lists it
+  again. The session keeps the login's claim, so narrowing never compounds.
 - *Account lists and extra fields* -- `other_accounts`, `service_accounts`,
   and the configured extras -- are re-read from the database on every
   authenticated request, rebuilt the way a login builds them: the users row

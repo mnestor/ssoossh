@@ -287,6 +287,13 @@ Authorization is evaluated from the session identity, and group membership is
 read at login. So removing someone from an admin group in the identity
 provider takes effect **at their next login**, not immediately.
 
+With a directory, that window can be shortened for the role groups:
+[`ldap.authoritative_role_groups`](/ssoossh/reference/config/ldap/#authoritative_role_groups)
+lets the sync take admin, SOC, auditor or fleet key admin away from a linked
+user between logins, effective on their next request, while still never
+granting a role (see
+[Authoritative role groups](/ssoossh/operations/ldap/#authoritative-role-groups)).
+
 This applies to roles only. The account lists a certificate's principals come
 from are re-read from the database on every request, so a directory sync that
 removes a linked account takes it away from live sessions immediately (see

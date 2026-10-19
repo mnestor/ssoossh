@@ -111,7 +111,10 @@ open keeps working until it expires, so shorten that window if it matters (see
 [the session lifetime](/ssoossh/operations/roles/#the-session-lifetime-is-the-revocation-window)). Certificates
 they already hold expire on their own, which is why there is no revocation
 list. Note that role membership is read at login, so the session lifetime
-(default: 30m idle under a 9h absolute cap) is the window on a *role* change.
+(default: 30m idle under a 9h absolute cap) is the window on a *role* change,
+unless the directory is made authoritative for role groups
+([`ldap.authoritative_role_groups`](/ssoossh/reference/config/ldap/#authoritative_role_groups)),
+which takes a role away on the next request after the sync sees it go.
 [Roles and containment](/ssoossh/operations/roles/).
 
 ## Can I lock down client settings across a fleet?

@@ -114,7 +114,7 @@ migrate, not after.
 | Enrollments | the service-account enrollment: the code, the enrolled public key, and the option set, key ID, principals and certificate duration fixed at approval |
 | Retrieval log | one row per redemption of an enrollment code, successful or not |
 | Users | one row per person who has logged in, their captured extra claims, and the disable state (`disabled_at`, `disabled_by_user_id`, `disabled_reason`, `disabled_source`) |
-| `user_groups` | one row per (user, group, source), where source is `oidc` or `ldap`. Never an authorization input |
+| `user_groups` | one row per (user, group, source), where source is `oidc` or `ldap`. Never grants anything; with `ldap.authoritative_role_groups` on, the `ldap` rows can take a role group away |
 | `user_ldap` | the directory anchor for a user: DN, attributes, `last_seen_at`, `first_missing_at` (the auto-disable window), and the consecutive-miss counter |
 | `ldap_sync_runs` | one row per LDAP sync pass, scheduled or manual: when it ran, what triggered it, who pressed the button, which instance ran it, its counts and any error |
 | `notification_preferences` | each user's choice per notification kind, where they changed one from its default |

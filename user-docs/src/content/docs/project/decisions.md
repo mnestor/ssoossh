@@ -49,7 +49,9 @@ Worth doing eventually; not started because nothing needs it yet.
   the session's absolute cap bounds how stale they can get. If a shorter
   revocation window is ever needed, the fix is re-validating claims on
   session refresh -- not caching group state in the database, which drifts
-  from the identity provider.
+  from the identity provider. The opt-in `ldap.authoritative_role_groups` is
+  not that cache: it lets the directory remove a role group the claim
+  carries, between logins, and nothing stored can grant one.
 
 ## Declined: wrong for this product
 
