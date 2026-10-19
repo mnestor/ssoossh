@@ -53,6 +53,8 @@
 		formatPercent,
 		graceEnd,
 		keyAlerts,
+		keyListBack,
+		keyListContext,
 		keyStatus,
 		missRate,
 		previousLive,
@@ -77,14 +79,15 @@
 	// rows so the back chip returns to the same view: the admin list of
 	// every key for ?from=admin, else the keys the reader's groups manage.
 	// `from` is only looked up and `back` is only a query string appended
-	// to that fixed route, so nothing here can be steered elsewhere.
-	const fromAdmin = $derived(page.url.searchParams.get('from') === 'admin');
-	const backHref = $derived.by(() => {
-		const carried = page.url.searchParams.get('back') ?? '';
-		const search = carried.startsWith('?') && !carried.includes('#') ? carried : '';
-		return `${fromAdmin ? resolve('/admin/nss/keys') : resolve('/nss-keys')}${search}`;
-	});
-	const backLabel = $derived(fromAdmin ? 'All NSS keys' : 'NSS keys');
+	// to that fixed route (keyListBack), so nothing here can be steered
+	// elsewhere. The rotation report carries the same way back
+	// (keyListContext), so its own back chip returns here with it.
+	const listBack = $derived(keyListBack(page.url.searchParams));
+	const backHref = $derived(
+		`${listBack.fromAdmin ? resolve('/admin/nss/keys') : resolve('/nss-keys')}${listBack.search}`
+	);
+	const backLabel = $derived(listBack.fromAdmin ? 'All NSS keys' : 'NSS keys');
+	const listContext = $derived(keyListContext(page.url.searchParams));
 
 	let key = $state<NSSKey | null>(null);
 	let loadError = $state<string | null>(null);
@@ -759,7 +762,7 @@
 				{/if}
 				{#if key.rotated_at}
 					<a
-						href={resolve('/nss-keys/[id]/rotation', { id: key.id })}
+						href={`${resolve('/nss-keys/[id]/rotation', { id: key.id })}${listContext}`}
 						class="inline-flex min-h-target items-center gap-1 text-sm text-accent hover:underline"
 						data-testid="nss-key-rotation-link"
 					>
@@ -1000,7 +1003,7 @@
 			{#if countError}
 				Could not check which hosts still present the old secret. Open the
 				<a
-					href={resolve('/nss-keys/[id]/rotation', { id: key.id })}
+					href={`${resolve('/nss-keys/[id]/rotation', { id: key.id })}${listContext}`}
 					class="text-accent hover:underline"
 					data-testid="nss-key-clear-report-link">rotation report</a
 				>

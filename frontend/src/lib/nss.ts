@@ -101,6 +101,42 @@ export function nssKeyFile(id: string, secret: string): string {
 	return `${id}\n${secret}\n`;
 }
 
+/** KeyListBack is the list a key's pages were opened from, and its filters. */
+export interface KeyListBack {
+	/** From All NSS keys (`from=admin`) rather than the keys a reader manages. */
+	fromAdmin: boolean;
+	/** The list's own query string (`back`), or '' for none or a malformed one. */
+	search: string;
+}
+
+/**
+ * keyListBack reads the way back a key's pages carry: `from` is only
+ * compared, and `back` is kept only as a query string ("?..." with no "#"),
+ * so neither can steer a back chip off its fixed route.
+ */
+export function keyListBack(params: Pick<URLSearchParams, 'get'>): KeyListBack {
+	const carried = params.get('back') ?? '';
+	return {
+		fromAdmin: params.get('from') === 'admin',
+		search: carried.startsWith('?') && !carried.includes('#') ? carried : ''
+	};
+}
+
+/**
+ * keyListContext is that way back as the query string a key's pages pass
+ * between them ("?from=admin&back=..."), '' when there is none. The key page
+ * hands it to its rotation report and the report hands it back, so the
+ * chain of back chips ends on the list it began at.
+ */
+export function keyListContext(params: Pick<URLSearchParams, 'get'>): string {
+	const { fromAdmin, search } = keyListBack(params);
+	const out = new URLSearchParams();
+	if (fromAdmin) out.set('from', 'admin');
+	if (search) out.set('back', search);
+	const query = out.toString();
+	return query ? `?${query}` : '';
+}
+
 /** isAccountCollision reports whether a collision is between accounts rather than groups. */
 export function isAccountCollision(kind: string): boolean {
 	return kind === NSSCollisionKindUID || kind === NSSCollisionKindUserName;

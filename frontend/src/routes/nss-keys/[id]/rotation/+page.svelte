@@ -23,7 +23,7 @@
 	import PageSection from '#lib/components/PageSection.svelte';
 	import PageShell from '#lib/components/PageShell.svelte';
 	import { formatDateTime } from '#lib/format.js';
-	import { groupRotationRows } from '#lib/nss.js';
+	import { groupRotationRows, keyListContext } from '#lib/nss.js';
 
 	// The page an operator opens after rotating a key: which hosts have
 	// switched to the new secret, and which would break if the old one ended
@@ -41,6 +41,11 @@
 	// fall, so it refreshes in place and says when it was read.
 
 	const id = $derived(page.params.id ?? '');
+	// The key's page, with the way back to the list it was opened from
+	// (?from=admin and the filters), so its back chip still ends there.
+	const keyHref = $derived(
+		`${resolve('/nss-keys/[id]', { id: id })}${keyListContext(page.url.searchParams)}`
+	);
 
 	let report = $state<NSSRotationReport | null>(null);
 	let key = $state<NSSKey | null>(null);
@@ -236,7 +241,7 @@
 		title="Rotation report"
 		testid="rotation-heading"
 		back={{
-			href: resolve('/nss-keys/[id]', { id: id }),
+			href: keyHref,
 			label: keyName || `Key ${id}`,
 			testid: 'rotation-back'
 		}}
@@ -326,7 +331,7 @@
 			hosts have switched to the new secret.
 			{#snippet action()}
 				<a
-					href={resolve('/nss-keys/[id]', { id: id })}
+					href={keyHref}
 					class="inline-flex min-h-target items-center text-sm text-accent hover:underline"
 					>Open the key</a
 				>

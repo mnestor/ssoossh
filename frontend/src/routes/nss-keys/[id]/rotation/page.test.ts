@@ -34,7 +34,7 @@ vi.mock('#lib/auth.js', async () => {
 	return { ...actual, redirectIfUnauthenticated };
 });
 
-import { fakePage } from '#lib/testing/page.svelte.js';
+import { fakePage, resetFakePage } from '#lib/testing/page.svelte.js';
 import Page from './+page.svelte';
 
 const rows = [
@@ -47,6 +47,7 @@ const rows = [
 ];
 
 beforeEach(() => {
+	resetFakePage('http://localhost/nss-keys/nss_k7m4qp2x/rotation');
 	session.user = userFixture();
 	session.resolved = true;
 	fakePage.params = { id: 'nss_k7m4qp2x' };
@@ -189,6 +190,51 @@ describe('Rotation report', () => {
 		render(Page);
 
 		expect(await screen.findByTestId('rotation-error-retry')).toBeInTheDocument();
+	});
+
+	// The report carries the way back the key's page was opened with, so
+	// the key page's own back chip still returns to that list.
+	describe('the way back', () => {
+		const adminBack = encodeURIComponent('?q=10.0.4.0%2F24&unused=1');
+		const cases: { name: string; search: string; want: string }[] = [
+			{
+				name: 'it was opened from the keys a reader manages',
+				search: '',
+				want: '/nss-keys/nss_k7m4qp2x'
+			},
+			{
+				name: 'it was opened from All NSS keys with its filters',
+				search: `?from=admin&back=${adminBack}`,
+				want: `/nss-keys/nss_k7m4qp2x?from=admin&back=${adminBack}`
+			},
+			{
+				name: 'the carried value is not a query string',
+				search: `?from=admin&back=${encodeURIComponent('https://elsewhere.example/')}`,
+				want: '/nss-keys/nss_k7m4qp2x?from=admin'
+			}
+		];
+		for (const { name, search, want } of cases) {
+			it(`should point the back chip at ${want} when ${name}`, async () => {
+				resetFakePage(`http://localhost/nss-keys/nss_k7m4qp2x/rotation${search}`);
+				serve(envelope(reportFixture(rows)));
+				render(Page);
+				await screen.findByTestId('rotation-summary');
+
+				expect(screen.getByTestId('rotation-back')).toHaveAttribute('href', want);
+			});
+		}
+
+		it('should open the key with the way back when there is no rotation yet', async () => {
+			resetFakePage(`http://localhost/nss-keys/nss_k7m4qp2x/rotation?from=admin`);
+			serve(envelope(reportFixture([], { rotated_at: undefined })));
+			render(Page);
+
+			const empty = await screen.findByTestId('rotation-empty');
+			expect(within(empty).getByRole('link', { name: 'Open the key' })).toHaveAttribute(
+				'href',
+				'/nss-keys/nss_k7m4qp2x?from=admin'
+			);
+		});
 	});
 
 	describe('naming the key', () => {

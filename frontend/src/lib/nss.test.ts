@@ -15,6 +15,8 @@ import {
 	expiryTone,
 	formatPercent,
 	graceEnd,
+	keyListBack,
+	keyListContext,
 	groupRotationRows,
 	isAccountCollision,
 	keyAlerts,
@@ -565,4 +567,47 @@ describe('parseEntryNumber', () => {
 			expect(parseEntryNumber(raw)).toBe(want);
 		});
 	}
+});
+
+describe('keyListContext', () => {
+	const filters = encodeURIComponent('?q=web&status=revoked');
+	const cases: { name: string; search: string; want: string }[] = [
+		{ name: 'nothing is carried', search: '', want: '' },
+		{ name: 'the key came from All NSS keys', search: '?from=admin', want: '?from=admin' },
+		{
+			name: 'the key came from All NSS keys with its filters',
+			search: `?from=admin&back=${filters}`,
+			want: `?from=admin&back=${filters}`
+		},
+		{
+			name: 'the key came from the keys a reader manages with its filters',
+			search: `?back=${filters}`,
+			want: `?back=${filters}`
+		},
+		{ name: 'from names another list', search: '?from=elsewhere', want: '' },
+		{
+			name: 'back is not a query string',
+			search: `?from=admin&back=${encodeURIComponent('https://elsewhere.example/')}`,
+			want: '?from=admin'
+		},
+		{
+			name: 'back carries a fragment',
+			search: `?back=${encodeURIComponent('?q=web#x')}`,
+			want: ''
+		}
+	];
+	for (const { name, search, want } of cases) {
+		it(`should carry ${want || 'nothing'} when ${name}`, () => {
+			expect(keyListContext(new URLSearchParams(search))).toBe(want);
+		});
+	}
+});
+
+describe('keyListBack', () => {
+	it('should read the admin list and its filters when both are carried', () => {
+		expect(keyListBack(new URLSearchParams('?from=admin&back=%3Fq%3Dweb'))).toEqual({
+			fromAdmin: true,
+			search: '?q=web'
+		});
+	});
 });
