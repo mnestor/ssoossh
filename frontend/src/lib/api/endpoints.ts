@@ -802,7 +802,7 @@ export function listNSSAccounts(options: NSSEntryListOptions = {}): Promise<NSSA
 
 /** The admin key list's query: the search, the filters and the page. */
 export interface NSSAdminKeyListOptions {
-	/** A substring of the name, group or creator, or an IP address or CIDR range to search the usage for. */
+	/** A substring of the name, group or creator, the start of the key id, or an IP address or CIDR range to search the usage for. */
 	q?: string;
 	/** One status; omitted lists every status. */
 	status?: NSSKeyStatus;

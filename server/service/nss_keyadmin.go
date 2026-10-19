@@ -29,7 +29,8 @@ const (
 // filter nothing.
 type NSSAdminKeyFilter struct {
 	// Page carries the cursor, the page size and q: a substring of the
-	// key's name or group or the creator's username or email, or, when it
+	// key's name or group or the creator's username or email, or the start
+	// of the key's id, or, when it
 	// reads as an IP address or a CIDR range, the address the key was used
 	// from (ParseNSSKeyAddressSearch).
 	Page paging.Params
@@ -139,7 +140,7 @@ func (s *NSSKeyService) addressUsageWhere(address *NSSKeyAddressSearch, now time
 
 // AdminList is the admin key list: one page of every key, whoever manages
 // it, narrowed by filter, by name then id. The caller is an auditor or
-// above; the route's middleware decides that. An address search reads
+// above, or a fleet key admin; the route's middleware decides that. An address search reads
 // nss_key_usage through its source index, and the per-key counts are
 // read for the page's keys only, a fixed number of queries per page.
 func (s *NSSKeyService) AdminList(ctx context.Context, filter NSSAdminKeyFilter) (*NSSAdminKeyPage, error) {
@@ -157,8 +158,7 @@ func (s *NSSKeyService) AdminList(ctx context.Context, filter NSSAdminKeyFilter)
 	if address != nil {
 		where, args := s.addressUsageWhere(address, now)
 		q = q.Where("nss_keys.id IN (?)", db.Model(&model.NSSKeyUsage{}).Select("nss_key_usage.key_id").Where(where, args...))
-	} else if where, args := paging.Filter(filter.Page.Query,
-		"nss_keys.name", "nss_keys.group_name", "users.username", "users.email"); where != "" {
+	} else if where, args := nssAdminKeyTextWhere(filter.Page.Query); where != "" {
 		q = q.Where(where, args...)
 	}
 	q = s.adminKeyFilters(q, filter, now)
@@ -192,6 +192,21 @@ func (s *NSSKeyService) AdminList(ctx context.Context, filter NSSAdminKeyFilter)
 		return nil, err
 	}
 	return page, nil
+}
+
+// nssAdminKeyTextWhere is a text search's WHERE fragment: a substring of
+// the key's name or group or the creator's username or email, ignoring
+// case, or the start of the key's id. An id is "nss_" and eight lower-case
+// base32 symbols (newNSSKeyID), so a whole id or a prefix of one, pasted
+// from an alert or `ssoosshd-nss status` in either case, finds its key.
+// The id is a plain column, never a JSON payload. "" when q is empty.
+func nssAdminKeyTextWhere(q string) (string, []any) {
+	text, textArgs := paging.Filter(q, "nss_keys.name", "nss_keys.group_name", "users.username", "users.email")
+	if text == "" {
+		return "", nil
+	}
+	id, idArgs := paging.PrefixFilter(q, "nss_keys.id")
+	return "(" + text + " OR " + id + ")", append(textArgs, idArgs...)
 }
 
 // adminKeyFilters applies the status, expiry, unused and alert filters.

@@ -11,6 +11,8 @@ describe('readKeySearch', () => {
 		{ name: 'a key name is typed', q: 'web fleet', want: { kind: 'text' } },
 		{ name: 'an email is typed', q: 'kim@example.org', want: { kind: 'text' } },
 		{ name: 'a key id is typed', q: 'nss_abcd2345', want: { kind: 'text' } },
+		{ name: 'a key id is pasted in capitals', q: 'NSS_ABCD2345', want: { kind: 'text' } },
+		{ name: 'a key id prefix is typed', q: 'nss_5', want: { kind: 'text' } },
 		{ name: 'a bare number is typed', q: '1234', want: { kind: 'text' } },
 		{ name: 'a word with one colon is typed', q: 'db:1', want: { kind: 'text' } },
 		{ name: 'a dotted name is typed', q: 'web.fleet', want: { kind: 'text' } },

@@ -34,7 +34,7 @@
 
 	// Every fleet key, whoever manages it, for the admin area's roles: the
 	// list an investigation starts from. The clue is usually an address
-	// from a log or an alert, else a key's name, group or creator, so one
+	// from a log or an alert, else a key's id, name, group or creator, so one
 	// search field leads and reads both: text searches the key, an address
 	// or a CIDR range searches the usage the server kept. Read only: a row
 	// opens the key's own page, which keeps every action.
@@ -326,9 +326,8 @@
 				</p>
 			{/if}
 			<p id={hintId} class="text-xs text-ink-muted">
-				A name, group or creator, or an address (<code class="font-mono">10.0.4.7</code>) or range (<code
-					class="font-mono">10.0.4.0/24</code
-				>).
+				A name, group, creator or key id, or an address (<code class="font-mono">10.0.4.7</code>) or
+				range (<code class="font-mono">10.0.4.0/24</code>).
 			</p>
 			{#if shownAddress && !fieldError}
 				<p class="text-xs text-ink" data-testid="nss-admin-keys-searching">

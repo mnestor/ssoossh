@@ -18,7 +18,7 @@
 <PageShell width="wide">
 	<PageHeading title="All NSS keys" testid="nss-admin-keys-heading">
 		{#snippet sub()}
-			Every fleet key, whoever manages it. Find a key by its name, group or creator, or by an
+			Every fleet key, whoever manages it. Find a key by its name, group, creator or id, or by an
 			address a host used it from.
 		{/snippet}
 		{#snippet action()}

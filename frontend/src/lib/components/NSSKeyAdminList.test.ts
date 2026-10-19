@@ -234,6 +234,25 @@ describe('NSS admin key list search', () => {
 		await waitFor(() => expect(goto).toHaveBeenCalledWith(`${LIST}?q=kim`, shallowReplace));
 	});
 
+	it('should name the key id among what the field searches when the field is shown', async () => {
+		routeFetch({ [`GET ${PATH}`]: listPage([]) });
+		render(NSSKeyAdminList);
+		await settle();
+
+		expect(screen.getByTestId('nss-admin-keys-search')).toHaveAccessibleDescription(
+			'A name, group, creator or key id, or an address (10.0.4.7) or range (10.0.4.0/24).'
+		);
+	});
+
+	it('should send a pasted key id to the server as text when Enter is pressed', async () => {
+		const calls = routeFetch({ [`GET ${PATH}`]: listPage([adminKey('a')]) });
+		render(NSSKeyAdminList);
+		await screen.findByTestId('nss-admin-keys-table');
+		await typeSearch('nss_5vqsreyx');
+
+		await waitFor(() => expect(requested(calls).at(-1)?.get('q')).toBe('nss_5vqsreyx'));
+	});
+
 	it('should say which addresses are searched over the server window when q is a range', async () => {
 		resetFakePage(`http://localhost${LIST}?q=10.0.4.7/24`);
 		routeFetch({

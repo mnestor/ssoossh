@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -173,6 +174,41 @@ func TestNSSKeyAdminList_ShouldListTheMatchingKeysWhenFiltered(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := adminListNames(t, keys, tt.filter); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("keys = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNSSKeyAdminList_ShouldFindTheKeyWhenQIsItsIDOrAPrefixOfIt(t *testing.T) {
+	t.Parallel()
+
+	db := testdb.New(t)
+	seedNSSCallers(t, db)
+	keys, _ := newTestNSSKeys(t, nssLookupTestConfig(), db)
+	fleet := seedAdminFleet(t, db, keys)
+	every := []string{"alpha", "bravo", "charlie", "delta", "echo", "foxtrot"}
+	bravo := fleet["bravo"]
+
+	tests := []struct {
+		name string
+		q    string
+		want []string
+	}{
+		{name: "should find the key when q is its whole id", q: bravo, want: []string{"bravo"}},
+		{name: "should find the key when q is its id in capitals", q: strings.ToUpper(bravo), want: []string{"bravo"}},
+		{name: "should find the key when q is a prefix of its id", q: bravo[:len(bravo)-1], want: []string{"bravo"}},
+		{name: "should find every key when q is the id prefix every key shares", q: "nss_", want: every},
+		{name: "should find nothing when q runs past the id", q: bravo + "x", want: []string{}},
+		{name: "should find nothing when q is the id's tail rather than its start", q: bravo[4:], want: []string{}},
+		// An unescaped "_" would match any character, so "ns__" would
+		// match every "nss_" id.
+		{name: "should find nothing when q carries an underscore where the id has none", q: "ns__", want: []string{}},
+		{name: "should find nothing when q carries a percent", q: "nss%", want: []string{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := adminListNames(t, keys, withQuery(tt.q)); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("keys = %v, want %v", got, tt.want)
 			}
 		})
