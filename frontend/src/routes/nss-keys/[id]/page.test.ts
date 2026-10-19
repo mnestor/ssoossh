@@ -303,12 +303,13 @@ describe('NSS key detail', () => {
 			expect(document.activeElement).toBe(screen.getByTestId('secret-panel-focus'));
 		});
 
-		it('should scroll to the new secret at the top of the page when the rotation lands', async () => {
-			const scroll = vi.spyOn(window, 'scrollTo');
+		it('should scroll the new secret into view when the rotation lands', async () => {
+			const scroll = vi.fn();
+			Element.prototype.scrollIntoView = scroll;
 			await rotateOnce();
+			delete (Element.prototype as Partial<Element>).scrollIntoView;
 
-			expect(scroll).toHaveBeenCalledWith({ top: 0 });
-			scroll.mockRestore();
+			expect(scroll).toHaveBeenCalledWith({ block: 'start' });
 		});
 
 		it('should say when the previous secret stops when the rotation lands', async () => {
@@ -355,6 +356,16 @@ describe('NSS key detail', () => {
 			guards.forEach((guard) => guard({ cancel, type: 'link' }));
 
 			expect(cancel).toHaveBeenCalled();
+		});
+
+		it('should let the reader leave without asking when the secret is ticked as stored', async () => {
+			const ask = vi.fn(() => false);
+			vi.stubGlobal('confirm', ask);
+			await rotateOnce();
+			await userEvent.click(screen.getByLabelText('I have stored this secret'));
+			guards.forEach((guard) => guard({ cancel: vi.fn(), type: 'link' }));
+
+			expect(ask).not.toHaveBeenCalled();
 		});
 
 		it('should warn that a live previous secret stops at once when rotating again', async () => {

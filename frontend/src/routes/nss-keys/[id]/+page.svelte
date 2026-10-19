@@ -239,6 +239,9 @@
 	// The rotation's answer while its secret is on screen; dropped on Done.
 	let issued = $state<NSSKeySecret | null>(null);
 	let secretPanel = $state<SecretPanel | undefined>(undefined);
+	// The panel's "I have stored this secret" tick, so leaving stops
+	// warning once the reader has said the secret is safe.
+	let secretStored = $state(false);
 
 	async function rotate() {
 		if (!key) return;
@@ -247,6 +250,7 @@
 		try {
 			const result = await rotateNSSKey(key.id);
 			key = result.key;
+			secretStored = false;
 			issued = result;
 			confirmRotate = false;
 			liveMessage = 'Key rotated. Store the new secret.';
@@ -281,7 +285,7 @@
 	}
 
 	beforeNavigate(({ cancel, type }) => {
-		if (!issued) return;
+		if (!issued || secretStored) return;
 		if (type === 'leave') {
 			cancel();
 			return;
@@ -578,6 +582,7 @@
 			{#key issued.key.current_generation}
 				<SecretPanel
 					bind:this={secretPanel}
+					bind:stored={secretStored}
 					keyId={issued.key.id}
 					secret={issued.secret}
 					previousExpiresAt={issued.key.previous_expires_at}

@@ -28,12 +28,52 @@ describe('SecretPanel', () => {
 		expect(document.activeElement).toBe(screen.getByTestId('secret-panel-focus'));
 	});
 
-	it('should scroll the page to the top when it appears', () => {
-		const scroll = vi.spyOn(window, 'scrollTo');
+	it('should scroll its own top into view when it appears', () => {
+		const scroll = vi.fn();
+		Element.prototype.scrollIntoView = scroll;
+		render(SecretPanel, props);
+		delete (Element.prototype as Partial<Element>).scrollIntoView;
+
+		expect(scroll).toHaveBeenCalledWith({ block: 'start' });
+	});
+
+	it('should name its focus target as the new secret when it appears', () => {
 		render(SecretPanel, props);
 
-		expect(scroll).toHaveBeenCalledWith({ top: 0 });
+		expect(screen.getByRole('region', { name: 'New secret, shown once' })).toBe(
+			screen.getByTestId('secret-panel-focus')
+		);
 	});
+
+	it('should describe its focus target with the shown-once warning when it appears', () => {
+		render(SecretPanel, props);
+
+		expect(screen.getByTestId('secret-panel-focus')).toHaveAccessibleDescription(
+			'It cannot be shown again. If it is lost, rotate the key and update every host.'
+		);
+	});
+
+	const storedCases: { name: string; tick: boolean; want: boolean }[] = [
+		{ name: 'the box is ticked', tick: true, want: true },
+		{ name: 'the box is left alone', tick: false, want: false }
+	];
+	for (const { name, tick, want } of storedCases) {
+		it(`should report stored as ${want} to its caller when ${name}`, async () => {
+			let stored = false;
+			render(SecretPanel, {
+				...props,
+				get stored() {
+					return stored;
+				},
+				set stored(value: boolean) {
+					stored = value;
+				}
+			});
+			if (tick) await userEvent.click(screen.getByLabelText('I have stored this secret'));
+
+			expect(stored).toBe(want);
+		});
+	}
 
 	it('should show the nss.key file as the key id then the secret', () => {
 		render(SecretPanel, props);

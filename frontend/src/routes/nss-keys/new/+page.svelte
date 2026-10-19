@@ -47,6 +47,12 @@
 	// The answer while its secret is on screen. Dropped on Done, so nothing
 	// on the page holds the secret afterwards.
 	let issued = $state<NSSKeySecret | null>(null);
+	// The panel's "I have stored this secret" tick, so leaving stops
+	// warning once the reader has said the secret is safe.
+	let secretStored = $state(false);
+	// What a screen reader hears once the key exists: the sub line changes
+	// too, but it is not a live region.
+	let liveMessage = $state('');
 
 	// Groups other keys already use, and the reader's own, offered as
 	// suggestions; any name may still be typed. A failed read only loses
@@ -96,7 +102,7 @@
 	// A key whose secret has not been stored yet is lost by leaving, so
 	// leaving asks first. Closing the tab gets the browser's own prompt.
 	beforeNavigate(({ cancel, type }) => {
-		if (!issued) return;
+		if (!issued || secretStored) return;
 		if (type === 'leave') {
 			cancel();
 			return;
@@ -125,6 +131,7 @@
 		busy = true;
 		submitError = null;
 		try {
+			secretStored = false;
 			issued = await createNSSKey({
 				name: name.trim(),
 				description: description.trim() || undefined,
@@ -132,6 +139,7 @@
 				expires_at: expires && !noDay ? endOfDay(expires).toISOString() : undefined,
 				notification_email: email.trim()
 			});
+			liveMessage = `Key ${issued.key.name} created. Store its secret now.`;
 		} catch (cause) {
 			if (redirectIfUnauthenticated(cause)) return;
 			submitError =
@@ -179,8 +187,13 @@
 			{/snippet}
 		</PageHeading>
 
+		<div aria-live="polite" aria-atomic="true" class="sr-only" data-testid="nss-key-new-live">
+			{liveMessage}
+		</div>
+
 		{#if issued}
 			<SecretPanel
+				bind:stored={secretStored}
 				keyId={issued.key.id}
 				secret={issued.secret}
 				ondismiss={dismiss}

@@ -291,6 +291,29 @@ describe('New NSS key', () => {
 			expect(cancel).toHaveBeenCalled();
 		});
 
+		it('should let the reader leave without asking when the secret is ticked as stored', async () => {
+			answers();
+			const confirm = vi.fn(() => false);
+			vi.stubGlobal('confirm', confirm);
+			render(Page);
+			await createNamed();
+			await userEvent.click(await screen.findByLabelText('I have stored this secret'));
+			guards.forEach((guard) => guard({ cancel: vi.fn(), type: 'link' }));
+
+			expect(confirm).not.toHaveBeenCalled();
+		});
+
+		it('should announce the new key when it is created', async () => {
+			answers();
+			render(Page);
+			await createNamed();
+			await screen.findByTestId('secret-panel');
+
+			expect(screen.getByTestId('nss-key-new-live')).toHaveTextContent(
+				'Key web fleet created. Store its secret now.'
+			);
+		});
+
 		it('should let a navigation through once the secret is dismissed', async () => {
 			answers();
 			render(Page);
