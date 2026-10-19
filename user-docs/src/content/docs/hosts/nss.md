@@ -157,8 +157,9 @@ that root does not own. Blank lines around the two are ignored; a third line
 is an error. Error messages give the line count, never the content.
 
 **3. Point it at the server.** In `/etc/ssoossh/nss.yaml`, set `server` and
-one trust root. The system trust store is never used, and proxy variables
-are ignored:
+one trust root: a key pin, as below, or a CA bundle in `tls_ca_file` (see
+[Server certificates from a public CA](#server-certificates-from-a-public-ca)).
+The daemon only trusts what you name there, and proxy variables are ignored:
 
 ```yaml
 server: https://ssh.example.com
@@ -179,10 +180,110 @@ openssl s_client -connect ssh.example.com:443 -servername ssh.example.com </dev/
 A pin names the server's key, not its certificate, so a certificate renewed
 on the same key keeps matching; list the next key's pin beside the current
 one before the server moves to it. With pins alone the key is the whole
-check. Set `tls_ca_file` to a private CA bundle instead to verify the chain
-as well, or set both, and the certificate must chain to that CA *and* carry a
-pinned key. Connections are TLS 1.3 only. When the pin does not match, the
-error in `ssoosshd-nss status` names the digest the server presented.
+check. Set `tls_ca_file` to a CA bundle instead to verify the chain and the
+server name, or set both, and the certificate must chain to that CA *and*
+carry a pinned key. Connections are TLS 1.3 only. When the pin does not match,
+the error in `ssoosshd-nss status` names the digest the server presented.
+
+#### Server certificates from a public CA
+
+A key pin suits a certificate whose key you control and keep. Most ACME
+clients make a new key at every renewal (certbot does unless it runs with
+`--reuse-key`), so a pin on a Let's Encrypt certificate breaks every 60 to 90
+days. For a certificate from a public CA, trust that CA's roots with
+`tls_ca_file` instead: the chain and the server name are both checked, and
+renewals and the CA's changes of intermediate keep working. Any certificate
+that CA issues for the server's name is accepted, which is less than a key
+pin and much less than the whole system trust store.
+
+Do not pin an intermediate. Public CAs rotate them, and `tls_spki_pin`
+matches the server's own certificate only.
+
+**Find which root the server's chain leads to.** The last `i:` line names it:
+
+```bash
+openssl s_client -connect ssh.example.com:443 -servername ssh.example.com </dev/null 2>/dev/null |
+  sed -n '/^Certificate chain/,/^---/p'
+```
+
+For Let's Encrypt it is ISRG Root X1 or ISRG Root X2, or one of the newer
+roots, Root YR and Root YE, which X1 and X2 cross-sign. Bundle all four, so a
+chain that moves to the newer roots, or drops a cross-sign, still verifies.
+
+**Fetch the roots**, each into its own file first so each can be checked:
+
+```bash
+mkdir -p /root/isrg && cd /root/isrg
+for f in isrgrootx1.pem isrg-root-x2.pem gen-y/root-yr.pem gen-y/root-ye.pem \
+         gen-y/root-yr-by-x1.pem gen-y/root-ye-by-x2.pem; do
+  curl -fsS -o "$(basename "$f")" "https://letsencrypt.org/certs/$f"
+done
+```
+
+**Check them before trusting them.** The download already rode on your
+system trust store; these checks do not depend on it.
+
+```bash
+# Subject, expiry and SHA-256 fingerprint of each root:
+for f in isrgrootx1.pem isrg-root-x2.pem root-yr.pem root-ye.pem; do
+  openssl x509 -in "$f" -noout -subject -enddate -fingerprint -sha256
+done
+
+# X1 and X2 are in every distribution's trust store; on Debian and Ubuntu
+# compare with those copies (no output means identical):
+cmp <(openssl x509 -in isrgrootx1.pem -outform der) \
+    <(openssl x509 -in /usr/share/ca-certificates/mozilla/ISRG_Root_X1.crt -outform der)
+cmp <(openssl x509 -in isrg-root-x2.pem -outform der) \
+    <(openssl x509 -in /usr/share/ca-certificates/mozilla/ISRG_Root_X2.crt -outform der)
+
+# Root YR and Root YE are newer than most trust stores: check that X1 and X2
+# vouch for their keys, then that the self-signed roots carry the same keys.
+openssl verify -no-CApath -no-CAstore -CAfile isrgrootx1.pem root-yr-by-x1.pem
+openssl verify -no-CApath -no-CAstore -CAfile isrg-root-x2.pem root-ye-by-x2.pem
+[ "$(openssl x509 -in root-yr.pem -noout -pubkey)" = "$(openssl x509 -in root-yr-by-x1.pem -noout -pubkey)" ] && echo "Root YR key matches"
+[ "$(openssl x509 -in root-ye.pem -noout -pubkey)" = "$(openssl x509 -in root-ye-by-x2.pem -noout -pubkey)" ] && echo "Root YE key matches"
+```
+
+At the time of writing the fingerprints are:
+
+| Root | Expires | SHA-256 fingerprint |
+| --- | --- | --- |
+| ISRG Root X1 | 2035-06-04 | `96:BC:EC:06:26:49:76:F3:74:60:77:9A:CF:28:C5:A7:CF:E8:A3:C0:AA:E1:1A:8F:FC:EE:05:C0:BD:DF:08:C6` |
+| ISRG Root X2 | 2040-09-17 | `69:72:9B:8E:15:A8:6E:FC:17:7A:57:AF:B7:17:1D:FC:64:AD:D2:8C:2F:CA:8C:F1:50:7E:34:45:3C:CB:14:70` |
+| Root YR | 2045-09-02 | `E5:7B:7E:6F:15:0C:41:91:02:E8:D5:C0:55:72:9F:F9:67:B9:D1:A8:29:BF:00:CE:C8:9C:A6:04:EB:F4:A8:6F` |
+| Root YE | 2045-09-02 | `E1:4F:FC:AD:5B:00:25:73:10:06:CA:A4:3A:12:1A:22:D8:E9:70:0F:4F:B9:CF:85:2F:02:A7:08:AA:5D:56:66` |
+
+**Install the bundle and test it against the server** with nothing else
+trusted. `openssl` needs `-no-CApath -no-CAstore`, and `curl` an empty
+`--capath`, or both quietly fall back to the system store and pass anyway:
+
+```bash
+cat isrgrootx1.pem isrg-root-x2.pem root-yr.pem root-ye.pem > /etc/ssoossh/isrg-roots.pem
+chmod 644 /etc/ssoossh/isrg-roots.pem
+
+openssl s_client -connect ssh.example.com:443 -servername ssh.example.com \
+  -CAfile /etc/ssoossh/isrg-roots.pem -no-CApath -no-CAstore -verify_return_error </dev/null 2>&1 |
+  grep 'Verify return code'          # Verify return code: 0 (ok)
+
+mkdir -p /tmp/no-ca && curl -sS --cacert /etc/ssoossh/isrg-roots.pem --capath /tmp/no-ca \
+  -o /dev/null -w '%{http_code}\n' https://ssh.example.com/api/version   # 200
+```
+
+Then set it in `nss.yaml` and restart the daemon, which reads the bundle when
+it connects to the server:
+
+```yaml
+server: https://ssh.example.com
+tls_ca_file: /etc/ssoossh/isrg-roots.pem
+```
+
+**The system trust store** is the weakest choice: every CA the host trusts,
+including any TLS-inspection root a company installs, can then answer for the
+server, and so decide which uid a name maps to on this host. If you accept
+that, point `tls_ca_file` at the distribution's bundle:
+`/etc/ssl/certs/ca-certificates.crt` on Debian and Ubuntu,
+`/etc/pki/tls/certs/ca-bundle.crt` on EL and Fedora. Restart the daemon after
+the distribution updates it.
 
 Leave `server` empty to discover it from the `_ssoossh._tcp` SRV records of
 `dns_discovery_domain` (the host's own domain when that is empty). The pin
@@ -475,7 +576,7 @@ three in step.
 | --- | --- | --- |
 | `server` | `""` | the `ssoosshd` https URL; empty discovers it from the `_ssoossh._tcp` SRV records of `dns_discovery_domain` |
 | `dns_discovery_domain` | `""` | the domain SRV discovery queries, and what `%d` expands to; empty means the host's own (what follows the first dot of the hostname, else the first `domain` or `search` entry of `/etc/resolv.conf`) |
-| `tls_ca_file` | `""` | a private CA bundle (PEM) the server's certificate must chain to; this or `tls_spki_pin` is required |
+| `tls_ca_file` | `""` | a CA bundle (PEM) the server's certificate must chain to: a private CA, a public CA's roots, or the system bundle ([public CAs](#server-certificates-from-a-public-ca)); this or `tls_spki_pin` is required |
 | `tls_spki_pin` | `[]` | base64 SHA-256 digests of the server's SubjectPublicKeyInfo; with `tls_ca_file` as well, both must hold |
 | `api_key_file` | `/etc/ssoossh/nss.key` | the fleet key: line 1 the key id, line 2 the secret, root-only |
 | `timeout` | `5s` | bounds one upstream lookup, retries included. Each attempt but the last gets at most half of what is left, and no more than `socket_answer_deadline` less a second (1.5 s by default), so a retry still answers the caller in time |
