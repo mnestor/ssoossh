@@ -73,14 +73,18 @@
 
 	const id = $derived(page.params.id ?? '');
 
-	// The list's filters, carried by its rows so the back chip returns to
-	// the same view. Only a query string is taken, appended to the fixed
-	// list route, so nothing here can be steered elsewhere.
+	// The list the key was opened from and its filters, carried by its
+	// rows so the back chip returns to the same view: the admin list of
+	// every key for ?from=admin, else the keys the reader's groups manage.
+	// `from` is only looked up and `back` is only a query string appended
+	// to that fixed route, so nothing here can be steered elsewhere.
+	const fromAdmin = $derived(page.url.searchParams.get('from') === 'admin');
 	const backHref = $derived.by(() => {
 		const carried = page.url.searchParams.get('back') ?? '';
 		const search = carried.startsWith('?') && !carried.includes('#') ? carried : '';
-		return `${resolve('/nss-keys')}${search}`;
+		return `${fromAdmin ? resolve('/admin/nss/keys') : resolve('/nss-keys')}${search}`;
 	});
+	const backLabel = $derived(fromAdmin ? 'All NSS keys' : 'NSS keys');
 
 	let key = $state<NSSKey | null>(null);
 	let loadError = $state<string | null>(null);
@@ -577,7 +581,7 @@
 	<PageHeading
 		title="NSS key"
 		testid="nss-key-heading"
-		back={{ href: backHref, label: 'All NSS keys', testid: 'nss-key-back' }}
+		back={{ href: backHref, label: backLabel, testid: 'nss-key-back' }}
 	>
 		{#snippet action()}
 			{#if mayRevoke}

@@ -64,9 +64,11 @@ export function primaryNav(): NavItem[] {
 }
 
 /**
- * nssKeysNav is the fleet key destination. Top level rather than in the
- * admin group: a key's own group manages it without an admin role, so the
- * entry is shown by showNSSKeys in #lib/nss, not by the admin gate.
+ * nssKeysNav is the destination for the fleet keys a viewer's groups
+ * manage. Top level rather than in the admin group: a key's own group
+ * manages it without an admin role, so the entry is shown by showNSSKeys in
+ * #lib/nss, not by the admin gate. Every key is the admin group's own NSS
+ * keys entry.
  */
 export function nssKeysNav(): NavItem {
 	return { href: resolve('/nss-keys'), label: 'NSS keys', icon: 'server-2' };
@@ -94,6 +96,10 @@ export const adminNav: readonly NavItem[] = [
 	// served for each, are read by auditors, SOC and admins alike. Only
 	// where NSS is on.
 	{ href: '/admin/nss', label: 'NSS directory', icon: 'database-search', nssOnly: true },
+	// Every fleet key, whoever manages it, for auditors and above, only
+	// where NSS is on. The same label as the top-level entry, as the two
+	// Service codes entries share one, with another drawing of its glyph.
+	{ href: '/admin/nss/keys', label: 'NSS keys', icon: 'server', nssOnly: true },
 	// Admin-only (issue #161): starting an echo is the page's only action,
 	// and the server refuses it below admin.
 	{ href: '/admin/identity/echo', label: 'Claims echo', icon: 'braces', adminOnly: true },
@@ -172,6 +178,22 @@ export function isFocusRoute(pathname: string): boolean {
  */
 export function isCurrent(href: string, pathname: string): boolean {
 	return pathname === href || pathname.startsWith(href + '/');
+}
+
+/**
+ * currentHref is the one href of hrefs that names the page at pathname: the
+ * longest that isCurrent matches, or null for none. A section nested under
+ * another (the NSS keys under the NSS directory's /admin/nss) then marks
+ * only itself, not its parent too.
+ */
+export function currentHref(hrefs: readonly string[], pathname: string): string | null {
+	let best: string | null = null;
+	for (const href of hrefs) {
+		if (isCurrent(href, pathname) && (best === null || href.length > best.length)) {
+			best = href;
+		}
+	}
+	return best;
 }
 
 /** isAdminRoute reports whether pathname is inside the admin area, which is

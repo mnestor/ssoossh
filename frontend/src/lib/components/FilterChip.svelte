@@ -19,8 +19,10 @@
 	// loaded, so there is no URL that would restore it anyway.
 	interface Props {
 		label: string;
-		/** Icon name from the registry — see Icon.svelte. */
-		icon: string;
+		/** Icon name from the registry — see Icon.svelte. Left out for a chip
+		 *  whose words are the whole value ("30 days"), where a glyph
+		 *  repeated on every chip would say nothing. */
+		icon?: string;
 		selected: boolean;
 		onclick: () => void;
 		/** Greyed and unpressable while the list behind it is reloading. */
@@ -50,6 +52,6 @@
 	     (DESIGN.md, "Selected, current and status"): cobalt is the primary
 	     action's, and a row of cobalt chips competed with it. -->
 	{#if selected}<Icon name="check" size="xs" />{/if}
-	<Icon name={icon} size="xs" />
+	{#if icon}<Icon name={icon} size="xs" />{/if}
 	<span>{label}</span>
 </button>

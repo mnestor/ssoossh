@@ -35,6 +35,7 @@ import type {
 	NSSAcceptedUserIDChangeResponse,
 	NSSAccountDetail,
 	NSSAccountsResponse,
+	NSSAdminKeysResponse,
 	NSSCollisionsResponse,
 	NSSGroupDetail,
 	NSSGroupMembersResponse,
@@ -54,7 +55,7 @@ import type {
 	SetNotificationEmailRequestBody,
 	UpdateNSSKeyBody
 } from './types';
-import type { NSSEntryState } from './generated/enums';
+import type { NSSEntryState, NSSKeyStatus } from './generated/enums';
 
 /** GET /api/users/me. */
 export function getCurrentUser(signal?: AbortSignal): Promise<CurrentUser> {
@@ -795,6 +796,42 @@ function entryListQuery(options: NSSEntryListOptions): string {
 /** GET /api/admin/nss/users: one page of the stored accounts, by name. */
 export function listNSSAccounts(options: NSSEntryListOptions = {}): Promise<NSSAccountsResponse> {
 	return request<NSSAccountsResponse>(`/admin/nss/users${entryListQuery(options)}`, {
+		signal: options.signal
+	});
+}
+
+/** The admin key list's query: the search, the filters and the page. */
+export interface NSSAdminKeyListOptions {
+	/** A substring of the name, group or creator, or an IP address or CIDR range to search the usage for. */
+	q?: string;
+	/** One status; omitted lists every status. */
+	status?: NSSKeyStatus;
+	/** Only live keys expiring within this many days: 7, 30 or 90. */
+	expiringWithin?: number;
+	/** Only keys with no lookup in 30 days. */
+	unused?: boolean;
+	/** Only keys a usage alert fired for in 7 days. */
+	alerts?: boolean;
+	/** The previous page's next_cursor. */
+	after?: string;
+	limit?: number;
+	signal?: AbortSignal;
+}
+
+/** GET /api/admin/nss/keys: one page of every fleet key, by name (auditor and above). */
+export function listAdminNSSKeys(
+	options: NSSAdminKeyListOptions = {}
+): Promise<NSSAdminKeysResponse> {
+	const params = new URLSearchParams();
+	if (options.q) params.set('q', options.q);
+	if (options.status) params.set('status', options.status);
+	if (options.expiringWithin) params.set('expiring_within', options.expiringWithin.toString());
+	if (options.unused) params.set('unused', '1');
+	if (options.alerts) params.set('alerts', '1');
+	if (options.after) params.set('after', options.after);
+	if (options.limit) params.set('limit', options.limit.toString());
+	const query = params.toString();
+	return request<NSSAdminKeysResponse>(`/admin/nss/keys${query ? `?${query}` : ''}`, {
 		signal: options.signal
 	});
 }

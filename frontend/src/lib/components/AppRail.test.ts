@@ -448,6 +448,22 @@ describe('app rail', () => {
 			});
 		}
 
+		it('should mark only NSS keys current in the admin group on the every-key list', async () => {
+			resetFakePage('http://localhost/admin/nss/keys');
+			routeFetch({ 'GET /api/nss/keys': envelope({ keys: [], can_create: false }) });
+			session.user = userFixture({ is_auditor: true });
+			session.resolved = true;
+
+			render(AppRail, { onsignout: () => {} });
+			await settle();
+
+			const current = screen
+				.getAllByRole('link')
+				.filter((link) => link.getAttribute('aria-current') === 'page')
+				.map((link) => link.getAttribute('href'));
+			expect(current).toEqual(['/admin/nss/keys']);
+		});
+
 		it('should mark the NSS directory current on a stored account page', () => {
 			resetFakePage('http://localhost/admin/nss/accounts/10001');
 			session.user = userFixture({ is_auditor: true });
