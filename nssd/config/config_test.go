@@ -214,6 +214,15 @@ func TestValidate(t *testing.T) {
 		{name: "should refuse a server with no host when the URL is empty of one", mutate: func(c *Config) { c.Server = "https://" }, wantErr: "https URL"},
 		{name: "should refuse an unparsable server when the URL is malformed", mutate: func(c *Config) { c.Server = "https://a b\x7f" }, wantErr: "https URL"},
 		{name: "should refuse discovery when no domain is known", mutate: func(c *Config) { c.Server = "" }, wantErr: "discover"},
+		{name: "should refuse the host's domain when discovery has a CA file and no pin", mutate: func(c *Config) {
+			c.Server, c.Domain, c.TLSSPKIPin, c.TLSCAFile = "", "corp.example", nil, "/etc/ssoossh/ca.pem"
+		}, wantErr: `the host domain "corp.example" comes from the hostname or /etc/resolv.conf`},
+		{name: "should refuse the host's domain when discovery trusts the system store and no pin", mutate: func(c *Config) {
+			c.Server, c.Domain, c.TLSSPKIPin, c.TLSCAFile = "", "corp.example", nil, "system"
+		}, wantErr: "set dns_discovery_domain or server"},
+		{name: "should accept discovery with a CA file when the domain is set explicitly", mutate: func(c *Config) {
+			c.Server, c.DNSDiscoveryDomain, c.Domain, c.TLSSPKIPin, c.TLSCAFile = "", "example.com", "example.com", nil, "/etc/ssoossh/ca.pem"
+		}},
 		{name: "should refuse no trust root when neither CA nor pin is set", mutate: func(c *Config) { c.TLSSPKIPin = nil }, wantErr: "tls_ca_file"},
 		{name: "should accept a CA file when no pin is set", mutate: func(c *Config) { c.TLSSPKIPin = nil; c.TLSCAFile = "/etc/ssoossh/ca.pem" }},
 		{name: "should accept the system store when no pin is set", mutate: func(c *Config) { c.TLSSPKIPin = nil; c.TLSCAFile = "system" }},

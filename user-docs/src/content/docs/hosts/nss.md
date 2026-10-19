@@ -328,10 +328,17 @@ That is what keeps a spoofed record from pointing the host at another server
 when the trust root is a public CA's roots or `tls_ca_file: system`: the name
 checked is the record's target, a public CA certifies any name for whoever
 controls it, but only certifies a name under your domain for whoever controls
-your domain. A key pin or a private CA would refuse such a server anyway. A
-host in `web1.corp.example.com` discovers from `corp.example.com`; set
-`dns_discovery_domain: example.com` when the server lives at the parent, or
-set `server`.
+your domain. A key pin or a private CA would refuse such a server anyway.
+
+The rule only protects a domain you wrote down. Left empty,
+`dns_discovery_domain` is guessed from the hostname (what follows its first
+dot) or the first `domain` or `search` line of `/etc/resolv.conf`, and DHCP
+can set both: a rogue DHCP server could hand out its own search domain, whose
+SRV targets would then be "in the domain". So the daemon uses the guess only
+when `tls_spki_pin` is set; with a CA file or `system` alone, set
+`dns_discovery_domain` or `server`, or it refuses to start. A host in
+`web1.corp.example.com` would guess `corp.example.com`; set
+`dns_discovery_domain: example.com` when the server lives at the parent.
 
 **4. Enable the socket, not the service.**
 
@@ -619,7 +626,7 @@ three in step.
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `server` | `""` | the `ssoosshd` https URL; empty discovers it from the `_ssoossh._tcp` SRV records of `dns_discovery_domain` |
-| `dns_discovery_domain` | `""` | the domain SRV discovery queries, and what `%d` expands to; empty means the host's own (what follows the first dot of the hostname, else the first `domain` or `search` entry of `/etc/resolv.conf`) |
+| `dns_discovery_domain` | `""` | the domain SRV discovery queries, and what `%d` expands to; empty means the host's own (what follows the first dot of the hostname, else the first `domain` or `search` entry of `/etc/resolv.conf`), which discovery accepts only with `tls_spki_pin` set |
 | `tls_ca_file` | `""` | a CA bundle (PEM) the server's certificate must chain to, a private CA or a public CA's roots, or `system` (exactly, lower case) for the host's system trust store, which also honours `SSL_CERT_FILE` and `SSL_CERT_DIR` from the daemon's environment ([public CAs](#server-certificates-from-a-public-ca)); this or `tls_spki_pin` is required |
 | `tls_spki_pin` | `[]` | base64 SHA-256 digests of the server's SubjectPublicKeyInfo; with `tls_ca_file` as well, both must hold |
 | `api_key_file` | `/etc/ssoossh/nss.key` | the fleet key: line 1 the key id, line 2 the secret, root-only |

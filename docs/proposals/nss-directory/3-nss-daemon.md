@@ -244,7 +244,7 @@ Root 0600; environment not consulted. Option names follow `sssd.conf(5)`.
 
 ```yaml
 server: ""                        # https URL; empty -> SRV via dns_discovery_domain
-dns_discovery_domain: ""          # empty -> host's domain
+dns_discovery_domain: ""          # empty -> host's domain, only with tls_spki_pin (added 2026-10-19: DHCP can set it)
 tls_ca_file: ""                   # one of these two is required; a path or "system"
 tls_spki_pin: []
 api_key_file: /etc/ssoossh/nss.key  # 0600, line 1 key_id, line 2 key_secret

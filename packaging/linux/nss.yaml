@@ -30,7 +30,8 @@
 # The domain SRV discovery queries, and what %d expands to in the homedir
 # templates. Empty means the host's own domain: what follows the first dot
 # of the hostname, else the first domain or search entry of
-# /etc/resolv.conf.
+# /etc/resolv.conf. Discovery accepts that guess only with tls_spki_pin set,
+# because DHCP can set both; with a CA file or system, set this.
 #dns_discovery_domain: ""
 
 # The one trust root. One of the two is required. tls_ca_file is a CA bundle

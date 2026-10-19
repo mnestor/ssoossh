@@ -99,7 +99,8 @@ type Config struct {
 	// _ssoossh._tcp SRV records of DNSDiscoveryDomain.
 	Server string `mapstructure:"server"`
 	// DNSDiscoveryDomain is the domain SRV discovery queries. Empty means
-	// the host's own domain.
+	// the host's own domain, allowed only with a tls_spki_pin: the host's
+	// domain comes from its hostname or resolv.conf, which DHCP can set.
 	DNSDiscoveryDomain string `mapstructure:"dns_discovery_domain"`
 	// TLSCAFile is a CA bundle the server's chain must end in, or
 	// TLSCASystem for the host's system trust store; it or TLSSPKIPin is
@@ -351,6 +352,11 @@ func (c *Config) validateServer(add func(string, ...any)) {
 		}
 	} else if c.Domain == "" {
 		add("server is empty and no dns_discovery_domain or host domain is known to discover it from")
+	} else if c.DNSDiscoveryDomain == "" && len(c.TLSSPKIPin) == 0 {
+		// The host's domain comes from its hostname or resolv.conf, which
+		// DHCP can set: a rogue server's search domain would make its own
+		// SRV targets "in the domain". Only a pin makes that harmless.
+		add("server is empty and dns_discovery_domain is not set: the host domain %q comes from the hostname or /etc/resolv.conf, which DHCP can set, so set dns_discovery_domain or server, or a tls_spki_pin", c.Domain)
 	}
 	if c.TLSCAFile == "" && len(c.TLSSPKIPin) == 0 {
 		add("one of tls_ca_file and tls_spki_pin is required: set tls_ca_file to a CA bundle, or to %s to trust the host's system store", TLSCASystem)
