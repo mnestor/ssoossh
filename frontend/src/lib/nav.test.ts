@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+	currentHref,
 	adminNav,
 	adminNavFor,
 	isAdminRoute,
@@ -96,6 +97,7 @@ describe('nav model', () => {
 			'Config',
 			'Directory',
 			'NSS directory',
+			'NSS keys',
 			'Claims echo',
 			'Audit log',
 			'Diagnostics'
@@ -188,6 +190,37 @@ describe('adminNavFor and the NSS directory', () => {
 	it('should mark the NSS directory current on a group page', () => {
 		expect(isCurrent('/admin/nss', '/admin/nss/groups/5000')).toBe(true);
 	});
+});
+
+describe('adminNavFor and every NSS key', () => {
+	for (const isAdmin of [true, false]) {
+		const who = isAdmin ? 'an admin' : 'SOC or an auditor';
+		it(`should offer every NSS key when the viewer is ${who} and NSS is on`, () => {
+			expect(adminNavFor(isAdmin, true).some((item) => item.href === '/admin/nss/keys')).toBe(true);
+		});
+
+		it(`should leave out every NSS key when the viewer is ${who} and NSS is off`, () => {
+			expect(adminNavFor(isAdmin, false).some((item) => item.href === '/admin/nss/keys')).toBe(
+				false
+			);
+		});
+	}
+});
+
+describe('currentHref', () => {
+	const hrefs = adminNavFor(true, true).map((item) => item.href);
+	const cases: { name: string; pathname: string; want: string | null }[] = [
+		{ name: 'the NSS keys list', pathname: '/admin/nss/keys', want: '/admin/nss/keys' },
+		{ name: 'a stored account', pathname: '/admin/nss/accounts/10001', want: '/admin/nss' },
+		{ name: 'the users list', pathname: '/admin/users', want: '/admin/users' },
+		{ name: 'a page outside the admin area', pathname: '/dashboard', want: null }
+	];
+
+	for (const { name, pathname, want } of cases) {
+		it(`should mark ${want ?? 'nothing'} when the page is ${name}`, () => {
+			expect(currentHref(hrefs, pathname)).toBe(want);
+		});
+	}
 });
 
 describe('nssKeysNav', () => {

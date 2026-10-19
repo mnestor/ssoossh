@@ -44,6 +44,9 @@
 		IconHistory,
 		IconKey,
 		IconKeyboard,
+		IconServer,
+		IconClockExclamation,
+		IconSearchOff,
 		IconServer2,
 		IconServerOff,
 		IconRotate,
@@ -139,6 +142,16 @@
 		'server-2': IconServer2,
 		'server-off': IconServerOff,
 		rotate: IconRotate,
+		// Every fleet key, the admin list: another drawing of the same noun,
+		// as `circle-key` is for every service code, because a collapsed
+		// admin row has no visual parent to tell it from the keys a
+		// viewer's own groups manage.
+		server: IconServer,
+		// The admin key list's "Needs attention" filters: a clock about to
+		// run out (an expiry near), and lookups that stopped (no use in 30
+		// days), modifiers of the clock and search nouns.
+		'clock-exclamation': IconClockExclamation,
+		'search-off': IconSearchOff,
 		// Admin destinations
 		'shield-lock': IconShieldLock,
 		users: IconUsers,

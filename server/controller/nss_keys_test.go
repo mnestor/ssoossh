@@ -217,29 +217,30 @@ func TestNSSKeyController_RoleMatrix(t *testing.T) {
 	}
 }
 
-func TestNSSKeyController_ShouldListTheKeysEachCallerMayView(t *testing.T) {
+func TestNSSKeyController_ShouldListOnlyTheKeysTheCallersGroupsManage(t *testing.T) {
 	t.Parallel()
 
 	env := newNSSKeyEnv(t)
 	managed, _ := createNSSKey(t, env.keys, nssCreatorIdentity(), nssKeyGroup)
-	unmanaged, _ := createNSSKey(t, env.keys, nssCreatorIdentity(), "")
-	other, _ := createNSSKey(t, env.keys, nssCreatorIdentity(), "team-ops")
-	all := []string{managed, unmanaged, other}
+	createNSSKey(t, env.keys, nssCreatorIdentity(), "")
+	createNSSKey(t, env.keys, nssCreatorIdentity(), "team-ops")
 
 	tests := []struct {
 		caller        string
 		wantIDs       []string
 		wantCanCreate bool
 	}{
-		{caller: nssCallerAdmin, wantIDs: all, wantCanCreate: true},
-		{caller: nssCallerKeyAdmin, wantIDs: all, wantCanCreate: true},
-		{caller: nssCallerSOC, wantIDs: all},
-		{caller: nssCallerAuditor, wantIDs: all},
+		// The list is the keys the caller's groups manage, for everyone:
+		// the admin roles find every key on /api/admin/nss/keys.
+		{caller: nssCallerAdmin, wantIDs: []string{}, wantCanCreate: true},
+		{caller: nssCallerKeyAdmin, wantIDs: []string{}, wantCanCreate: true},
+		{caller: nssCallerSOC, wantIDs: []string{}},
+		{caller: nssCallerAuditor, wantIDs: []string{}},
 		{caller: nssCallerMember, wantIDs: []string{managed}},
 		{caller: nssCallerUnrelated, wantIDs: []string{}},
 	}
 	for _, tc := range tests {
-		t.Run("should list what the "+tc.caller+" may view", func(t *testing.T) {
+		t.Run("should list only the keys the "+tc.caller+"'s groups manage", func(t *testing.T) {
 			t.Parallel()
 
 			w := serveNSSKeys(env.router(nssCallerNamed(t, tc.caller)), http.MethodGet, "/nss/keys", "")
@@ -339,8 +340,16 @@ func TestNSSKeyController_ShouldReportEachCallersPermissions(t *testing.T) {
 				t.Errorf("get permissions = %v, want %v", got.Permissions, tc.wantPerms)
 			}
 
+			// Only the key's group lists it; every other role opens it
+			// from the admin list.
 			var list webtypes.NSSKeyListResponse
 			decodeEnvelope(t, serveNSSKeys(r, http.MethodGet, "/nss/keys", "").Body.Bytes(), &list)
+			if tc.caller != nssCallerMember {
+				if len(list.Keys) != 0 {
+					t.Errorf("list = %+v, want nothing for a caller outside the key's group", list.Keys)
+				}
+				return
+			}
 			if len(list.Keys) != 1 || !reflect.DeepEqual(list.Keys[0].Permissions, tc.wantPerms) {
 				t.Errorf("list = %+v, want the one key with permissions %v", list.Keys, tc.wantPerms)
 			}
@@ -546,7 +555,7 @@ func seedNSSKeyUsage(t *testing.T, db *gorm.DB, keyID, sourceIP string, day time
 	t.Helper()
 	day = time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, time.UTC)
 	row := model.NSSKeyUsage{
-		KeyID: keyID, SourceIP: sourceIP, Generation: 1, Day: day,
+		KeyID: keyID, SourceIP: sourceIP, SourceIPKey: service.NSSAddressKey(sourceIP), Generation: 1, Day: day,
 		Lookups: lookups, Misses: 1, FirstSeen: day.Add(time.Hour), LastSeen: day.Add(2 * time.Hour),
 	}
 	if err := db.Create(&row).Error; err != nil {

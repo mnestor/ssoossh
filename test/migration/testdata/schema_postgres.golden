@@ -234,9 +234,11 @@ table nss_key_usage
   column lookups type=bigint nullable=false default=0
   column misses type=bigint nullable=false default=0
   column source_ip type=text nullable=false default=<none>
+  column source_ip_key type=bytea nullable=true default=<none>
   fk key_id -> nss_keys.id on_delete=NO ACTION on_update=NO ACTION
   index idx_nss_key_usage_day CREATE INDEX idx_nss_key_usage_day ON public.nss_key_usage USING btree (day)
   index idx_nss_key_usage_key_day CREATE INDEX idx_nss_key_usage_key_day ON public.nss_key_usage USING btree (key_id, day)
+  index idx_nss_key_usage_source_day CREATE INDEX idx_nss_key_usage_source_day ON public.nss_key_usage USING btree (source_ip_key, day)
   index nss_key_usage_pkey CREATE UNIQUE INDEX nss_key_usage_pkey ON public.nss_key_usage USING btree (key_id, source_ip, generation, day)
 table nss_keys
   column created_at type=timestamp with time zone nullable=false default=<none>

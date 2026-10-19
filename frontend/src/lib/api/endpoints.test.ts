@@ -14,6 +14,7 @@ import {
 	getNSSKeyUsage,
 	getNSSPendingIDChanges,
 	getNSSRotationReport,
+	listAdminNSSKeys,
 	listNSSAccounts,
 	listNSSGroupMembers,
 	listNSSGroups,
@@ -234,6 +235,27 @@ describe('NSS endpoints', () => {
 			call: () => purgeNSSGroupTombstone(5000),
 			method: 'DELETE',
 			url: '/api/admin/nss/groups/5000/tombstone'
+		},
+		{
+			name: 'list every fleet key',
+			call: () => listAdminNSSKeys(),
+			method: 'GET',
+			url: '/api/admin/nss/keys'
+		},
+		{
+			name: 'search and filter every fleet key',
+			call: () =>
+				listAdminNSSKeys({
+					q: '10.0.4.0/24',
+					status: 'active',
+					expiringWithin: 30,
+					unused: true,
+					alerts: true,
+					after: 'nss_k7m4qp2x',
+					limit: 50
+				}),
+			method: 'GET',
+			url: '/api/admin/nss/keys?q=10.0.4.0%2F24&status=active&expiring_within=30&unused=1&alerts=1&after=nss_k7m4qp2x&limit=50'
 		},
 		{
 			name: 'list the stored accounts',

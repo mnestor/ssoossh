@@ -75,6 +75,7 @@ packages:
         NSSKeyStatus,
         NSSNotServedReason,
         NSSRotationBucket,
+        NSSSecretGeneration,
         PosixStatus
       } from './enums';
     type_mappings:
@@ -84,6 +85,7 @@ packages:
       model.NSSKeyStatus: "NSSKeyStatus"
       model.NSSKeyPermission: "NSSKeyPermission"
       model.NSSRotationBucket: "NSSRotationBucket"
+      model.NSSSecretGeneration: "NSSSecretGeneration"
       model.NSSEntryState: "NSSEntryState"
       model.NSSNotServedReason: "NSSNotServedReason"
       model.PosixStatus: "PosixStatus"

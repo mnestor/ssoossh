@@ -22,7 +22,8 @@
 	interface Props {
 		/** The question this group answers — "Type", "Status", "Outcome". */
 		label: string;
-		options: { value: string; label: string; icon: string }[];
+		/** icon may be left out when the words are the whole value (see FilterChip). */
+		options: { value: string; label: string; icon?: string }[];
 		/** The selected value. Each group carries its own "any" option, so
 		 *  there is no separate cleared state to represent. */
 		selected: string;

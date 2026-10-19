@@ -119,19 +119,42 @@ describe('NSS keys list', () => {
 		expect(screen.queryByTestId('nss-keys-new')).not.toBeInTheDocument();
 	});
 
-	it('should teach how to start when there are no keys and the caller may create them', async () => {
+	it('should teach how to start when no key is in the groups and the caller may create keys', async () => {
 		listOf([], true);
 		render(Page);
 
-		expect(await screen.findByTestId('nss-keys-empty')).toHaveTextContent('No NSS keys yet');
+		expect(await screen.findByTestId('nss-keys-empty')).toHaveTextContent(
+			'Create one key for each fleet of hosts'
+		);
 	});
 
-	it('should say keys come through a group when there are none and the caller may not create them', async () => {
+	it('should say keys come through a group when no key is in the groups', async () => {
 		listOf([], false);
 		render(Page);
 
 		expect(await screen.findByTestId('nss-keys-empty')).toHaveTextContent(
-			'No NSS keys are shared with you'
+			'No NSS keys in your groups'
+		);
+	});
+
+	it('should say who assigns keys when no key is in the groups and the caller holds no role', async () => {
+		listOf([], false);
+		render(Page);
+
+		expect(await screen.findByTestId('nss-keys-empty')).toHaveTextContent(
+			'An administrator assigns a key to a group.'
+		);
+	});
+
+	it('should point an auditor at every key when no key is in their groups', async () => {
+		session.user = userFixture({ is_auditor: true });
+		listOf([], false);
+		render(Page);
+		await screen.findByTestId('nss-keys-empty');
+
+		expect(screen.getByRole('link', { name: 'All NSS keys' })).toHaveAttribute(
+			'href',
+			'/admin/nss/keys'
 		);
 	});
 

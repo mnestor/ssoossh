@@ -22,7 +22,7 @@ func seedNSSUsage(t *testing.T, db *gorm.DB, keyID, ip string, generation int, f
 	t.Helper()
 
 	row := model.NSSKeyUsage{
-		KeyID: keyID, SourceIP: ip, Generation: generation,
+		KeyID: keyID, SourceIP: ip, SourceIPKey: NSSAddressKey(ip), Generation: generation,
 		Day:     time.Date(lastSeen.Year(), lastSeen.Month(), lastSeen.Day(), 0, 0, 0, 0, time.UTC),
 		Lookups: lookups, FirstSeen: firstSeen, LastSeen: lastSeen,
 	}

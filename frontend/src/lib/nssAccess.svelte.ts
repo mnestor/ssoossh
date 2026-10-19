@@ -4,13 +4,13 @@ import { needsKeyCheck } from '#lib/nss.js';
 
 /**
  * NSSAccess answers whether the signed-in viewer holds any fleet key through
- * a key's group, which is what decides the rail's NSS keys entry for someone
- * with no role that shows it anyway (see showNSSKeys in #lib/nss).
+ * a key's group, which is what decides the rail's NSS keys entry for every
+ * viewer (see showNSSKeys in #lib/nss).
  *
  * The session does not carry it, so the rail asks /api/nss/keys once per
- * identity, and only for a viewer whose roles leave the answer open. A
- * failed read hides the entry: the page is still reachable by its address,
- * and a rail entry that can only show an error is worse than none.
+ * identity wherever NSS is on, and again after a key is created (refresh).
+ * A failed read hides the entry: the page is still reachable by its
+ * address, and a rail entry that can only show an error is worse than none.
  */
 export class NSSAccess {
 	/** True once the key list came back non-empty for the current identity. */
@@ -40,6 +40,12 @@ export class NSSAccess {
 					this.hasKeys = false;
 				}
 			});
+	}
+
+	/** refresh asks again for this viewer, after something may have changed the answer. */
+	refresh(user: CurrentUser | null): void {
+		this.checkedFor = null;
+		this.check(user);
 	}
 
 	/** clear forgets the answer, for a sign-out or a test. */

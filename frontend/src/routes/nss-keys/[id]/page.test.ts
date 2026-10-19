@@ -105,6 +105,16 @@ describe('NSS key detail', () => {
 			name: 'the carried value has a fragment',
 			search: `?back=${encodeURIComponent('?status=revoked#x')}`,
 			want: '/nss-keys'
+		},
+		{
+			name: 'the key was opened from the admin list with its filters',
+			search: `?from=admin&back=${encodeURIComponent('?q=10.0.4.0%2F24&unused=1')}`,
+			want: '/admin/nss/keys?q=10.0.4.0%2F24&unused=1'
+		},
+		{
+			name: 'the from value is not one the page knows',
+			search: '?from=https://elsewhere.example/',
+			want: '/nss-keys'
 		}
 	];
 	for (const { name, search, want } of backCases) {
@@ -114,6 +124,20 @@ describe('NSS key detail', () => {
 			await loaded();
 
 			expect(screen.getByTestId('nss-key-back')).toHaveAttribute('href', want);
+		});
+	}
+
+	const backLabels = [
+		{ name: 'it was opened from the keys a reader manages', search: '', want: 'NSS keys' },
+		{ name: 'it was opened from the admin list', search: '?from=admin', want: 'All NSS keys' }
+	];
+	for (const { name, search, want } of backLabels) {
+		it(`should name the back chip ${want} when ${name}`, async () => {
+			resetFakePage(`http://localhost/nss-keys/nss_k7m4qp2x${search}`);
+			serve(keyFixture());
+			await loaded();
+
+			expect(screen.getByTestId('nss-key-back')).toHaveTextContent(want);
 		});
 	}
 

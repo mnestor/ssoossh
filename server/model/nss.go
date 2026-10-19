@@ -85,12 +85,17 @@ type NSSKeyUsage struct {
 	// SourceIP is the connection's address as the server observed it.
 	SourceIP string `gorm:"column:source_ip;primaryKey"`
 
+	// SourceIPKey is SourceIP as its 16-byte IPv6 form, an IPv4 address
+	// IPv4-mapped, for the admin key list's address and range search; nil
+	// when SourceIP does not parse. Derived from SourceIP by the writer.
+	SourceIPKey []byte `gorm:"column:source_ip_key;index:idx_nss_key_usage_source_day,priority:1"`
+
 	// Generation is the generation the host presented: current or
 	// current-1.
 	Generation int `gorm:"column:generation;primaryKey"`
 
 	// Day is midnight UTC of the day the counts belong to.
-	Day time.Time `gorm:"column:day;primaryKey;index:idx_nss_key_usage_key_day,priority:2;index:idx_nss_key_usage_day"`
+	Day time.Time `gorm:"column:day;primaryKey;index:idx_nss_key_usage_key_day,priority:2;index:idx_nss_key_usage_day;index:idx_nss_key_usage_source_day,priority:2"`
 
 	Lookups int64 `gorm:"column:lookups"`
 	Misses  int64 `gorm:"column:misses"`

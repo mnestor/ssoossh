@@ -1,8 +1,10 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"net/netip"
 	"testing"
 	"time"
 
@@ -115,6 +117,73 @@ func TestNSSUsage_ShouldAggregateAnsweredLookupsWhenTheyAreFlushed(t *testing.T)
 	}
 	if again := usageRows(t, f.db); len(again) != 3 || again[0].Lookups != 4 {
 		t.Errorf("an empty flush changed the rows: %+v", again)
+	}
+}
+
+// key16 is an address's 16-byte form, for the expected bounds.
+func key16(t *testing.T, addr string) []byte {
+	t.Helper()
+	parsed, err := netip.ParseAddr(addr)
+	if err != nil {
+		t.Fatalf("parse %q: %v", addr, err)
+	}
+	key := parsed.As16()
+	return key[:]
+}
+
+func TestNSSAddressKey_ShouldGiveEachAddressOneKeyWhenItIsWrittenEitherWay(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		addr string
+		want []byte
+	}{
+		{name: "should map an IPv4 address into the IPv4-mapped range when it is stored", addr: "10.0.4.7", want: key16(t, "::ffff:10.0.4.7")},
+		{name: "should give an IPv4-mapped address the IPv4 address's key when it is stored", addr: "::ffff:10.0.4.7", want: key16(t, "::ffff:10.0.4.7")},
+		{name: "should keep an IPv6 address's own bytes when it is stored", addr: "2001:db8::1", want: key16(t, "2001:db8::1")},
+		{name: "should drop the zone when an IPv6 address carries one", addr: "fe80::1%eth0", want: key16(t, "fe80::1")},
+		{name: "should trim blanks when the address has them", addr: " 192.0.2.1 ", want: key16(t, "::ffff:192.0.2.1")},
+		{name: "should give no key when the address does not parse", addr: "unknown", want: nil},
+		{name: "should give no key when the address is empty", addr: "", want: nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := NSSAddressKey(tt.addr); !bytes.Equal(got, tt.want) {
+				t.Errorf("NSSAddressKey(%q) = %x, want %x", tt.addr, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNSSUsage_ShouldStoreTheAddressKeyWhenARowIsFlushed(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		ip   string
+		want []byte
+	}{
+		{name: "should store the IPv4-mapped form when the address is IPv4", ip: "10.0.4.7", want: NSSAddressKey("::ffff:10.0.4.7")},
+		{name: "should store the address's own bytes when it is IPv6", ip: "2001:db8::1", want: NSSAddressKey("2001:db8::1")},
+		{name: "should store no key when the observed address does not parse", ip: "not-an-address", want: nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newNSSUsageFixture(t, nssLookupTestConfig())
+			f.usage.Observe(t.Context(), f.verified(tt.ip, 1, NSSResultHit))
+			if err := f.usage.Flush(t.Context()); err != nil {
+				t.Fatalf("Flush: %v", err)
+			}
+			rows := usageRows(t, f.db)
+			if len(rows) != 1 || !bytes.Equal(rows[0].SourceIPKey, tt.want) {
+				t.Errorf("rows = %+v, want one with source_ip_key %x", rows, tt.want)
+			}
+		})
 	}
 }
 

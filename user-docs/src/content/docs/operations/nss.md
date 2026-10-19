@@ -378,7 +378,9 @@ what that exposes.
 
 | Action | Endpoint | Who | Audit |
 | --- | --- | --- | --- |
-| List, view | `GET /api/nss/keys`, `GET /api/nss/keys/:id` | key admins, admin, SOC and auditors see every key; members of a key's group see that key | |
+| List the keys your groups manage | `GET /api/nss/keys` | anyone: the keys whose group is one of the caller's groups, whatever their roles | |
+| List every key | `GET /api/admin/nss/keys` | auditors, SOC and admin | |
+| View | `GET /api/nss/keys/:id` | key admins, admin, SOC and auditors see every key; members of a key's group see that key | |
 | Create | `POST /api/nss/keys` | key admins | `nss.key_created` |
 | Edit description, notification address | `PATCH /api/nss/keys/:id` | key admins, members of the key's group | `nss.key_updated` |
 | Assign the managing group | `PATCH /api/nss/keys/:id` (`group_name`) | key admins | `nss.key_updated` |
@@ -393,6 +395,49 @@ members of a key's group are not admins. Each key in a response carries a
 the caller. A revoked key is terminal: every change to it is 409. The web UI
 gives fleet keys pages of their own, outside the admin area, built on these
 endpoints.
+
+### Finding a key
+
+Two lists, for two questions.
+
+- **NSS keys** (`/nss-keys`, a top-level rail entry) is the keys you manage:
+  those whose group is one of your groups. It is the same for every role, an
+  admin's included, and the rail shows it only when the list is not empty.
+  A key with no group is on neither person's list.
+- **All NSS keys** (`/admin/nss/keys`, in the rail's admin group, for
+  auditors, SOC and admins) is every key, whoever manages it. A row opens the
+  key's own page, which keeps every action your role allows; its back chip
+  returns to the list with the filters you had.
+
+All NSS keys has one search field:
+
+- Text matches the key's name or group, or its creator's username or
+  email, ignoring case.
+- An IP address (IPv4 or IPv6; an IPv4-mapped one is read as IPv4) or a CIDR
+  range searches the usage instead: the keys a host used from that address
+  or range within
+  [`nss.usage_retention`](/ssoossh/reference/config/nss/#usage_retention).
+  Each key shows up to five of the matching addresses, newest first, with
+  when it was last used from each and whether that lookup presented the
+  current or the previous secret. The line under the field names the
+  address or range searched and the window.
+- A term shaped like an address that is not one (`10.0.4`, `10.0.4.0/33`)
+  is refused with the reason and searches nothing, rather than being
+  searched as text and quietly matching no key.
+- The address searched is the one the server observed for each lookup:
+  for a host behind a reverse proxy listed in
+  [`http.trusted_proxies`](/ssoossh/reference/config/http/#trusted_proxies),
+  the forwarded address, otherwise the connection's. An address that used
+  a key before the retention window, or that reaches the server through a
+  proxy it does not trust, does not match.
+
+Beside it: a status filter (active, expired, revoked), and three triage
+toggles: **Expiring** (active keys expiring within 7, 30 or 90 days),
+**Unused 30 days** (no lookup in 30 days, never-used keys included) and
+**Alerts 7 days** (a miss rate or key source alert in the last week). Each
+row shows the creator, the status and expiry, the distinct source
+addresses of the last 7 days and the last lookup. Every filter is in the
+page's address, so a link opens the same view.
 
 ### Roles
 

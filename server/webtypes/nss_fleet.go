@@ -169,3 +169,84 @@ type NSSRotationReportResponse struct {
 	Gone          int                            `json:"gone" validate:"required"`
 	Rows          []NSSRotationReportRowResponse `json:"rows" validate:"required"`
 }
+
+// The admin key list, GET /api/admin/nss/keys (auditor and above): every
+// fleet key, whoever manages it, with how hosts use it. Read only; a row
+// opens the key's own page, /api/nss/keys/{id}, which keeps every action.
+
+// NSSAdminKeysResponse is one page of the admin key list, by name then id.
+type NSSAdminKeysResponse struct {
+	Keys []NSSAdminKeyResponse `json:"keys" validate:"required"`
+	// Total counts every key matching the filters, across all pages.
+	Total int64 `json:"total" validate:"required"`
+	// NextCursor is the after for the following page, absent on the last.
+	NextCursor *string `json:"next_cursor,omitempty"`
+	// AddressSearch is q as the server read it when it is an address or a
+	// range, normalised ("10.0.4.7/24" is "10.0.4.0/24", an IPv4-mapped
+	// address is written as IPv4); absent for a text search.
+	AddressSearch string `json:"address_search,omitempty"`
+	// UsageRetentionSeconds is nss.usage_retention: how far back an
+	// address search reaches, since older usage is not kept. 0 keeps
+	// every row.
+	UsageRetentionSeconds int `json:"usage_retention_seconds" validate:"required"`
+}
+
+// NSSAdminKeyResponse is one key on the admin list. Never a secret or a
+// secret's hash.
+type NSSAdminKeyResponse struct {
+	ID        string `json:"id" validate:"required"`
+	Name      string `json:"name" validate:"required"`
+	GroupName string `json:"group_name" validate:"required"`
+	// Status is derived from the revocation and expiry.
+	Status            model.NSSKeyStatus `json:"status" validate:"required"`
+	CurrentGeneration int                `json:"current_generation" validate:"required"`
+	// ExpiresAt is absent for a key that never expires.
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	// PreviousExpiresAt is when the previous secret stops being accepted,
+	// absent when there is none.
+	PreviousExpiresAt *time.Time `json:"previous_expires_at,omitempty"`
+	// RevokedAt is absent while the key is live.
+	RevokedAt *time.Time            `json:"revoked_at,omitempty"`
+	CreatedAt time.Time             `json:"created_at" validate:"required"`
+	Creator   NSSKeyCreatorResponse `json:"creator" validate:"required"`
+	// Hosts7d counts the distinct source addresses that used the key in
+	// the last 7 days.
+	Hosts7d int64 `json:"hosts_7d" validate:"required"`
+	// LastSeenAt is the last lookup any host made with the key, from the
+	// retained usage; absent for a key no host has used.
+	LastSeenAt *time.Time `json:"last_seen_at,omitempty"`
+	// MissRateAlertAt and KeySourceAlertAt are when those alerts last
+	// fired for the key, absent unless within the last 7 days.
+	MissRateAlertAt  *time.Time `json:"miss_rate_alert_at,omitempty"`
+	KeySourceAlertAt *time.Time `json:"key_source_alert_at,omitempty"`
+	// Matched is, for an address search only, the addresses in the search
+	// the key was used from.
+	Matched *NSSKeyMatchedUseResponse `json:"matched,omitempty"`
+}
+
+// NSSKeyCreatorResponse is who created a key, as the users table has them
+// now. Exists is false when no account has the id any more; username and
+// email are then empty, and the id still names who it was.
+type NSSKeyCreatorResponse struct {
+	UserID   string `json:"user_id" validate:"required"`
+	Username string `json:"username" validate:"required"`
+	Email    string `json:"email" validate:"required"`
+	Exists   bool   `json:"exists" validate:"required"`
+}
+
+// NSSKeyMatchedUseResponse is what an address search found for one key: up
+// to 5 addresses, the most recently seen first, and how many in all.
+type NSSKeyMatchedUseResponse struct {
+	Addresses []NSSKeyAddressUseResponse `json:"addresses" validate:"required"`
+	Total     int64                      `json:"total" validate:"required"`
+}
+
+// NSSKeyAddressUseResponse is one address an address search matched.
+type NSSKeyAddressUseResponse struct {
+	SourceIP string `json:"source_ip" validate:"required"`
+	// LastSeen is the key's last lookup from the address in the window.
+	LastSeen   time.Time `json:"last_seen" validate:"required"`
+	Generation int       `json:"generation" validate:"required"`
+	// Secret is which of the key's secrets that lookup presented.
+	Secret model.NSSSecretGeneration `json:"secret" validate:"required"`
+}

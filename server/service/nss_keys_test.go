@@ -146,7 +146,7 @@ func TestNSSKeys_ShouldGrantEachRoleItsPermissionsWhenAKeyIsViewed(t *testing.T)
 	}
 }
 
-func TestNSSKeys_ShouldListOnlyTheKeysACallerMayViewWhenListing(t *testing.T) {
+func TestNSSKeys_ShouldListOnlyTheKeysTheCallersGroupsManageWhenListing(t *testing.T) {
 	t.Parallel()
 
 	db := testdb.New(t)
@@ -161,11 +161,13 @@ func TestNSSKeys_ShouldListOnlyTheKeysACallerMayViewWhenListing(t *testing.T) {
 		caller *Identity
 		want   []string
 	}{
-		{name: "should list every key when the caller is an admin", caller: nssAdmin, want: []string{"bastions", "db fleet", "web fleet"}},
-		{name: "should list every key when the caller holds the key admin role", caller: nssKeyAdmin, want: []string{"bastions", "db fleet", "web fleet"}},
-		{name: "should list every key when the caller is SOC", caller: nssSOC, want: []string{"bastions", "db fleet", "web fleet"}},
-		{name: "should list every key when the caller is an auditor", caller: nssAuditor, want: []string{"bastions", "db fleet", "web fleet"}},
+		{name: "should list nothing when the caller is an admin in no key's group", caller: nssAdmin, want: []string{}},
+		{name: "should list nothing when the caller holds the key admin role in no key's group", caller: nssKeyAdmin, want: []string{}},
+		{name: "should list nothing when the caller is SOC in no key's group", caller: nssSOC, want: []string{}},
+		{name: "should list nothing when the caller is an auditor in no key's group", caller: nssAuditor, want: []string{}},
 		{name: "should list only the group's key when the caller is in one key's group", caller: nssMember, want: []string{"web fleet"}},
+		{name: "should list the group's key when an admin is also in that group", caller: &Identity{Subject: "sub-admin", Groups: []string{"admins", "db-admins"}}, want: []string{"db fleet"}},
+		{name: "should list every group's keys by name when the caller is in several", caller: &Identity{Subject: "sub-member", Groups: []string{"web-admins", "db-admins"}}, want: []string{"db fleet", "web fleet"}},
 		{name: "should list nothing when the caller holds no role and no key's group", caller: nssPlain, want: []string{}},
 		{name: "should list nothing when the caller has no groups at all", caller: &Identity{Subject: "sub-none"}, want: []string{}},
 	}
@@ -1064,7 +1066,7 @@ func TestNSSKeys_ShouldReturnTheDatabaseErrorWhenTheKeysActivityCannotBeRead(t *
 			if err := db.Exec("DROP TABLE " + tt.table).Error; err != nil {
 				t.Fatalf("drop %s: %v", tt.table, err)
 			}
-			if views, err := keys.List(t.Context(), nssAdmin); err == nil {
+			if views, err := keys.List(t.Context(), nssMember); err == nil {
 				t.Errorf("List = %d keys, want the error reading %s", len(views), tt.table)
 			}
 		})

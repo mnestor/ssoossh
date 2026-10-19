@@ -132,6 +132,22 @@ func fullFixtures() map[string]any {
 		"create_nss_key":   webtypes.CreateNSSKeyBody{Name: "web fleet", Description: nssDescription, GroupName: nssGroup, ExpiresAt: &nssKeyExpires, NotificationEmail: &nssNotificationEmail},
 		"update_nss_key":   webtypes.UpdateNSSKeyBody{Description: &nssDescription, NotificationEmail: &nssNotificationEmail, GroupName: &nssGroup},
 		"nss_key_usage":    webtypes.NSSKeyUsageResponse{Rows: []webtypes.NSSKeyUsageRowResponse{{SourceIP: "192.0.2.10", Generation: 2, Day: time.Date(2026, 10, 17, 0, 0, 0, 0, time.UTC), Lookups: 1200, Misses: 7, FirstSeen: keyRotatedAt, LastSeen: keyRotatedAt.Add(time.Hour)}}, Total: 41, NextCursor: &usageCursor},
+		"nss_admin_keys": webtypes.NSSAdminKeysResponse{
+			Keys: []webtypes.NSSAdminKeyResponse{{
+				ID: "nss_k7m4qp2x", Name: "web fleet", GroupName: nssGroup, Status: model.NSSKeyStatusRevoked,
+				CurrentGeneration: 2, ExpiresAt: &nssKeyExpires, PreviousExpiresAt: &keyPreviousExpires,
+				RevokedAt: &keyRotatedAt, CreatedAt: issuedAt,
+				Creator: webtypes.NSSKeyCreatorResponse{
+					UserID: "3c2b1a09-8f7e-4d6c-b5a4-938271605f4e", Username: "kim", Email: "kim@example.org", Exists: true,
+				},
+				Hosts7d: 14, LastSeenAt: &keyRotatedAt, MissRateAlertAt: &keyRotatedAt, KeySourceAlertAt: &keyRotatedAt,
+				Matched: &webtypes.NSSKeyMatchedUseResponse{
+					Addresses: []webtypes.NSSKeyAddressUseResponse{{SourceIP: "10.0.4.7", LastSeen: keyRotatedAt, Generation: 1, Secret: model.NSSSecretGenerationPrevious}},
+					Total:     9,
+				},
+			}},
+			Total: 42, NextCursor: &usageCursor, AddressSearch: "10.0.4.0/24", UsageRetentionSeconds: 7776000,
+		},
 		"nss_rotation_report": webtypes.NSSRotationReportResponse{
 			KeyID: "nss_k7m4qp2x", CurrentGeneration: 2, RotatedAt: &keyRotatedAt, PreviousExpiresAt: &keyPreviousExpires,
 			GraceDaysLeft: 29, Switched: 40, NotSwitched: 2, Gone: 1,
@@ -520,6 +536,7 @@ func zeroFixtures() map[string]any {
 		"update_nss_key":               webtypes.UpdateNSSKeyBody{},
 		"nss_key_usage":                webtypes.NSSKeyUsageResponse{},
 		"nss_rotation_report":          webtypes.NSSRotationReportResponse{},
+		"nss_admin_keys":               webtypes.NSSAdminKeysResponse{},
 	}
 }
 

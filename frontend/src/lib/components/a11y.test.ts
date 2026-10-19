@@ -503,11 +503,15 @@ describe('component accessibility roster', () => {
 		//
 		// NSSEntryHistory: the same; historySuite (#lib/testing/history) runs
 		// axe over it with events loaded on both NSS detail pages.
+		//
+		// NSSKeyAdminList: the same, it fetches on mount; its own suite runs
+		// axe over it with rows loaded and with the search field's error.
 		covered.add('ConsentModal');
 		covered.add('NSSDirectoryPanels');
 		covered.add('NSSEntryList');
 		covered.add('NSSStoredEntries');
 		covered.add('NSSEntryHistory');
+		covered.add('NSSKeyAdminList');
 		covered.add('ApprovalView');
 		covered.add('AdminServiceCodeDetail');
 

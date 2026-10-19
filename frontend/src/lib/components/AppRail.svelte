@@ -7,7 +7,14 @@
 	import RailGroup from './RailGroup.svelte';
 	import RailItem from './RailItem.svelte';
 	import RailUserMenu from './RailUserMenu.svelte';
-	import { adminNavFor, isAdminRoute, isCurrent, nssKeysNav, primaryNav } from '#lib/nav.js';
+	import {
+		adminNavFor,
+		currentHref,
+		isAdminRoute,
+		isCurrent,
+		nssKeysNav,
+		primaryNav
+	} from '#lib/nav.js';
 	import { showNSSKeys } from '#lib/nss.js';
 	import { nssAccess } from '#lib/nssAccess.svelte.js';
 	import { rail } from '#lib/rail.svelte.js';
@@ -45,9 +52,10 @@
 
 	const collapsed = $derived(forceCollapsed ?? rail.collapsed);
 
-	// NSS keys shows where the server serves them, to the roles that see
-	// every key, and to anyone a key's group names; the last needs one read
-	// of the key list, which nssAccess makes once per identity.
+	// NSS keys shows where the server serves them, to anyone a key's group
+	// names, whatever their roles: the list is the keys their groups
+	// manage. That needs one read of the key list, which nssAccess makes
+	// once per identity. Every key is in the admin group instead.
 	$effect(() => nssAccess.check(session.user));
 	const nssItem = $derived(showNSSKeys(session.user, nssAccess.hasKeys) ? nssKeysNav() : null);
 	const isAuditor = $derived(session.user?.is_auditor ?? false);
@@ -56,6 +64,14 @@
 	// and the NSS directory wherever the server does not serve NSS.
 	const adminItems = $derived(
 		adminNavFor(session.user?.is_admin ?? false, session.user?.nss_enabled ?? false)
+	);
+	// One admin row is current: the NSS keys page sits under the NSS
+	// directory's /admin/nss and must not light both.
+	const adminCurrent = $derived(
+		currentHref(
+			adminItems.map((item) => item.href),
+			page.url.pathname
+		)
 	);
 
 	// The identity is the label on its own row rather than a heading above
@@ -201,7 +217,7 @@
 						href={item.href}
 						label={item.label}
 						icon={item.icon}
-						current={isCurrent(item.href, page.url.pathname)}
+						current={item.href === adminCurrent}
 						{collapsed}
 						onnavigate={navigated}
 					/>

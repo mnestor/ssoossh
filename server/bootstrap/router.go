@@ -544,7 +544,7 @@ func (a *app) registerRoutes(r *gin.Engine) error {
 	}
 	controller.NewLDAPAdminController(apiGroup, a.config, a.db, ldapDiagnostics, nssSync,
 		sessionAuth, adminAuth, csrf, probeRateLimit, a.svc.audit)
-	controller.NewNSSAdminController(apiGroup, a.db, nssAdmin, a.nssViewer(), sessionAuth, adminAuth, auditorAuth, csrf)
+	controller.NewNSSAdminController(apiGroup, a.db, nssAdmin, a.nssViewer(), a.svc.nssKeys, sessionAuth, adminAuth, auditorAuth, csrf)
 	controller.NewIdentityEchoController(apiGroup, a.svc.auth, sessionAuth, adminAuth, csrf)
 
 	// The diagnostics run makes the server open an outbound connection to

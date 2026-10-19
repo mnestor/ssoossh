@@ -217,18 +217,25 @@ describe('showNSSKeys', () => {
 			check: false
 		},
 		{
-			name: 'a fleet key admin',
+			name: 'a fleet key admin whose groups manage no key',
 			user: { ...base, is_nss_key_admin: true },
 			hasKeys: false,
-			show: true,
-			check: false
+			show: false,
+			check: true
 		},
 		{
-			name: 'an auditor',
+			name: 'an auditor whose groups manage no key',
 			user: { ...base, is_auditor: true },
 			hasKeys: false,
+			show: false,
+			check: true
+		},
+		{
+			name: 'an auditor whose groups manage a key',
+			user: { ...base, is_auditor: true },
+			hasKeys: true,
 			show: true,
-			check: false
+			check: true
 		},
 		{
 			name: 'a key group member',
