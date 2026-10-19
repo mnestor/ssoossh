@@ -177,6 +177,9 @@ func (a *app) initNSSServices(svc *services) error {
 
 	keys, err := service.NewNSSKeyService(a.config, a.db, meter)
 	if err != nil {
+		// not covered: fails only on a crypto/rand failure or a gauge
+		// the meter refuses, and its name and unit are constants that pass
+		// (see NewNSSKeyService).
 		return err
 	}
 	keys.SetAuditor(svc.audit)
@@ -197,6 +200,9 @@ func (a *app) initNSSServices(svc *services) error {
 
 	usage, err := service.NewNSSUsageService(a.config, a.db, keys, meter)
 	if err != nil {
+		// not covered: fails only on an instrument the meter refuses, and
+		// the names and units are constants that pass (see
+		// NewNSSUsageService).
 		return err
 	}
 	usage.SetAuditor(svc.audit)

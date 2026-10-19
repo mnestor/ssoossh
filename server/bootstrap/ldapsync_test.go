@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -92,6 +93,19 @@ func TestOpenDirectorySync_ShouldRefuseWhatItCannotRunAgainst(t *testing.T) {
 			c.Mail.SMTP.TLS = config.MailTLSRequired
 			c.Mail.SMTP.CAFile = filepath.Join(t.TempDir(), "missing-ca.pem")
 		}, wantErr: "mail relay"},
+		{name: "should refuse an NSS filter that does not parse", migrate: true, mutate: func(c *config.Config) {
+			setNSSDirectory(c)
+			c.NSS.GroupFilter = "(objectClass=posixGroup"
+		}, wantErr: "not a valid LDAP filter"},
+		{name: "should refuse a database it cannot open", mutate: func(c *config.Config) {
+			// A path under a regular file: no directory can be made there,
+			// root or not.
+			file := filepath.Join(t.TempDir(), "not-a-dir")
+			if err := os.WriteFile(file, nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			c.DB.Provider, c.DB.Connection = config.DBProviderSqlite, filepath.Join(file, "ssoossh.db")
+		}, wantErr: "failed to connect to database"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -148,6 +162,56 @@ func TestOpenDirectorySync_ShouldRunAPassAgainstTheServersDatabase(t *testing.T)
 	}
 	if !strings.Contains(console.String(), "ldap.sync_triggered") {
 		t.Errorf("the audit line did not reach the console:\n%s", console.String())
+	}
+}
+
+// With NSS on, a manual pass runs the NSS full sync after the LDAP pass,
+// as POST /api/admin/ldap/sync does. The directory is a closed port, so the
+// full sync fails fast, and that failure is reported, not swallowed.
+func TestOpenDirectorySync_ShouldRunTheNSSFullSyncWhenNSSIsOn(t *testing.T) {
+	saveSlogDefault(t)
+
+	c := directorySyncTestConfig(t)
+	c.LDAP.URL = "ldaps://127.0.0.1:1"
+	setNSSDirectory(c)
+	migrateTestDatabase(t, c)
+
+	d, err := OpenDirectorySync(c, &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("OpenDirectorySync() error = %v", err)
+	}
+	result := d.Run(context.Background(), service.ManualSyncRequest{Actor: service.AuditSubjectForCLI()})
+	if err := d.Close(context.Background()); err != nil {
+		t.Errorf("Close() error = %v", err)
+	}
+
+	if !result.NSSRan || result.NSSErr == nil {
+		t.Errorf("result = %+v, want the NSS full sync run and its connection failure reported", result)
+	}
+}
+
+// Close runs every closer, newest first, and joins their errors, so one
+// failing release does not leave the rest open.
+func TestDirectorySyncClose_ShouldRunEveryCloserAndJoinTheirErrors(t *testing.T) {
+	t.Parallel()
+
+	first, last := errors.New("close the logs"), errors.New("close the database")
+	var order []string
+	d := &DirectorySync{closers: []func(context.Context) error{
+		func(context.Context) error { order = append(order, "logs"); return first },
+		func(context.Context) error { order = append(order, "audit"); return nil },
+		func(context.Context) error { order = append(order, "database"); return last },
+	}}
+
+	err := d.Close(context.Background())
+	if !errors.Is(err, first) || !errors.Is(err, last) {
+		t.Errorf("Close() error = %v, want both closer errors joined", err)
+	}
+	if strings.Join(order, ",") != "database,audit,logs" {
+		t.Errorf("closers ran in order %v, want newest first", order)
+	}
+	if d.closers != nil {
+		t.Error("Close() left the closers to run again")
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"crypto/rand"
 	"encoding/pem"
 	"log/slog"
+	"strings"
 	"testing"
 
 	"golang.org/x/crypto/ssh"
@@ -98,5 +99,20 @@ func TestInitServices_ShouldSucceedWithInvalidSSHKeyForAPIMode(t *testing.T) {
 	}
 	if svc.ca == nil {
 		t.Fatal("expected a non-nil CAService")
+	}
+}
+
+// A bad NSS filter is a startup error with its own message, raised before
+// any of the concurrent constructors runs (so no OIDC provider is needed).
+func TestInitServices_ShouldFailWhenAnNSSFilterDoesNotParse(t *testing.T) {
+	t.Parallel()
+
+	c := &config.Config{}
+	setNSSDirectory(c)
+	c.NSS.UserFilter = "(objectClass=posixAccount"
+	a := &app{config: c}
+
+	if _, err := a.initServices(); err == nil || !strings.Contains(err.Error(), "not a valid LDAP filter") {
+		t.Errorf("initServices() error = %v, want the NSS filter refused", err)
 	}
 }

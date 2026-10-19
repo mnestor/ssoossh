@@ -6,7 +6,8 @@
 //	setup     write the server's TLS certificate and key, its SPKI pin and
 //	          an SSH CA key into a directory
 //	oidc      serve a loopback OIDC provider that signs in whoever submits
-//	          its form, so ssoosshd can start and a person can log in
+//	          its form, so ssoosshd can start and a person can log in; it
+//	          redirects only to -redirect-uri, as a real provider would
 //	login     sign a person in to ssoosshd through that provider
 //	seed-key  write a fleet key row and the daemon's key file
 //	revoke-key revoke a fleet key in the database

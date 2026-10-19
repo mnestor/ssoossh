@@ -145,6 +145,8 @@ func (a *app) registerNSSDirectoryJobs(ctx context.Context) error {
 			continue
 		}
 		if err := a.scheduler.RegisterJob(ctx, job.name, gocron.DurationJob(job.interval), job.run, service.RegisterJobOpts{}); err != nil {
+			// not covered: RegisterJob fails only on a nil context or an
+			// interval gocron rejects, and the interval here is positive.
 			return fmt.Errorf("failed to register %s: %w", job.name, err)
 		}
 		slog.DebugContext(ctx, "registered an NSS directory job",
@@ -168,12 +170,16 @@ func (a *app) registerNSSIDChangeMailJobs(ctx context.Context) error {
 	nss := a.svc.nss
 	if err := a.scheduler.RegisterJob(ctx, nssIDChangeMailJobName, gocron.DurationJob(service.NSSIDChangeMailInterval),
 		nss.SweepPendingIDChangeMail, service.RegisterJobOpts{}); err != nil {
+		// not covered: RegisterJob fails only on a nil context or an
+		// interval gocron rejects, and the interval here is positive.
 		return fmt.Errorf("failed to register the NSS id change mail: %w", err)
 	}
 	weekly := gocron.WeeklyJob(1, gocron.NewWeekdays(service.NSSIDChangeReminderWeekday),
 		gocron.NewAtTimes(gocron.NewAtTime(service.NSSIDChangeReminderHour, 0, 0)))
 	if err := a.scheduler.RegisterJob(ctx, nssIDChangeReminderJobName, weekly,
 		nss.SweepPendingIDChangeReminder, service.RegisterJobOpts{}); err != nil {
+		// not covered: RegisterJob fails only on a nil context or a
+		// definition gocron rejects, and this weekly one is a constant.
 		return fmt.Errorf("failed to register the NSS id change reminder: %w", err)
 	}
 	return nil
@@ -204,6 +210,8 @@ func (a *app) registerNSSKeyJobs(ctx context.Context) error {
 	if a.config.NSS.UsageRetention > 0 {
 		if err := a.scheduler.RegisterJob(ctx, nssUsagePruneJobName, gocron.DurationJob(nssHourly),
 			a.svc.nssUsage.PruneUsage, service.RegisterJobOpts{}); err != nil {
+			// not covered: RegisterJob fails only on a nil context or an
+			// interval gocron rejects, and the interval here is positive.
 			return fmt.Errorf("failed to register the NSS usage prune: %w", err)
 		}
 	}
@@ -214,12 +222,16 @@ func (a *app) registerNSSKeyJobs(ctx context.Context) error {
 	if lead := a.config.Mail.ExpiryReminderLead; lead > 0 {
 		if err := a.scheduler.RegisterJob(ctx, nssKeyExpiryReminderJobName, gocron.DurationJob(expiryReminderInterval(lead)),
 			a.svc.nssKeys.SweepExpiryReminders, service.RegisterJobOpts{}); err != nil {
+			// not covered: RegisterJob fails only on a nil context or an
+			// interval gocron rejects, and the interval here is positive.
 			return fmt.Errorf("failed to register the NSS fleet key expiry reminder: %w", err)
 		}
 	}
 	if a.config.Mail.RotationQuietPeriod > 0 {
 		if err := a.scheduler.RegisterJob(ctx, nssRotationCleanupJobName, gocron.DurationJob(nssHourly),
 			a.svc.nssKeys.SweepRotationCleanup, service.RegisterJobOpts{}); err != nil {
+			// not covered: RegisterJob fails only on a nil context or an
+			// interval gocron rejects, and the interval here is positive.
 			return fmt.Errorf("failed to register the NSS fleet key rotation cleanup digest: %w", err)
 		}
 	}
