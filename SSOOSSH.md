@@ -38,7 +38,7 @@
   - Database: SQLite or Postgres, with migrations for both.
   - Roles come from OIDC groups named in config: admin implies SOC implies auditor. `admin.nss_key_group` (fleet key admin) is a fourth group outside that chain, which admin also implies. There is no admin role stored in the database.
   - The audit log is append-only and is swept by retention or row cap. Approval decisions record who, from where, when and what was granted.
-  - Email notifications cover certificates issued (user, PAM, console), service enrollments (created, redeemed, expiring, expired-code attempt), and an admin the directory sync disabled (always sent, no opt-out). Users set their own notification preferences.
+  - Email notifications cover certificates issued (user, PAM, console), service enrollments (created, redeemed, expiring, expired-code attempt), and an admin the directory sync disabled (always sent, no opt-out). Admins are also mailed when a directory sync holds a uid or gid change for their approval, with a weekly reminder while it waits; recipients come from each admin's last login. Users set their own notification preferences.
   - Each user has two detail levels, both stored on the server per user: one for the web UI and a separate one for email.
     - The defaults are set once, at the user's first login: advanced for SOC and admin, simplified for everyone else. A later change of groups never moves them.
     - The email level decides only whether a message adds its "Details" section (key IDs, serials, options). Users without a stored level, and a service code's notification address, get simplified.
@@ -76,7 +76,7 @@
     - has a principal picker that remembers the last approved set per browser
     - offers a simplified or advanced detail level, saved to the user's account on the server (not per browser) and shared with the certificate and service code pages
   - User pages: dashboard, certificate detail, own history, service codes (holders, redemption log), console code entry, preferences (notification kinds, email detail level, web detail level), account, NSS keys (the keys of your own groups: create with a one-time secret, rotate, revoke, usage, rotation report).
-  - Admin pages: users (audit timeline, disable and enable), audit, certificate history, service codes (expire), directory, diagnostics, config, identity echo.
+  - Admin pages: users (audit timeline, disable and enable), audit, certificate history, service codes (expire), directory (with pending id changes and collisions), NSS directory (stored accounts and groups, what hosts are served, per-entry history and the date each membership was added), NSS keys (every fleet key, searchable by name, group, creator or source address and range), diagnostics, config, identity echo.
 
   ### pam_ssoossh (separate C repo mnestor/ssoossh-pam; its docs live here)
   - PAM `auth` module with an ephemeral keypair. It shares the principals-map file format with `ssoossh host`.
