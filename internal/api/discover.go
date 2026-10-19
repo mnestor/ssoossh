@@ -27,8 +27,12 @@ type SRVResolver interface {
 // The zero value uses the system resolver.
 //
 // Discovery chooses where to connect, never whom to trust: a spoofed record
-// points at a server that then fails the TLS pin (see Config.TLSSPKIPins),
-// so nothing here needs DNSSEC to be safe.
+// points at a server that then fails the TLS pin (see Config.TLSSPKIPins)
+// or a private CA (Config.TLSCAFile), so with either nothing here needs
+// DNSSEC to be safe. Config.TLSSystemRoots alone, or a CA file holding a
+// public CA's roots, is not such a bound: the host name verified is the
+// one the record names, and a public CA certifies any name its owner
+// controls.
 type ServerDiscovery struct {
 	// Resolver answers the SRV query. Nil means net.DefaultResolver.
 	Resolver SRVResolver

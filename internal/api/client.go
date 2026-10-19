@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -85,26 +86,43 @@ type Config struct {
 	// SkipVerifySSL disables TLS certificate verification entirely.
 	// Intended for development / self-signed setups. TLS verification is
 	// otherwise the standard trust-chain and hostname checks against the
-	// system trust store, unless TLSCAFile or TLSSPKIPins pins it. It
-	// cannot be combined with either.
+	// system trust store, unless TLSCAFile, TLSSystemRoots or TLSSPKIPins
+	// pins it. It cannot be combined with any of them.
 	SkipVerifySSL bool
 
 	// TLSCAFile is a PEM bundle holding the only CAs a server certificate
-	// may chain to. Setting it, or TLSSPKIPins, switches the client to
-	// pinned mode: the system trust store is never consulted, TLS 1.3 is
-	// the minimum, and no proxy is used whatever the environment says, so
-	// nothing outside the configuration decides which server is trusted.
-	// Empty, with no pins, keeps the system trust store. ssoosshd-nss sets
-	// it from its tls_ca_file.
+	// may chain to. Setting it, TLSSystemRoots or TLSSPKIPins switches the
+	// client to pinned mode: TLS 1.3 is the minimum and no proxy is used
+	// whatever the environment says, so nothing outside the configuration
+	// decides which server is reached. With TLSCAFile the system trust
+	// store is never consulted, and SSL_CERT_FILE and SSL_CERT_DIR are
+	// ignored. Empty, with neither of the others, keeps the system trust
+	// store outside pinned mode. ssoosshd-nss sets it from its
+	// tls_ca_file.
 	TLSCAFile string
+
+	// TLSSystemRoots is pinned mode with the host's system trust store as
+	// the trust root: the chain and host name are verified against every
+	// CA the host trusts, TLS 1.3 is the minimum and no proxy is used. On
+	// Linux Go builds that store from the distribution's bundle, or from
+	// SSL_CERT_FILE and SSL_CERT_DIR when the process environment sets
+	// them. It cannot be combined with TLSCAFile or SkipVerifySSL; with
+	// TLSSPKIPins both must hold. ssoosshd-nss sets it for
+	// "tls_ca_file: system".
+	TLSSystemRoots bool
 
 	// TLSSPKIPins are base64 (standard encoding) SHA-256 digests of a
 	// server leaf certificate's DER SubjectPublicKeyInfo, the leaf must
-	// match one, and more than one lets a key rotate. With TLSCAFile the
-	// chain and host name are verified as well; without it the pin alone
-	// decides, as an SSH host key does. Setting any switches the client to
-	// pinned mode (see TLSCAFile).
+	// match one, and more than one lets a key rotate. With TLSCAFile or
+	// TLSSystemRoots the chain and host name are verified as well; without
+	// either the pin alone decides, as an SSH host key does. Setting any
+	// switches the client to pinned mode (see TLSCAFile).
 	TLSSPKIPins []string
+
+	// systemRoots loads the pool TLSSystemRoots trusts. Nil means
+	// x509.SystemCertPool; a test sets it so it never depends on the
+	// store of the host it runs on.
+	systemRoots func() (*x509.CertPool, error)
 
 	// KeyID and KeySecret are a fleet key, sent as the X-Ssoossh-Key-Id and
 	// X-Ssoossh-Key-Secret headers on the NSS lookups and on no other call.

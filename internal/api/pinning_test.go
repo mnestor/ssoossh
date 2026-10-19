@@ -4,7 +4,8 @@ package api
 // combination of settings, and then each combination is driven end to end
 // against httptest.NewTLSServer, whose certificate is self-signed and so
 // trusted only when pinned. A second, unrelated self-signed certificate
-// stands in for "some other CA".
+// stands in for "some other CA", and a pool built by the test stands in
+// for the host's system store (see rootsOf).
 
 import (
 	"context"
@@ -90,6 +91,29 @@ func unrelatedCA(t *testing.T) []byte {
 	return der
 }
 
+// rootsOf returns a system-roots loader yielding a pool of certs, which
+// stands in for the host's store so no test depends on the store of the
+// machine it runs on.
+func rootsOf(certs ...*x509.Certificate) func() (*x509.CertPool, error) {
+	return func() (*x509.CertPool, error) {
+		pool := x509.NewCertPool()
+		for _, c := range certs {
+			pool.AddCert(c)
+		}
+		return pool, nil
+	}
+}
+
+// parseDER parses a certificate the test built.
+func parseDER(t *testing.T, der []byte) *x509.Certificate {
+	t.Helper()
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatalf("parse certificate: %v", err)
+	}
+	return cert
+}
+
 // TestBuildTLSConfig checks the settings each combination produces.
 func TestBuildTLSConfig(t *testing.T) {
 	t.Parallel()
@@ -100,6 +124,7 @@ func TestBuildTLSConfig(t *testing.T) {
 	if err := os.WriteFile(emptyFile, []byte("no certificate here\n"), 0o600); err != nil {
 		t.Fatalf("write empty CA file: %v", err)
 	}
+	systemPool := rootsOf(ts.Certificate())
 
 	tests := []struct {
 		name             string
@@ -122,6 +147,13 @@ func TestBuildTLSConfig(t *testing.T) {
 		{name: "should refuse a pin when it is empty", cfg: Config{TLSSPKIPins: []string{""}}, wantErr: true},
 		{name: "should refuse a CA file when it does not exist", cfg: Config{TLSCAFile: filepath.Join(t.TempDir(), "absent.pem")}, wantErr: true},
 		{name: "should refuse a CA file when it holds no certificate", cfg: Config{TLSCAFile: emptyFile}, wantErr: true},
+		{name: "should trust the system store when asked", cfg: Config{TLSSystemRoots: true, systemRoots: systemPool}, wantRootCAs: true, wantPinnedDirect: true},
+		{name: "should check both when given the system store and pins", cfg: Config{TLSSystemRoots: true, systemRoots: systemPool, TLSSPKIPins: []string{otherPin()}}, wantRootCAs: true, wantVerifyHook: true, wantPinnedDirect: true},
+		{name: "should refuse skipping verification when the system store is set", cfg: Config{SkipVerifySSL: true, TLSSystemRoots: true, systemRoots: systemPool}, wantErr: true},
+		{name: "should refuse the system store when a CA file is set as well", cfg: Config{TLSCAFile: caFile, TLSSystemRoots: true, systemRoots: systemPool}, wantErr: true},
+		{name: "should refuse the system store when it cannot be loaded", cfg: Config{TLSSystemRoots: true, systemRoots: func() (*x509.CertPool, error) { return nil, errors.New("no store") }}, wantErr: true},
+		{name: "should refuse the system store when it holds no certificate", cfg: Config{TLSSystemRoots: true, systemRoots: rootsOf()}, wantErr: true},
+		{name: "should refuse the system store when the loader returns no pool", cfg: Config{TLSSystemRoots: true, systemRoots: func() (*x509.CertPool, error) { return nil, nil }}, wantErr: true},
 	}
 
 	for _, tt := range tests {
@@ -174,7 +206,10 @@ func TestNewClient_Pinning(t *testing.T) {
 	ts := caServer(t)
 	serverPin := pinOf(ts.Certificate())
 	serverCA := writePEM(t, ts.Certificate().Raw)
-	otherCA := writePEM(t, unrelatedCA(t))
+	otherDER := unrelatedCA(t)
+	otherCA := writePEM(t, otherDER)
+	serverRoots := rootsOf(ts.Certificate())
+	otherRoots := rootsOf(parseDER(t, otherDER))
 
 	tests := []struct {
 		name         string
@@ -190,6 +225,11 @@ func TestNewClient_Pinning(t *testing.T) {
 		{name: "should connect when the CA file and the pin both agree", cfg: Config{TLSCAFile: serverCA, TLSSPKIPins: []string{serverPin}}},
 		{name: "should refuse the server when the CA agrees and the pin does not", cfg: Config{TLSCAFile: serverCA, TLSSPKIPins: []string{otherPin()}}, wantErr: true, wantMismatch: true},
 		{name: "should refuse the server when the pin agrees and the CA does not", cfg: Config{TLSCAFile: otherCA, TLSSPKIPins: []string{serverPin}}, wantErr: true},
+		{name: "should connect when the system store holds the issuing CA", cfg: Config{TLSSystemRoots: true, systemRoots: serverRoots}},
+		{name: "should refuse the server when the system store does not hold its CA", cfg: Config{TLSSystemRoots: true, systemRoots: otherRoots}, wantErr: true},
+		{name: "should connect when the system store and the pin both agree", cfg: Config{TLSSystemRoots: true, systemRoots: serverRoots, TLSSPKIPins: []string{serverPin}}},
+		{name: "should refuse the server when the system store agrees and the pin does not", cfg: Config{TLSSystemRoots: true, systemRoots: serverRoots, TLSSPKIPins: []string{otherPin()}}, wantErr: true, wantMismatch: true},
+		{name: "should refuse the server when the pin agrees and the system store does not", cfg: Config{TLSSystemRoots: true, systemRoots: otherRoots, TLSSPKIPins: []string{serverPin}}, wantErr: true},
 	}
 
 	for _, tt := range tests {
@@ -248,7 +288,8 @@ func TestNewTransport(t *testing.T) {
 }
 
 // TestNewClient_ShouldIgnoreTheProxyEnvironmentWhenPinned sets the proxy
-// variables to a live proxy and checks a pinned client never uses it.
+// variables to a live proxy and checks a pinned client, by pin or by the
+// system store, never uses it.
 //
 // The transport's Proxy field is the assertion that carries the weight:
 // Go reads the proxy environment once per process and never proxies a
@@ -267,23 +308,96 @@ func TestNewClient_ShouldIgnoreTheProxyEnvironmentWhenPinned(t *testing.T) {
 	t.Setenv("NO_PROXY", "")
 
 	ts := caServer(t)
-	c, err := NewClient(Config{ServerURL: ts.URL, TLSSPKIPins: []string{pinOf(ts.Certificate())}})
-	if err != nil {
-		t.Fatalf("NewClient() error = %v", err)
+	tests := []struct {
+		name string
+		cfg  Config
+	}{
+		{name: "should ignore the proxy environment when a pin is set", cfg: Config{TLSSPKIPins: []string{pinOf(ts.Certificate())}}},
+		{name: "should ignore the proxy environment when the system store is trusted", cfg: Config{TLSSystemRoots: true, systemRoots: rootsOf(ts.Certificate())}},
 	}
 
-	transport, ok := c.http.Transport.(*http.Transport)
-	if !ok {
-		t.Fatalf("transport is %T, want *http.Transport", c.http.Transport)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := tt.cfg
+			cfg.ServerURL = ts.URL
+			c, err := NewClient(cfg)
+			if err != nil {
+				t.Fatalf("NewClient() error = %v", err)
+			}
+
+			transport, ok := c.http.Transport.(*http.Transport)
+			if !ok {
+				t.Fatalf("transport is %T, want *http.Transport", c.http.Transport)
+			}
+			if transport.Proxy != nil {
+				t.Error("a pinned client's transport consults the proxy environment")
+			}
+			if _, err := c.GetCA(context.Background()); err != nil {
+				t.Fatalf("GetCA() error = %v", err)
+			}
+			if n := proxied.Load(); n != 0 {
+				t.Errorf("the proxy received %d requests", n)
+			}
+		})
 	}
-	if transport.Proxy != nil {
-		t.Error("a pinned client's transport consults the proxy environment")
+}
+
+// TestNewClient_ShouldRefuseTLS12WhenPinned drives a server that offers at
+// most TLS 1.2: every pinned mode keeps the 1.3 minimum, the system store
+// included, rather than negotiating down.
+func TestNewClient_ShouldRefuseTLS12WhenPinned(t *testing.T) {
+	t.Parallel()
+
+	ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(caResponseBody))
+	}))
+	ts.TLS = &tls.Config{MaxVersion: tls.VersionTLS12}
+	ts.StartTLS()
+	t.Cleanup(ts.Close)
+
+	tests := []struct {
+		name string
+		cfg  Config
+	}{
+		{name: "should refuse a TLS 1.2 server when the system store is trusted", cfg: Config{TLSSystemRoots: true, systemRoots: rootsOf(ts.Certificate())}},
+		{name: "should refuse a TLS 1.2 server when a pin is set", cfg: Config{TLSSPKIPins: []string{pinOf(ts.Certificate())}}},
 	}
-	if _, err := c.GetCA(context.Background()); err != nil {
-		t.Fatalf("GetCA() error = %v", err)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cfg := tt.cfg
+			cfg.ServerURL = ts.URL
+			c, err := NewClient(cfg)
+			if err != nil {
+				t.Fatalf("NewClient() error = %v", err)
+			}
+			if _, err := c.GetCA(context.Background()); err == nil {
+				t.Fatal("GetCA() reached a TLS 1.2 server")
+			}
+		})
 	}
-	if n := proxied.Load(); n != 0 {
-		t.Errorf("the proxy received %d requests", n)
+}
+
+// TestLoadSystemRoots_ShouldUseTheSystemPoolWhenNoLoaderIsGiven compares
+// the default loader with x509.SystemCertPool on this host, whatever its
+// store holds: the same pool, or the same refusal of an empty or missing
+// one.
+func TestLoadSystemRoots_ShouldUseTheSystemPoolWhenNoLoaderIsGiven(t *testing.T) {
+	t.Parallel()
+
+	want, wantErr := x509.SystemCertPool()
+	got, err := loadSystemRoots(nil)
+	switch {
+	case wantErr != nil || want.Equal(x509.NewCertPool()):
+		if err == nil {
+			t.Fatal("expected an error for a missing or empty system store, got none")
+		}
+	case err != nil:
+		t.Fatalf("loadSystemRoots() error = %v", err)
+	case !got.Equal(want):
+		t.Error("loadSystemRoots(nil) is not the system pool")
 	}
 }
 
