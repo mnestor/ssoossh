@@ -48,7 +48,6 @@ func newFixture(t *testing.T, mutate func(*config.Config)) *fixture {
 		}
 	}
 	cfg := config.Defaults()
-	cfg.Domain = "corp.example"
 	if mutate != nil {
 		mutate(&cfg)
 	}
@@ -352,10 +351,11 @@ func TestHomeExpansion(t *testing.T) {
 	}{
 		{name: "should take the server home when no override is set", home: str("/home/alice"), want: "/home/alice"},
 		{name: "should take override_homedir over the server's when it is set", override: "/srv/%u", home: str("/home/alice"), want: "/srv/alice"},
-		{name: "should expand %U %d %h and %% when the template uses them", override: "%h/%U/%d/100%%", home: str("/data"), want: "/data/5001/corp.example/100%"},
+		{name: "should expand %U %h and %% when the template uses them", override: "%h/%U/100%%", home: str("/data"), want: "/data/5001/100%"},
 		{name: "should keep an unknown sequence when the template has one", override: "/srv/%x/%u%", home: str("/home/alice"), want: "/srv/%x/alice%"},
+		{name: "should keep %d as written when the template has it", override: "/home/%d/%u", home: str("/home/alice"), want: "/home/%d/alice"},
 		{name: "should take fallback_homedir when the server sends none", home: nil, want: "/home/alice"},
-		{name: "should skip a relative server home when it is not absolute", home: str("alice"), fallback: "/home/%d/%u", want: "/home/corp.example/alice"},
+		{name: "should skip a relative server home when it is not absolute", home: str("alice"), fallback: "/home/users/%u", want: "/home/users/alice"},
 		{name: "should skip an override that uses %h when the server sends no home", override: "%h/x", home: nil, want: "/home/alice"},
 		{name: "should not mistake %%h for %h when the server sends no home", override: "/srv/%%h", home: nil, want: "/srv/%h"},
 	}

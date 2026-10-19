@@ -466,52 +466,74 @@ func TestOfflineBackoffShouldStopDoublingWhenItReachesTheCap(t *testing.T) {
 	}
 }
 
-func TestRetriesShouldRotateThroughDiscoveredServersWhenOneFails(t *testing.T) {
+func TestEveryAttemptShouldGoToTheConfiguredServer(t *testing.T) {
 	t.Parallel()
-	var discoveries atomic.Int32
-	h := newHarness(t, func(c *config.Config, o *Options) {
-		c.Server, c.Domain, c.ReconnectionRetries = "", "corp.example", 2
-		o.Discover = func(_ context.Context, domain string) ([]string, error) {
-			discoveries.Add(1)
-			if domain != "corp.example" {
-				t.Errorf("discovered %q", domain)
+
+	tests := []struct {
+		name      string
+		answer    error
+		want      error
+		wantState string
+		wantCalls int
+	}{
+		{name: "should ask the configured server when it answers", wantState: StateOnline, wantCalls: 1},
+		{name: "should retry the configured server when the transport fails", answer: errTransport, want: ErrOffline, wantState: StateOffline, wantCalls: 4},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			h := newHarness(t, nil)
+			var tried []string
+			var mu sync.Mutex
+			h.setAnswer(func(url string) (*apitypes.NSSUserResponse, error) {
+				mu.Lock()
+				tried = append(tried, url)
+				mu.Unlock()
+				if tt.answer != nil {
+					return nil, tt.answer
+				}
+				return &apitypes.NSSUserResponse{Name: "alice"}, nil
+			})
+			if _, err := h.client.UserByName(t.Context(), "alice"); !errors.Is(err, tt.want) || (tt.want == nil && err != nil) {
+				t.Fatalf("got %v, want %v", err, tt.want)
 			}
-			return []string{"https://a:443", "https://b:443", "https://c:443"}, nil
-		}
-		o.Sleep = func(context.Context, time.Duration) error {
-			t.Error("should not pause when another server is there to try")
-			return nil
-		}
-	})
-	var tried []string
-	var mu sync.Mutex
-	h.setAnswer(func(url string) (*apitypes.NSSUserResponse, error) {
-		mu.Lock()
-		tried = append(tried, url)
-		mu.Unlock()
-		if url != "https://c:443" {
-			return nil, errTransport
-		}
-		return &apitypes.NSSUserResponse{Name: "alice"}, nil
-	})
+			if len(tried) != tt.wantCalls {
+				t.Fatalf("got %d attempts, want %d", len(tried), tt.wantCalls)
+			}
+			for _, url := range tried {
+				if url != "https://sso.example.com" {
+					t.Fatalf("tried %v, want only the configured server", tried)
+				}
+			}
+			if st := h.client.Status(); st.Server != "https://sso.example.com" || st.State != tt.wantState {
+				t.Fatalf("got status %+v, want the configured server %s", st, tt.wantState)
+			}
+		})
+	}
+}
+
+func TestResetShouldBuildAFreshClientWhenTheNextLookupRuns(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, nil)
 	ctx := t.Context()
 	if _, err := h.client.UserByName(ctx, "alice"); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(tried, ",") != "https://a:443,https://b:443,https://c:443" {
-		t.Fatalf("tried %v", tried)
+	if _, err := h.client.UserByName(ctx, "alice"); err != nil {
+		t.Fatal(err)
 	}
-	// The server that answered goes first next time, with no rediscovery.
-	tried = nil
-	if _, err := h.client.UserByName(ctx, "alice"); err != nil || len(tried) != 1 || tried[0] != "https://c:443" {
-		t.Fatalf("got %v, tried %v", err, tried)
+	h.client.Reset()
+	if _, err := h.client.UserByName(ctx, "alice"); err != nil {
+		t.Fatal(err)
 	}
-	if h.client.Status().Server != "https://c:443" || discoveries.Load() != 1 {
-		t.Fatalf("got status %+v after %d discoveries", h.client.Status(), discoveries.Load())
+	h.builtMu.Lock()
+	defer h.builtMu.Unlock()
+	if len(h.built) != 2 {
+		t.Fatalf("built %d clients, want one before the reset and one after", len(h.built))
 	}
 }
 
-func TestRetriesShouldPauseBetweenAttemptsWhenThereIsOneServer(t *testing.T) {
+func TestRetriesShouldPauseBetweenAttemptsWhenTheTransportFails(t *testing.T) {
 	t.Parallel()
 	var pauses atomic.Int32
 	h := newHarness(t, func(c *config.Config, o *Options) {
@@ -545,17 +567,6 @@ func TestRetriesShouldStopWhenThePauseIsInterrupted(t *testing.T) {
 	}
 	if h.calls.Load() != 1 {
 		t.Fatalf("got %d calls", h.calls.Load())
-	}
-}
-
-func TestDiscoveryFailureShouldGoOfflineWhenNoServerIsPublished(t *testing.T) {
-	t.Parallel()
-	h := newHarness(t, func(c *config.Config, o *Options) {
-		c.Server, c.Domain = "", "corp.example"
-		o.Discover = func(context.Context, string) ([]string, error) { return nil, api.ErrNoServerRecords }
-	})
-	if _, err := h.client.UserByName(t.Context(), "alice"); !errors.Is(err, ErrOffline) || !errors.Is(err, api.ErrNoServerRecords) {
-		t.Fatalf("got %v", err)
 	}
 }
 

@@ -13,8 +13,10 @@ is the glibc side (README U1). Shared context in [README.md](README.md).
   socket-activated by systemd. No NSS module of our own.
 - New shared package `internal/varlink`: minimal varlink codec (client and
   server halves), used by the daemon and by `ssoossh host principals`.
-- `internal/api` additions: TLS pinning, SRV discovery, fleet key headers,
-  NSS lookup methods (none exist today; README R3).
+- `internal/api` additions: TLS pinning, fleet key headers, NSS lookup
+  methods (none exist today; README R3). SRV discovery was dropped on
+  2026-10-19: `server` is required; failover is the load balancer's behind
+  one URL; `%d` went with it.
 - Packaging: one `ssoosshd-nss` `.deb`/`.rpm` via this repo's nfpm holding
   the daemon and its `.socket` and `.service` units. No `.apk`: musl
   cannot load NSS modules and has no systemd (README U2).
@@ -223,17 +225,12 @@ No `members`; `nss-systemd` fetches them through `GetMemberships`.
   daemon's environment (the unit's, under systemd). Every CA the host
   trusts can answer for the server, so the daemon logs a warning at start
   when no pin is set as well, and `status` names the trust on its `trust:`
-  line. With SRV discovery and no pin, a spoofed record could name a host
-  any public CA certified; discovery therefore refuses a target outside the
-  discovery domain (added 2026-10-19), see the user docs.
+  line.
 - `Config.Headers` or a dedicated `KeyID/KeySecret` pair sent on NSS calls
   only; secret redacted in `traceRequest`/`logHeaders`.
-- `DiscoverServer(ctx, domain)`: `net.Resolver.LookupSRV("ssoossh", "tcp",
-  domain)`, RFC 2782 priority/weight order. A target that is not the domain
-  or a name under it is refused (`ErrServerOutsideDomain`, added
-  2026-10-19), so a spoofed SRV cannot point at a server a public CA
-  certified for someone else's domain; with a pin or a private CA the
-  server would fail anyway.
+- No server discovery. SRV discovery was dropped on 2026-10-19: `server`
+  is required; failover is the load balancer's behind one URL; `%d` went
+  with it.
 - `GetNSSUser(ctx, byName|byUID)`, `GetNSSGroup(ctx, byName|byGID)`
   returning typed structs in `internal/apitypes`; distinguish 404, 401, 429
   (honour `Retry-After`), other.
@@ -243,8 +240,7 @@ No `members`; `nss-systemd` fetches them through `GetMemberships`.
 Root 0600; environment not consulted. Option names follow `sssd.conf(5)`.
 
 ```yaml
-server: ""                        # https URL; empty -> SRV via dns_discovery_domain
-dns_discovery_domain: ""          # empty -> host's domain, only with tls_spki_pin (added 2026-10-19: DHCP can set it)
+server: ""                        # https URL, required (SRV discovery dropped 2026-10-19)
 tls_ca_file: ""                   # one of these two is required; a path or "system"
 tls_spki_pin: []
 api_key_file: /etc/ssoossh/nss.key  # 0600, line 1 key_id, line 2 key_secret
@@ -271,7 +267,7 @@ min_id: 1000
 max_id: 0                         # 0 = no max
 override_gid: 0
 override_homedir: ""
-fallback_homedir: /home/%u        # %u user, %U uid, %d domain, %h original
+fallback_homedir: /home/%u        # %u user, %U uid, %h original
 override_shell: ""
 shell_fallback: /bin/sh
 allowed_shells: []                # empty -> /etc/shells
@@ -611,8 +607,7 @@ systemd as PID 1 covers socket activation across a restart.
   `continues` streams; `FuzzDecode` (missing NUL, oversize, invalid JSON,
   truncated stream).
 - `internal/api`: httptest TLS server with correct and wrong SPKI pin, CA
-  file, proxy env set and ignored, key headers redacted in trace output,
-  SRV ordering with a fake resolver.
+  file, proxy env set and ignored, key headers redacted in trace output.
 - `nssd/userdb`: every method with each primary-key combination,
   `BadService`, `ConflictingRecordFound`, `NonMatchingRecordFound`,
   `InvalidParameter` for `fuzzyNames`/`uuid`, `EnumerationNotSupported`,

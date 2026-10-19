@@ -26,14 +26,11 @@ func writeFile(t *testing.T, dir, name, content string, mode os.FileMode) string
 	return path
 }
 
-// noDomain is a host-domain lookup that knows none.
-func noDomain() string { return "" }
-
 func TestLoadShouldApplyDefaultsWhenTheFileSetsOnlyTheServer(t *testing.T) {
 	t.Parallel()
 	path := writeFile(t, t.TempDir(), "nss.yaml", minimalYAML, 0o600)
 
-	c, err := load(path, os.Geteuid(), noDomain)
+	c, err := load(path, os.Geteuid())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +47,6 @@ func TestLoadShouldDecodeEveryOptionWhenTheFileSetsThem(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	yaml := `server: https://sso.example.com:8443
-dns_discovery_domain: example.com
 tls_ca_file: /etc/ssoossh/ca.pem
 tls_spki_pin: "AAAA,BBBB"
 api_key_file: /etc/ssoossh/other.key
@@ -76,7 +72,7 @@ min_id: 2000
 max_id: 60000
 override_gid: 100
 override_homedir: /srv/%u
-fallback_homedir: /home/%d/%u
+fallback_homedir: /home/users/%u
 override_shell: /bin/bash
 shell_fallback: /bin/bash
 allowed_shells: [/bin/bash, /bin/zsh]
@@ -89,7 +85,7 @@ require_groups: [staff]
 `
 	path := writeFile(t, dir, "nss.yaml", yaml, 0o600)
 
-	c, err := load(path, os.Geteuid(), noDomain)
+	c, err := load(path, os.Geteuid())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +94,7 @@ require_groups: [staff]
 		ok   bool
 	}{
 		{"server", c.Server == "https://sso.example.com:8443"},
-		{"domain from the file", c.Domain == "example.com"},
+		{"homes", c.OverrideHomedir == "/srv/%u" && c.FallbackHomedir == "/home/users/%u"},
 		{"comma-separated pins", slices.Equal(c.TLSSPKIPin, []string{"AAAA", "BBBB"})},
 		{"bare seconds", c.OfflineTimeout == 30*time.Second && c.EntryCacheTimeout == 10*time.Minute},
 		{"fractional seconds", c.EntryCacheGroupTimeout == 1500*time.Millisecond},
@@ -135,6 +131,8 @@ func TestLoadShouldRefuseTheFile(t *testing.T) {
 		{name: "should refuse a world-readable file when it may hold secrets", content: minimalYAML, mode: 0o604, euid: os.Geteuid(), wantErr: "group- or world-accessible"},
 		{name: "should refuse a file not owned by root when running as root", content: minimalYAML, mode: 0o600, euid: 0, wantErr: "not root"},
 		{name: "should refuse an unknown key when it is probably a typo", content: minimalYAML + "entry_cache_timout: 5s\n", mode: 0o600, euid: os.Geteuid(), wantErr: "entry_cache_timout"},
+		{name: "should refuse dns_discovery_domain when it is no longer an option", content: minimalYAML + "dns_discovery_domain: example.com\n", mode: 0o600, euid: os.Geteuid(), wantErr: "dns_discovery_domain"},
+		{name: "should refuse a file with no server when server is required", content: "tls_spki_pin: [AAAA]\n", mode: 0o600, euid: os.Geteuid(), wantErr: "server is required"},
 		{name: "should refuse invalid YAML when it cannot be parsed", content: "server: [\n", mode: 0o600, euid: os.Geteuid(), wantErr: "parse"},
 		{name: "should refuse a wrong type when a duration is a list", content: minimalYAML + "timeout: [1]\n", mode: 0o600, euid: os.Geteuid(), wantErr: "timeout"},
 		{name: "should refuse an invalid value when validation fails", content: minimalYAML + "min_id: 0\n", mode: 0o600, euid: os.Geteuid(), wantErr: "min_id"},
@@ -146,7 +144,7 @@ func TestLoadShouldRefuseTheFile(t *testing.T) {
 				t.Skip("the owner check cannot fail for a root-owned temporary file")
 			}
 			path := writeFile(t, t.TempDir(), "nss.yaml", tt.content, tt.mode)
-			_, err := load(path, tt.euid, noDomain)
+			_, err := load(path, tt.euid)
 			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 				t.Fatalf("got %v, want an error containing %q", err, tt.wantErr)
 			}
@@ -181,18 +179,6 @@ func TestLoadShouldRefuseAnOversizeFileWhenItPassesTheCap(t *testing.T) {
 	}
 }
 
-func TestLoadShouldUseTheHostDomainWhenNoneIsConfigured(t *testing.T) {
-	t.Parallel()
-	path := writeFile(t, t.TempDir(), "nss.yaml", "tls_spki_pin: [AAAA]\n", 0o600)
-	c, err := load(path, os.Geteuid(), func() string { return "corp.example" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if c.Domain != "corp.example" {
-		t.Fatalf("got domain %q", c.Domain)
-	}
-}
-
 func TestValidate(t *testing.T) {
 	t.Parallel()
 
@@ -208,21 +194,15 @@ func TestValidate(t *testing.T) {
 		wantErr string
 	}{
 		{name: "should accept the defaults when a server and a pin are set", mutate: func(*Config) {}},
-		{name: "should accept discovery when a domain is known", mutate: func(c *Config) { c.Server = ""; c.Domain = "example.com" }},
 		{name: "should accept a %h home when it starts from the server's", mutate: func(c *Config) { c.OverrideHomedir = "%h/x" }},
 		{name: "should refuse http when only https is pinned", mutate: func(c *Config) { c.Server = "http://sso.example.com" }, wantErr: "https URL"},
 		{name: "should refuse a server with no host when the URL is empty of one", mutate: func(c *Config) { c.Server = "https://" }, wantErr: "https URL"},
 		{name: "should refuse an unparsable server when the URL is malformed", mutate: func(c *Config) { c.Server = "https://a b\x7f" }, wantErr: "https URL"},
-		{name: "should refuse discovery when no domain is known", mutate: func(c *Config) { c.Server = "" }, wantErr: "discover"},
-		{name: "should refuse the host's domain when discovery has a CA file and no pin", mutate: func(c *Config) {
-			c.Server, c.Domain, c.TLSSPKIPin, c.TLSCAFile = "", "corp.example", nil, "/etc/ssoossh/ca.pem"
-		}, wantErr: `the host domain "corp.example" comes from the hostname or /etc/resolv.conf`},
-		{name: "should refuse the host's domain when discovery trusts the system store and no pin", mutate: func(c *Config) {
-			c.Server, c.Domain, c.TLSSPKIPin, c.TLSCAFile = "", "corp.example", nil, "system"
-		}, wantErr: "set dns_discovery_domain or server"},
-		{name: "should accept discovery with a CA file when the domain is set explicitly", mutate: func(c *Config) {
-			c.Server, c.DNSDiscoveryDomain, c.Domain, c.TLSSPKIPin, c.TLSCAFile = "", "example.com", "example.com", nil, "/etc/ssoossh/ca.pem"
-		}},
+		{name: "should refuse an empty server with an example when server is required", mutate: func(c *Config) { c.Server = "" }, wantErr: `server is required: the ssoosshd https URL, e.g. "https://sso.example.com"`},
+		{name: "should refuse an empty server when only a CA file is set", mutate: func(c *Config) {
+			c.Server, c.TLSSPKIPin, c.TLSCAFile = "", nil, "/etc/ssoossh/ca.pem"
+		}, wantErr: "server is required"},
+		{name: "should refuse a bare host name when it is not a URL", mutate: func(c *Config) { c.Server = "sso.example.com" }, wantErr: "https URL"},
 		{name: "should refuse no trust root when neither CA nor pin is set", mutate: func(c *Config) { c.TLSSPKIPin = nil }, wantErr: "tls_ca_file"},
 		{name: "should accept a CA file when no pin is set", mutate: func(c *Config) { c.TLSSPKIPin = nil; c.TLSCAFile = "/etc/ssoossh/ca.pem" }},
 		{name: "should accept the system store when no pin is set", mutate: func(c *Config) { c.TLSSPKIPin = nil; c.TLSCAFile = "system" }},
@@ -304,7 +284,7 @@ func TestLoadShouldReadTheSystemStoreWhenTheFileSaysSystem(t *testing.T) {
 	t.Parallel()
 	path := writeFile(t, t.TempDir(), "nss.yaml", "server: https://sso.example.com\ntls_ca_file: system\n", 0o600)
 
-	c, err := load(path, os.Geteuid(), noDomain)
+	c, err := load(path, os.Geteuid())
 	if err != nil {
 		t.Fatal(err)
 	}

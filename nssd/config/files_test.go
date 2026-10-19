@@ -1,7 +1,6 @@
 package config
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -95,56 +94,4 @@ func TestStampOfShouldFailWhenThePathCannotBeStatted(t *testing.T) {
 	if _, err := StampOf(filepath.Join(file, "child")); err == nil {
 		t.Fatal("want an error for a path under a regular file")
 	}
-}
-
-func TestDomainFrom(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name     string
-		hostname string
-		resolv   string
-		want     string
-	}{
-		{name: "should take the hostname's domain when it is fully qualified", hostname: "web1.corp.example.", want: "corp.example"},
-		{name: "should take resolv.conf's domain when the hostname is short", hostname: "web1", resolv: "nameserver 10.0.0.1\ndomain corp.example\n", want: "corp.example"},
-		{name: "should take the first search entry when there is no domain line", hostname: "web1", resolv: "search a.example b.example\n", want: "a.example"},
-		{name: "should know none when neither says", hostname: "web1", resolv: "nameserver 10.0.0.1\n", want: ""},
-		{name: "should skip a trailing dot when the hostname ends in one", hostname: "web1.", resolv: "", want: ""},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			if got := domainFrom(tt.hostname, []byte(tt.resolv)); got != tt.want {
-				t.Fatalf("got %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestDomainOfHost(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	resolv := writeFile(t, dir, "resolv.conf", "search corp.example\n", 0o644)
-	failing := func() (string, error) { return "", errors.New("no hostname") }
-
-	tests := []struct {
-		name     string
-		hostname func() (string, error)
-		path     string
-		want     string
-	}{
-		{name: "should fall back on resolv.conf when the hostname lookup fails", hostname: failing, path: resolv, want: "corp.example"},
-		{name: "should know none when both lookups fail", hostname: failing, path: filepath.Join(dir, "absent"), want: ""},
-		{name: "should use the hostname when it is qualified", hostname: func() (string, error) { return "h.example.org", nil }, path: resolv, want: "example.org"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			if got := domainOfHost(tt.hostname, tt.path); got != tt.want {
-				t.Fatalf("got %q, want %q", got, tt.want)
-			}
-		})
-	}
-	_ = hostDomain() // the production wiring, whatever this host says
 }

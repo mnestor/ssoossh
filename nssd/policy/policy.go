@@ -507,10 +507,10 @@ func (e *Engine) home(name string, uid uint32, serverHome, home string) (string,
 	return "", rejected("user %q has no absolute home directory", name)
 }
 
-// expand substitutes %u (name), %U (uid), %d (domain), %h (the server's
-// home) and %% in a homedir template. An unknown sequence is kept as
-// written. A template that uses %h when the server sent no home expands to
-// nothing, so "%h/x" never becomes "/x".
+// expand substitutes %u (name), %U (uid), %h (the server's home) and %%
+// in a homedir template. An unknown sequence is kept as written. A
+// template that uses %h when the server sent no home expands to nothing,
+// so "%h/x" never becomes "/x".
 func (e *Engine) expand(template, name string, uid uint32, serverHome string) string {
 	if template == "" || (serverHome == "" && strings.Contains(strings.ReplaceAll(template, "%%", ""), "%h")) {
 		return ""
@@ -527,8 +527,6 @@ func (e *Engine) expand(template, name string, uid uint32, serverHome string) st
 			b.WriteString(name)
 		case 'U':
 			b.WriteString(strconv.FormatUint(uint64(uid), 10))
-		case 'd':
-			b.WriteString(e.cfg.Domain)
 		case 'h':
 			b.WriteString(serverHome)
 		case '%':

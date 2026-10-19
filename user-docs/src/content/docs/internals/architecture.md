@@ -435,7 +435,7 @@ flowchart LR
 | `ssoosshd-nss.socket` | `deploy/` | systemd holds the userdb socket, so lookups queue across a daemon restart instead of failing |
 | `ssoosshd-nss` | `nssd/`, `cmd/ssoosshd-nss` | implements systemd's `io.systemd.UserDatabase` (`GetUserRecord`, `GetGroupRecord`, `GetMemberships`), `org.varlink.service.GetInfo`, and its own `com.github.mnestor.ssoossh.NSS.RefreshUser`; the cache, the host policy, the upstream client |
 | `internal/varlink` | shared | the NUL-framed JSON codec, used by the daemon and by `ssoossh host principals` for its one-way refresh hint |
-| `internal/api` | shared | the HTTPS client, with SPKI pinning, SRV discovery and the fleet key headers |
+| `internal/api` | shared | the HTTPS client, with SPKI pinning and the fleet key headers |
 | `/api/nss/*` | `server/` | the lookup endpoints, the fleet keys, and the directory sync behind them |
 
 `nssd/` imports only `internal/`, never `server/` or `client/`, and the

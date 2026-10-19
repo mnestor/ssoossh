@@ -153,7 +153,7 @@ func (r *RootCommand) runDaemon(ctx context.Context, flags runFlags) error {
 
 	log.Info("ssoosshd-nss started",
 		"version", version.Version, "userdb_socket", userdbL.Addr().String(), "admin_socket", r.adminSocket,
-		"cache_mode", cfg.CacheMode, "server", cfg.Server, "domain", cfg.Domain, "key_id", up.Status().KeyID)
+		"cache_mode", cfg.CacheMode, "server", cfg.Server, "key_id", up.Status().KeyID)
 
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error { daemon.Run(ctx); return nil })

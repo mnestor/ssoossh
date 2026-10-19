@@ -309,36 +309,9 @@ the same CAs, but `system` finds the bundle on any distribution. Either way,
 the store is read once, when the daemon starts: restart it after the
 distribution updates the store.
 
-Leave `server` empty to discover it from the `_ssoossh._tcp` SRV records of
-`dns_discovery_domain` (the host's own domain when that is empty). Each record
-gives a priority, a weight, a port and a target host; the daemon tries the
-lowest priority first, and spreads load by weight within one priority:
-
-```text
-_ssoossh._tcp.example.com. 300 IN SRV 10 60 443 ssh1.example.com.
-_ssoossh._tcp.example.com. 300 IN SRV 10 40 443 ssh2.example.com.
-_ssoossh._tcp.example.com. 300 IN SRV 20  0 443 ssh-dr.example.com.
-```
-
-Check what a host sees with `dig +short SRV _ssoossh._tcp.example.com`.
-
-A record whose target is not `dns_discovery_domain` itself or a name under it
-is refused, and when every record is refused `ssoosshd-nss status` says so.
-That is what keeps a spoofed record from pointing the host at another server
-when the trust root is a public CA's roots or `tls_ca_file: system`: the name
-checked is the record's target, a public CA certifies any name for whoever
-controls it, but only certifies a name under your domain for whoever controls
-your domain. A key pin or a private CA would refuse such a server anyway.
-
-The rule only protects a domain you wrote down. Left empty,
-`dns_discovery_domain` is guessed from the hostname (what follows its first
-dot) or the first `domain` or `search` line of `/etc/resolv.conf`, and DHCP
-can set both: a rogue DHCP server could hand out its own search domain, whose
-SRV targets would then be "in the domain". So the daemon uses the guess only
-when `tls_spki_pin` is set; with a CA file or `system` alone, set
-`dns_discovery_domain` or `server`, or it refuses to start. A host in
-`web1.corp.example.com` would guess `corp.example.com`; set
-`dns_discovery_domain: example.com` when the server lives at the parent.
+`server` is required. The daemon talks to that one URL only. For failover,
+put several `ssoosshd` servers behind a load balancer and set `server` to its
+URL.
 
 **4. Enable the socket, not the service.**
 
@@ -625,13 +598,12 @@ three in step.
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `server` | `""` | the `ssoosshd` https URL; empty discovers it from the `_ssoossh._tcp` SRV records of `dns_discovery_domain` |
-| `dns_discovery_domain` | `""` | the domain SRV discovery queries, and what `%d` expands to; empty means the host's own (what follows the first dot of the hostname, else the first `domain` or `search` entry of `/etc/resolv.conf`), which discovery accepts only with `tls_spki_pin` set |
+| `server` | `""` | the `ssoosshd` https URL, e.g. `https://sso.example.com`; required. For failover, name a load balancer's URL |
 | `tls_ca_file` | `""` | a CA bundle (PEM) the server's certificate must chain to, a private CA or a public CA's roots, or `system` (exactly, lower case) for the host's system trust store, which also honours `SSL_CERT_FILE` and `SSL_CERT_DIR` from the daemon's environment ([public CAs](#server-certificates-from-a-public-ca)); this or `tls_spki_pin` is required |
 | `tls_spki_pin` | `[]` | base64 SHA-256 digests of the server's SubjectPublicKeyInfo; with `tls_ca_file` as well, both must hold |
 | `api_key_file` | `/etc/ssoossh/nss.key` | the fleet key: line 1 the key id, line 2 the secret, root-only |
 | `timeout` | `5s` | bounds one upstream lookup, retries included. Each attempt but the last gets at most half of what is left, and no more than `socket_answer_deadline` less a second (1.5 s by default), so a retry still answers the caller in time |
-| `reconnection_retries` | `3` | further attempts after a transport failure, rotating through the discovered servers, before the daemon counts the server as offline |
+| `reconnection_retries` | `3` | further attempts after a transport failure, a short pause apart, before the daemon counts the server as offline |
 | `offline_timeout` | `60s` | the first wait before probing an offline server again; it doubles after each failed probe, up to an hour |
 | `socket_answer_deadline` | `2.5s` | how long a userdb call may take to answer; must stay under 45 s, systemd's own call timeout |
 | `socket_max_connections` | `1024` | the most userdb connections served at once; a quarter of them only uid 0 callers may take, and one over the cap is answered "service not available" ([what over the cap looks like](#what-to-expect)); at least 4. The unit's `LimitNOFILE`, `MemoryMax` and `TasksMax` are sized for 1024 |
@@ -667,7 +639,7 @@ three in step.
 | `max_id` | `0` | every uid and gid served is at most this; 0 means no upper bound, which leaves systemd's reserved ranges reachable (see [Choosing min_id and max_id](#choosing-min_id-and-max_id)) |
 | `override_gid` | `0` | replaces every user's primary gid; applied after the range check, so it may name a shared group such as gid 100; 0 leaves the server's |
 | `override_homedir` | `""` | replaces every home directory |
-| `fallback_homedir` | `/home/%u` | the home when the server sends none; the homedir templates expand `%u` (name), `%U` (uid), `%d` (domain), `%h` (the server's home) and `%%` |
+| `fallback_homedir` | `/home/%u` | the home when the server sends none; the homedir templates expand `%u` (name), `%U` (uid), `%h` (the server's home) and `%%`; any other `%` sequence is kept as written |
 | `override_shell` | `""` | replaces every shell, if acceptable |
 | `shell_fallback` | `/bin/sh` | the shell when no other candidate is acceptable, used even when it is not |
 | `allowed_shells` | `[]` | the acceptable shells; empty means `/etc/shells` |
