@@ -14,7 +14,8 @@ import (
 )
 
 // The admin key list's handler, registered by NewNSSAdminController behind
-// the auditor middleware.
+// middleware.NSSKeyListAuthMiddleware: auditors and above, or the fleet key
+// admin role.
 
 // nssAdminKeyFilter reads the list's parameters. An unknown status,
 // expiring_within or flag value is dropped rather than refused, as every
@@ -58,9 +59,10 @@ func queryFlag(g *gin.Context, name string) bool {
 
 // listKeysHandler handles GET /api/admin/nss/keys.
 //
-// @Summary     List every fleet API key (auditor and above)
+// @Summary     List every fleet API key (auditor and above, or fleet key admin)
 // @Description One page of every fleet key, whoever manages it and whether or not it has a group, by name then id.
-// @Description q matches a case-insensitive substring of the key's name or group or the creator's username or email.
+// @Description q matches a case-insensitive substring of the key's name or group or the creator's username or email,
+// @Description or the start of the key's id (nss_5vqsreyx, or a prefix of it, in any case).
 // @Description A q that reads as an IP address (IPv4 or IPv6, an IPv4-mapped one read as IPv4) or a CIDR range
 // @Description searches the usage instead: the keys hosts used from that address or range within nss.usage_retention,
 // @Description each with up to 5 of the matching addresses (newest first) and how many matched; address_search then
@@ -74,7 +76,7 @@ func queryFlag(g *gin.Context, name string) bool {
 // @Produce     json
 // @Param       after           query string false "Key id to start after (cursor): the previous page's next_cursor"
 // @Param       limit           query int    false "Page size (default 25, max 100)" example(25)
-// @Param       q               query string false "Text matched against name, group, creator username and email; or an IP address or CIDR range" example(10.0.4.0/24)
+// @Param       q               query string false "Text matched against name, group, creator username and email, or the start of the key id; or an IP address or CIDR range" example(10.0.4.0/24)
 // @Param       status          query string false "Status filter; omitted or all returns every status" Enums(all, active, expired, revoked)
 // @Param       expiring_within query int    false "Only active keys expiring within this many days" Enums(7, 30, 90)
 // @Param       unused          query bool   false "Only keys with no lookup in the last 30 days"
@@ -82,7 +84,7 @@ func queryFlag(g *gin.Context, name string) bool {
 // @Success     200 {object} openapidoc.NSSAdminKeysEnvelope "One page of keys"
 // @Failure     400 {object} openapidoc.ErrorEnvelope "A q shaped like an address or range that is not one, invalid paging parameters, an after that names no key, or offset"
 // @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
-// @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as auditor"
+// @Failure     403 {object} openapidoc.ErrorEnvelope "Neither an auditor (or above) nor a fleet key admin"
 // @Failure     404 {object} openapidoc.ErrorEnvelope "nss_disabled: nss.enabled is false"
 // @Security    sessionCookie
 // @Router      /api/admin/nss/keys [get]

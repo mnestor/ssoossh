@@ -81,7 +81,8 @@ func nssAdminRouterWith(t *testing.T, cfg *config.Config, db *gorm.DB, identity 
 	r.Use(middleware.NewErrorHandlerMiddleware().Add())
 	NewNSSAdminController(&r.RouterGroup, db, admin, viewer, nil,
 		identityMiddleware(identity), middleware.NewAdminAuthMiddleware(cfg).Add(),
-		middleware.NewAuditorAuthMiddleware(cfg).Add(), func(c *gin.Context) { c.Next() })
+		middleware.NewAuditorAuthMiddleware(cfg).Add(), middleware.NewNSSKeyListAuthMiddleware(cfg).Add(),
+		func(c *gin.Context) { c.Next() })
 	return r
 }
 

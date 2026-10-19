@@ -23,7 +23,10 @@ import (
 // Admin only, every route but the viewer's: accepting a changed number
 // re-owns files on every host, and a purge hands a number and a name on.
 // The viewer only reads, so auditors (and so SOC and admins) see it, as
-// they see the user directory, and the fleet key list beside it. nss,
+// they see the user directory. The fleet key list beside it is also the
+// fleet key admin role's (admin.nss_key_group), which manages every key
+// without an admin area role, so it sits behind keyListAuthMiddleware
+// (middleware.NSSKeyListAuthMiddleware) instead. nss,
 // viewer and keys are nil when nss.enabled is off, which every route
 // answers with a 404 naming the setting (the key list's as nss_disabled,
 // as the session routes under /api/nss do).
@@ -36,6 +39,7 @@ func NewNSSAdminController(
 	sessionAuthMiddleware gin.HandlerFunc,
 	adminAuthMiddleware gin.HandlerFunc,
 	auditorAuthMiddleware gin.HandlerFunc,
+	keyListAuthMiddleware gin.HandlerFunc,
 	csrfMiddleware gin.HandlerFunc,
 ) {
 	a := &nssAdminController{db: db, nss: nss, viewer: viewer, keys: keys}
@@ -60,7 +64,11 @@ func NewNSSAdminController(
 	auditorGroup.GET("/groups/:gid/members", a.groupMembersHandler)
 	auditorGroup.GET("/users/:uid/audit", a.accountHistoryHandler)
 	auditorGroup.GET("/groups/:gid/audit", a.groupHistoryHandler)
-	auditorGroup.GET("/keys", a.listKeysHandler)
+
+	// Every fleet key: auditors and above, or the fleet key admin role.
+	// Read only, so no CSRF check either.
+	keysGroup := group.Group("/admin/nss", sessionAuthMiddleware, keyListAuthMiddleware)
+	keysGroup.GET("/keys", a.listKeysHandler)
 }
 
 // nssAdminController handles the NSS directory's admin routes. The

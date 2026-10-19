@@ -214,6 +214,40 @@ func TestFilter(t *testing.T) {
 	}
 }
 
+func TestPrefixFilter(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		query    string
+		wantSQL  string
+		wantArgs []any
+	}{
+		{name: "should return nothing when the query is empty", query: ""},
+		{name: "should match the start of the column when the query is a prefix", query: "nss_5vq",
+			wantSQL: `id LIKE ? ESCAPE '\'`, wantArgs: []any{`nss\_5vq%`}},
+		{name: "should lower the query when it is pasted in capitals", query: "NSS_5VQSREYX",
+			wantSQL: `id LIKE ? ESCAPE '\'`, wantArgs: []any{`nss\_5vqsreyx%`}},
+		{name: "should escape a percent when the query carries one", query: "nss%",
+			wantSQL: `id LIKE ? ESCAPE '\'`, wantArgs: []any{`nss\%%`}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			gotSQL, gotArgs := PrefixFilter(tt.query, "id")
+			if gotSQL != tt.wantSQL || len(gotArgs) != len(tt.wantArgs) {
+				t.Fatalf("PrefixFilter(%q) = %q, %v; want %q, %v", tt.query, gotSQL, gotArgs, tt.wantSQL, tt.wantArgs)
+			}
+			for i := range gotArgs {
+				if gotArgs[i] != tt.wantArgs[i] {
+					t.Errorf("args[%d] = %v, want %v", i, gotArgs[i], tt.wantArgs[i])
+				}
+			}
+		})
+	}
+}
+
 // pagingRow is a throwaway table for the query-building tests. The helpers
 // under test are driver-agnostic string builders, run against both backends
 // (test/testdb), which is where the LOWER()/ESCAPE choice has to hold.

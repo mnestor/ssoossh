@@ -118,3 +118,41 @@ func (m *AuditorAuthMiddleware) Add() gin.HandlerFunc {
 		c.Next()
 	}
 }
+
+// NSSKeyListAuthMiddleware guards the one admin route a fleet key admin
+// reads without an admin area role: the list of every fleet key (GET
+// /api/admin/nss/keys). It admits an auditor (and so SOC and admins) or a
+// fleet key admin (admin.nss_key_group, which admin implies). Every other
+// /api/admin route keeps its own role middleware, so this widens nothing
+// else. Fails closed: no identity, or neither role, denies with 403
+// Forbidden.
+type NSSKeyListAuthMiddleware struct {
+	config *config.Config
+}
+
+// NewNSSKeyListAuthMiddleware creates an NSSKeyListAuthMiddleware.
+func NewNSSKeyListAuthMiddleware(c *config.Config) *NSSKeyListAuthMiddleware {
+	return &NSSKeyListAuthMiddleware{config: c}
+}
+
+// Add returns a gin.HandlerFunc that authorizes the fleet key list. Both
+// rules are the config's own (GrantsAuditor, GrantsNSSKeyAdmin), so a
+// change to either role reaches this route without a second copy here.
+func (m *NSSKeyListAuthMiddleware) Add() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		identity, ok := Identity(c)
+		if !ok || identity == nil {
+			_ = c.Error(&errorresponses.ForbiddenError{}) //nolint:errcheck
+			c.Abort()
+			return
+		}
+
+		if !m.config.Admin.GrantsAuditor(identity.Groups) && !m.config.Admin.GrantsNSSKeyAdmin(identity.Groups) {
+			_ = c.Error(&errorresponses.ForbiddenError{}) //nolint:errcheck
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
+}

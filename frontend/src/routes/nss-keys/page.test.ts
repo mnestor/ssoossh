@@ -146,17 +146,23 @@ describe('NSS keys list', () => {
 		);
 	});
 
-	it('should point an auditor at every key when no key is in their groups', async () => {
-		session.user = userFixture({ is_auditor: true });
-		listOf([], false);
-		render(Page);
-		await screen.findByTestId('nss-keys-empty');
+	const everyKeyReaders: { name: string; user: Parameters<typeof userFixture>[0] }[] = [
+		{ name: 'an auditor', user: { is_auditor: true } },
+		{ name: 'a fleet key admin with no admin area role', user: { is_nss_key_admin: true } }
+	];
+	for (const { name, user } of everyKeyReaders) {
+		it(`should point ${name} at every key when no key is in their groups`, async () => {
+			session.user = userFixture(user);
+			listOf([], user?.is_nss_key_admin ?? false);
+			render(Page);
+			await screen.findByTestId('nss-keys-empty');
 
-		expect(screen.getByRole('link', { name: 'All NSS keys' })).toHaveAttribute(
-			'href',
-			'/admin/nss/keys'
-		);
-	});
+			expect(screen.getByRole('link', { name: 'All NSS keys' })).toHaveAttribute(
+				'href',
+				'/admin/nss/keys'
+			);
+		});
+	}
 
 	it('should offer Try again when the list fails to load', async () => {
 		routeFetch({ 'GET /api/nss/keys': envelope(null, 500, 'database unavailable') });

@@ -391,7 +391,7 @@ vocabulary; an unmapped name renders a visible red `?`.
   Config, `address-book` Directory, `database-search` NSS directory (the
   stored accounts and groups, looked up: a new object, so a new noun),
   `braces` Claims echo, `logs` Audit log, `activity-heartbeat` Diagnostics,
-  `user-cog` Preferences, `server` NSS keys (admin, every key: another
+  `user-cog` Preferences, `server` NSS keys (all) (admin, every key: another
   drawing of the fleet key noun, as `circle-key` is for every service code).
 - **NSS fleet keys** (`KeyStatusBadge`, the rail): `server-2` the fleet a
   key serves (the NSS keys destination and an active key), `rotate` a key
@@ -446,8 +446,12 @@ layout.
   collapsed. Escape is handled on its own wrapper so it closes before the
   drawer does. The trigger carries the current state for every page behind
   it.
-- **Admin group:** gated on `is_auditor`, open by default, remembered shut
-  (`ssoossh:rail-admin-open`), forced open on any `/admin` route.
+- **Admin group:** shown when `adminNavFor` leaves it a section: every
+  section for auditors and above (less the `adminOnly` ones below admin),
+  and for a fleet key admin (`is_nss_key_admin`) with no admin area role
+  only the sections marked `keyAdmin`, which is NSS keys (all). Open by
+  default, remembered shut (`ssoossh:rail-admin-open`), forced open on any
+  `/admin` route.
 - **Focus routes** render with no rail: `/login`, `/c` (a console code) and
   `/approval-unavailable`, plus any screen for a signed-out visitor.
   `isFocusRoute` in `lib/nav.ts` decides, matching on a path boundary so
@@ -1024,7 +1028,8 @@ the result and drops the diagnostic detail an expert compares.
 - **Roles** (from the 2026-10-10 review): SOC may disable and enable users;
   `/api/users/me` gains `is_nss_key_admin`; NSS keys are one top-level rail
   item, read-only for auditors. Since 2026-10-19 that item is the keys the
-  viewer's groups manage, and every key is the admin group's NSS keys. Admin, SOC and auditor powers sit behind
+  viewer's groups manage, and every key is the admin group's NSS keys (all),
+  which the fleet key admin role opens too. Admin, SOC and auditor powers sit behind
   admin mode (`docs/proposals/admin-elevation.md`).
 - **`/preferences` order:** Email notifications, Login shell (the NSS login
   shell setting), Display.
@@ -1032,7 +1037,10 @@ the result and drops the diagnostic detail an expert compares.
 ## 13. The admin area
 
 `src/routes/admin/+layout.svelte` gates the area on auditor access and does
-nothing else. The gate is display-only (the server re-checks every read),
+nothing else, with one exception the nav model names: `adminRouteOpen`
+lets a fleet key admin with no admin area role see the sections marked
+`keyAdmin` (All NSS keys), and every other admin page gives them the
+`AccessDenied` card. The gate is display-only (the server re-checks every read),
 and a signed-in identity without auditor access is told so rather than sent
 to a login it already passed. That refusal is the `AccessDenied` card, the
 same one the error page gives a 403; a section narrower than the area (the
@@ -1128,13 +1136,16 @@ beneath it.
     no stored entry has that number and that a host lookup would still ask
     the directory; a group's also links the account with that uid, since
     private groups are never stored.
-  - **NSS keys** (`/admin/nss/keys`, `wide`, titled "All NSS keys", the
-    rail entry `nssOnly`, below NSS directory, which `currentHref` keeps
-    from lighting up too): every fleet key, whoever manages it, read only.
+  - **NSS keys (all)** (`/admin/nss/keys`, `wide`, titled "All NSS keys",
+    the rail entry "NSS keys (all)", `nssOnly` and `keyAdmin`, below NSS
+    directory, which `currentHref` keeps from lighting up too): every fleet
+    key, whoever manages it, read only, for auditors and above and the fleet
+    key admin role (the server's `NSSKeyListAuthMiddleware`).
     `NSSKeyAdminList`. The primary control is one search field with a
-    visible label, "Search keys", and the hint "A name, group or creator,
-    or an address (10.0.4.7) or range (10.0.4.0/24)." (plain text, no
-    `inputmode`, mono). Text searches the key; an address or a CIDR range
+    visible label, "Search keys", and the hint "A name, group, creator or
+    key id, or an address (10.0.4.7) or range (10.0.4.0/24)." (plain text,
+    no `inputmode`, mono). Text searches the key (a substring of the name,
+    group or creator, or the start of the id, in any case); an address or a CIDR range
     searches the usage the server kept, and a line under the field says
     "Keys used from 10.0.4.0/24 in the last 90 days", with the range and the
     window the server answered. A term shaped like an address that does not
@@ -1153,7 +1164,9 @@ beneath it.
     swaps Hosts for "Used from": each matching address in mono with when it
     was last seen and "current secret" or "previous secret", and "and N
     more". No row action: a row opens `/nss-keys/<id>?from=admin` with the
-    filters (`back=`), whose back chip says "All NSS keys". New key is a
+    filters (`back=`), whose back chip says "All NSS keys"; its rotation
+    report carries both on (`keyListContext`), so the report's back chip
+    returns to the key page with them. New key is a
     ghost link in the heading, for the fleet key admin role only, so it
     never competes with the search. States: skeleton rows; "No NSS keys
     yet", which says why a host needs a key and that a fleet key admin
@@ -1165,8 +1178,8 @@ beneath it.
   - **The keys a viewer manages** (`/nss-keys`, outside the admin area): the
     keys whose group is one of the viewer's groups, for every role, so its
     top-level rail entry shows only when that list is not empty. Its empty
-    state, "No NSS keys in your groups", links auditors to All NSS keys and
-    keeps New key for the fleet key admin role.
+    state, "No NSS keys in your groups", links auditors and fleet key admins
+    to All NSS keys and keeps New key for the fleet key admin role.
   - **Admin-only references:** the Probe, Sync, Pending id changes and
     Collisions live on the admin-only Directory, so `NSSDirectoryRef` links
     to them for admins and says "An admin can ..." to everyone else.

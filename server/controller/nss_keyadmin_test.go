@@ -2,7 +2,7 @@ package controller
 
 // Test methodology: the admin key list's handler runs against the real
 // key service over a real database (testdb, so make test-postgres covers
-// it on Postgres too) behind the real auditor middleware. The service's
+// it on Postgres too) behind the real role middleware. The service's
 // filters and search are covered in server/service/nss_keyadmin_test.go;
 // these tests cover the route, the role gate, the parameter handling and
 // the wire mapping.
@@ -34,7 +34,8 @@ func (e *nssKeyEnv) adminKeysRouter(identity *service.Identity, enabled bool) *g
 	r.Use(middleware.NewErrorHandlerMiddleware().Add())
 	NewNSSAdminController(&r.RouterGroup, e.db, nil, nil, keys,
 		identityMiddleware(identity), middleware.NewAdminAuthMiddleware(e.cfg).Add(),
-		middleware.NewAuditorAuthMiddleware(e.cfg).Add(), func(c *gin.Context) { c.Next() })
+		middleware.NewAuditorAuthMiddleware(e.cfg).Add(), middleware.NewNSSKeyListAuthMiddleware(e.cfg).Add(),
+		func(c *gin.Context) { c.Next() })
 	return r
 }
 
@@ -50,7 +51,7 @@ func adminKeyNames(t *testing.T, body []byte) []string {
 	return names
 }
 
-func TestNSSAdminKeys_ShouldAdmitAuditorsAndAboveWhenListed(t *testing.T) {
+func TestNSSAdminKeys_ShouldAdmitAuditorsAndFleetKeyAdminsWhenListed(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -60,8 +61,9 @@ func TestNSSAdminKeys_ShouldAdmitAuditorsAndAboveWhenListed(t *testing.T) {
 		{caller: nssCallerAdmin, want: http.StatusOK},
 		{caller: nssCallerSOC, want: http.StatusOK},
 		{caller: nssCallerAuditor, want: http.StatusOK},
-		// The fleet key role alone is not an admin area role.
-		{caller: nssCallerKeyAdmin, want: http.StatusForbidden},
+		// The fleet key role manages every key, so it reads the list of
+		// them without an admin area role.
+		{caller: nssCallerKeyAdmin, want: http.StatusOK},
 		{caller: nssCallerMember, want: http.StatusForbidden},
 		{caller: nssCallerUnrelated, want: http.StatusForbidden},
 	}
@@ -74,6 +76,41 @@ func TestNSSAdminKeys_ShouldAdmitAuditorsAndAboveWhenListed(t *testing.T) {
 			w := doNSSRequest(env.adminKeysRouter(nssCallerNamed(t, tt.caller), true), http.MethodGet, "/admin/nss/keys")
 			if w.Code != tt.want {
 				t.Errorf("status = %d, want %d: %s", w.Code, tt.want, w.Body.String())
+			}
+		})
+	}
+}
+
+// TestNSSAdminKeys_ShouldRefuseTheFleetKeyAdminWhenAnotherNSSAdminRouteIsRead
+// pins that the key list's wider gate is that route's alone: the viewer
+// and the admin routes beside it in the same controller still refuse the
+// fleet key role, before any handler runs (the viewer and the directory
+// service are nil here, so a handler would answer 404 instead).
+func TestNSSAdminKeys_ShouldRefuseTheFleetKeyAdminWhenAnotherNSSAdminRouteIsRead(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct{ method, path string }{
+		{http.MethodGet, "/admin/nss/users"},
+		{http.MethodGet, "/admin/nss/users/10001"},
+		{http.MethodGet, "/admin/nss/users/10001/audit"},
+		{http.MethodGet, "/admin/nss/groups"},
+		{http.MethodGet, "/admin/nss/groups/5000"},
+		{http.MethodGet, "/admin/nss/groups/5000/members"},
+		{http.MethodGet, "/admin/nss/groups/5000/audit"},
+		{http.MethodGet, "/admin/nss/pending-id-changes"},
+		{http.MethodGet, "/admin/nss/collisions"},
+		{http.MethodPost, "/admin/nss/users/10001/accept-id-change"},
+		{http.MethodPost, "/admin/nss/groups/5000/accept-id-change"},
+		{http.MethodDelete, "/admin/nss/users/10001/tombstone"},
+		{http.MethodDelete, "/admin/nss/groups/5000/tombstone"},
+	}
+	env := newNSSKeyEnv(t)
+	r := env.adminKeysRouter(nssCallerNamed(t, nssCallerKeyAdmin), true)
+	for _, tt := range tests {
+		t.Run("should answer Forbidden when the fleet key admin sends "+tt.method+" "+tt.path, func(t *testing.T) {
+			w := doNSSRequest(r, tt.method, tt.path)
+			if w.Code != http.StatusForbidden {
+				t.Errorf("status = %d, want 403: %s", w.Code, w.Body.String())
 			}
 		})
 	}
@@ -150,6 +187,8 @@ func TestNSSAdminKeys_ShouldApplyKnownFiltersAndDropUnknownOnesWhenListed(t *tes
 		{name: "should drop alerts when it is off", query: "?alerts=0", want: everyKey},
 		{name: "should search the text when q is a word", query: "?q=OPS", want: []string{"fleet team-ops"}},
 		{name: "should search the usage when q is an address", query: "?q=10.0.4.7", want: []string{"fleet " + nssKeyGroup}},
+		{name: "should find the key by its id when q is the id pasted in capitals with spaces around it",
+			query: "?q=%20" + strings.ToUpper(revoked) + "%20", want: []string{"fleet team-ops"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

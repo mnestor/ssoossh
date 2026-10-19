@@ -2,7 +2,9 @@ import { isIPAddress } from '#lib/audit.js';
 
 // How the admin key list reads its one search field, the browser's half of
 // server/service/nss_keysearch.go: text searches the key's name, group and
-// creator; an address or a CIDR range searches the usage instead. Both
+// creator and the start of its id; an address or a CIDR range searches the
+// usage instead. A key id ("nss_" and base32) has letters and an underscore,
+// so it never reads as an address on either side. Both
 // sides decide "looks like an address" the same way and word a bad one the
 // same way, so a typo is caught here without asking the server, and the
 // server's 400 for what slips past reads the same in the field.

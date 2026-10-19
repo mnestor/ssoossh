@@ -127,6 +127,29 @@ describe('NSS key detail', () => {
 		});
 	}
 
+	// The rotation report hands the way back on to its own back chip, so it
+	// ends on the list the key was opened from.
+	const rotationCases = [
+		{ name: 'it was opened from the keys a reader manages', search: '', want: '' },
+		{
+			name: 'it was opened from the admin list with its filters',
+			search: `?from=admin&back=${encodeURIComponent('?unused=1')}`,
+			want: `?from=admin&back=${encodeURIComponent('?unused=1')}`
+		}
+	];
+	for (const { name, search, want } of rotationCases) {
+		it(`should carry the way back to the rotation report when ${name}`, async () => {
+			resetFakePage(`http://localhost/nss-keys/nss_k7m4qp2x${search}`);
+			serve(keyFixture({ current_generation: 2, rotated_at: '2026-10-18T12:00:00Z' }));
+			await loaded();
+
+			expect(screen.getByTestId('nss-key-rotation-link')).toHaveAttribute(
+				'href',
+				`/nss-keys/nss_k7m4qp2x/rotation${want}`
+			);
+		});
+	}
+
 	const backLabels = [
 		{ name: 'it was opened from the keys a reader manages', search: '', want: 'NSS keys' },
 		{ name: 'it was opened from the admin list', search: '?from=admin', want: 'All NSS keys' }

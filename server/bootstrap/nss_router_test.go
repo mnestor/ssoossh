@@ -9,10 +9,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
 	"github.com/mnestor/ssoossh/internal/apitypes"
 	"github.com/mnestor/ssoossh/server/config"
+	"github.com/mnestor/ssoossh/server/middleware"
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/service"
 )
@@ -182,5 +184,92 @@ func TestNSSRouter_ShouldAnswerNSSDisabledOnEveryNSSRouteWhenNSSIsOff(t *testing
 		if w.Code != http.StatusNotFound || !strings.Contains(w.Body.String(), apitypes.ErrorCodeNSSDisabled) {
 			t.Errorf("%s %s = %d %s, want 404 nss_disabled", route.method, route.path, w.Code, w.Body.String())
 		}
+	}
+}
+
+// signInAs adds a route to srv that writes identity into a session, as the
+// OIDC callback does, and returns the session cookie it set: every admin
+// route then runs its real session and role middleware for identity.
+func signInAs(t *testing.T, srv *Server, identity *service.Identity) *http.Cookie {
+	t.Helper()
+
+	srv.router.GET("/test-sign-in", func(c *gin.Context) {
+		if err := middleware.SetIdentitySession(c, identity); err != nil {
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+		c.Status(http.StatusNoContent)
+	})
+	w := httptest.NewRecorder()
+	srv.router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/test-sign-in", nil))
+	for _, cookie := range w.Result().Cookies() {
+		if cookie.Name == "ssoossh_session" {
+			return cookie
+		}
+	}
+	t.Fatalf("sign-in set no session cookie: %d %s", w.Code, w.Body.String())
+	return nil
+}
+
+// concretePath fills a route's parameters with placeholder values.
+func concretePath(path string) string {
+	segments := strings.Split(path, "/")
+	for i, segment := range segments {
+		if strings.HasPrefix(segment, ":") || strings.HasPrefix(segment, "*") {
+			segments[i] = "1"
+		}
+	}
+	return strings.Join(segments, "/")
+}
+
+// TestNSSRouter_ShouldOpenOnlyTheKeyListToAFleetKeyAdminWhenEveryAdminRouteIsSwept
+// walks every /api/admin route the real router registers as a fleet key
+// admin (admin.nss_key_group) who holds no admin area role: GET
+// /api/admin/nss/keys answers 200 and every other route 403, so the key
+// list's wider gate widens nothing else, including routes added later.
+func TestNSSRouter_ShouldOpenOnlyTheKeyListToAFleetKeyAdminWhenEveryAdminRouteIsSwept(t *testing.T) {
+	t.Parallel()
+
+	c := nssRouterConfig(0)
+	c.Admin.NSSKeyGroup = "nss-key-admins"
+	c.Admin.SOCGroup = "ssh-soc"
+	c.Admin.AuditorGroup = "ssh-auditors"
+	a := newTestApp(t, c)
+	a.svc.audit = service.NewAuditService(c, a.db)
+	a.svc.notification = service.NewNotificationService(a.db, nil, false, false, false)
+	a.svc.identity = service.NewIdentityService(a.db, nil)
+	if err := a.initNSSServices(a.svc); err != nil {
+		t.Fatalf("initNSSServices: %v", err)
+	}
+	srv, err := a.initRouter()
+	if err != nil {
+		t.Fatalf("initRouter: %v", err)
+	}
+	routes := srv.router.Routes()
+	cookie := signInAs(t, srv, &service.Identity{Subject: "sub-keyadmin", Username: "keyadmin", Groups: []string{"nss-key-admins"}})
+
+	swept := 0
+	for _, route := range routes {
+		if !strings.HasPrefix(route.Path, "/api/admin/") {
+			continue
+		}
+		swept++
+		want := http.StatusForbidden
+		if route.Method == http.MethodGet && route.Path == "/api/admin/nss/keys" {
+			want = http.StatusOK
+		}
+		t.Run("should answer "+http.StatusText(want)+" when the fleet key admin sends "+route.Method+" "+route.Path, func(t *testing.T) {
+			req := httptest.NewRequest(route.Method, concretePath(route.Path), nil)
+			req.AddCookie(cookie)
+			w := httptest.NewRecorder()
+			srv.router.ServeHTTP(w, req)
+			if w.Code != want {
+				t.Errorf("status = %d, want %d: %s", w.Code, want, w.Body.String())
+			}
+		})
+	}
+	// A sweep that found nothing would pass vacuously.
+	if swept < 10 {
+		t.Fatalf("swept %d admin routes, want the whole admin API", swept)
 	}
 }

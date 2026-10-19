@@ -4,12 +4,16 @@
 	import { goToLogin } from '#lib/auth.js';
 	import AccessDenied from '#lib/components/AccessDenied.svelte';
 	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
+	import { adminRouteOpen } from '#lib/nav.js';
 	import type { Snippet } from 'svelte';
 
 	let { children }: { children: Snippet } = $props();
 
-	// Gate the entire admin area on auditor access. The server re-checks
-	// every read, so this is display-only and provides no security.
+	// Gate the entire admin area on auditor access, with one exception the
+	// nav model names (adminRouteOpen): the fleet key admin role opens All
+	// NSS keys, the keys it manages, and only that. Every other admin page
+	// refuses it below. The server re-checks every read, so this is
+	// display-only and provides no security.
 	//
 	// Only a signed-OUT visitor is sent to login. Someone signed in without
 	// auditor access stays here and gets the explanation below: logging in
@@ -22,7 +26,7 @@
 	});
 </script>
 
-{#if session.user?.is_auditor}
+{#if adminRouteOpen(session.user, page.url.pathname)}
 	<!-- The gate, and nothing else.
 
 	     This layout used to own two things it had no business owning. It
@@ -34,9 +38,10 @@
 	     through PageShell, the same way every non-admin page does. -->
 	{@render children()}
 {:else if session.resolved}
-	<!-- Signed in, but without auditor access. The same card the error page
-	     gives a 403, rather than one muted sentence with no heading and no
-	     way out. -->
+	<!-- Signed in, but without auditor access (or a fleet key admin on a
+	     page other than All NSS keys). The same card the error page gives a
+	     403, rather than one muted sentence with no heading and no way
+	     out. -->
 	<AccessDenied
 		requirement="The admin area needs an admin, SOC or auditor role. Ask an administrator if you need it."
 		testid="admin-access-denied"

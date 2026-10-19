@@ -95,7 +95,8 @@ func parseNSSKeyRange(q string) (*NSSKeyAddressSearch, error) {
 // meant as a range), or hex digits, colons and dots with at least two
 // colons (IPv6, an embedded IPv4 included), with an optional zone and an
 // optional "/" and digits after it. A key name, a group or a username
-// carries some other letter and so never reads as one.
+// carries some other letter and so never reads as one, and nor does a key
+// id or a prefix of one ("nss_" and base32), which the text search matches.
 func looksLikeAddress(q string) bool {
 	body, bits, hasBits := strings.Cut(q, "/")
 	if !onlyRunes(bits, isDigit) {

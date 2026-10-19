@@ -55,7 +55,9 @@ func TestParseNSSKeyAddressSearch_ShouldReadTheAddressOrRangeWhenQLooksLikeOne(t
 func TestParseNSSKeyAddressSearch_ShouldLeaveItToTheTextSearchWhenQIsNotAnAddress(t *testing.T) {
 	t.Parallel()
 
-	for _, q := range []string{"", "web fleet", "kim", "kim@example.org", "nss_abcd2345", "1234", "db:1", "cafe", "web.fleet", "ou=hosts/web", "/24", "10.0.4.7 web"} {
+	// A key id or a prefix of one ("nss_" and base32, in either case) always
+	// carries letters and an underscore, so it is text, never an address.
+	for _, q := range []string{"", "web fleet", "kim", "kim@example.org", "nss_abcd2345", "NSS_ABCD2345", "nss_", "nss_5", "1234", "db:1", "cafe", "web.fleet", "ou=hosts/web", "/24", "10.0.4.7 web"} {
 		t.Run("should not read "+q+" as an address when it is searched", func(t *testing.T) {
 			t.Parallel()
 

@@ -5276,7 +5276,8 @@ paths:
     get:
       description: |-
         One page of every fleet key, whoever manages it and whether or not it has a group, by name then id.
-        q matches a case-insensitive substring of the key's name or group or the creator's username or email.
+        q matches a case-insensitive substring of the key's name or group or the creator's username or email,
+        or the start of the key's id (nss_5vqsreyx, or a prefix of it, in any case).
         A q that reads as an IP address (IPv4 or IPv6, an IPv4-mapped one read as IPv4) or a CIDR range
         searches the usage instead: the keys hosts used from that address or range within nss.usage_retention,
         each with up to 5 of the matching addresses (newest first) and how many matched; address_search then
@@ -5298,8 +5299,8 @@ paths:
         name: limit
         schema:
           type: integer
-      - description: Text matched against name, group, creator username and email;
-          or an IP address or CIDR range
+      - description: Text matched against name, group, creator username and email,
+          or the start of the key id; or an IP address or CIDR range
         example: 10.0.4.0/24
         in: query
         name: q
@@ -5360,7 +5361,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
-          description: Not authorized as auditor
+          description: Neither an auditor (or above) nor a fleet key admin
         "404":
           content:
             application/json:
@@ -5369,7 +5370,7 @@ paths:
           description: 'nss_disabled: nss.enabled is false'
       security:
       - sessionCookie: []
-      summary: List every fleet API key (auditor and above)
+      summary: List every fleet API key (auditor and above, or fleet key admin)
       tags:
       - admin
   /api/admin/nss/pending-id-changes:

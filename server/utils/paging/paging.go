@@ -204,6 +204,22 @@ func Filter(query string, columns ...string) (string, []any) {
 	return "(" + strings.Join(clauses, " OR ") + ")", args
 }
 
+// PrefixFilter builds the WHERE fragment and bind arguments matching rows
+// whose column starts with query, for a column whose values are stored in
+// lower case (a generated id): query is lowered, so a term pasted in any
+// case matches, and the column is compared as stored. It returns "" and
+// nil when query is empty. LIKE wildcards in query match themselves, as in
+// Filter.
+//
+// The column name is interpolated into the SQL, so it must be a literal
+// from the calling package, never a caller-supplied string.
+func PrefixFilter(query, column string) (string, []any) {
+	if query == "" {
+		return "", nil
+	}
+	return fmt.Sprintf("%s LIKE ? ESCAPE '%s'", column, likeEscape), []any{escapeLike(strings.ToLower(query)) + "%"}
+}
+
 // escapeLike neutralizes the LIKE wildcards in s so a search term matches
 // itself literally. Without it, a user typing "%" into a search box matches
 // every row, and "_" matches any character — both of which read as the
