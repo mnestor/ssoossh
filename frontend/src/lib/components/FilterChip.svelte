@@ -19,7 +19,7 @@
 	// loaded, so there is no URL that would restore it anyway.
 	interface Props {
 		label: string;
-		/** Icon name from the registry — see Icon.svelte. Left out for a chip
+		/** Icon name from the registry (see Icon.svelte). Left out for a chip
 		 *  whose words are the whole value ("30 days"), where a glyph
 		 *  repeated on every chip would say nothing. */
 		icon?: string;

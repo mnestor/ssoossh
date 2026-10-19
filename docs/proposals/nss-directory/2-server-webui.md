@@ -16,15 +16,19 @@ in [README.md](README.md).
 6. A read-only viewer of the stored accounts and groups, with what a
    host's lookup is served for each, under `/admin/nss` (added 2026-10-18
    at the owner's request).
+7. A fleet-wide list of every key for auditors and above, `/admin/nss/keys`,
+   and `/nss-keys` narrowed to the keys the viewer's groups manage (added
+   2026-10-19 at the owner's request).
 
-No new API surface beyond Part 1. All data comes from `/api/nss/keys*`
-and `/api/users/me`.
+No new API surface beyond Part 1. All data comes from `/api/nss/keys*`,
+`/api/admin/nss/*` and `/api/users/me`.
 
 ## Routes
 
 | Route | Who sees it | Notes |
 | --- | --- | --- |
-| `/nss-keys` | anyone whose `/api/nss/keys` list is non-empty, plus `is_nss_key_admin` from `/api/users/me` | top-level nav entry, **not under `/admin`**: `frontend/src/routes/admin/+layout.svelte` gates on admin roles, and key-group members are not admins (README R16) |
+| `/nss-keys` | anyone whose `/api/nss/keys` list is non-empty (changed 2026-10-19 by the owner: the list is the keys whose group is one of the viewer's groups for every role, so no role shows the entry on its own) | top-level nav entry, **not under `/admin`**: `frontend/src/routes/admin/+layout.svelte` gates on admin roles, and key-group members are not admins (README R16) |
+| `/admin/nss/keys` | auditor, SOC, admin | (added 2026-10-19) "NSS keys" in the admin group of the rail, beside "NSS directory", only when `nss_enabled` is true. Every key, see "Fleet keys (admin)" below |
 | `/nss-keys/new` | `is_nss_key_admin` (admins inherit it) | |
 | `/nss-keys/[id]` | read roles for that key | detail + usage |
 | `/nss-keys/[id]/rotation` | read roles | rotation report |
@@ -50,6 +54,57 @@ Columns: id (monospace), name, description (truncated), group, expires
 (relative, amber within 30 days, red when past), last used (from usage
 aggregate), status (`active`, `rotating` while a previous secret is live,
 `expired`, `revoked`). Filter by status and group; sort by expiry.
+
+## Fleet keys (admin)
+
+(added 2026-10-19 at the owner's request)
+
+`/admin/nss/keys`, `wide`, titled "All NSS keys", from
+`GET /api/admin/nss/keys` (Part 1, "Fleet key admin endpoints"). The reader
+starts from a clue, usually an address from a log or an alert, else a key's
+name, group or creator, and opens the key. The worst case is acting on the
+wrong key, or concluding an address uses no key when the search quietly
+missed, so:
+
+- **Search**: one field, labelled "Search keys", with the hint "A name, group
+  or creator, or an address (10.0.4.7) or range (10.0.4.0/24)." Plain text,
+  no `inputmode`, autocomplete and spellcheck off. Text matches name, group
+  and the creator's username or email. An address or a CIDR range searches
+  the usage within `nss.usage_retention`, and a line under the field says
+  "Keys used from 10.0.4.0/24 in the last 90 days", the range as the server
+  normalised it and the window from its response. A term shaped like an
+  address that does not parse gets an inline error naming the problem
+  ("10.0.4.0/33 is not a valid range: an IPv4 prefix is 0 to 32.") on Enter
+  or leaving the field, and no request; the server's 400 lands in the same
+  place. Typing settles into a search as every list's box does.
+- **Filters**: a Status group (All, Active, Expired, Revoked) and a "Needs
+  attention" group of toggles (Expiring, Unused 30 days, Alerts 7 days);
+  Expiring adds a 7 / 30 / 90 days choice beside it, 30 by default. All in the
+  address (`?q=`, `?status=`, `?expiring=`, `?unused=1`, `?alerts=1`),
+  server-side, unknown values dropped. Clear filters once any is set.
+- **Rows**: Name (mono, the link, the group muted under it), Creator
+  (username, email under it; "unknown user" and the id when the account is
+  gone), Status (the key badge, the expiry as on `/nss-keys`, and a recent
+  usage alert), Hosts (distinct addresses in 7 days, right-aligned) and Last
+  seen. For an address search the Hosts column is "Used from": up to five
+  matching addresses, when each was last seen, "current secret" or "previous
+  secret", and "and N more". No action on any row: a row opens
+  `/nss-keys/[id]?from=admin`, whose back chip ("All NSS keys") returns with
+  the filters.
+- **Heading**: New key, a ghost link, for the fleet key admin role only,
+  opening the create form with `?from=admin`.
+- **States**: skeleton rows; no keys yet (why a host needs one, and who
+  creates them); nothing matching with Clear filters; an address no key was
+  used from, naming the window and that the address is the one the server
+  observed (the forwarded one behind a proxy in `http.trusted_proxies`); a
+  load error with Try again; Load more through `LoadMoreFooter`; the NSS
+  off notice; an expired session goes to sign in.
+
+`/nss-keys` (changed 2026-10-19): the keys whose group is one of the
+viewer's groups, for every role. Its empty state says a key is listed once
+its group is one the viewer is in, links auditors to All NSS keys, and keeps
+New key for the fleet key admin role. The create form suggests the groups of
+every key only to the admin area's roles.
 
 ## Create
 

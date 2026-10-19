@@ -391,11 +391,15 @@ vocabulary; an unmapped name renders a visible red `?`.
   Config, `address-book` Directory, `database-search` NSS directory (the
   stored accounts and groups, looked up: a new object, so a new noun),
   `braces` Claims echo, `logs` Audit log, `activity-heartbeat` Diagnostics,
-  `user-cog` Preferences.
+  `user-cog` Preferences, `server` NSS keys (admin, every key: another
+  drawing of the fleet key noun, as `circle-key` is for every service code).
 - **NSS fleet keys** (`KeyStatusBadge`, the rail): `server-2` the fleet a
   key serves (the NSS keys destination and an active key), `rotate` a key
   whose previous secret is still accepted, `server-off` a revoked key,
-  `clock-cancel` an expired one (time ran out, as for a request).
+  `clock-cancel` an expired one (time ran out, as for a request). On the
+  admin key list's Needs attention toggles, `clock-exclamation` a key whose
+  expiry is near, `search-off` one no host has looked anything up with
+  lately, and `alert-triangle` a recent usage alert.
 - **Files and edits:** `download` a file to save (the rotation report's
   CSV), `pencil` a value changed in place.
 - **Account, theme and chrome:** `user-circle` identity, `logout`, `sun` /
@@ -584,7 +588,10 @@ rounded-md border-border-control bg-surface px-3 text-base`, `text-base`
   group has its own "any" option (the `filter-off` chip; "All", "Any" or
   "Both" in the select) rather than clearing by pressing the selected chip
   again.
-- **FilterChip**: glyph, label, pressed state. `rounded`, `min-h-target`,
+- **FilterChip**: glyph, label, pressed state. The glyph may be left out
+  where the words are the whole value (the "7 days / 30 days / 90 days"
+  choice on All NSS keys), since one glyph repeated on every chip says
+  nothing. `rounded`, `min-h-target`,
   unselected `border-control text-ink-muted`, selected ink fill plus `check`
   plus `aria-pressed`. Always named: a chip is never its glyph alone. It
   appears only from `sm` up; below that its group is a select.
@@ -1016,7 +1023,8 @@ the result and drops the diagnostic detail an expert compares.
   "forget" control: unticking a chip on the next approval is the way out.
 - **Roles** (from the 2026-10-10 review): SOC may disable and enable users;
   `/api/users/me` gains `is_nss_key_admin`; NSS keys are one top-level rail
-  item, read-only for auditors. Admin, SOC and auditor powers sit behind
+  item, read-only for auditors. Since 2026-10-19 that item is the keys the
+  viewer's groups manage, and every key is the admin group's NSS keys. Admin, SOC and auditor powers sit behind
   admin mode (`docs/proposals/admin-elevation.md`).
 - **`/preferences` order:** Email notifications, Login shell (the NSS login
   shell setting), Display.
@@ -1120,6 +1128,45 @@ beneath it.
     no stored entry has that number and that a host lookup would still ask
     the directory; a group's also links the account with that uid, since
     private groups are never stored.
+  - **NSS keys** (`/admin/nss/keys`, `wide`, titled "All NSS keys", the
+    rail entry `nssOnly`, below NSS directory, which `currentHref` keeps
+    from lighting up too): every fleet key, whoever manages it, read only.
+    `NSSKeyAdminList`. The primary control is one search field with a
+    visible label, "Search keys", and the hint "A name, group or creator,
+    or an address (10.0.4.7) or range (10.0.4.0/24)." (plain text, no
+    `inputmode`, mono). Text searches the key; an address or a CIDR range
+    searches the usage the server kept, and a line under the field says
+    "Keys used from 10.0.4.0/24 in the last 90 days", with the range and the
+    window the server answered. A term shaped like an address that does not
+    parse is marked on Enter or leaving the field (`aria-invalid`, a
+    `text-danger` line naming the problem, "The list below is not searched
+    by it.") and sends nothing; the server's 400 shows there too. Then a
+    Status `FilterGroup` and a "Needs attention" group of `FilterChip`
+    toggles (Expiring, Unused 30 days, Alerts 7 days); Expiring adds an
+    "Expiring within" 7 / 30 / 90 days group, 30 by default. All of it in
+    the address (`?q=`, `?status=`, `?expiring=`, `?unused=1`, `?alerts=1`).
+    `.data-table`, five columns: Name (mono link, the group muted under it,
+    "no group" for none), Creator (username, email under it; "unknown user"
+    and the id in mono when the account is gone), Status (`KeyStatusBadge`,
+    the expiry as on `/nss-keys`, a recent usage alert in `trimmed` with
+    its glyph), Hosts, 7 days (right-aligned), Last seen. An address search
+    swaps Hosts for "Used from": each matching address in mono with when it
+    was last seen and "current secret" or "previous secret", and "and N
+    more". No row action: a row opens `/nss-keys/<id>?from=admin` with the
+    filters (`back=`), whose back chip says "All NSS keys". New key is a
+    ghost link in the heading, for the fleet key admin role only, so it
+    never competes with the search. States: skeleton rows; "No NSS keys
+    yet", which says why a host needs a key and that a fleet key admin
+    creates them; "No keys match" with Clear filters; "No key was used from
+    <address>", which names the window and that the address is the one the
+    server observed (the forwarded one behind a proxy in
+    `http.trusted_proxies`), with Clear filters; error with Try again; Load
+    more; the NSS off notice.
+  - **The keys a viewer manages** (`/nss-keys`, outside the admin area): the
+    keys whose group is one of the viewer's groups, for every role, so its
+    top-level rail entry shows only when that list is not empty. Its empty
+    state, "No NSS keys in your groups", links auditors to All NSS keys and
+    keeps New key for the fleet key admin role.
   - **Admin-only references:** the Probe, Sync, Pending id changes and
     Collisions live on the admin-only Directory, so `NSSDirectoryRef` links
     to them for admins and says "An admin can ..." to everyone else.

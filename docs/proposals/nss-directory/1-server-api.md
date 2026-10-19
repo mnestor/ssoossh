@@ -156,7 +156,8 @@ person's own-name certificate principal can never pass `getpwnam` (R23).
 | `revoked_at`, `revoked_by` | |
 
 **`nss_key_usage`**: PK `(key_id, source_ip, generation, day)`; `lookups`,
-`misses`, `first_seen`, `last_seen`. Written by a flusher, not per request
+`misses`, `first_seen`, `last_seen`, and `source_ip_key` (added 2026-10-19,
+see "Every key" under Fleet key admin endpoints). Written by a flusher, not per request
 (R14): the lookup path increments an in-memory map; a goroutine flushes it
 every 60 s and on graceful shutdown with upserts. Pruned at
 `nss.usage_retention` (2160h) by a scheduler job. A crash loses at most one
@@ -491,7 +492,7 @@ Session-authenticated; swag-annotated; all mutations audit-logged.
 
 | Path | Method | Who |
 | --- | --- | --- |
-| `/api/nss/keys` | GET | all keys: `nss_key_group`, admin, SOC, auditor; others: keys whose `group` they are in |
+| `/api/nss/keys` | GET | the keys whose `group` is one of the caller's groups, for everyone (changed 2026-10-19 by the owner: the roles that read every key use `/api/admin/nss/keys`) |
 | `/api/nss/keys` | POST | `nss_key_group`, admin. Returns the secret once |
 | `/api/nss/keys/:id` | GET | as list |
 | `/api/nss/keys/:id` | PATCH | `description`, `notification_email`: key group members too. `group`: `nss_key_group`, admin only. The expiry cannot be edited; rotation renews it (decided 2026-10-18) |
@@ -504,6 +505,39 @@ Session-authenticated; swag-annotated; all mutations audit-logged.
 List and detail responses carry a per-key `permissions` array for the
 caller (`view`, `rotate`, `revoke`, `edit`, `assign_group`) so the UI does
 not reimplement the role matrix.
+
+**Every key** (added 2026-10-19 at the owner's request).
+`GET /api/admin/nss/keys`, auditor and above, beside the directory viewer
+and like it a 404 (`nss_disabled`) with NSS off. One page of every key by
+name then id, cursor paged (`after`, `limit`) with a total. Each row: id,
+name, group, status, generation, expiry, previous secret expiry, revocation,
+creation, the creator (`user_id`, `username`, `email`, `exists`, from a LEFT
+JOIN on `users`, so a creator whose account is gone still names the id),
+`hosts_7d` (distinct source addresses in 7 days), `last_seen_at` and the
+recent usage alerts. Never a secret hash. Parameters:
+
+- `q`: a case-insensitive substring of the name, the group or the creator's
+  username or email; or, when it reads as an IP address or a CIDR range, an
+  address search: the keys with `nss_key_usage` rows from that address or
+  range within `nss.usage_retention`, each with `matched` (up to 5
+  addresses, newest first, with `last_seen`, `generation` and `secret`
+  `current`, `previous` or `older`, and the total). `address_search` echoes
+  the normalised address or range and `usage_retention_seconds` the window.
+  A term shaped like an address or a range that is not one is a 400 naming
+  the problem.
+- `status` (`all`, `active`, `expired`, `revoked`), `expiring_within` (7, 30
+  or 90 days, active keys only), `unused` (no lookup in 30 days, never used
+  included), `alerts` (a `miss_rate` or `key_source` claim in `nss_alerts`
+  in 7 days, read by its primary key). Unknown values are dropped.
+
+The address search reads `nss_key_usage.source_ip_key`, the address as its
+16-byte IPv6 form (IPv4 as IPv4-mapped), BLOB on SQLite and BYTEA on
+Postgres, written by the flusher beside `source_ip` and indexed with the day
+(`idx_nss_key_usage_source_day`). One address is an equality and a range a
+`BETWEEN` on the first and last address, both of which the two dialects
+compare bytewise, so the search never scans the table. The host counts,
+last use and matches are read for the page's keys only, a fixed number of
+queries per page.
 
 ## Pending id changes (admin)
 
