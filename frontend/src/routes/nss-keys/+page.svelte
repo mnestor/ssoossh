@@ -338,11 +338,15 @@
 								{@const status = keyStatus(key, now)}
 								<tr data-testid="nss-key-row">
 									<td>
+										<!-- keyHref is a resolve()'d route plus the back query; the rule cannot see through the call.
+										     Block form because the report lands on the href line. -->
+										<!-- eslint-disable svelte/no-navigation-without-resolve -->
 										<a
 											href={keyHref(key.id)}
 											class="inline-flex min-h-target items-center font-medium text-accent hover:underline"
 											data-testid="nss-key-link">{key.name}</a
 										>
+										<!-- eslint-enable svelte/no-navigation-without-resolve -->
 										<div class="font-mono text-xs text-ink-muted">{key.id}</div>
 										<!-- Below `sm` the status column folds in here, so the
 										     table fits a phone without scrolling. -->

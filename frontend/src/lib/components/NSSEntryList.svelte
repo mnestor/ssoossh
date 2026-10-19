@@ -287,11 +287,15 @@
 					{#each rows as row (row.id)}
 						<tr data-testid="nss-list-row">
 							<td>
+								<!-- rowHref is a resolve()'d route plus the back query; the rule cannot see through the call.
+								     Block form because the report lands on the href line. -->
+								<!-- eslint-disable svelte/no-navigation-without-resolve -->
 								<a
 									href={rowHref(row)}
 									class="font-mono text-accent hover:underline"
 									data-testid="nss-list-link">{row.name}</a
 								>
+								<!-- eslint-enable svelte/no-navigation-without-resolve -->
 							</td>
 							{#if 'uid' in row}
 								<td class="text-right font-mono">{row.uid}</td>

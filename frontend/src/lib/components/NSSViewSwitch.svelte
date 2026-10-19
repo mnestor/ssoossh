@@ -26,6 +26,9 @@
 	data-testid="nss-view-switch"
 >
 	{#each views as view (view.id)}
+		<!-- view.href is resolve()'d in the script above; the rule cannot see through the array.
+		     Block form because the report lands on the href line. -->
+		<!-- eslint-disable svelte/no-navigation-without-resolve -->
 		<a
 			href={view.href}
 			aria-current={current === view.id ? 'page' : undefined}
@@ -38,5 +41,6 @@
 			{#if current === view.id}<Icon name="check" size="xs" />{/if}
 			{view.label}
 		</a>
+		<!-- eslint-enable svelte/no-navigation-without-resolve -->
 	{/each}
 </nav>

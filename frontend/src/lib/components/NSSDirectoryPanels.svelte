@@ -284,11 +284,15 @@
 			<!-- A stored side opens its viewer page; a refused one has no row
 			     to open, so it stays plain text. -->
 			{#if side.stored}
+				<!-- entryHref builds this from resolve(); the rule cannot see through the call.
+				     Block form because the report lands on the href line. -->
+				<!-- eslint-disable svelte/no-navigation-without-resolve -->
 				<a
 					href={entryHref(account, side.number)}
 					class="font-mono text-accent hover:underline"
 					data-testid="collision-{role}-link">{side.name}</a
 				>
+				<!-- eslint-enable svelte/no-navigation-without-resolve -->
 			{:else}
 				<span class="font-mono text-ink">{side.name}</span>
 			{/if}
@@ -351,11 +355,15 @@
 									<span class="inline-flex items-center gap-1.5">
 										<!-- Every pending row is stored, so its name opens its
 										     viewer page by the stored number. -->
+										<!-- entryHref builds this from resolve(); the rule cannot see through the call.
+										     Block form because the report lands on the href line. -->
+										<!-- eslint-disable svelte/no-navigation-without-resolve -->
 										<a
 											href={entryHref(row.kind === 'account', row.number)}
 											class="font-mono text-accent hover:underline"
 											data-testid="nss-pending-link">{row.name}</a
 										>
+										<!-- eslint-enable svelte/no-navigation-without-resolve -->
 										<span class="text-xs text-ink-muted">{row.kind}</span>
 									</span>
 									<span class="font-mono text-xs break-all text-ink-muted">{row.dn}</span>

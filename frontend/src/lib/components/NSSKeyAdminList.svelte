@@ -457,11 +457,15 @@
 						{@const status = keyStatus(key, now)}
 						<tr data-testid="nss-admin-keys-row">
 							<td>
+								<!-- rowHref is a resolve()'d route plus the from and back query; the rule cannot see through the call.
+								     Block form because the report lands on the href line. -->
+								<!-- eslint-disable svelte/no-navigation-without-resolve -->
 								<a
 									href={rowHref(key.id)}
 									class="inline-flex min-h-target items-center font-mono font-medium text-accent hover:underline"
 									data-testid="nss-admin-keys-link">{key.name}</a
 								>
+								<!-- eslint-enable svelte/no-navigation-without-resolve -->
 								<div class="font-mono text-xs text-ink-muted">
 									{key.group_name || 'no group'}
 								</div>

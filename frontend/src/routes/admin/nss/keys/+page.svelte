@@ -23,6 +23,9 @@
 		{/snippet}
 		{#snippet action()}
 			{#if canCreate}
+				<!-- A resolve()'d route with a query appended, not a bare route id.
+				     Block form because the report lands on the href line. -->
+				<!-- eslint-disable svelte/no-navigation-without-resolve -->
 				<a
 					href={`${resolve('/nss-keys/new')}?from=admin`}
 					data-testid="nss-admin-keys-new"
@@ -30,6 +33,7 @@
 				>
 					New key
 				</a>
+				<!-- eslint-enable svelte/no-navigation-without-resolve -->
 			{/if}
 		{/snippet}
 	</PageHeading>

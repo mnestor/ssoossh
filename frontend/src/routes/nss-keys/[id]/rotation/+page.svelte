@@ -263,7 +263,7 @@
 					</Button>
 					<!-- A plain link: the answer is a file download, not a page.
 					     downloadCSV checks the session before letting it through. -->
-					<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
+					<!-- eslint-disable svelte/no-navigation-without-resolve -->
 					<a
 						bind:this={csvLink}
 						href={nssRotationReportCSVURL(id)}
@@ -276,6 +276,7 @@
 						<Icon name="download" size="sm" />
 						Download CSV
 					</a>
+					<!-- eslint-enable svelte/no-navigation-without-resolve -->
 				</div>
 			{/if}
 		{/snippet}
@@ -330,11 +331,15 @@
 			This key has never been rotated. Rotate it from its page, then come back here to see which
 			hosts have switched to the new secret.
 			{#snippet action()}
+				<!-- keyHref is a resolve()'d route plus the list context, $derived above; the rule cannot see through it.
+				     Block form because the report lands on the href line. -->
+				<!-- eslint-disable svelte/no-navigation-without-resolve -->
 				<a
 					href={keyHref}
 					class="inline-flex min-h-target items-center text-sm text-accent hover:underline"
 					>Open the key</a
 				>
+				<!-- eslint-enable svelte/no-navigation-without-resolve -->
 			{/snippet}
 		</EmptyState>
 	{:else}

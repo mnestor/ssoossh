@@ -197,6 +197,8 @@
 	function dismiss() {
 		const id = issued?.key.id ?? '';
 		issued = null;
+		// A resolve()'d route with a query appended, not a bare route id.
+		// eslint-disable-next-line svelte/no-navigation-without-resolve
 		goto(`${resolve('/nss-keys/[id]', { id: id })}${fromAdmin ? '?from=admin' : ''}`);
 	}
 

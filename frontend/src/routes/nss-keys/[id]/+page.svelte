@@ -761,6 +761,9 @@
 					</Button>
 				{/if}
 				{#if key.rotated_at}
+					<!-- A resolve()'d route with the list context appended, not a bare route id.
+					     Block form because the report lands on the href line. -->
+					<!-- eslint-disable svelte/no-navigation-without-resolve -->
 					<a
 						href={`${resolve('/nss-keys/[id]/rotation', { id: key.id })}${listContext}`}
 						class="inline-flex min-h-target items-center gap-1 text-sm text-accent hover:underline"
@@ -769,6 +772,7 @@
 						Rotation report
 						<Icon name="chevron-right" size="xs" />
 					</a>
+					<!-- eslint-enable svelte/no-navigation-without-resolve -->
 				{/if}
 			</div>
 		</PageSection>
@@ -1002,11 +1006,15 @@
 		<p data-testid="nss-key-clear-count">
 			{#if countError}
 				Could not check which hosts still present the old secret. Open the
+				<!-- A resolve()'d route with the list context appended, not a bare route id.
+				     Block form because the report lands on the href line. -->
+				<!-- eslint-disable svelte/no-navigation-without-resolve -->
 				<a
 					href={`${resolve('/nss-keys/[id]/rotation', { id: key.id })}${listContext}`}
 					class="text-accent hover:underline"
 					data-testid="nss-key-clear-report-link">rotation report</a
 				>
+				<!-- eslint-enable svelte/no-navigation-without-resolve -->
 				before you go on.
 			{:else if notSwitched === null}
 				Checking which hosts still present the old secret…
