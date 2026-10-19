@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -92,17 +93,33 @@ func TestServeShouldSendPrivilegedDataWhenThePeerIsRoot(t *testing.T) {
 func TestServeShouldCloseTheConnection(t *testing.T) {
 	t.Parallel()
 
+	// slowTimers keeps every timer out of the way of a case that writes
+	// first: a test descheduled past a 100 ms read timeout before its write
+	// would find the connection already closed and fail on EPIPE, and the
+	// close it then saw would not be the one the case is about. The
+	// client's 5 s read deadline below is what bounds those cases.
+	const slowTimers = 30 * time.Second
+
 	tests := []struct {
 		name string
-		send func(t *testing.T, conn net.Conn)
+		// readTimeout is the server's per-call wait; zero is the
+		// fixture's 100 ms.
+		readTimeout time.Duration
+		// idleTimeout, when set, is socket_idle_timeout.
+		idleTimeout time.Duration
+		send        func(t *testing.T, conn net.Conn)
 	}{
 		{name: "should close when no call arrives within the read timeout", send: func(*testing.T, net.Conn) {}},
-		{name: "should close when the call is not JSON", send: func(t *testing.T, conn net.Conn) { write(t, conn, []byte("not json\x00")) }},
-		{name: "should close when a message passes 64 KiB", send: func(t *testing.T, conn net.Conn) {
-			write(t, conn, bytes.Repeat([]byte("a"), varlink.MaxMessageSize+2))
+		{name: "should close when the call is not JSON", readTimeout: slowTimers, send: func(t *testing.T, conn net.Conn) { write(t, conn, []byte("not json\x00")) }},
+		// One buffer past the limit with no NUL: the decoder notices an
+		// oversize message a buffer at a time, so a couple of bytes over
+		// would sit waiting for more until the read timeout, and the case
+		// would pass on the timer instead of the limit.
+		{name: "should close when a message passes 64 KiB", readTimeout: slowTimers, send: func(t *testing.T, conn net.Conn) {
+			write(t, conn, bytes.Repeat([]byte("a"), varlink.MaxMessageSize+4096))
 		}},
-		{name: "should close when a call has no method", send: func(t *testing.T, conn net.Conn) { write(t, conn, []byte(`{"parameters":{}}`+"\x00")) }},
-		{name: "should close after a call when the connection then sits idle", send: func(t *testing.T, conn net.Conn) {
+		{name: "should close when a call has no method", readTimeout: slowTimers, send: func(t *testing.T, conn net.Conn) { write(t, conn, []byte(`{"parameters":{}}`+"\x00")) }},
+		{name: "should close after a call when the connection then sits idle", readTimeout: slowTimers, idleTimeout: time.Second, send: func(t *testing.T, conn net.Conn) {
 			write(t, conn, []byte(`{"method":"org.varlink.service.GetInfo"}`+"\x00"))
 			if _, err := varlink.NewDecoder(conn).ReadReply(); err != nil {
 				t.Errorf("first reply: %v", err)
@@ -112,7 +129,12 @@ func TestServeShouldCloseTheConnection(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			f := start(t, nil, nil)
+			readTimeout := cmp.Or(tt.readTimeout, fixtureReadTimeout)
+			var mutate func(*config.Config)
+			if tt.idleTimeout > 0 {
+				mutate = func(c *config.Config) { c.SocketIdleTimeout = tt.idleTimeout }
+			}
+			f := startWithReadTimeout(t, nil, mutate, readTimeout)
 			conn, err := net.Dial("unix", f.socket)
 			if err != nil {
 				t.Fatal(err)
