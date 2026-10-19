@@ -1,4 +1,5 @@
 import { render, screen, waitFor, within } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -171,6 +172,33 @@ describe('NSS key detail', () => {
 
 			expect(screen.getByTestId('nss-key-readonly')).toBeInTheDocument();
 		});
+
+		const revokeOnlyCases: { name: string; permissions: NSSKeyPermission[]; shown: boolean }[] = [
+			{ name: 'the caller may only revoke (SOC)', permissions: ['view', 'revoke'], shown: true },
+			{
+				name: 'the caller may also rotate and edit',
+				permissions: ['view', 'rotate', 'revoke', 'edit'],
+				shown: false
+			},
+			{ name: 'the caller may only view', permissions: ['view'], shown: false }
+		];
+		for (const { name, permissions, shown } of revokeOnlyCases) {
+			it(`should ${shown ? 'say' : 'not say'} who may rotate and edit when ${name}`, async () => {
+				serve(keyFixture({ permissions }));
+				await loaded();
+
+				expect(screen.queryByTestId('nss-key-revoke-only') !== null).toBe(shown);
+			});
+		}
+
+		it('should name the roles that may rotate and edit when the caller may only revoke', async () => {
+			serve(keyFixture({ permissions: ['view', 'revoke'] }));
+			await loaded();
+
+			expect(screen.getByTestId('nss-key-revoke-only')).toHaveTextContent(
+				'Rotating and editing it need the fleet key admin role or membership of its group.'
+			);
+		});
 	});
 
 	describe('revoke', () => {
@@ -213,6 +241,29 @@ describe('NSS key detail', () => {
 			await userEvent.click(screen.getByTestId('nss-key-revoke-confirm'));
 
 			expect(await screen.findByTestId('nss-key-revoked')).toBeInTheDocument();
+		});
+
+		it('should put the caret on the revoked notice when the revoke lands', async () => {
+			await openRevoke();
+			await userEvent.type(screen.getByTestId('nss-key-revoke-typed'), 'nss_k7m4qp2x');
+			await userEvent.click(screen.getByTestId('nss-key-revoke-confirm'));
+			await waitFor(() =>
+				expect(screen.queryByTestId('nss-key-revoke-confirm')).not.toBeInTheDocument()
+			);
+			await tick();
+
+			expect(document.activeElement).toBe(screen.getByTestId('nss-key-revoked').parentElement);
+		});
+
+		it('should put the caret back on Revoke key when the dialog is cancelled', async () => {
+			await openRevoke();
+			await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+			await waitFor(() =>
+				expect(screen.queryByTestId('nss-key-revoke-confirm')).not.toBeInTheDocument()
+			);
+			await tick();
+
+			expect(document.activeElement).toBe(screen.getByTestId('nss-key-revoke'));
 		});
 	});
 
@@ -272,6 +323,29 @@ describe('NSS key detail', () => {
 			await userEvent.click(screen.getByTestId('secret-panel-done'));
 
 			expect(container.innerHTML).not.toContain(SECRET);
+		});
+
+		it('should hide Rotate secret when a new secret is on screen', async () => {
+			await rotateOnce();
+
+			expect(screen.queryByTestId('nss-key-rotate')).not.toBeInTheDocument();
+		});
+
+		it('should say why Rotate secret is gone when a new secret is on screen', async () => {
+			await rotateOnce();
+
+			expect(screen.getByTestId('nss-key-rotate-held')).toHaveTextContent(
+				'Rotate again once the new secret above is stored and you press Done.'
+			);
+		});
+
+		it('should put the caret on Rotate secret when Done is pressed', async () => {
+			await rotateOnce();
+			await userEvent.click(screen.getByLabelText('I have stored this secret'));
+			await userEvent.click(screen.getByTestId('secret-panel-done'));
+			await tick();
+
+			expect(document.activeElement).toBe(screen.getByTestId('nss-key-rotate'));
 		});
 
 		it('should ask before leaving while the new secret is on screen', async () => {
@@ -489,13 +563,158 @@ describe('NSS key detail', () => {
 			});
 			await loaded();
 			await userEvent.click(screen.getByTestId('nss-key-clear-previous'));
+			await settle();
 			await userEvent.click(screen.getByTestId('nss-key-clear-confirm'));
 
 			expect(calls.some((call) => call.method === 'DELETE')).toBe(true);
 		});
+
+		const holdCases: {
+			name: string;
+			report: Route | Response;
+			disabled: boolean;
+		}[] = [
+			{
+				name: 'the count is still loading',
+				report: () => new Promise<Response>(() => {}),
+				disabled: true
+			},
+			{
+				name: 'the count has loaded',
+				report: envelope(reportFixture([reportRow('10.0.0.1', 'switched')])),
+				disabled: false
+			},
+			{
+				name: 'the count failed to load',
+				report: envelope(null, 500, 'boom'),
+				disabled: false
+			}
+		];
+		for (const { name, report, disabled } of holdCases) {
+			it(`should ${disabled ? 'hold' : 'offer'} End previous secret when ${name}`, async () => {
+				serve(key, { 'GET /api/nss/keys/nss_k7m4qp2x/rotation-report': report });
+				await loaded();
+				await userEvent.click(screen.getByTestId('nss-key-clear-previous'));
+				await settle();
+
+				expect(screen.getByTestId('nss-key-clear-confirm').hasAttribute('disabled')).toBe(disabled);
+			});
+		}
+
+		it('should link to the rotation report from the dialog when the count fails', async () => {
+			serve(key, {
+				'GET /api/nss/keys/nss_k7m4qp2x/rotation-report': envelope(null, 500, 'boom')
+			});
+			await loaded();
+			await userEvent.click(screen.getByTestId('nss-key-clear-previous'));
+			await settle();
+
+			expect(screen.getByTestId('nss-key-clear-report-link')).toHaveAttribute(
+				'href',
+				'/nss-keys/nss_k7m4qp2x/rotation'
+			);
+		});
+
+		it('should show the count of the latest opening when an earlier answer lands last', async () => {
+			const answers: Array<(response: Response) => void> = [];
+			serve(key, {
+				'GET /api/nss/keys/nss_k7m4qp2x/rotation-report': () =>
+					new Promise<Response>((resolve) => answers.push(resolve))
+			});
+			await loaded();
+			await userEvent.click(screen.getByTestId('nss-key-clear-previous'));
+			await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+			await waitFor(() =>
+				expect(screen.queryByTestId('nss-key-clear-confirm')).not.toBeInTheDocument()
+			);
+			await userEvent.click(screen.getByTestId('nss-key-clear-previous'));
+			answers[1](envelope(reportFixture([reportRow('10.0.0.1', 'not_switched')])));
+			await settle();
+			answers[0](envelope(reportFixture([reportRow('10.0.0.2', 'switched')])));
+			await settle();
+
+			expect(screen.getByTestId('nss-key-clear-count')).toHaveTextContent(
+				'1 host still on the old secret will start failing.'
+			);
+		});
+
+		it('should put the caret on the previous secret row when it has been ended', async () => {
+			serve(key, {
+				'GET /api/nss/keys/nss_k7m4qp2x/rotation-report': envelope(reportFixture([])),
+				'DELETE /api/nss/keys/nss_k7m4qp2x/previous': envelope(keyFixture({ permissions: ALL }))
+			});
+			await loaded();
+			await userEvent.click(screen.getByTestId('nss-key-clear-previous'));
+			await settle();
+			await userEvent.click(screen.getByTestId('nss-key-clear-confirm'));
+			await waitFor(() =>
+				expect(screen.queryByTestId('nss-key-clear-confirm')).not.toBeInTheDocument()
+			);
+			await tick();
+
+			expect(document.activeElement).toBe(screen.getByTestId('nss-key-previous'));
+		});
 	});
 
 	describe('inline edits', () => {
+		const fields = ['description', 'group', 'email'];
+
+		/** openEdit loads an editable key and opens one field's form. */
+		async function openEdit(field: string) {
+			serve(keyFixture({ permissions: ALL }), {
+				'PATCH /api/nss/keys/nss_k7m4qp2x': envelope(keyFixture({ permissions: ALL }))
+			});
+			await loaded();
+			await userEvent.click(screen.getByTestId(`nss-key-edit-${field}`));
+		}
+
+		for (const field of fields) {
+			it(`should put the caret in the field when Edit ${field} is pressed`, async () => {
+				await openEdit(field);
+
+				expect(document.activeElement).toBe(screen.getByTestId(`nss-key-input-${field}`));
+			});
+
+			it(`should put the caret back on Edit ${field} when the edit is cancelled`, async () => {
+				await openEdit(field);
+				await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+				await tick();
+
+				expect(document.activeElement).toBe(screen.getByTestId(`nss-key-edit-${field}`));
+			});
+
+			it(`should put the caret back on Edit ${field} when Escape is pressed`, async () => {
+				await openEdit(field);
+				await userEvent.keyboard('{Escape}');
+				await tick();
+
+				expect(document.activeElement).toBe(screen.getByTestId(`nss-key-edit-${field}`));
+			});
+
+			it(`should put the caret back on Edit ${field} when the edit is saved`, async () => {
+				await openEdit(field);
+				await userEvent.click(screen.getByTestId(`nss-key-save-${field}`));
+				await waitFor(() =>
+					expect(screen.queryByTestId(`nss-key-form-${field}`)).not.toBeInTheDocument()
+				);
+				await tick();
+
+				expect(document.activeElement).toBe(screen.getByTestId(`nss-key-edit-${field}`));
+			});
+		}
+
+		it('should keep the form open when Escape is pressed while the save is in flight', async () => {
+			serve(keyFixture({ permissions: ALL }), {
+				'PATCH /api/nss/keys/nss_k7m4qp2x': () => new Promise<Response>(() => {})
+			});
+			await loaded();
+			await userEvent.click(screen.getByTestId('nss-key-edit-description'));
+			await userEvent.click(screen.getByTestId('nss-key-save-description'));
+			await userEvent.keyboard('{Escape}');
+
+			expect(screen.getByTestId('nss-key-form-description')).toBeInTheDocument();
+		});
+
 		it('should send only the edited field when a description is saved', async () => {
 			const calls = serve(keyFixture({ permissions: ALL }), {
 				'PATCH /api/nss/keys/nss_k7m4qp2x': envelope(
@@ -551,6 +770,16 @@ describe('NSS key detail', () => {
 
 			const usage = await screen.findByTestId('nss-key-usage-row');
 			expect(within(usage).getByText('10.0.0.7')).toBeInTheDocument();
+		});
+
+		it('should list both rows when the server repeats a day, address and generation', async () => {
+			serve(keyFixture(), {
+				'GET /api/nss/keys/nss_k7m4qp2x/usage': envelope({ rows: [row, row], total: 2 })
+			});
+			await loaded();
+			await screen.findAllByTestId('nss-key-usage-row');
+
+			expect(screen.getAllByTestId('nss-key-usage-row')).toHaveLength(2);
 		});
 
 		it('should show the miss rate beside the misses', async () => {

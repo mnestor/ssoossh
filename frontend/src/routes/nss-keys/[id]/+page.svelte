@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import { beforeNavigate } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
@@ -148,9 +149,34 @@
 					: key.notification_email;
 	}
 
-	function cancelEdit() {
+	// Each field's Edit button, so the caret goes back to it when its form
+	// closes. The form replaces the button, so without this the caret falls
+	// to <body> both on the way in and on the way out (WCAG 2.4.3).
+	let editButtons = $state<Partial<Record<Field, HTMLButtonElement>>>({});
+
+	/** focusOnMount puts the caret in a field the moment it appears. */
+	function focusOnMount(node: HTMLElement) {
+		node.focus();
+	}
+
+	/** closeEdit closes the open form and hands the caret back to its Edit button. */
+	async function closeEdit(field: Field) {
 		editing = null;
 		editError = null;
+		await tick();
+		editButtons[field]?.focus();
+	}
+
+	function cancelEdit() {
+		if (!editing || saving) return;
+		void closeEdit(editing);
+	}
+
+	/** editKeydown lets Escape leave an inline edit, as it leaves a dialog. */
+	function editKeydown(event: KeyboardEvent) {
+		if (event.key !== 'Escape') return;
+		event.preventDefault();
+		cancelEdit();
 	}
 
 	/** saveEdit sends the one field being edited, and only it. */
@@ -166,8 +192,9 @@
 		editError = null;
 		try {
 			key = await updateNSSKey(key.id, body);
-			editing = null;
 			liveMessage = `${fieldNames[field]} saved.`;
+			saving = false;
+			await closeEdit(field);
 		} catch (cause) {
 			if (redirectIfUnauthenticated(cause)) return;
 			editError = errorMessage(cause);
@@ -231,8 +258,17 @@
 		}
 	}
 
-	function dismissSecret() {
+	// Rotate is hidden while a new secret is on screen, so a second rotation
+	// cannot replace a secret nobody has stored yet. Done brings it back and
+	// puts the caret on it, where the reader left off before the panel
+	// opened; without that the pressed Done unmounts and the caret falls to
+	// <body>.
+	let rotateButton = $state<HTMLButtonElement | undefined>(undefined);
+
+	async function dismissSecret() {
 		issued = null;
+		await tick();
+		rotateButton?.focus();
 	}
 
 	// The panel opens at the top of the page, far above the Rotate button,
@@ -265,22 +301,53 @@
 	let totalHosts = $state<number | null>(null);
 	let countError = $state(false);
 
+	// The count read for the dialog now open. Aborted when the dialog
+	// closes, so an answer for an earlier opening never lands on a later
+	// one. Not $state: nothing renders from it.
+	let countRead: AbortController | null = null;
+
 	function openClear() {
 		if (!key) return;
+		countRead?.abort();
+		const controller = new AbortController();
+		countRead = controller;
 		confirmClear = true;
 		clearError = null;
 		notSwitched = null;
 		totalHosts = null;
 		countError = false;
-		getNSSRotationReport(key.id)
+		getNSSRotationReport(key.id, controller.signal)
 			.then((report) => {
+				if (controller.signal.aborted) return;
 				notSwitched = report.not_switched;
 				totalHosts = report.switched + report.not_switched + report.gone;
 			})
 			.catch((cause) => {
-				if (redirectIfUnauthenticated(cause)) return;
+				if (controller.signal.aborted || redirectIfUnauthenticated(cause)) return;
 				countError = true;
 			});
+	}
+
+	function closeClear() {
+		countRead?.abort();
+		countRead = null;
+		confirmClear = false;
+	}
+
+	// The count is the reason the dialog exists, so it cannot be confirmed
+	// before the count has loaded or failed to.
+	const countPending = $derived(notSwitched === null && !countError);
+
+	// Once the previous secret has ended its button goes, so the caret moves
+	// to the row that now says "None accepted". When the call failed and the
+	// reader cancelled, the button is still there and the dialog returns to
+	// it.
+	let previousValue = $state<HTMLElement | undefined>(undefined);
+
+	function focusPrevious(): boolean {
+		if (graceLive || !previousValue) return false;
+		previousValue.focus();
+		return true;
 	}
 
 	async function clearPrevious() {
@@ -289,7 +356,7 @@
 		clearError = null;
 		try {
 			key = await clearNSSKeyPrevious(key.id);
-			confirmClear = false;
+			closeClear();
 			liveMessage = 'The previous secret is no longer accepted.';
 		} catch (cause) {
 			if (redirectIfUnauthenticated(cause)) return;
@@ -304,6 +371,16 @@
 	let confirmRevoke = $state(false);
 	let revoking = $state(false);
 	let revokeError = $state<string | null>(null);
+
+	// A revoked key offers no Revoke button, so the caret moves to the
+	// notice that says the key is revoked rather than falling to <body>.
+	let revokedNotice = $state<HTMLElement | undefined>(undefined);
+
+	function focusRevoked(): boolean {
+		if (!revoked || !revokedNotice) return false;
+		revokedNotice.focus();
+		return true;
+	}
 
 	async function revoke() {
 		if (!key) return;
@@ -404,6 +481,7 @@
 
 {#snippet editButton(field: Field)}
 	<button
+		bind:this={editButtons[field]}
 		type="button"
 		onclick={() => startEdit(field)}
 		data-testid="nss-key-edit-{field}"
@@ -419,6 +497,8 @@
 		{#if type === 'textarea'}
 			<textarea
 				bind:value={draft}
+				use:focusOnMount
+				onkeydown={editKeydown}
 				rows="2"
 				aria-label={fieldNames[field]}
 				disabled={saving}
@@ -428,6 +508,8 @@
 		{:else}
 			<input
 				bind:value={draft}
+				use:focusOnMount
+				onkeydown={editKeydown}
 				{type}
 				aria-label={fieldNames[field]}
 				disabled={saving}
@@ -491,14 +573,18 @@
 		<LoadingBlock shape="lines" count={6} label="Loading this key…" testid="nss-key-loading" />
 	{:else}
 		{#if issued}
-			<SecretPanel
-				bind:this={secretPanel}
-				keyId={issued.key.id}
-				secret={issued.secret}
-				previousExpiresAt={issued.key.previous_expires_at}
-				ondismiss={dismissSecret}
-				testid="secret-panel"
-			/>
+			<!-- A fresh panel for every secret, so a tick or a "Copied" from
+			     an earlier one never stands beside a new one. -->
+			{#key issued.key.current_generation}
+				<SecretPanel
+					bind:this={secretPanel}
+					keyId={issued.key.id}
+					secret={issued.secret}
+					previousExpiresAt={issued.key.previous_expires_at}
+					ondismiss={dismissSecret}
+					testid="secret-panel"
+				/>
+			{/key}
 		{/if}
 
 		<!-- Identity strip: the key as the page's subject. -->
@@ -517,17 +603,27 @@
 					You can read this key and its usage. Changing it needs the fleet key admin role or
 					membership of its group.
 				</p>
+			{:else if mayRevoke && !mayRotate && !mayEdit}
+				<!-- SOC: revoke is offered, so say why rotate and edit are not. -->
+				<p class="text-dense text-ink-muted" data-testid="nss-key-revoke-only">
+					You can revoke this key. Rotating and editing it need the fleet key admin role or
+					membership of its group.
+				</p>
 			{/if}
 		</div>
 
 		{#if revoked}
-			<Alert variant="info" title="This key is revoked" testid="nss-key-revoked">
-				Neither secret is accepted any more{#if key.revoked_at}, since {formatDateTime(
-						key.revoked_at
-					)}{/if}{#if key.revoked_by_username}, revoked by
-					<span class="font-mono">{key.revoked_by_username}</span>{/if}. Hosts that still present it
-				resolve no directory accounts.
-			</Alert>
+			<!-- tabindex="-1": where the caret goes once a revoke lands, never
+			     a Tab stop. -->
+			<div bind:this={revokedNotice} tabindex="-1" class="rounded-lg">
+				<Alert variant="info" title="This key is revoked" testid="nss-key-revoked">
+					Neither secret is accepted any more{#if key.revoked_at}, since {formatDateTime(
+							key.revoked_at
+						)}{/if}{#if key.revoked_by_username}, revoked by
+						<span class="font-mono">{key.revoked_by_username}</span>{/if}. Hosts that still present
+					it resolve no directory accounts.
+				</Alert>
+			</div>
 		{/if}
 
 		{#if alerts.length > 0}
@@ -566,27 +662,44 @@
 				</DetailRow>
 				<DetailRow label="Previous secret">
 					{#if graceLive && key.previous_expires_at}
-						<span class="text-trimmed" data-testid="nss-key-previous">
+						<span
+							bind:this={previousValue}
+							tabindex="-1"
+							class="text-trimmed"
+							data-testid="nss-key-previous"
+						>
 							Accepted until {formatDateTime(key.previous_expires_at)} ({remainingLabel(
 								key.previous_expires_at,
 								now
 							)})
 						</span>
 					{:else}
-						<span class="text-ink-muted" data-testid="nss-key-previous">None accepted</span>
+						<!-- tabindex="-1": where the caret goes once the previous
+						     secret is ended early. -->
+						<span
+							bind:this={previousValue}
+							tabindex="-1"
+							class="text-ink-muted"
+							data-testid="nss-key-previous">None accepted</span
+						>
 					{/if}
 				</DetailRow>
 			</dl>
 
 			<div class="mt-4 flex flex-wrap items-center gap-3">
-				{#if mayRotate}
+				{#if mayRotate && !issued}
 					<Button
+						bind:element={rotateButton}
 						onclick={() => {
 							rotateError = null;
 							confirmRotate = true;
 						}}
 						testid="nss-key-rotate">Rotate secret</Button
 					>
+				{:else if mayRotate}
+					<span class="text-dense text-ink-muted" data-testid="nss-key-rotate-held">
+						Rotate again once the new secret above is stored and you press Done.
+					</span>
 				{/if}
 				{#if mayRotate && graceLive}
 					<Button variant="ghost" onclick={openClear} testid="nss-key-clear-previous">
@@ -696,7 +809,9 @@
 								</tr>
 							</thead>
 							<tbody>
-								{#each usage as row (`${row.day}|${row.source_ip}|${row.generation}`)}
+								<!-- The index makes the key unique even if the server ever
+					     repeats a day, address and generation. -->
+								{#each usage as row, index (`${index}|${row.day}|${row.source_ip}|${row.generation}`)}
 									<tr data-testid="nss-key-usage-row">
 										<td class="whitespace-nowrap">{utcDay(row.day)}</td>
 										<td class="font-mono">{row.source_ip}</td>
@@ -800,13 +915,20 @@
 		error={clearError}
 		errorTitle="The previous secret was not ended"
 		confirmTestid="nss-key-clear-confirm"
+		confirmDisabled={countPending}
 		onconfirm={clearPrevious}
-		oncancel={() => (confirmClear = false)}
+		oncancel={closeClear}
+		returnFocus={focusPrevious}
 	>
 		<p data-testid="nss-key-clear-count">
 			{#if countError}
-				Could not check which hosts still present the old secret. Open the rotation report before
-				you go on.
+				Could not check which hosts still present the old secret. Open the
+				<a
+					href={resolve('/nss-keys/[id]/rotation', { id: key.id })}
+					class="text-accent hover:underline"
+					data-testid="nss-key-clear-report-link">rotation report</a
+				>
+				before you go on.
 			{:else if notSwitched === null}
 				Checking which hosts still present the old secret…
 			{:else if notSwitched === 0}
@@ -840,6 +962,7 @@
 		confirmTestid="nss-key-revoke-confirm"
 		onconfirm={revoke}
 		oncancel={() => (confirmRevoke = false)}
+		returnFocus={focusRevoked}
 	>
 		Both the current and the previous secret stop being accepted now. Every host using
 		<span class="font-mono">{key.name}</span> stops resolving directory accounts until it gets a new key.
