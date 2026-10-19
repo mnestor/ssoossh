@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { page, type ReadonlyURLSearchParams } from '$app/state';
 
 	import { ApiError } from '#lib/api/client.js';
 	import { listNSSKeys } from '#lib/api/endpoints.js';
@@ -9,6 +10,7 @@
 		NSSKeyStatusRevoked
 	} from '#lib/api/generated/enums.js';
 	import type { NSSKey, NSSKeyListResponse } from '#lib/api/types.js';
+	import { syncAddressSearch } from '#lib/addressSearch.svelte.js';
 	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
 	import Alert from '#lib/components/Alert.svelte';
 	import Button from '#lib/components/Button.svelte';
@@ -61,6 +63,37 @@
 		{ value: NSSKeyStatusRevoked, label: 'Revoked', icon: 'server-off' }
 	];
 
+	// The filters and the sort live in the address too, so a reader who
+	// opens a key and comes back by its back chip finds the same view. An
+	// unknown value is dropped, not refused.
+	/** readFilters sets the filters and the sort from a query string; a missing key is the default. */
+	function readFilters(params: ReadonlyURLSearchParams) {
+		const wanted = params.get('status') ?? '';
+		statusFilter = statusOptions.some((option) => option.value === wanted) ? wanted : '';
+		groupFilter = params.has('no_group') ? NO_GROUP : (params.get('group') ?? '');
+		sort = params.get('sort') === 'expiry' ? 'expiry' : 'name';
+	}
+	readFilters(page.url.searchParams);
+
+	// The query string the filters stand for, '' at the defaults.
+	const filterSearch = $derived.by(() => {
+		const parts: string[] = [];
+		const add = (key: string, value: string) => parts.push(`${key}=${encodeURIComponent(value)}`);
+		if (statusFilter) add('status', statusFilter);
+		if (groupFilter === NO_GROUP) add('no_group', '1');
+		else if (groupFilter) add('group', groupFilter);
+		if (sort !== 'name') add('sort', sort);
+		return parts.length ? `?${parts.join('&')}` : '';
+	});
+
+	syncAddressSearch(() => filterSearch, readFilters);
+
+	/** keyHref opens one key, carrying the filters for its back chip. */
+	function keyHref(id: string): string {
+		const back = filterSearch ? `?back=${encodeURIComponent(filterSearch)}` : '';
+		return `${resolve('/nss-keys/[id]', { id })}${back}`;
+	}
+
 	const keys = $derived(list?.keys ?? []);
 
 	const groups = $derived(
@@ -76,9 +109,7 @@
 					groupFilter === '' ||
 					(groupFilter === NO_GROUP ? key.group_name === '' : key.group_name === groupFilter)
 			)
-			.sort((a, b) =>
-				sort === 'expiry' ? expiryTime(a) - expiryTime(b) : a.name.localeCompare(b.name)
-			)
+			.sort((a, b) => (sort === 'expiry' ? compareExpiry(a, b) : a.name.localeCompare(b.name)))
 	);
 
 	const filtering = $derived(statusFilter !== '' || groupFilter !== '');
@@ -120,9 +151,26 @@
 		return () => controller.abort();
 	});
 
-	/** expiryTime orders keys by expiry, a key that never expires last. */
+	/** expiryTime is when a key expires, Infinity for one that never does. */
 	function expiryTime(key: NSSKey): number {
 		return key.expires_at ? new Date(key.expires_at).getTime() : Number.POSITIVE_INFINITY;
+	}
+
+	/**
+	 * compareExpiry orders keys soonest expiry first, a key that never
+	 * expires after those that do. A revoked key's expiry no longer means
+	 * anything, so revoked keys come after every live one rather than
+	 * among the keys about to stop working, by name among themselves.
+	 */
+	function compareExpiry(a: NSSKey, b: NSSKey): number {
+		const aRevoked = a.status === NSSKeyStatusRevoked;
+		const bRevoked = b.status === NSSKeyStatusRevoked;
+		if (aRevoked !== bRevoked) return aRevoked ? 1 : -1;
+		if (aRevoked) return a.name.localeCompare(b.name);
+		const at = expiryTime(a);
+		const bt = expiryTime(b);
+		if (at === bt) return a.name.localeCompare(b.name);
+		return at < bt ? -1 : 1;
 	}
 
 	/** toneClass colours an expiry by how close it is; a revoked key's expiry no longer matters. */
@@ -141,7 +189,9 @@
 			The keys your hosts present to look up accounts and groups. Each fleet of hosts shares one.
 		{/snippet}
 		{#snippet action()}
-			{#if list?.can_create}
+			<!-- While the list is empty its empty state carries New key, so
+			     the heading does not offer a second one. -->
+			{#if list?.can_create && keys.length > 0}
 				<a
 					href={resolve('/nss-keys/new')}
 					data-testid="nss-keys-new"
@@ -275,8 +325,8 @@
 								<tr data-testid="nss-key-row">
 									<td>
 										<a
-											href={resolve('/nss-keys/[id]', { id: key.id })}
-											class="font-medium text-accent hover:underline"
+											href={keyHref(key.id)}
+											class="inline-flex min-h-target items-center font-medium text-accent hover:underline"
 											data-testid="nss-key-link">{key.name}</a
 										>
 										<div class="font-mono text-xs text-ink-muted">{key.id}</div>

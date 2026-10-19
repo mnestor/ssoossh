@@ -73,6 +73,15 @@
 
 	const id = $derived(page.params.id ?? '');
 
+	// The list's filters, carried by its rows so the back chip returns to
+	// the same view. Only a query string is taken, appended to the fixed
+	// list route, so nothing here can be steered elsewhere.
+	const backHref = $derived.by(() => {
+		const carried = page.url.searchParams.get('back') ?? '';
+		const search = carried.startsWith('?') && !carried.includes('#') ? carried : '';
+		return `${resolve('/nss-keys')}${search}`;
+	});
+
 	let key = $state<NSSKey | null>(null);
 	let loadError = $state<string | null>(null);
 	let notFound = $state(false);
@@ -568,7 +577,7 @@
 	<PageHeading
 		title="NSS key"
 		testid="nss-key-heading"
-		back={{ href: resolve('/nss-keys'), label: 'All NSS keys', testid: 'nss-key-back' }}
+		back={{ href: backHref, label: 'All NSS keys', testid: 'nss-key-back' }}
 	>
 		{#snippet action()}
 			{#if mayRevoke}

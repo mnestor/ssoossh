@@ -78,6 +78,42 @@ describe('New NSS key', () => {
 		expect(calls.filter((call) => call.method === 'POST')).toHaveLength(0);
 	});
 
+	it('should name the name field by its label alone when its error shows', async () => {
+		answers();
+		render(Page);
+		await userEvent.click(screen.getByTestId('nss-key-create'));
+
+		expect(screen.getByRole('textbox', { name: 'Name' })).toBe(screen.getByTestId('nss-key-name'));
+	});
+
+	it('should describe the name field with its error when the name is missing', async () => {
+		answers();
+		render(Page);
+		await userEvent.click(screen.getByTestId('nss-key-create'));
+
+		expect(screen.getByTestId('nss-key-name')).toHaveAccessibleDescription(
+			'Give the key a name, such as the fleet it serves.'
+		);
+	});
+
+	it('should mark the notification email optional when the form is shown', () => {
+		answers();
+		render(Page);
+
+		expect(screen.getByLabelText(/^\s*Notification email \(optional\)/)).toBe(
+			screen.getByTestId('nss-key-email')
+		);
+	});
+
+	it('should say what the group suggestions are when the form is shown', () => {
+		answers();
+		render(Page);
+
+		expect(screen.getByText(/Any group name is accepted/)).toHaveTextContent(
+			'the suggestions are the groups other keys use and the groups you are in.'
+		);
+	});
+
 	it('should default the notification email to the caller', () => {
 		answers();
 		render(Page);
@@ -188,6 +224,35 @@ describe('New NSS key', () => {
 
 			expect(screen.getByTestId('nss-key-expires-error')).toBeInTheDocument();
 			expect(calls.some((call) => call.method === 'POST')).toBe(false);
+		});
+
+		const earlyCases: { name: string; typed: string }[] = [
+			{ name: 'a past day is typed', typed: '2026-10-01' },
+			{ name: 'today is typed', typed: '2026-10-18' }
+		];
+		for (const { name, typed } of earlyCases) {
+			it(`should refuse the day without asking the server when ${name}`, async () => {
+				const calls = withSettings(YEAR);
+				render(Page);
+				await settle();
+				await userEvent.clear(screen.getByTestId('nss-key-expires'));
+				await userEvent.type(screen.getByTestId('nss-key-expires'), typed);
+				await createNamed();
+
+				expect(calls.some((call) => call.method === 'POST')).toBe(false);
+			});
+		}
+
+		it('should say to choose a later day when a past day is typed', async () => {
+			withSettings(envelope(null, 500, 'database unavailable'));
+			render(Page);
+			await settle();
+			await userEvent.type(screen.getByTestId('nss-key-expires'), '2026-10-01');
+			await createNamed();
+
+			expect(screen.getByTestId('nss-key-expires-error')).toHaveTextContent(
+				'Choose a day after today.'
+			);
 		});
 
 		it('should send no expiry when the limit is under a day', async () => {

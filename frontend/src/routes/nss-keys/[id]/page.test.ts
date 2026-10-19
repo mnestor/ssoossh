@@ -39,7 +39,7 @@ vi.mock('$app/state', async () => {
 	return { page: fakePage };
 });
 
-import { fakePage } from '#lib/testing/page.svelte.js';
+import { fakePage, resetFakePage } from '#lib/testing/page.svelte.js';
 import Page from './+page.svelte';
 
 const now = new Date('2026-10-18T12:00:00Z');
@@ -51,6 +51,7 @@ beforeEach(() => {
 	session.user = userFixture();
 	session.resolved = true;
 	fakePage.params = { id: 'nss_k7m4qp2x' };
+	resetFakePage('http://localhost/nss-keys/nss_k7m4qp2x');
 	guards.length = 0;
 });
 
@@ -87,6 +88,34 @@ describe('NSS key detail', () => {
 
 		expect(await screen.findByTestId('nss-key-missing')).toBeInTheDocument();
 	});
+
+	const backCases: { name: string; search: string; want: string }[] = [
+		{ name: 'the list carried no filters', search: '', want: '/nss-keys' },
+		{
+			name: 'the list carried its filters',
+			search: `?back=${encodeURIComponent('?status=revoked&sort=expiry')}`,
+			want: '/nss-keys?status=revoked&sort=expiry'
+		},
+		{
+			name: 'the carried value is not a query string',
+			search: `?back=${encodeURIComponent('https://elsewhere.example/')}`,
+			want: '/nss-keys'
+		},
+		{
+			name: 'the carried value has a fragment',
+			search: `?back=${encodeURIComponent('?status=revoked#x')}`,
+			want: '/nss-keys'
+		}
+	];
+	for (const { name, search, want } of backCases) {
+		it(`should point the back chip at ${want} when ${name}`, async () => {
+			resetFakePage(`http://localhost/nss-keys/nss_k7m4qp2x${search}`);
+			serve(keyFixture());
+			await loaded();
+
+			expect(screen.getByTestId('nss-key-back')).toHaveAttribute('href', want);
+		});
+	}
 
 	it('should offer Try again when the key fails to load', async () => {
 		routeFetch({

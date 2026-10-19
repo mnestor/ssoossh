@@ -39,7 +39,9 @@
 	let email = $state(session.user?.email ?? '');
 
 	let nameError = $state(false);
-	let expiresError = $state(false);
+	// Which bound a typed expiry broke: the field's min and max are advice
+	// a typed date can pass, so both are checked before the server is asked.
+	let expiresError = $state<'early' | 'late' | null>(null);
 	let busy = $state(false);
 	let submitError = $state<string | null>(null);
 	let nameInput = $state<HTMLInputElement>();
@@ -64,8 +66,10 @@
 	let liveMessage = $state('');
 
 	// Groups other keys already use, and the reader's own, offered as
-	// suggestions; any name may still be typed. A failed read only loses
-	// the suggestions.
+	// suggestions. The server takes any group name here (it is free text,
+	// matched later against each caller's session groups), so the list is
+	// not a limit, and the help under the field says what it holds. A
+	// failed read only loses the suggestions.
 	let knownGroups = $state<string[]>([]);
 	$effect(() => {
 		if (!allowed) return;
@@ -129,14 +133,20 @@
 			return;
 		}
 		nameError = false;
-		// The field's max is advice a typed date can pass, so it is checked
-		// here too rather than left for the server to trim.
-		if (expires && maxDate && expires > maxDate && !noDay) {
-			expiresError = true;
+		// The field's min and max are advice a typed date can pass, so they
+		// are checked here too rather than left for the server to refuse or
+		// trim.
+		if (expires && !noDay && expires < minDate) {
+			expiresError = 'early';
 			expiresInput?.focus();
 			return;
 		}
-		expiresError = false;
+		if (expires && maxDate && expires > maxDate && !noDay) {
+			expiresError = 'late';
+			expiresInput?.focus();
+			return;
+		}
+		expiresError = null;
 		busy = true;
 		submitError = null;
 		try {
@@ -227,11 +237,14 @@
 					novalidate
 					data-testid="nss-key-form"
 				>
-					<label class="flex flex-col gap-1">
-						<span class="text-sm font-medium text-ink">Name</span>
+					<!-- The error sits outside the label, so it is the field's
+					     description only and not read again as part of its name. -->
+					<div class="flex flex-col gap-1">
+						<label for="nss-key-name-input" class="text-sm font-medium text-ink">Name</label>
 						<input
 							bind:this={nameInput}
 							bind:value={name}
+							id="nss-key-name-input"
 							type="text"
 							autocomplete="off"
 							aria-invalid={nameError}
@@ -247,7 +260,7 @@
 								>Give the key a name, such as the fleet it serves.</span
 							>
 						{/if}
-					</label>
+					</div>
 
 					<label class="flex flex-col gap-1">
 						<span class="text-sm font-medium text-ink">
@@ -278,7 +291,9 @@
 							{/each}
 						</datalist>
 						<span class="text-xs text-ink-muted">
-							Members of this group can rotate, edit and revoke the key without an admin role.
+							Members of this group can rotate, edit and revoke the key without an admin role. Any
+							group name is accepted; the suggestions are the groups other keys use and the groups
+							you are in.
 						</span>
 					</label>
 
@@ -293,12 +308,18 @@
 							min={minDate}
 							max={maxDate ?? undefined}
 							disabled={noDay}
-							aria-invalid={expiresError}
+							aria-invalid={!!expiresError}
 							aria-describedby={expiresError ? 'nss-key-expires-error' : 'nss-key-expires-hint'}
 							data-testid="nss-key-expires"
 							class="{field} max-w-[420px]"
 						/>
-						{#if expiresError && maxLifetime}
+						{#if expiresError === 'early'}
+							<span
+								id="nss-key-expires-error"
+								class="text-xs text-danger"
+								data-testid="nss-key-expires-error">Choose a day after today.</span
+							>
+						{:else if expiresError === 'late' && maxLifetime}
 							<span
 								id="nss-key-expires-error"
 								class="text-xs text-danger"
@@ -326,7 +347,9 @@
 					</label>
 
 					<label class="flex flex-col gap-1">
-						<span class="text-sm font-medium text-ink">Notification email</span>
+						<span class="text-sm font-medium text-ink">
+							Notification email <span class="font-normal text-ink-muted">(optional)</span>
+						</span>
 						<input
 							bind:value={email}
 							type="email"

@@ -15,11 +15,23 @@ vi.mock('$app/state', async () => {
 	const { fakePage } = await import('#lib/testing/page.svelte.js');
 	return { page: fakePage };
 });
+// The filters live in the address: a fake page for what it says, and a
+// goto that records what the page writes back.
+const { goto } = vi.hoisted(() => ({ goto: vi.fn() }));
+vi.mock('$app/navigation', async () => {
+	const { fakeAfterNavigate } = await import('#lib/testing/page.svelte.js');
+	return { goto, afterNavigate: fakeAfterNavigate };
+});
+
+import { fakeGoto, resetFakePage } from '#lib/testing/page.svelte.js';
 
 const now = new Date('2026-10-18T12:00:00Z');
 
 beforeEach(() => {
 	vi.useFakeTimers({ now, toFake: ['Date'] });
+	resetFakePage('http://localhost/nss-keys');
+	goto.mockReset();
+	goto.mockImplementation(fakeGoto);
 	session.user = userFixture();
 	session.resolved = true;
 });
@@ -76,6 +88,21 @@ describe('NSS keys list', () => {
 			expect(await screen.findByTestId('nss-key-last-used')).toHaveTextContent(want);
 		});
 	}
+
+	it('should give the key link the full target height when keys load', async () => {
+		listOf();
+		render(Page);
+
+		expect(await screen.findByTestId('nss-key-link')).toHaveClass('min-h-target');
+	});
+
+	it('should offer one New key when there are no keys and the caller may create them', async () => {
+		listOf([], true);
+		render(Page);
+		await screen.findByTestId('nss-keys-empty');
+
+		expect(screen.getAllByRole('link', { name: 'New key' })).toHaveLength(1);
+	});
 
 	it('should offer New key when the caller may create keys', async () => {
 		listOf([keyFixture()], true);
@@ -206,15 +233,15 @@ describe('NSS keys list', () => {
 			render(Page);
 			await userEvent.click(await screen.findByTestId('nss-keys-sort-expiry'));
 
-			expect(rowNames()).toEqual(['bravo', 'charlie', 'alpha']);
+			expect(rowNames()).toEqual(['bravo', 'alpha', 'charlie']);
 		});
 
-		it('should list a key that never expires last when sorted by expiry', async () => {
+		it('should list a key that never expires after the live keys that do when sorted by expiry', async () => {
 			listOf([keyFixture({ id: 'nss_d', name: 'delta', expires_at: undefined }), ...keys]);
 			render(Page);
 			await userEvent.click(await screen.findByTestId('nss-keys-sort-expiry'));
 
-			expect(rowNames()).toEqual(['bravo', 'charlie', 'alpha', 'delta']);
+			expect(rowNames()).toEqual(['bravo', 'alpha', 'delta', 'charlie']);
 		});
 
 		it('should keep only revoked keys when the revoked filter is chosen', async () => {
@@ -234,6 +261,54 @@ describe('NSS keys list', () => {
 			);
 
 			expect(rowNames()).toEqual(['bravo']);
+		});
+
+		const addressCases: { name: string; href: string; want: string[] }[] = [
+			{ name: 'the address names the revoked filter', href: '?status=revoked', want: ['charlie'] },
+			{ name: 'the address names a group', href: '?group=db-admins', want: ['bravo'] },
+			{ name: 'the address names keys with no group', href: '?no_group=1', want: ['charlie'] },
+			{
+				name: 'the address names the expiry sort',
+				href: '?sort=expiry',
+				want: ['bravo', 'alpha', 'charlie']
+			},
+			{
+				name: 'the address names an unknown status',
+				href: '?status=lost',
+				want: ['alpha', 'bravo', 'charlie']
+			}
+		];
+		for (const { name, href, want } of addressCases) {
+			it(`should list ${want.join(', ')} when ${name}`, async () => {
+				resetFakePage(`http://localhost/nss-keys${href}`);
+				listOf(keys);
+				render(Page);
+				await screen.findAllByTestId('nss-key-row');
+
+				expect(rowNames()).toEqual(want);
+			});
+		}
+
+		it('should write the chosen filter into the address when a filter is chosen', async () => {
+			listOf(keys);
+			render(Page);
+			await userEvent.click(await screen.findByTestId('nss-keys-status-filter-revoked'));
+
+			expect(goto).toHaveBeenLastCalledWith(
+				'/nss-keys?status=revoked',
+				expect.objectContaining({ shallow: true, replace: true })
+			);
+		});
+
+		it('should carry the filters in the key link when a filter is chosen', async () => {
+			listOf(keys);
+			render(Page);
+			await userEvent.click(await screen.findByTestId('nss-keys-status-filter-revoked'));
+
+			expect(screen.getByTestId('nss-key-link')).toHaveAttribute(
+				'href',
+				`/nss-keys/nss_c?back=${encodeURIComponent('?status=revoked')}`
+			);
 		});
 
 		it('should offer Clear filters when the filters exclude every key', async () => {
