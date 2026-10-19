@@ -546,7 +546,7 @@ func seedNSSKeyUsage(t *testing.T, db *gorm.DB, keyID, sourceIP string, day time
 	t.Helper()
 	day = time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, time.UTC)
 	row := model.NSSKeyUsage{
-		KeyID: keyID, SourceIP: sourceIP, Generation: 1, Day: day,
+		KeyID: keyID, SourceIP: sourceIP, SourceIPKey: service.NSSAddressKey(sourceIP), Generation: 1, Day: day,
 		Lookups: lookups, Misses: 1, FirstSeen: day.Add(time.Hour), LastSeen: day.Add(2 * time.Hour),
 	}
 	if err := db.Create(&row).Error; err != nil {

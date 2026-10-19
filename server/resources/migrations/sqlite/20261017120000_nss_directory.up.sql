@@ -266,6 +266,11 @@ CREATE TABLE nss_key_usage (
     key_id     TEXT NOT NULL REFERENCES nss_keys(id),
     -- The connection's address as the server observed it.
     source_ip  TEXT NOT NULL,
+    -- source_ip as its 16-byte IPv6 form, an IPv4 address IPv4-mapped, so
+    -- the admin key list's address search is an equality and a range
+    -- search a byte range (both dialects compare these bytewise). NULL
+    -- when source_ip does not parse as an address.
+    source_ip_key BLOB NULL,
     -- The generation the host presented: current or current-1.
     generation INTEGER NOT NULL,
     -- Midnight UTC of the day the counts belong to.
@@ -281,6 +286,9 @@ CREATE TABLE nss_key_usage (
 CREATE INDEX idx_nss_key_usage_key_day ON nss_key_usage (key_id, day);
 -- The retention prune, by age alone.
 CREATE INDEX idx_nss_key_usage_day ON nss_key_usage (day);
+-- The admin key list's address search: which keys were used from one
+-- address, or from a range, within the retained days.
+CREATE INDEX idx_nss_key_usage_source_day ON nss_key_usage (source_ip_key, day);
 
 -- When each NSS alert was last raised, so a "once a day per uid" alert is
 -- raised once a day across every instance: the raiser claims the row with a

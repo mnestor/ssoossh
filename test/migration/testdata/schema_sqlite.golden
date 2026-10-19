@@ -232,9 +232,11 @@ table nss_key_usage
   column lookups type=INTEGER nullable=false pk=false default=0
   column misses type=INTEGER nullable=false pk=false default=0
   column source_ip type=TEXT nullable=false pk=true default=<none>
+  column source_ip_key type=BLOB nullable=true pk=false default=<none>
   fk key_id -> nss_keys.id on_delete=NO ACTION on_update=NO ACTION
   index idx_nss_key_usage_day unique=false columns=day
   index idx_nss_key_usage_key_day unique=false columns=key_id,day
+  index idx_nss_key_usage_source_day unique=false columns=source_ip_key,day
   index sqlite_autoindex_nss_key_usage_1 unique=true columns=key_id,source_ip,generation,day
 table nss_keys
   column created_at type=DATETIME nullable=false pk=false default=<none>

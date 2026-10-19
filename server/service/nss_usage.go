@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -442,7 +444,8 @@ func (s *NSSUsageService) Flush(ctx context.Context) error {
 	keyIDs := map[string]bool{}
 	for key, count := range pending {
 		rows = append(rows, model.NSSKeyUsage{
-			KeyID: key.keyID, SourceIP: key.sourceIP, Generation: key.generation, Day: key.day,
+			KeyID: key.keyID, SourceIP: key.sourceIP, SourceIPKey: NSSAddressKey(key.sourceIP),
+			Generation: key.generation, Day: key.day,
 			Lookups: count.lookups, Misses: count.misses, FirstSeen: count.firstSeen, LastSeen: count.lastSeen,
 		})
 		keyIDs[key.keyID] = true
@@ -547,16 +550,45 @@ func (s *NSSUsageService) checkKeySources(ctx context.Context, keyIDs []string) 
 	}
 }
 
+// NSSAddressKey is addr as nss_key_usage.source_ip_key holds it: the 16
+// bytes of its IPv6 form, an IPv4 address IPv4-mapped and any zone
+// dropped, so one IPv4 address has one key whichever way it was written.
+// Nil when addr does not parse, which leaves the row out of every address
+// search rather than matching it by accident.
+func NSSAddressKey(addr string) []byte {
+	parsed, err := netip.ParseAddr(strings.TrimSpace(addr))
+	if err != nil {
+		return nil
+	}
+	key := parsed.WithZone("").As16()
+	return key[:]
+}
+
+// nssDayStart is midnight UTC of the day at falls on, the form
+// nss_key_usage.day takes.
+func nssDayStart(at time.Time) time.Time {
+	at = at.UTC()
+	return time.Date(at.Year(), at.Month(), at.Day(), 0, 0, 0, 0, time.UTC)
+}
+
+// nssUsageCutoff is the first day nss.usage_retention keeps at now, the
+// same day PruneUsage keeps from; ok is false when retention keeps every
+// row.
+func nssUsageCutoff(now time.Time, retention time.Duration) (time.Time, bool) {
+	if retention <= 0 {
+		return time.Time{}, false
+	}
+	return nssDayStart(now.Add(-retention)), true
+}
+
 // PruneUsage deletes usage rows older than nss.usage_retention, whole days
 // at a time. Zero retention keeps every row. Registered as a scheduled
 // job; every instance runs it, and a delete is idempotent.
 func (s *NSSUsageService) PruneUsage(ctx context.Context) error {
-	retention := s.config.NSS.UsageRetention
-	if retention <= 0 {
+	cutoff, ok := nssUsageCutoff(s.now(), s.config.NSS.UsageRetention)
+	if !ok {
 		return nil
 	}
-	cutoff := s.now().Add(-retention).UTC()
-	cutoff = time.Date(cutoff.Year(), cutoff.Month(), cutoff.Day(), 0, 0, 0, 0, time.UTC)
 	result := s.db.WithContext(ctx).Where("day < ?", cutoff).Delete(&model.NSSKeyUsage{})
 	if result.Error != nil {
 		return fmt.Errorf("prune nss key usage: %w", result.Error)

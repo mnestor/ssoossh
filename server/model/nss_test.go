@@ -114,7 +114,8 @@ func TestNSSKeyUsage_ShouldRoundTripEveryColumnWhenStoredAndReadBack(t *testing.
 			row: func(keyID string) NSSKeyUsage {
 				return NSSKeyUsage{
 					KeyID: keyID, SourceIP: "192.0.2.10", Generation: 2, Day: nssTestTime().Truncate(24 * time.Hour),
-					Lookups: 1200, Misses: 7, FirstSeen: nssTestTime(), LastSeen: nssTestTime().Add(time.Hour),
+					SourceIPKey: []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, 192, 0, 2, 10},
+					Lookups:     1200, Misses: 7, FirstSeen: nssTestTime(), LastSeen: nssTestTime().Add(time.Hour),
 				}
 			},
 		},
