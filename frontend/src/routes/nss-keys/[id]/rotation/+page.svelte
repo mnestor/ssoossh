@@ -3,16 +3,18 @@
 	import { page } from '$app/state';
 
 	import { ApiError } from '#lib/api/client.js';
-	import { getNSSRotationReport, nssRotationReportCSVURL } from '#lib/api/endpoints.js';
+	import { getNSSKey, getNSSRotationReport, nssRotationReportCSVURL } from '#lib/api/endpoints.js';
 	import {
+		NSSKeyStatusRevoked,
 		NSSRotationBucketGone,
 		NSSRotationBucketNotSwitched,
 		NSSRotationBucketSwitched,
 		type NSSRotationBucket
 	} from '#lib/api/generated/enums.js';
-	import type { NSSRotationReport, NSSRotationReportRow } from '#lib/api/types.js';
+	import type { NSSKey, NSSRotationReport, NSSRotationReportRow } from '#lib/api/types.js';
 	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
 	import Alert from '#lib/components/Alert.svelte';
+	import Button from '#lib/components/Button.svelte';
 	import EmptyState from '#lib/components/EmptyState.svelte';
 	import Icon from '#lib/components/Icon.svelte';
 	import ListStatus from '#lib/components/ListStatus.svelte';
@@ -29,14 +31,32 @@
 	// old secret", because it is the one that decides whether to wait.
 	// Not switched comes first for the same reason; gone (not seen since
 	// the rotation) last, since those hosts may simply be off.
+	//
+	// The report names a key only by id, and an operator rotating several
+	// fleets keeps several of these open, so the key itself is read beside
+	// it for its name and whether it is revoked. That read is best effort:
+	// without it the page falls back to the id and the report still stands.
+	//
+	// Usage is written once a minute and the page exists to watch a count
+	// fall, so it refreshes in place and says when it was read.
 
 	const id = $derived(page.params.id ?? '');
 
 	let report = $state<NSSRotationReport | null>(null);
+	let key = $state<NSSKey | null>(null);
 	let loadError = $state<string | null>(null);
 	let notFound = $state(false);
 	let hasLoaded = $state(false);
 	let attempt = $state(0);
+	// When the report on screen was read.
+	let readAt = $state<Date | null>(null);
+	let refreshing = $state(false);
+	let refreshError = $state<string | null>(null);
+	// What a screen reader hears when a refresh lands.
+	let refreshMessage = $state('');
+	// Which read may write to the page, so a slow first load cannot land
+	// over a newer refresh. Not $state: nothing renders from it.
+	let latestRead = 0;
 
 	// One address filter across the three groups, and one sort.
 	let addressFilter = $state('');
@@ -48,18 +68,35 @@
 		attempt += 1;
 	}
 
+	/**
+	 * read fetches the report and, beside it, the key. The key read never
+	 * fails the page: a missing name falls back to the id.
+	 */
+	async function read(keyId: string, signal?: AbortSignal) {
+		const [result, named] = await Promise.all([
+			getNSSRotationReport(keyId, signal),
+			getNSSKey(keyId, signal).catch(() => null)
+		]);
+		return { result, named };
+	}
+
 	$effect(() => {
 		void attempt;
 		const keyId = id;
 		const controller = new AbortController();
+		const current = ++latestRead;
 		notFound = false;
-		getNSSRotationReport(keyId, controller.signal)
-			.then((result) => {
+		read(keyId, controller.signal)
+			.then(({ result, named }) => {
+				if (current !== latestRead) return;
 				report = result;
+				key = named;
+				readAt = new Date();
 				hasLoaded = true;
 			})
 			.catch((cause) => {
 				if (controller.signal.aborted || redirectIfUnauthenticated(cause)) return;
+				if (current !== latestRead) return;
 				notFound = cause instanceof ApiError && cause.isNotFound;
 				loadError = notFound ? null : errorMessage(cause);
 				hasLoaded = true;
@@ -67,7 +104,77 @@
 		return () => controller.abort();
 	});
 
-	const totalHosts = $derived(report ? report.switched + report.not_switched + report.gone : 0);
+	/**
+	 * refresh reads the report again in place. The counts and the filter
+	 * stay on screen while it runs, and a failure keeps them, saying the
+	 * figures are from the last good read.
+	 */
+	async function refresh() {
+		const current = ++latestRead;
+		refreshing = true;
+		refreshError = null;
+		refreshMessage = '';
+		try {
+			const { result, named } = await read(id);
+			if (current !== latestRead) return;
+			report = result;
+			key = named ?? key;
+			readAt = new Date();
+			refreshMessage = `Report refreshed. ${result.not_switched} of ${hostCount(result)} hosts still on the old secret.`;
+		} catch (cause) {
+			if (redirectIfUnauthenticated(cause)) return;
+			if (current !== latestRead) return;
+			refreshError = errorMessage(cause);
+		} finally {
+			if (current === latestRead) refreshing = false;
+		}
+	}
+
+	// The CSV is a plain download, which the page cannot redirect: with an
+	// expired session the browser would save the server's 401 body under a
+	// .csv name. So the link's first press reads the report first; a 401
+	// there goes to sign in, and only a read that worked lets the download
+	// through. Not $state: nothing renders from it.
+	let csvLink = $state<HTMLAnchorElement | undefined>(undefined);
+	let csvChecked = false;
+	let csvChecking = $state(false);
+	let csvError = $state<string | null>(null);
+
+	async function downloadCSV(event: MouseEvent) {
+		if (csvChecked) {
+			csvChecked = false;
+			return;
+		}
+		event.preventDefault();
+		if (csvChecking) return;
+		csvChecking = true;
+		csvError = null;
+		try {
+			await getNSSRotationReport(id);
+			csvChecked = true;
+			csvLink?.click();
+		} catch (cause) {
+			if (redirectIfUnauthenticated(cause)) return;
+			csvError = errorMessage(cause);
+		} finally {
+			csvChecking = false;
+		}
+	}
+
+	/** hostCount is every host the report has seen. */
+	function hostCount(value: NSSRotationReport): number {
+		return value.switched + value.not_switched + value.gone;
+	}
+
+	// The key's name for the chip, the title and the sub line, or its id
+	// when the key read failed.
+	const keyName = $derived(key?.name ?? '');
+	const revoked = $derived(key?.status === NSSKeyStatusRevoked);
+	// Once the previous secret has ended, hosts still on it are failing,
+	// not waiting.
+	const ended = $derived(!!report && (!report.previous_expires_at || report.grace_days_left === 0));
+
+	const totalHosts = $derived(report ? hostCount(report) : 0);
 
 	/** visible narrows and orders one group's rows. */
 	function visible(rows: NSSRotationReportRow[]): NSSRotationReportRow[] {
@@ -88,12 +195,13 @@
 
 	const groups = $derived(report ? groupRotationRows(report.rows) : null);
 
-	const sections: { bucket: NSSRotationBucket; title: string; description: string }[] = [
+	const sections = $derived<{ bucket: NSSRotationBucket; title: string; description: string }[]>([
 		{
 			bucket: NSSRotationBucketNotSwitched,
 			title: 'Not switched',
-			description:
-				'Last presented an older secret. These stop resolving accounts when the previous secret ends.'
+			description: ended
+				? 'Last presented an older secret, which is no longer accepted. These resolve no accounts until they have the current one.'
+				: 'Last presented an older secret. These stop resolving accounts when the previous secret ends.'
 		},
 		{
 			bucket: NSSRotationBucketSwitched,
@@ -105,7 +213,7 @@
 			title: 'Gone',
 			description: 'Not seen since the rotation. They may be off, or no longer use this key.'
 		}
-	];
+	]);
 
 	const shownCount = $derived(
 		groups
@@ -121,7 +229,7 @@
 	);
 </script>
 
-<svelte:head><title>Rotation report · {id} · ssoossh</title></svelte:head>
+<svelte:head><title>Rotation report · {keyName || id} · ssoossh</title></svelte:head>
 
 <PageShell width="wide">
 	<PageHeading
@@ -129,31 +237,70 @@
 		testid="rotation-heading"
 		back={{
 			href: resolve('/nss-keys/[id]', { id: id }),
-			label: `Key ${id}`,
+			label: keyName || `Key ${id}`,
 			testid: 'rotation-back'
 		}}
 	>
 		{#snippet sub()}
-			Which hosts have switched to this key's current secret since it was last rotated.
+			{#if keyName}
+				Which hosts have switched to the current secret of
+				<span class="font-mono text-ink" data-testid="rotation-key-name">{keyName}</span> since it was
+				last rotated.
+			{:else}
+				Which hosts have switched to this key's current secret since it was last rotated.
+			{/if}
 		{/snippet}
 		{#snippet action()}
 			{#if report?.rotated_at}
-				<!-- A plain link: the answer is a file download, not a page. -->
-				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
-				<a
-					href={nssRotationReportCSVURL(id)}
-					download
-					data-testid="rotation-csv"
-					class="inline-flex min-h-target items-center gap-2 rounded-md border border-border-control px-4 py-2 text-sm font-medium text-ink transition hover:bg-surface-muted"
-				>
-					<Icon name="download" size="sm" />
-					Download CSV
-				</a>
+				<div class="flex flex-wrap items-center gap-2">
+					<Button variant="ghost" busy={refreshing} onclick={refresh} testid="rotation-refresh">
+						{refreshing ? 'Refreshing…' : 'Refresh'}
+					</Button>
+					<!-- A plain link: the answer is a file download, not a page.
+					     downloadCSV checks the session before letting it through. -->
+					<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
+					<a
+						bind:this={csvLink}
+						href={nssRotationReportCSVURL(id)}
+						download
+						onclick={downloadCSV}
+						aria-busy={csvChecking}
+						data-testid="rotation-csv"
+						class="inline-flex min-h-target items-center gap-2 rounded-md border border-border-control px-4 py-2 text-sm font-medium text-ink transition hover:bg-surface-muted"
+					>
+						<Icon name="download" size="sm" />
+						Download CSV
+					</a>
+				</div>
 			{/if}
 		{/snippet}
 	</PageHeading>
 
 	<ListStatus message={listMessage} testid="rotation-status" />
+	<div aria-live="polite" aria-atomic="true" class="sr-only" data-testid="rotation-refresh-live">
+		{refreshMessage}
+	</div>
+
+	{#if csvError}
+		<Alert variant="error" title="Could not download the CSV" testid="rotation-csv-error">
+			{csvError} Press Download CSV to try again.
+		</Alert>
+	{/if}
+
+	{#if refreshError}
+		<Alert variant="error" title="Could not refresh the report" testid="rotation-refresh-error">
+			{refreshError} The figures below are from the last read. Press Refresh to try again.
+		</Alert>
+	{/if}
+
+	{#if revoked}
+		<Alert variant="info" title="This key is revoked" testid="rotation-revoked">
+			Neither secret is accepted any more{#if key?.revoked_at}, since {formatDateTime(
+					key.revoked_at
+				)}{/if}. Hosts still presenting it resolve no directory accounts, whichever generation they
+			are on.
+		</Alert>
+	{/if}
 
 	{#if notFound}
 		<Alert variant="error" title="No such NSS key" testid="rotation-missing">
@@ -187,10 +334,21 @@
 		</EmptyState>
 	{:else}
 		<section class="flex flex-col gap-4 rounded-lg bg-surface p-5" data-testid="rotation-summary">
-			<p class="text-lg font-semibold text-ink" data-testid="rotation-headline">
-				{report.not_switched} of {totalHosts}
-				{totalHosts === 1 ? 'host' : 'hosts'} still on the old secret
-			</p>
+			{#if ended}
+				<p
+					class="text-lg font-semibold {report.not_switched > 0 ? 'text-danger' : 'text-ink'}"
+					data-testid="rotation-headline"
+				>
+					{report.not_switched} of {totalHosts}
+					{totalHosts === 1 ? 'host' : 'hosts'}
+					{report.not_switched === 1 ? 'presents' : 'present'} a secret that is no longer accepted
+				</p>
+			{:else}
+				<p class="text-lg font-semibold text-ink" data-testid="rotation-headline">
+					{report.not_switched} of {totalHosts}
+					{totalHosts === 1 ? 'host' : 'hosts'} still on the old secret
+				</p>
+			{/if}
 			<p class="text-dense text-ink-muted" data-testid="rotation-grace">
 				Rotated {formatDateTime(report.rotated_at)} to generation {report.current_generation}.
 				{#if report.previous_expires_at && report.grace_days_left > 0}
@@ -200,6 +358,9 @@
 					)}.
 				{:else}
 					The previous secret is no longer accepted.
+				{/if}
+				{#if readAt}
+					<span data-testid="rotation-read-at">As of {formatDateTime(readAt.toISOString())}.</span>
 				{/if}
 			</p>
 			<dl class="grid grid-cols-3 gap-4 sm:max-w-md">
@@ -239,7 +400,6 @@
 					<input
 						bind:value={addressFilter}
 						type="search"
-						inputmode="decimal"
 						autocomplete="off"
 						data-testid="rotation-filter"
 						class="min-h-target w-64 max-w-full rounded-md border border-border-control bg-surface px-3 font-mono text-dense text-ink"
