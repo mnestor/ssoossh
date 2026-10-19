@@ -123,7 +123,8 @@
 
 	// ---- Inline edits ---------------------------------------------------
 
-	// The expiry is not here: it is fixed when the key is created.
+	// The expiry is not here: it is set when the key is created, and only a
+	// rotation renews it.
 	type Field = 'description' | 'group' | 'email';
 	let editing = $state<Field | null>(null);
 	let draft = $state('');
@@ -233,6 +234,24 @@
 		key && settings ? renewedExpiry(key, now, settings.max_lifetime_seconds) : undefined
 	);
 
+	// How the rotation moves the expiry. "Renewed" reads as "extended", so
+	// it is said only when the date moves later: a key that never expired
+	// gains an expiry under a limit set since, and a limit lowered below the
+	// key's lifetime brings the date closer.
+	const renewal = $derived.by((): 'unknown' | 'never' | 'gains' | 'earlier' | 'renewed' => {
+		if (renewed === undefined) return 'unknown';
+		if (renewed === null) return 'never';
+		if (!key?.expires_at) return 'gains';
+		return renewed.getTime() < new Date(key.expires_at).getTime() ? 'earlier' : 'renewed';
+	});
+
+	/** expirySentence is what a rotation's answer says about the key's new expiry. */
+	function expirySentence(expiresAt: string | undefined): string {
+		return expiresAt
+			? `The key now expires ${formatDateTime(expiresAt)}.`
+			: 'The key never expires.';
+	}
+
 	let confirmRotate = $state(false);
 	let rotating = $state(false);
 	let rotateError = $state<string | null>(null);
@@ -253,7 +272,7 @@
 			secretStored = false;
 			issued = result;
 			confirmRotate = false;
-			liveMessage = 'Key rotated. Store the new secret.';
+			liveMessage = `Key rotated. Store the new secret. ${expirySentence(result.key.expires_at)}`;
 		} catch (cause) {
 			if (redirectIfUnauthenticated(cause)) return;
 			rotateError = errorMessage(cause);
@@ -476,11 +495,16 @@
 		});
 	}
 
-	const expiryClass = $derived.by(() => {
-		if (!key || revoked) return 'text-ink';
-		const tone = expiryTone(key.expires_at, now);
-		return tone === 'past' ? 'text-danger' : tone === 'soon' ? 'text-trimmed' : 'text-ink';
-	});
+	// A revoked key's expiry no longer matters, so it is never toned.
+	const tone = $derived(key && !revoked ? expiryTone(key.expires_at, now) : 'normal');
+	const expiryClass = $derived(
+		tone === 'past' ? 'text-danger' : tone === 'soon' ? 'text-trimmed' : 'text-ink'
+	);
+	// An expired key still offers Rotate, which revives it, so the page says
+	// so where the reader meets the expiry.
+	const expired = $derived(
+		!!key && !revoked && (status === NSSKeyStatusExpired || tone === 'past')
+	);
 </script>
 
 {#snippet editButton(field: Field)}
@@ -586,6 +610,7 @@
 					keyId={issued.key.id}
 					secret={issued.secret}
 					previousExpiresAt={issued.key.previous_expires_at}
+					expiresAt={issued.key.expires_at ?? null}
 					ondismiss={dismissSecret}
 					testid="secret-panel"
 				/>
@@ -650,6 +675,13 @@
 						{/if}
 					{/each}
 				</div>
+			</Alert>
+		{/if}
+
+		{#if expired}
+			<Alert variant="warning" title="This key has expired" testid="nss-key-expired">
+				Hosts using it resolve no accounts. Rotating issues a new secret and renews the expiry; the
+				old secret is not accepted again.
 			</Alert>
 		{/if}
 
@@ -753,11 +785,23 @@
 					{/if}
 				</DetailRow>
 				<DetailRow label="Expires">
-					<span class={expiryClass} data-testid="nss-key-expires">
-						{#if key.expires_at}
-							{formatDateTime(key.expires_at)} ({remainingLabel(key.expires_at, now)})
-						{:else}
-							Never
+					<span class="flex flex-col gap-1">
+						<span
+							class="inline-flex items-center gap-1 {expiryClass}"
+							data-testid="nss-key-expires"
+						>
+							{#if key.expires_at}
+								<!-- The same glyph the list draws for a near expiry. -->
+								{#if tone === 'soon'}<Icon name="alert-triangle" size="xs" />{/if}
+								{formatDateTime(key.expires_at)} ({remainingLabel(key.expires_at, now)})
+							{:else}
+								Never
+							{/if}
+						</span>
+						{#if tone === 'soon' || tone === 'past'}
+							<span class="text-ink-muted" data-testid="nss-key-expires-renew">
+								Rotate the secret to renew it.
+							</span>
 						{/if}
 					</span>
 				</DetailRow>
@@ -892,10 +936,22 @@
 			{/if}
 		</p>
 		<p class="mt-2" data-testid="nss-key-rotate-expiry">
-			{#if renewed === undefined}
+			{#if renewal === 'unknown'}
 				The key's expiry is renewed by its lifetime, up to the server's limit.
-			{:else if renewed === null}
+			{:else if renewal === 'never' || !renewed}
 				The key still never expires.
+			{:else if renewal === 'gains'}
+				<span class="text-trimmed"
+					>The key now gets an expiry:
+					<span class="font-semibold">{formatDateTime(renewed.toISOString())}</span>. Until now it
+					never expired.</span
+				>
+			{:else if renewal === 'earlier' && settings}
+				<span class="text-trimmed"
+					>The key's expiry moves earlier, to
+					<span class="font-semibold">{formatDateTime(renewed.toISOString())}</span>, because the
+					server's limit is now {formatDuration(settings.max_lifetime_seconds)}.</span
+				>
 			{:else}
 				The key's expiry is renewed to
 				<span class="font-semibold text-ink">{formatDateTime(renewed.toISOString())}</span>.

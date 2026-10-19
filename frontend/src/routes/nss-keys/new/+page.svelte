@@ -13,7 +13,7 @@
 	import PageSection from '#lib/components/PageSection.svelte';
 	import PageShell from '#lib/components/PageShell.svelte';
 	import SecretPanel from '#lib/components/SecretPanel.svelte';
-	import { formatDuration } from '#lib/format.js';
+	import { formatDateTime, formatDuration } from '#lib/format.js';
 	import { endOfDay, latestExpiryDay, localDay } from '#lib/nss.js';
 	import { session } from '#lib/session.svelte.js';
 
@@ -26,8 +26,9 @@
 	// the expiry at the last day nss.key_max_lifetime allows, read from the
 	// server, and the address at the reader's own. An empty expiry still
 	// takes the server's default, so a failed read costs only the proposal
-	// and the bound, which the server enforces anyway. The expiry is fixed
-	// once the key exists, so the form says so.
+	// and the bound, which the server enforces anyway. Once the key exists
+	// only a rotation moves the expiry, renewing it by the same length, so
+	// the form says so.
 
 	const allowed = $derived(session.user?.is_nss_key_admin ?? false);
 
@@ -47,6 +48,14 @@
 	// The answer while its secret is on screen. Dropped on Done, so nothing
 	// on the page holds the secret afterwards.
 	let issued = $state<NSSKeySecret | null>(null);
+	// The expiry the form sent, so the answer can say when the server's
+	// limit trimmed it to an earlier one.
+	let requestedExpiry = $state<string | undefined>(undefined);
+	const trimmed = $derived(
+		!!issued?.key.expires_at &&
+			!!requestedExpiry &&
+			new Date(issued.key.expires_at).getTime() < new Date(requestedExpiry).getTime() - 1000
+	);
 	// The panel's "I have stored this secret" tick, so leaving stops
 	// warning once the reader has said the secret is safe.
 	let secretStored = $state(false);
@@ -132,14 +141,19 @@
 		submitError = null;
 		try {
 			secretStored = false;
+			const expiresAt = expires && !noDay ? endOfDay(expires).toISOString() : undefined;
+			requestedExpiry = expiresAt;
 			issued = await createNSSKey({
 				name: name.trim(),
 				description: description.trim() || undefined,
 				group_name: group.trim() || undefined,
-				expires_at: expires && !noDay ? endOfDay(expires).toISOString() : undefined,
+				expires_at: expiresAt,
 				notification_email: email.trim()
 			});
-			liveMessage = `Key ${issued.key.name} created. Store its secret now.`;
+			const expiry = issued.key.expires_at
+				? `It expires ${formatDateTime(issued.key.expires_at)}.`
+				: 'It never expires.';
+			liveMessage = `Key ${issued.key.name} created. ${expiry} Store its secret now.`;
 		} catch (cause) {
 			if (redirectIfUnauthenticated(cause)) return;
 			submitError =
@@ -178,8 +192,14 @@
 			{#snippet sub()}
 				{#if issued}
 					<span data-testid="nss-key-created">
-						Created <span class="font-mono text-ink">{issued.key.name}</span>. Store its secret
-						before you leave this page.
+						Created <span class="font-mono text-ink">{issued.key.name}</span>.
+						<span data-testid="nss-key-created-expiry"
+							>{#if issued.key.expires_at && trimmed}It expires {formatDateTime(
+									issued.key.expires_at
+								)}, the latest the server's limit allows, not the day you chose.{:else if issued.key.expires_at}It
+								expires {formatDateTime(issued.key.expires_at)}.{:else}It never expires.{/if}</span
+						>
+						Store its secret before you leave this page.
 					</span>
 				{:else}
 					One key per fleet of hosts. The secret is shown once, when you create it.
@@ -301,7 +321,7 @@
 							{:else}
 								At the end of that day. Leave it empty for the server's default.
 							{/if}
-							The expiry cannot be changed once the key exists.
+							The expiry is set now. Each rotation renews it by the same length, up to the server's limit.
 						</span>
 					</label>
 

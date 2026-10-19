@@ -135,6 +135,26 @@ describe('SecretPanel', () => {
 		);
 	});
 
+	const expiryCases: { name: string; expiresAt: string | null | undefined; want: string | null }[] =
+		[
+			{
+				name: 'the rotation gave the key an expiry',
+				expiresAt: '2027-10-18T12:00:00Z',
+				want: 'The key now expires'
+			},
+			{ name: 'the key never expires', expiresAt: null, want: 'The key never expires.' },
+			{ name: 'no expiry is given', expiresAt: undefined, want: null }
+		];
+	for (const { name, expiresAt, want } of expiryCases) {
+		it(`should ${want ? 'say' : 'not mention'} the key's expiry when ${name}`, () => {
+			render(SecretPanel, { ...props, expiresAt });
+
+			expect(screen.queryByTestId('secret-panel-expiry')?.textContent?.trim() ?? null).toEqual(
+				want === null ? null : expect.stringContaining(want)
+			);
+		});
+	}
+
 	it('should not mention a previous secret when none is given', () => {
 		render(SecretPanel, props);
 

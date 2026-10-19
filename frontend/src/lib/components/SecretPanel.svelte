@@ -28,6 +28,11 @@
 		secret: string;
 		/** Set after a rotation: when the previous secret stops being accepted. */
 		previousExpiresAt?: string;
+		/**
+		 * Set after a rotation: the expiry the server gave the key, null when
+		 * it never expires. Left out, the panel says nothing about it.
+		 */
+		expiresAt?: string | null;
 		/** Called by Done, once the reader has ticked the acknowledgement. */
 		ondismiss: () => void;
 		/**
@@ -42,6 +47,7 @@
 		keyId,
 		secret,
 		previousExpiresAt,
+		expiresAt,
 		ondismiss,
 		stored = $bindable(false),
 		testid = 'secret-panel'
@@ -170,6 +176,16 @@
 				<p class="text-dense text-ink" data-testid="{testid}-grace">
 					The previous secret is accepted until {formatDateTime(previousExpiresAt)}. Hosts still
 					presenting it after that stop resolving accounts.
+				</p>
+			{/if}
+
+			{#if expiresAt !== undefined}
+				<p class="text-dense text-ink" data-testid="{testid}-expiry">
+					{#if expiresAt}
+						The key now expires {formatDateTime(expiresAt)}.
+					{:else}
+						The key never expires.
+					{/if}
 				</p>
 			{/if}
 

@@ -166,6 +166,71 @@ describe('NSS key detail', () => {
 			expect(screen.getByTestId('nss-key-expires')).toHaveTextContent('Never');
 		});
 
+		const renewLineCases: { name: string; key: NSSKey; shown: boolean }[] = [
+			{
+				name: 'the key expires within 30 days',
+				key: keyFixture({ expires_at: '2026-11-01T12:00:00Z' }),
+				shown: true
+			},
+			{
+				name: 'the key has expired',
+				key: keyFixture({ status: 'expired', expires_at: '2026-10-01T12:00:00Z' }),
+				shown: true
+			},
+			{ name: 'the key expires in months', key: keyFixture(), shown: false },
+			{
+				name: 'the key is revoked',
+				key: keyFixture({ status: 'revoked', expires_at: '2026-11-01T12:00:00Z' }),
+				shown: false
+			}
+		];
+		for (const { name, key, shown } of renewLineCases) {
+			it(`should ${shown ? 'say' : 'not say'} that rotating renews the expiry when ${name}`, async () => {
+				serve(key);
+				await loaded();
+
+				expect(screen.queryByTestId('nss-key-expires-renew') !== null).toBe(shown);
+			});
+		}
+
+		it('should draw the warning glyph beside the expiry when it is within 30 days', async () => {
+			serve(keyFixture({ expires_at: '2026-11-01T12:00:00Z' }));
+			await loaded();
+
+			expect(screen.getByTestId('nss-key-expires').querySelector('svg')).not.toBeNull();
+		});
+
+		const expiredCases: { name: string; key: NSSKey; shown: boolean }[] = [
+			{
+				name: 'the key has expired',
+				key: keyFixture({ status: 'expired', expires_at: '2026-10-01T12:00:00Z' }),
+				shown: true
+			},
+			{ name: 'the key is active', key: keyFixture(), shown: false },
+			{
+				name: 'the key is revoked after its expiry',
+				key: keyFixture({ status: 'revoked', expires_at: '2026-10-01T12:00:00Z' }),
+				shown: false
+			}
+		];
+		for (const { name, key, shown } of expiredCases) {
+			it(`should ${shown ? 'show' : 'not show'} the expired notice when ${name}`, async () => {
+				serve(key);
+				await loaded();
+
+				expect(screen.queryByTestId('nss-key-expired') !== null).toBe(shown);
+			});
+		}
+
+		it('should say rotating revives an expired key when it has expired', async () => {
+			serve(keyFixture({ status: 'expired', expires_at: '2026-10-01T12:00:00Z' }));
+			await loaded();
+
+			expect(screen.getByTestId('nss-key-expired')).toHaveTextContent(
+				'Hosts using it resolve no accounts. Rotating issues a new secret and renews the expiry; the old secret is not accepted again.'
+			);
+		});
+
 		it('should say the key is read-only when the caller may only view it', async () => {
 			serve(keyFixture());
 			await loaded();
@@ -312,6 +377,22 @@ describe('NSS key detail', () => {
 			expect(scroll).toHaveBeenCalledWith({ block: 'start' });
 		});
 
+		it('should say the expiry the server set when the rotation lands', async () => {
+			await rotateOnce();
+
+			expect(screen.getByTestId('secret-panel-expiry')).toHaveTextContent(
+				`The key now expires ${formatDateTime('2027-01-10T12:00:00Z')}.`
+			);
+		});
+
+		it('should announce the new expiry when the rotation lands', async () => {
+			await rotateOnce();
+
+			expect(screen.getByTestId('nss-key-live')).toHaveTextContent(
+				`Key rotated. Store the new secret. The key now expires ${formatDateTime('2027-01-10T12:00:00Z')}.`
+			);
+		});
+
 		it('should say when the previous secret stops when the rotation lands', async () => {
 			await rotateOnce();
 
@@ -413,10 +494,16 @@ describe('NSS key detail', () => {
 				want: `renewed to ${formatDateTime('2027-10-18T12:00:00.000Z')}`
 			},
 			{
-				name: 'the server limits keys to 30 days',
+				name: 'the server limits keys to 30 days, earlier than the current expiry',
 				key: keyFixture({ permissions: ALL }),
 				settings: envelope({ max_lifetime_seconds: 2592000, rotation_grace_seconds: 0 }),
-				want: `renewed to ${formatDateTime('2026-11-17T12:00:00.000Z')}`
+				want: `The key's expiry moves earlier, to ${formatDateTime('2026-11-17T12:00:00.000Z')}, because the server's limit is now 1mo.`
+			},
+			{
+				name: 'the key never expired and the server now limits keys to a year',
+				key: keyFixture({ permissions: ALL, expires_at: undefined }),
+				settings: envelope({ max_lifetime_seconds: 31536000, rotation_grace_seconds: 0 }),
+				want: `The key now gets an expiry: ${formatDateTime('2027-10-18T12:00:00.000Z')}. Until now it never expired.`
 			},
 			{
 				name: 'the key never expires and the server sets no limit',

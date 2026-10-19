@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { formatDateTime } from '#lib/format.js';
 import { session } from '#lib/session.svelte.js';
 import { endOfDay, localDay } from '#lib/nss.js';
 import { envelope, keyFixture, routeFetch, settle, userFixture } from '#lib/testing/nss.js';
@@ -211,15 +212,59 @@ describe('New NSS key', () => {
 			);
 		});
 
-		it('should say the expiry is fixed once the key exists', async () => {
+		it('should say each rotation renews the expiry when the form is shown', async () => {
 			withSettings(YEAR);
 			render(Page);
 			await settle();
 
 			expect(screen.getByTestId('nss-key-expires-hint')).toHaveTextContent(
-				'The expiry cannot be changed once the key exists.'
+				"The expiry is set now. Each rotation renews it by the same length, up to the server's limit."
 			);
 		});
+
+		const createdCases: {
+			name: string;
+			typed: string;
+			expiresAt: string | undefined;
+			want: string;
+		}[] = [
+			{
+				name: 'the server keeps the day asked for',
+				typed: '2027-01-10',
+				expiresAt: endOfDay('2027-01-10').toISOString(),
+				want: `It expires ${formatDateTime(endOfDay('2027-01-10').toISOString())}.`
+			},
+			{
+				name: "the server's limit trims the day asked for",
+				typed: '2030-01-01',
+				expiresAt: '2027-10-18T12:00:00.000Z',
+				want: `It expires ${formatDateTime('2027-10-18T12:00:00.000Z')}, the latest the server's limit allows, not the day you chose.`
+			},
+			{
+				name: 'the key never expires',
+				typed: '',
+				expiresAt: undefined,
+				want: 'It never expires.'
+			}
+		];
+		for (const { name, typed, expiresAt, want } of createdCases) {
+			it(`should say the expiry the key got when ${name}`, async () => {
+				routeFetch({
+					'GET /api/nss/keys': envelope({ keys: [], can_create: true }),
+					'GET /api/nss/key-settings': envelope(null, 500, 'database unavailable'),
+					'POST /api/nss/keys': envelope({
+						key: keyFixture({ expires_at: expiresAt }),
+						secret: SECRET
+					})
+				});
+				render(Page);
+				await settle();
+				if (typed) await userEvent.type(screen.getByTestId('nss-key-expires'), typed);
+				await createNamed();
+
+				expect(await screen.findByTestId('nss-key-created-expiry')).toHaveTextContent(want);
+			});
+		}
 	});
 
 	it('should show the server reason when the create is refused', async () => {
@@ -310,7 +355,7 @@ describe('New NSS key', () => {
 			await screen.findByTestId('secret-panel');
 
 			expect(screen.getByTestId('nss-key-new-live')).toHaveTextContent(
-				'Key web fleet created. Store its secret now.'
+				`Key web fleet created. It expires ${formatDateTime('2027-01-10T12:00:00Z')}. Store its secret now.`
 			);
 		});
 
