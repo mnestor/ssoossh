@@ -526,3 +526,24 @@ func TestRegisterFrontend_ShouldInjectNonceIntoScriptTagsWithAttributes(t *testi
 		t.Error("expected at least one script tag with the nonce injected")
 	}
 }
+
+// TestRateLimitSkipURLPrefixes_ShouldMatchImmutableAssetPrefixes keeps the
+// rate-limiter skip list the bootstrap router reads in step with the paths
+// this package actually caches as immutable, each carrying the leading slash
+// the limiter matches on c.Request.URL.Path. If a new immutable prefix is
+// added without updating the skip list, a cold load of those assets would
+// start counting against the per-IP burst again (issue #210).
+func TestRateLimitSkipURLPrefixes_ShouldMatchImmutableAssetPrefixes(t *testing.T) {
+	t.Parallel()
+
+	skip := RateLimitSkipURLPrefixes()
+	if len(skip) != len(immutableAssetPrefixes) {
+		t.Fatalf("RateLimitSkipURLPrefixes has %d entries, immutableAssetPrefixes has %d: they must cover the same paths", len(skip), len(immutableAssetPrefixes))
+	}
+	for i, prefix := range immutableAssetPrefixes {
+		want := "/" + prefix
+		if skip[i] != want {
+			t.Errorf("entry %d: skip prefix = %q, want %q (immutableAssetPrefixes %q with a leading slash)", i, skip[i], want, prefix)
+		}
+	}
+}

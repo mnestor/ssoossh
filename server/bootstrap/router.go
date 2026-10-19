@@ -173,11 +173,15 @@ func (a *app) initEngine() (*gin.Engine, error) {
 	// A rate_limit of 0 (or less) disables rate limiting entirely. The NSS
 	// lookups are left to their own limiter, per fleet key and address
 	// (see nssFleetKeyGate): a fleet behind one NAT address would share a
-	// single per-IP bucket here.
+	// single per-IP bucket here. Content-hashed frontend assets skip the
+	// limiter too: a cold first paint pulls dozens at once and they carry no
+	// database or audit cost, so counting them only risks a 429 for a new
+	// user browsing (see frontend.RateLimitSkipURLPrefixes, issue #210).
 	if c.HTTP.RateLimit > 0 {
 		rateLimitInterval := c.HTTP.RateDuration / time.Duration(c.HTTP.RateLimit)
+		skipPrefixes := append(middleware.NSSLookupPathPrefixes(), frontend.RateLimitSkipURLPrefixes()...)
 		r.Use(middleware.NewRateLimitMiddleware().Add(rate.Every(rateLimitInterval), c.HTTP.RateLimit,
-			middleware.SkipPathPrefixes(middleware.NSSLookupPathPrefixes()...)))
+			middleware.SkipPathPrefixes(skipPrefixes...)))
 	}
 
 	// Sent regardless of whether this server terminates TLS itself: a
