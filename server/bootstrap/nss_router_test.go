@@ -273,3 +273,75 @@ func TestNSSRouter_ShouldOpenOnlyTheKeyListToAFleetKeyAdminWhenEveryAdminRouteIs
 		t.Fatalf("swept %d admin routes, want the whole admin API", swept)
 	}
 }
+
+// The admin NSS directory routes reach the directory service when one is
+// built (LDAP on beside NSS) and answer 404 when NSS runs without one: the
+// router must hand the service over, and an untyped nil when there is none.
+func TestNSSRouter_ShouldServeTheDirectoryAdminRoutesOnlyWhenTheDirectoryIsWired(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		directory  bool
+		wantStatus int
+	}{
+		{name: "should answer the pending id changes when the directory is wired", directory: true, wantStatus: http.StatusOK},
+		{name: "should answer 404 when NSS has no directory", directory: false, wantStatus: http.StatusNotFound},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			c := nssRouterConfig(0)
+			a := newTestApp(t, c)
+			if tt.directory {
+				newTestLDAPService(t, c)
+				setNSSDirectory(c)
+				nss, err := service.NewNSSDirectoryService(c, a.db)
+				if err != nil {
+					t.Fatalf("NewNSSDirectoryService: %v", err)
+				}
+				a.svc.nss = nss
+			}
+			a.svc.audit = service.NewAuditService(c, a.db)
+			a.svc.notification = service.NewNotificationService(a.db, nil, false, false, false)
+			a.svc.identity = service.NewIdentityService(a.db, nil)
+			if err := a.initNSSServices(a.svc); err != nil {
+				t.Fatalf("initNSSServices: %v", err)
+			}
+			srv, err := a.initRouter()
+			if err != nil {
+				t.Fatalf("initRouter: %v", err)
+			}
+			cookie := signInAs(t, srv, &service.Identity{Subject: "sub-admin", Username: "admin", Groups: []string{"admins"}})
+
+			req := httptest.NewRequest(http.MethodGet, "/api/admin/nss/pending-id-changes", nil)
+			req.AddCookie(cookie)
+			w := httptest.NewRecorder()
+			srv.router.ServeHTTP(w, req)
+			if w.Code != tt.wantStatus {
+				t.Errorf("status = %d, want %d: %s", w.Code, tt.wantStatus, w.Body.String())
+			}
+		})
+	}
+}
+
+// A source allow list entry that is not an address or a CIDR is a startup
+// error: the router must refuse to build rather than serve lookups to
+// sources nobody meant to allow.
+func TestNSSRouter_ShouldFailWhenTheSourceAllowListDoesNotParse(t *testing.T) {
+	t.Parallel()
+
+	c := nssRouterConfig(0)
+	c.NSS.SourceAllowList = []string{"not-a-network"}
+	a := newTestApp(t, c)
+	a.svc.audit = service.NewAuditService(c, a.db)
+	a.svc.notification = service.NewNotificationService(a.db, nil, false, false, false)
+	if err := a.initNSSServices(a.svc); err != nil {
+		t.Fatalf("initNSSServices: %v", err)
+	}
+
+	if _, err := a.initRouter(); err == nil || !strings.Contains(err.Error(), "nss.source_allow_list") {
+		t.Errorf("initRouter() error = %v, want one naming nss.source_allow_list", err)
+	}
+}
