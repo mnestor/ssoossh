@@ -98,9 +98,11 @@ func (k *nssKeyController) keySettingsHandler(g *gin.Context) {
 
 // listHandler handles GET /api/nss/keys.
 //
-// @Summary     List fleet API keys
-// @Description Every key for the fleet key admin role, admins, SOC and auditors; for anyone else, the keys
-// @Description whose group they are in. Each key carries what the caller may do with it.
+// @Summary     List the fleet API keys the caller's groups manage
+// @Description The keys whose group is one of the caller's groups, for everyone: the fleet key admin role,
+// @Description admins, SOC and auditors included, who find every key, a key with no group too, on
+// @Description /api/admin/nss/keys. Each key carries what the caller may do with it, and GET /api/nss/keys/{id}
+// @Description and the actions keep the full role matrix, so a key missing here can still be opened.
 // @Tags        web
 // @Produce     json
 // @Success     200 {object} openapidoc.NSSKeyListEnvelope "The keys, by name"

@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { beforeNavigate, goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 
 	import { ApiError } from '#lib/api/client.js';
-	import { createNSSKey, getNSSKeySettings, listNSSKeys } from '#lib/api/endpoints.js';
+	import { createNSSKey, getNSSKeySettings, listAdminNSSKeys } from '#lib/api/endpoints.js';
 	import type { NSSKeySecret } from '#lib/api/types.js';
 	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
 	import AccessDenied from '#lib/components/AccessDenied.svelte';
@@ -15,6 +16,7 @@
 	import SecretPanel from '#lib/components/SecretPanel.svelte';
 	import { formatDateTime, formatDuration } from '#lib/format.js';
 	import { endOfDay, latestExpiryDay, localDay } from '#lib/nss.js';
+	import { nssAccess } from '#lib/nssAccess.svelte.js';
 	import { session } from '#lib/session.svelte.js';
 
 	// Creating a fleet key: one short form, then the secret, once.
@@ -31,6 +33,16 @@
 	// the form says so.
 
 	const allowed = $derived(session.user?.is_nss_key_admin ?? false);
+
+	// Opened from the admin list (?from=admin), the back chip and Done
+	// return there; otherwise to the keys the reader's groups manage. The
+	// value is only looked up, never followed.
+	const fromAdmin = $derived(page.url.searchParams.get('from') === 'admin');
+	const back = $derived(
+		fromAdmin
+			? { href: resolve('/admin/nss/keys'), label: 'All NSS keys' }
+			: { href: resolve('/nss-keys'), label: 'NSS keys' }
+	);
 
 	let name = $state('');
 	let description = $state('');
@@ -65,16 +77,19 @@
 	// too, but it is not a live region.
 	let liveMessage = $state('');
 
-	// Groups other keys already use, and the reader's own, offered as
-	// suggestions. The server takes any group name here (it is free text,
-	// matched later against each caller's session groups), so the list is
-	// not a limit, and the help under the field says what it holds. A
-	// failed read only loses the suggestions.
+	// The reader's own groups, offered as suggestions, and for the admin
+	// area's roles the groups other keys use, from the first page of every
+	// key (the list of keys a reader's groups manage would add nothing to
+	// their own groups). The server takes any group name here (it is free
+	// text, matched later against each caller's session groups), so the
+	// list is not a limit, and the help under the field says what it holds.
+	// A failed read only loses the suggestions.
+	const seesEveryKey = $derived(session.user?.is_auditor ?? false);
 	let knownGroups = $state<string[]>([]);
 	$effect(() => {
-		if (!allowed) return;
+		if (!allowed || !seesEveryKey) return;
 		const controller = new AbortController();
-		listNSSKeys(controller.signal)
+		listAdminNSSKeys({ limit: 100, signal: controller.signal })
 			.then((result) => {
 				knownGroups = result.keys.map((key) => key.group_name);
 			})
@@ -164,6 +179,9 @@
 				? `It expires ${formatDateTime(issued.key.expires_at)}.`
 				: 'It never expires.';
 			liveMessage = `Key ${issued.key.name} created. ${expiry} Store its secret now.`;
+			// A key in one of the reader's groups may be their first, which
+			// is what shows the rail's NSS keys entry.
+			nssAccess.refresh(session.user);
 		} catch (cause) {
 			if (redirectIfUnauthenticated(cause)) return;
 			submitError =
@@ -179,7 +197,7 @@
 	function dismiss() {
 		const id = issued?.key.id ?? '';
 		issued = null;
-		goto(resolve('/nss-keys/[id]', { id: id }));
+		goto(`${resolve('/nss-keys/[id]', { id: id })}${fromAdmin ? '?from=admin' : ''}`);
 	}
 
 	const field =
@@ -197,7 +215,7 @@
 	<PageShell width="wide">
 		<PageHeading
 			title="New NSS key"
-			back={{ href: resolve('/nss-keys'), label: 'All NSS keys', testid: 'nss-key-new-back' }}
+			back={{ href: back.href, label: back.label, testid: 'nss-key-new-back' }}
 		>
 			{#snippet sub()}
 				{#if issued}
@@ -292,8 +310,8 @@
 						</datalist>
 						<span class="text-xs text-ink-muted">
 							Members of this group can rotate, edit and revoke the key without an admin role. Any
-							group name is accepted; the suggestions are the groups other keys use and the groups
-							you are in.
+							group name is accepted; the suggestions are
+							{seesEveryKey ? 'the groups other keys use and the groups' : 'the groups'} you are in.
 						</span>
 					</label>
 

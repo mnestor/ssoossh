@@ -206,30 +206,27 @@ func (s *NSSKeyService) permissions(groups []string, key *model.NSSKey) []model.
 	return granted
 }
 
-// sees reports whether the caller may see every key, rather than only the
-// ones their groups manage.
-func (s *NSSKeyService) seesAll(groups []string) bool {
-	return s.config.Admin.GrantsNSSKeyAdmin(groups) || s.config.Admin.GrantsAuditor(groups)
-}
-
 // CanCreate reports whether the identity may create keys: the fleet key
 // admin role, which admin implies.
 func (s *NSSKeyService) CanCreate(identity *Identity) bool {
 	return s.config.Admin.GrantsNSSKeyAdmin(identityGroups(identity))
 }
 
-// List returns the keys the identity may view, by name.
+// List returns the keys the identity manages through a key's group: those
+// whose group_name is one of the identity's groups, by name. For everyone,
+// the fleet key admin role and the admin area's roles included, so the
+// list is "keys I manage" whatever else the caller may do. Every key, a
+// key with no group included, is on the admin list (AdminList), and Get
+// and the actions keep their own role matrix, so an auditor still opens
+// any key from there.
 func (s *NSSKeyService) List(ctx context.Context, identity *Identity) ([]NSSKeyView, error) {
 	groups := identityGroups(identity)
-	q := s.db.WithContext(ctx).Order("name, id")
-	if !s.seesAll(groups) {
-		if len(groups) == 0 {
-			return []NSSKeyView{}, nil
-		}
-		q = q.Where("group_name <> '' AND group_name IN ?", groups)
+	if len(groups) == 0 {
+		return []NSSKeyView{}, nil
 	}
 	var keys []model.NSSKey
-	if err := q.Find(&keys).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("group_name <> '' AND group_name IN ?", groups).
+		Order("name, id").Find(&keys).Error; err != nil {
 		return nil, fmt.Errorf("list fleet keys: %w", err)
 	}
 	return s.views(ctx, groups, keys)

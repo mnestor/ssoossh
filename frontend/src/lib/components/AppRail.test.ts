@@ -51,6 +51,14 @@ function railLinkLabels(): string[] {
 		.map((item) => item.textContent?.trim() ?? '');
 }
 
+/** railHrefs lists the rail's link targets, in order. */
+function railHrefs(): string[] {
+	const nav = screen.getByRole('navigation', { name: 'Main' });
+	return within(nav)
+		.getAllByRole('link')
+		.map((link) => link.getAttribute('href') ?? '');
+}
+
 beforeEach(() => {
 	vi.unstubAllGlobals();
 	vi.stubGlobal('localStorage', {
@@ -351,12 +359,25 @@ describe('app rail', () => {
 			keys: number;
 			shown: boolean;
 		}[] = [
-			{ name: 'a fleet key admin', user: { is_nss_key_admin: true }, keys: 0, shown: true },
-			{ name: 'an auditor', user: { is_auditor: true }, keys: 0, shown: true },
+			// The entry is the keys the viewer's groups manage, so no role
+			// shows it on its own: every key is the admin group's entry.
 			{
-				name: 'an admin',
+				name: 'a fleet key admin no key names',
+				user: { is_nss_key_admin: true },
+				keys: 0,
+				shown: false
+			},
+			{ name: 'an auditor no key names', user: { is_auditor: true }, keys: 0, shown: false },
+			{
+				name: 'an admin no key names',
 				user: { is_admin: true, is_soc: true, is_auditor: true, is_nss_key_admin: true },
 				keys: 0,
+				shown: false
+			},
+			{
+				name: 'an admin whose group manages a key',
+				user: { is_admin: true, is_soc: true, is_auditor: true, is_nss_key_admin: true },
+				keys: 1,
 				shown: true
 			},
 			{ name: 'a member of a key group', user: {}, keys: 1, shown: true },
@@ -383,13 +404,13 @@ describe('app rail', () => {
 				render(AppRail, { onsignout: () => {} });
 				await settle();
 
-				expect(railLinkLabels().includes('NSS keys')).toBe(shown);
+				expect(railHrefs().includes('/nss-keys')).toBe(shown);
 			});
 		}
 
-		it('should not ask for the key list when the role of the viewer already decides', async () => {
+		it('should not ask for the key list when NSS is off', async () => {
 			const calls = routeFetch({});
-			session.user = userFixture({ is_nss_key_admin: true });
+			session.user = userFixture({ is_nss_key_admin: true, nss_enabled: false });
 			session.resolved = true;
 
 			render(AppRail, { onsignout: () => {} });
@@ -406,15 +427,17 @@ describe('app rail', () => {
 			render(AppRail, { onsignout: () => {} });
 			await settle();
 
-			expect(railLinkLabels().includes('NSS keys')).toBe(false);
+			expect(railHrefs().includes('/nss-keys')).toBe(false);
 		});
 
 		it('should mark NSS keys current on a key page', async () => {
 			resetFakePage('http://localhost/nss-keys/nss_k7m4qp2x');
-			session.user = userFixture({ is_nss_key_admin: true });
+			routeFetch({ 'GET /api/nss/keys': envelope({ keys: [keyFixture()], can_create: false }) });
+			session.user = userFixture();
 			session.resolved = true;
 
 			render(AppRail, { onsignout: () => {} });
+			await settle();
 
 			expect(screen.getByRole('link', { name: 'NSS keys' })).toHaveAttribute(
 				'aria-current',

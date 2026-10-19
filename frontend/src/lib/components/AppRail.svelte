@@ -52,9 +52,10 @@
 
 	const collapsed = $derived(forceCollapsed ?? rail.collapsed);
 
-	// NSS keys shows where the server serves them, to the roles that see
-	// every key, and to anyone a key's group names; the last needs one read
-	// of the key list, which nssAccess makes once per identity.
+	// NSS keys shows where the server serves them, to anyone a key's group
+	// names, whatever their roles: the list is the keys their groups
+	// manage. That needs one read of the key list, which nssAccess makes
+	// once per identity. Every key is in the admin group instead.
 	$effect(() => nssAccess.check(session.user));
 	const nssItem = $derived(showNSSKeys(session.user, nssAccess.hasKeys) ? nssKeysNav() : null);
 	const isAuditor = $derived(session.user?.is_auditor ?? false);

@@ -32,9 +32,12 @@ vi.mock('$app/state', async () => {
 
 import Page from './+page.svelte';
 
+import { resetFakePage } from '#lib/testing/page.svelte.js';
+
 const SECRET = 'c2VjcmV0LW9uY2U';
 
 beforeEach(() => {
+	resetFakePage('http://localhost/nss-keys/new');
 	session.user = userFixture({ is_nss_key_admin: true });
 	session.resolved = true;
 	goto.mockClear();
@@ -50,6 +53,7 @@ afterEach(() => {
 function answers(create: Response = envelope({ key: keyFixture(), secret: SECRET })) {
 	return routeFetch({
 		'GET /api/nss/keys': envelope({ keys: [], can_create: true }),
+		'GET /api/admin/nss/keys': envelope({ keys: [], total: 0, usage_retention_seconds: 0 }),
 		'POST /api/nss/keys': create
 	});
 }
@@ -105,7 +109,17 @@ describe('New NSS key', () => {
 		);
 	});
 
-	it('should say what the group suggestions are when the form is shown', () => {
+	it('should say the suggestions are the reader own groups when the reader sees no other key', () => {
+		answers();
+		render(Page);
+
+		expect(screen.getByText(/Any group name is accepted/)).toHaveTextContent(
+			'the suggestions are the groups you are in.'
+		);
+	});
+
+	it('should say the suggestions include other keys groups when the reader sees every key', () => {
+		session.user = userFixture({ is_nss_key_admin: true, is_auditor: true });
 		answers();
 		render(Page);
 
@@ -113,6 +127,49 @@ describe('New NSS key', () => {
 			'the suggestions are the groups other keys use and the groups you are in.'
 		);
 	});
+
+	it('should suggest the groups every key uses when the reader sees every key', async () => {
+		session.user = userFixture({ is_nss_key_admin: true, is_auditor: true, groups: [] });
+		routeFetch({
+			'GET /api/admin/nss/keys': envelope({
+				keys: [{ group_name: 'db-admins' }, { group_name: '' }],
+				total: 2,
+				usage_retention_seconds: 0
+			})
+		});
+		const { container } = render(Page);
+		await settle();
+
+		const options = [...container.querySelectorAll('#nss-key-groups option')].map((o) =>
+			o.getAttribute('value')
+		);
+		expect(options).toEqual(['db-admins']);
+	});
+
+	const backCases = [
+		{
+			name: 'it was opened from the keys a reader manages',
+			url: '/nss-keys/new',
+			href: '/nss-keys',
+			label: 'NSS keys'
+		},
+		{
+			name: 'it was opened from the admin list',
+			url: '/nss-keys/new?from=admin',
+			href: '/admin/nss/keys',
+			label: 'All NSS keys'
+		}
+	];
+	for (const { name, url, href, label } of backCases) {
+		it(`should point the back chip at ${href} when ${name}`, () => {
+			resetFakePage(`http://localhost${url}`);
+			answers();
+			render(Page);
+
+			expect(screen.getByTestId('nss-key-new-back')).toHaveAttribute('href', href);
+			expect(screen.getByTestId('nss-key-new-back')).toHaveTextContent(label);
+		});
+	}
 
 	it('should default the notification email to the caller', () => {
 		answers();
@@ -375,6 +432,29 @@ describe('New NSS key', () => {
 			await userEvent.click(screen.getByTestId('secret-panel-done'));
 
 			expect(goto).toHaveBeenCalledWith('/nss-keys/nss_k7m4qp2x');
+		});
+
+		it('should keep the way back to the admin list when Done is pressed after opening from it', async () => {
+			resetFakePage('http://localhost/nss-keys/new?from=admin');
+			answers();
+			render(Page);
+			await createNamed();
+			await userEvent.click(await screen.findByLabelText('I have stored this secret'));
+			await userEvent.click(screen.getByTestId('secret-panel-done'));
+
+			expect(goto).toHaveBeenCalledWith('/nss-keys/nss_k7m4qp2x?from=admin');
+		});
+
+		it('should ask again whether the reader holds a key once one is created', async () => {
+			const calls = answers();
+			render(Page);
+			await createNamed();
+			await screen.findByTestId('secret-panel-done');
+			await settle();
+
+			expect(calls.some((call) => call.method === 'GET' && call.url === '/api/nss/keys')).toBe(
+				true
+			);
 		});
 
 		it('should hold the secret nowhere on the page once Done is pressed', async () => {

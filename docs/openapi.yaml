@@ -7122,8 +7122,10 @@ paths:
   /api/nss/keys:
     get:
       description: |-
-        Every key for the fleet key admin role, admins, SOC and auditors; for anyone else, the keys
-        whose group they are in. Each key carries what the caller may do with it.
+        The keys whose group is one of the caller's groups, for everyone: the fleet key admin role,
+        admins, SOC and auditors included, who find every key, a key with no group too, on
+        /api/admin/nss/keys. Each key carries what the caller may do with it, and GET /api/nss/keys/{id}
+        and the actions keep the full role matrix, so a key missing here can still be opened.
       responses:
         "200":
           content:
@@ -7145,7 +7147,7 @@ paths:
           description: 'nss_disabled: nss.enabled is false'
       security:
       - sessionCookie: []
-      summary: List fleet API keys
+      summary: List the fleet API keys the caller's groups manage
       tags:
       - web
     post:

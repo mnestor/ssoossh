@@ -24,11 +24,13 @@
 	import PageShell from '#lib/components/PageShell.svelte';
 	import { formatDateTime, relativeTime, remainingLabel } from '#lib/format.js';
 	import { expiryTone, KeyRotating, keyStatus, type KeyDisplayStatus } from '#lib/nss.js';
+	import { session } from '#lib/session.svelte.js';
 
-	// Every fleet key the caller may see. The server decides which: all of
-	// them for the fleet key admin role and the admin area's roles, and for
-	// anyone else the keys whose group they are in. The list is not paged
-	// (keys are fleet-sized), so the filters and the sort run here.
+	// The fleet keys the caller manages: the server lists the keys whose
+	// group is one of the caller's groups, for every caller, the admin
+	// roles included. Every key, a key with no group too, is on the admin
+	// list at /admin/nss/keys. The list is not paged (one person's keys
+	// are few), so the filters and the sort run here.
 	//
 	// The one question a reader brings is "which key, and is it about to
 	// stop working?", so the key's name leads each row and the expiry is the
@@ -186,7 +188,8 @@
 <PageShell width="wide">
 	<PageHeading title="NSS keys" testid="nss-keys-heading">
 		{#snippet sub()}
-			The keys your hosts present to look up accounts and groups. Each fleet of hosts shares one.
+			The keys your groups manage. Each fleet of hosts shares one and presents it to look up
+			accounts and groups.
 		{/snippet}
 		{#snippet action()}
 			<!-- While the list is empty its empty state carries New key, so
@@ -220,23 +223,32 @@
 	{:else if !hasLoaded}
 		<LoadingBlock shape="table" count={4} label="Loading the NSS keys…" testid="nss-keys-loading" />
 	{:else if list && keys.length === 0}
-		{#if list.can_create}
-			<EmptyState icon="server-2" title="No NSS keys yet" testid="nss-keys-empty">
+		<!-- One empty state for every caller: the list is the keys their
+		     groups manage, whatever their roles, so a role changes only
+		     where they go next. -->
+		<EmptyState icon="server-2" title="No NSS keys in your groups" testid="nss-keys-empty">
+			A key is listed here once its group is one you are in.
+			{#if session.user?.is_auditor}
+				<span data-testid="nss-keys-empty-admin">
+					Every key in the fleet, a key with no group included, is on
+					<a href={resolve('/admin/nss/keys')} class="text-accent hover:underline">All NSS keys</a>.
+				</span>
+			{:else if list.can_create}
 				Create one key for each fleet of hosts. Every host in the fleet stores it in
 				<code class="font-mono">/etc/ssoossh/nss.key</code> and presents it on each lookup.
-				{#snippet action()}
+			{:else}
+				An administrator assigns a key to a group.
+			{/if}
+			{#snippet action()}
+				{#if list?.can_create}
 					<a
 						href={resolve('/nss-keys/new')}
 						class="inline-flex min-h-target items-center rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-ink hover:bg-accent-hover"
 						>New key</a
 					>
-				{/snippet}
-			</EmptyState>
-		{:else}
-			<EmptyState icon="server-2" title="No NSS keys are shared with you" testid="nss-keys-empty">
-				A key appears here once an administrator assigns it to a group you are in.
-			</EmptyState>
-		{/if}
+				{/if}
+			{/snippet}
+		</EmptyState>
 	{:else if list}
 		<div class="flex flex-col gap-3">
 			<div class="flex flex-wrap items-end gap-x-6 gap-y-3 sm:items-center">
