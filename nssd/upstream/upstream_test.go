@@ -259,6 +259,50 @@ func TestEveryLookupKindShouldGoThroughTheSamePathWhenCalled(t *testing.T) {
 	}
 }
 
+func TestClientForShouldCarryTheTrustChoiceWhenBuildingTheAPIClient(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		caFile      string
+		pins        []string
+		wantCAFile  string
+		wantSystem  bool
+		wantStatus  Status
+		wantWarning bool
+	}{
+		{name: "should set TLSSystemRoots when tls_ca_file is system", caFile: "system", wantSystem: true,
+			wantStatus: Status{TLSCAFile: "system"}, wantWarning: true},
+		{name: "should set both when tls_ca_file is system and pins are set", caFile: "system", pins: []string{"AAAA", "BBBB"}, wantSystem: true,
+			wantStatus: Status{TLSCAFile: "system", TLSPins: 2}},
+		{name: "should pass the path as TLSCAFile when tls_ca_file is a path", caFile: "/etc/ssoossh/ca.pem", wantCAFile: "/etc/ssoossh/ca.pem",
+			wantStatus: Status{TLSCAFile: "/etc/ssoossh/ca.pem"}},
+		{name: "should set neither when only a pin is set", pins: []string{"AAAA"},
+			wantStatus: Status{TLSPins: 1}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			h := newHarness(t, func(c *config.Config, _ *Options) { c.TLSCAFile, c.TLSSPKIPin = tt.caFile, tt.pins })
+			if _, err := h.client.UserByName(t.Context(), "alice"); err != nil {
+				t.Fatal(err)
+			}
+			b := h.built[0]
+			if b.TLSCAFile != tt.wantCAFile || b.TLSSystemRoots != tt.wantSystem || len(b.TLSSPKIPins) != len(tt.pins) {
+				t.Fatalf("got TLSCAFile %q, TLSSystemRoots %v, %d pins", b.TLSCAFile, b.TLSSystemRoots, len(b.TLSSPKIPins))
+			}
+			st := h.client.Status()
+			if st.TLSCAFile != tt.wantStatus.TLSCAFile || st.TLSPins != tt.wantStatus.TLSPins {
+				t.Fatalf("got status trust %q, %d pins", st.TLSCAFile, st.TLSPins)
+			}
+			warned := strings.Contains(h.logs.String(), "level=WARN msg=\"tls_ca_file is system: every CA in this host's trust store can answer for the server")
+			if warned != tt.wantWarning {
+				t.Fatalf("warned = %v, want %v; logs:\n%s", warned, tt.wantWarning, h.logs.String())
+			}
+		})
+	}
+}
+
 func TestUnauthorizedLatch(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t, nil)

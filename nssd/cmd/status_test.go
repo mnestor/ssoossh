@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/mnestor/ssoossh/nssd/policy"
+	"github.com/mnestor/ssoossh/nssd/upstream"
 	"github.com/mnestor/ssoossh/nssd/userdb"
 )
 
@@ -53,6 +54,42 @@ func TestPrintGroupFindings(t *testing.T) {
 				t.Fatalf("got:\n%s\nwant:\n%s", out.String(), tt.want)
 			}
 		})
+	}
+}
+
+func TestDescribeTrust(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		caFile string
+		pins   int
+		want   string
+	}{
+		{name: "should name the system store when tls_ca_file is system", caFile: "system", want: "system store (any CA this host trusts)"},
+		{name: "should name the CA file when tls_ca_file is a path", caFile: "/etc/ssoossh/isrg-roots.pem", want: "CA file /etc/ssoossh/isrg-roots.pem"},
+		{name: "should count the pins when only pins are set", pins: 2, want: "key pin (2 pins)"},
+		{name: "should say pin when there is one", pins: 1, want: "key pin (1 pin)"},
+		{name: "should name both when a CA file and a pin are set", caFile: "/etc/ssoossh/ca.pem", pins: 1, want: "CA file /etc/ssoossh/ca.pem and key pin (1 pin)"},
+		{name: "should name both when the system store and pins are set", caFile: "system", pins: 2, want: "system store (any CA this host trusts) and key pin (2 pins)"},
+		{name: "should print a dash when nothing is set", want: "-"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := describeTrust(tt.caFile, tt.pins); got != tt.want {
+				t.Fatalf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPrintDaemonStatusShouldNameTheTrustWhenTheDaemonReportsIt(t *testing.T) {
+	t.Parallel()
+	var out bytes.Buffer
+	printDaemonStatus(&out, &userdb.Status{Upstream: upstream.Status{Server: "https://sso.example.com", TLSCAFile: "system"}})
+	if !strings.Contains(out.String(), "server:        https://sso.example.com\ntrust:         system store (any CA this host trusts)\n") {
+		t.Fatalf("got:\n%s", out.String())
 	}
 }
 

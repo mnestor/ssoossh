@@ -119,6 +119,37 @@ func TestNSSExampleShouldMatchTheDaemonDefaults(t *testing.T) {
 	}
 }
 
+// should accept the "tls_ca_file: system" the example's comment documents,
+// spelled as it documents it, so the comment cannot name a value the
+// daemon refuses.
+func TestNSSExampleShouldDocumentTheSystemStoreAsTheDaemonSpellsIt(t *testing.T) {
+	t.Parallel()
+
+	body, err := os.ReadFile(filepath.Join(repoRoot(t), nssExample))
+	if err != nil {
+		t.Fatalf("read %s: %v", nssExample, err)
+	}
+	documented := "# tls_ca_file: " + config.TLSCASystem + " "
+	if !strings.Contains(string(body), documented) {
+		t.Fatalf("%s does not document %q", nssExample, strings.TrimSpace(documented))
+	}
+
+	options, _ := nssExampleOptions(t)
+	options = strings.Replace(options, "server: \"\"\n", "server: \"https://sso.example.test\"\n", 1)
+	options = strings.Replace(options, "tls_ca_file: \"\"\n", "tls_ca_file: "+config.TLSCASystem+"\n", 1)
+	path := filepath.Join(t.TempDir(), "nss.yaml")
+	if err := os.WriteFile(path, []byte(options), 0o600); err != nil {
+		t.Fatalf("write the uncommented example: %v", err)
+	}
+	got, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("the example with tls_ca_file: system does not load: %v", err)
+	}
+	if !got.TLSSystemRoots() {
+		t.Fatalf("tls_ca_file is %q, want the system store", got.TLSCAFile)
+	}
+}
+
 // configDiff lists, by option name, every field where got and want differ.
 // An empty slice or map equals a nil one: "allowed_shells: []" in the
 // example is the same setting as the default's nil.
