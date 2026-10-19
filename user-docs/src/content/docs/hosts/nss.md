@@ -188,7 +188,7 @@ CA *and* carry a pinned key. Connections are TLS 1.3 only. `ssoosshd-nss
 status` names the trust in force on its `trust:` line, and when the pin does
 not match, its error names the digest the server presented.
 
-#### Server certificates from a public CA
+### Server certificates from a public CA
 
 A key pin suits a certificate whose key you control and keep. Most ACME
 clients make a new key at every renewal (certbot does unless it runs with
