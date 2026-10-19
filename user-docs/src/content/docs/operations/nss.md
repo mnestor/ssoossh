@@ -404,15 +404,20 @@ Two lists, for two questions.
   those whose group is one of your groups. It is the same for every role, an
   admin's included, and the rail shows it only when the list is not empty.
   A key with no group is on neither person's list.
-- **All NSS keys** (`/admin/nss/keys`, in the rail's admin group, for
-  auditors, SOC and admins) is every key, whoever manages it. A row opens the
-  key's own page, which keeps every action your role allows; its back chip
-  returns to the list with the filters you had.
+- **All NSS keys** (`/admin/nss/keys`, "NSS keys (all)" in the rail's admin
+  group) is every key, whoever manages it, for auditors, SOC and admins and
+  for fleet key admins (`admin.nss_key_group`). A fleet key admin with no
+  other admin role sees only this entry in the admin group and can open no
+  other admin page. A row opens the key's own page, which keeps every action
+  your role allows; its back chip, and the rotation report's back to the
+  key, return to the list with the filters you had.
 
 All NSS keys has one search field:
 
 - Text matches the key's name or group, or its creator's username or
-  email, ignoring case.
+  email, ignoring case, or the start of the key's id: paste a whole id
+  (`nss_5vqsreyx`) from an alert or `ssoosshd-nss status`, or its first
+  few characters, in either case.
 - An IP address (IPv4 or IPv6; an IPv4-mapped one is read as IPv4) or a CIDR
   range searches the usage instead: the keys a host used from that address
   or range within

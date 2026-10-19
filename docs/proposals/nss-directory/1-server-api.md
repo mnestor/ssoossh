@@ -509,7 +509,9 @@ caller (`view`, `rotate`, `revoke`, `edit`, `assign_group`) so the UI does
 not reimplement the role matrix.
 
 **Every key** (added 2026-10-19 at the owner's request).
-`GET /api/admin/nss/keys`, auditor and above, beside the directory viewer
+`GET /api/admin/nss/keys`, auditor and above, and the fleet key admin role
+(`admin.nss_key_group`, the one `/api/admin` route it reads; changed
+2026-10-19 by the owner), beside the directory viewer
 and like it a 404 (`nss_disabled`) with NSS off. One page of every key by
 name then id, cursor paged (`after`, `limit`) with a total. Each row: id,
 name, group, status, generation, expiry, previous secret expiry, revocation,
@@ -519,7 +521,8 @@ JOIN on `users`, so a creator whose account is gone still names the id),
 recent usage alerts. Never a secret hash. Parameters:
 
 - `q`: a case-insensitive substring of the name, the group or the creator's
-  username or email; or, when it reads as an IP address or a CIDR range, an
+  username or email, or the start of the key's id in any case (added
+  2026-10-19); or, when it reads as an IP address or a CIDR range, an
   address search: the keys with `nss_key_usage` rows from that address or
   range within `nss.usage_retention`, each with `matched` (up to 5
   addresses, newest first, with `last_seen`, `generation` and `secret`
