@@ -10,7 +10,7 @@
   issuance or anyone's authority.
   - A human approves every issuance in the browser. Service certificates are approved once, at enrollment. Every issuance goes through the sign queue.
   - Issued certificates are never stored on the server. Delivery is the only copy.
-  - Group membership never appears in a certificate. Roles and policy come from the session identity, never from database rows.
+  - Group membership never appears in a certificate. Roles and policy come from the session identity, never from database rows, with one narrowing exception: with `ldap.authoritative_role_groups` on, a role group (admin, SOC, auditor, fleet key admin) counts for a directory-linked user only while the latest directory read still lists it, so the sync can take a role away between logins, effective on the next request. The directory never grants a role.
   - There are no host certificates. `ssoossh host` is local principal mapping for `AuthorizedPrincipalsCommand`, plus `host check`, a read-only report on whether this host's sshd will accept ssoossh certificates.
   - `verify-required` is never used. `no-touch-required` is only for enrolled `sk-` keys on the service path.
   - Policy uses the source address the server observed, never one the client supplied. Audit records never capture `Cookie` or `Authorization`. No log line, audit record or API response carries a fleet key secret, except the one-time display at create and rotate.
@@ -67,7 +67,7 @@
   ### ssoosshd-nss (host daemon, Linux)
   - A systemd userdb service on /run/systemd/userdb/com.github.mnestor.ssoossh, socket-activated; nss-systemd is the glibc side. Floor: systemd 245+, glibc, `systemd` on the passwd, group and shadow lines.
   - Local accounts and groups always win: a directory membership is matched to a local group by gid, never by name, and out-of-range ids and name collisions are refused and listed in `ssoosshd-nss status`.
-  - TLS pinned by CA file or SPKI digest, fleet key in a root-only file, a persistent cache whose user and group entries correct each other, a fresh read for an sshd login once an entry is older than `login_soft_ttl` (sshd recognised by uid 0 and its cgroup), a connection cap with a share kept for uid 0, an empty capability bounding set.
+  - TLS trust named explicitly: a CA file, an SPKI digest, or the host's system store as `tls_ca_file: system`, never by default; fleet key in a root-only file, a persistent cache whose user and group entries correct each other, a fresh read for an sshd login once an entry is older than `login_soft_ttl` (sshd recognised by uid 0 and its cgroup), a connection cap with a share kept for uid 0, an empty capability bounding set.
   - Packages `ssoosshd-nss` (deb, rpm) and `ssoossh-nss-selinux` (rpm).
 
   ### Web UI (SvelteKit, embedded in ssoosshd)
