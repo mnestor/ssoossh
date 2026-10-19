@@ -95,13 +95,9 @@ const (
 // Config is nss.yaml, decoded. Durations accept Go duration strings
 // ("90m") and, as sssd.conf does, plain integers counted in seconds.
 type Config struct {
-	// Server is the ssoosshd https URL. Empty means discover it from the
-	// _ssoossh._tcp SRV records of DNSDiscoveryDomain.
+	// Server is the ssoosshd https URL; required. Failover across several
+	// servers is a load balancer's job behind this one URL.
 	Server string `mapstructure:"server"`
-	// DNSDiscoveryDomain is the domain SRV discovery queries. Empty means
-	// the host's own domain, allowed only with a tls_spki_pin: the host's
-	// domain comes from its hostname or resolv.conf, which DHCP can set.
-	DNSDiscoveryDomain string `mapstructure:"dns_discovery_domain"`
 	// TLSCAFile is a CA bundle the server's chain must end in, or
 	// TLSCASystem for the host's system trust store; it or TLSSPKIPin is
 	// required.
@@ -113,8 +109,7 @@ type Config struct {
 	// Timeout bounds one upstream lookup, retries included.
 	Timeout time.Duration `mapstructure:"timeout"`
 	// ReconnectionRetries is how many more attempts a lookup makes after a
-	// transport failure, rotating through the discovered servers, before
-	// the daemon goes offline.
+	// transport failure before the daemon goes offline.
 	ReconnectionRetries int `mapstructure:"reconnection_retries"`
 	// OfflineTimeout is the first wait before probing an offline server;
 	// it doubles on each failed probe.
@@ -188,11 +183,6 @@ type Config struct {
 	FilterGroups []string `mapstructure:"filter_groups"`
 	// RequireGroups, when set, serves only members of at least one.
 	RequireGroups []string `mapstructure:"require_groups"`
-
-	// Domain is DNSDiscoveryDomain, or the host's domain when that is
-	// empty: what SRV discovery queries and what %d expands to. Resolved
-	// at load, never read from the file.
-	Domain string `mapstructure:"-"`
 }
 
 // Defaults returns the configuration a file that sets nothing gets: the
@@ -228,12 +218,12 @@ func Defaults() Config {
 // know are an error: a misspelt option in a file that decides who may log
 // in is better caught at start than silently ignored.
 func Load(path string) (*Config, error) {
-	return load(path, os.Geteuid(), hostDomain)
+	return load(path, os.Geteuid())
 }
 
-// load is Load with the effective uid and the host-domain lookup supplied,
-// so a test can exercise the root-only owner check and domain fallback.
-func load(path string, euid int, domainOf func() string) (*Config, error) {
+// load is Load with the effective uid supplied, so a test can exercise the
+// root-only owner check.
+func load(path string, euid int) (*Config, error) {
 	data, err := readPrivateFile(path, euid)
 	if err != nil {
 		return nil, err
@@ -253,11 +243,6 @@ func load(path string, euid int, domainOf func() string) (*Config, error) {
 		secondsToDurationHook(),
 	))); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
-	}
-
-	c.Domain = c.DNSDiscoveryDomain
-	if c.Domain == "" {
-		c.Domain = domainOf()
 	}
 
 	if err := c.Validate(); err != nil {
@@ -345,18 +330,10 @@ func (c *Config) Validate() error {
 
 // validateServer checks where the daemon connects and what it trusts.
 func (c *Config) validateServer(add func(string, ...any)) {
-	if c.Server != "" {
-		u, err := url.Parse(c.Server)
-		if err != nil || u.Scheme != "https" || u.Host == "" {
-			add("server %q must be an https URL", c.Server)
-		}
-	} else if c.Domain == "" {
-		add("server is empty and no dns_discovery_domain or host domain is known to discover it from")
-	} else if c.DNSDiscoveryDomain == "" && len(c.TLSSPKIPin) == 0 {
-		// The host's domain comes from its hostname or resolv.conf, which
-		// DHCP can set: a rogue server's search domain would make its own
-		// SRV targets "in the domain". Only a pin makes that harmless.
-		add("server is empty and dns_discovery_domain is not set: the host domain %q comes from the hostname or /etc/resolv.conf, which DHCP can set, so set dns_discovery_domain or server, or a tls_spki_pin", c.Domain)
+	if c.Server == "" {
+		add(`server is required: the ssoosshd https URL, e.g. "https://sso.example.com"`)
+	} else if u, err := url.Parse(c.Server); err != nil || u.Scheme != "https" || u.Host == "" {
+		add("server %q must be an https URL", c.Server)
 	}
 	if c.TLSCAFile == "" && len(c.TLSSPKIPin) == 0 {
 		add("one of tls_ca_file and tls_spki_pin is required: set tls_ca_file to a CA bundle, or to %s to trust the host's system store", TLSCASystem)

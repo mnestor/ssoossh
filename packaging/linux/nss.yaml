@@ -13,7 +13,7 @@
 # or, as sssd.conf counts, a bare number of seconds.
 #
 # Before the first start, set at least:
-#   - server (or rely on SRV discovery),
+#   - server,
 #   - tls_ca_file or tls_spki_pin, and
 #   - the fleet key file named by api_key_file,
 # then `systemctl enable --now ssoosshd-nss.socket`. As shipped the daemon
@@ -23,16 +23,9 @@
 
 # --- server ---------------------------------------------------------------
 
-# The ssoosshd https URL, e.g. "https://sso.example.com". Empty discovers
-# the server from the _ssoossh._tcp SRV records of dns_discovery_domain.
+# The ssoosshd https URL, e.g. "https://sso.example.com". Required. For
+# failover, put several servers behind a load balancer and name its URL.
 #server: ""
-
-# The domain SRV discovery queries, and what %d expands to in the homedir
-# templates. Empty means the host's own domain: what follows the first dot
-# of the hostname, else the first domain or search entry of
-# /etc/resolv.conf. Discovery accepts that guess only with tls_spki_pin set,
-# because DHCP can set both; with a CA file or system, set this.
-#dns_discovery_domain: ""
 
 # The one trust root. One of the two is required. tls_ca_file is a CA bundle
 # (PEM) the server's certificate must chain to, a private CA or a public
@@ -59,9 +52,8 @@
 # Bounds one upstream lookup, retries included.
 #timeout: 5s
 
-# How many more attempts a lookup makes after a transport failure, rotating
-# through the discovered servers, before the daemon counts the directory as
-# offline.
+# How many more attempts a lookup makes after a transport failure before
+# the daemon counts the directory as offline.
 #reconnection_retries: 3
 
 # The first wait before probing an offline server again; it doubles after
@@ -154,7 +146,7 @@
 
 # Home directory, first valid absolute path wins: override_homedir, then the
 # server's home, then fallback_homedir. Templates expand %u (name), %U (uid),
-# %d (domain), %h (the server's home) and %%.
+# %h (the server's home) and %%.
 #override_homedir: ""
 #fallback_homedir: /home/%u
 

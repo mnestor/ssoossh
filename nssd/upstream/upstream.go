@@ -2,7 +2,7 @@
 // internal/api's NSS calls with the state Part 3 of
 // docs/proposals/nss-directory gives them ("Request path", Upstream): the
 // offline state with exponential backoff, the 401 latch, Retry-After on
-// 429, the concurrency cap, SRV discovery and reconnection retries.
+// 429, the concurrency cap and reconnection retries.
 //
 // Every failure is classified into one of a few errors the daemon acts
 // on: ErrNotFound is the only one it may negative-cache, ErrInvalid is a
@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"slices"
 	"sync"
 	"time"
 
@@ -73,9 +72,7 @@ const maxOfflineBackoff = time.Hour
 // latchLogInterval is how often a latched client repeats its error log.
 const latchLogInterval = time.Minute
 
-// retryPause is the wait between two attempts on one server. With
-// several discovered servers the next attempt goes to the next one at
-// once.
+// retryPause is the wait between two attempts on the server.
 const retryPause = 200 * time.Millisecond
 
 // Upstream is what the daemon asks of the directory. Client implements it.
@@ -99,7 +96,7 @@ type Upstream interface {
 type Status struct {
 	// State is one of the State* values.
 	State string `json:"state"`
-	// Server is the server last used, or the configured one.
+	// Server is the configured server URL.
 	Server string `json:"server"`
 	// KeyID is the fleet key id in use.
 	KeyID string `json:"key_id"`
@@ -126,13 +123,10 @@ type Options struct {
 	Log *slog.Logger
 	// Now is the clock. Nil means time.Now.
 	Now func() time.Time
-	// NewClient builds the HTTPS client for one server URL. Nil means
+	// NewClient builds the HTTPS client for the server. Nil means
 	// internal/api's.
 	NewClient func(api.Config) (api.NSSClient, error)
-	// Discover finds the servers from SRV records. Nil means
-	// api.DiscoverServer.
-	Discover func(ctx context.Context, domain string) ([]string, error)
-	// Sleep waits between two attempts on one server. Nil means a timer
+	// Sleep waits between two attempts on the server. Nil means a timer
 	// that ctx can interrupt.
 	Sleep func(ctx context.Context, d time.Duration) error
 }
@@ -143,7 +137,6 @@ type Client struct {
 	log       *slog.Logger
 	now       func() time.Time
 	newClient func(api.Config) (api.NSSClient, error)
-	discover  func(context.Context, string) ([]string, error)
 	sleep     func(context.Context, time.Duration) error
 
 	// slots is the concurrency cap's semaphore.
@@ -153,12 +146,11 @@ type Client struct {
 	key      config.Key
 	keyStamp config.Stamp
 	keyErr   string
-	clients  map[string]api.NSSClient
-	servers  []string
-	next     int
+	// client is the HTTPS client for the server, nil until the next
+	// lookup builds one.
+	client api.NSSClient
 
 	state       string
-	server      string
 	backoff     time.Duration
 	retryAt     time.Time
 	lastErr     string
@@ -176,21 +168,15 @@ func New(opts Options) (*Client, error) {
 		log:       opts.Log,
 		now:       opts.Now,
 		newClient: opts.NewClient,
-		discover:  opts.Discover,
 		sleep:     opts.Sleep,
 		slots:     make(chan struct{}, MaxInFlight),
-		clients:   map[string]api.NSSClient{},
 		state:     StateUnknown,
-		server:    opts.Config.Server,
 	}
 	if c.now == nil {
 		c.now = time.Now
 	}
 	if c.newClient == nil {
 		c.newClient = func(cfg api.Config) (api.NSSClient, error) { return api.NewClient(cfg) }
-	}
-	if c.discover == nil {
-		c.discover = api.DiscoverServer
 	}
 	if c.sleep == nil {
 		c.sleep = sleepContext
@@ -263,7 +249,7 @@ func (c *Client) Status() Status {
 	defer c.mu.Unlock()
 	return Status{
 		State:       c.state,
-		Server:      c.server,
+		Server:      c.cfg.Server,
 		KeyID:       c.key.ID,
 		TLSCAFile:   c.cfg.TLSCAFile,
 		TLSPins:     len(c.cfg.TLSSPKIPin),
@@ -275,21 +261,21 @@ func (c *Client) Status() Status {
 
 // Reset implements Upstream: it re-reads the key file (keeping the old key
 // if the new one is unreadable), clears the latch and the backoff, and
-// forgets the discovered servers so the next lookup starts afresh.
+// drops the HTTPS client so the next lookup starts on a fresh one.
 func (c *Client) Reset() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.reloadKeyLocked(true)
 	c.state, c.backoff, c.retryAt = StateUnknown, 0, time.Time{}
-	c.servers, c.clients = nil, map[string]api.NSSClient{}
+	c.client = nil
 	c.log.Info("upstream state reset")
 }
 
-// lookup is one API call on one server's client.
+// lookup is one API call on the server's client.
 type lookup func(ctx context.Context, n api.NSSClient) error
 
-// do runs one lookup through the gate, the cap, discovery and the retries,
-// and classifies the outcome.
+// do runs one lookup through the gate, the cap and the retries, and
+// classifies the outcome.
 func (c *Client) do(ctx context.Context, call lookup) error {
 	if err := c.gate(); err != nil {
 		return err
@@ -307,15 +293,9 @@ func (c *Client) do(ctx context.Context, call lookup) error {
 	// Set by WithTimeout, so always there.
 	deadline, _ := ctx.Deadline()
 
-	servers, err := c.serverList(ctx)
-	if err != nil {
-		return c.fail(parent, err)
-	}
-
 	var lastErr error
 	for attempt := 0; attempt <= c.cfg.ReconnectionRetries; attempt++ {
-		url := c.pick(servers, attempt)
-		client, err := c.clientFor(url)
+		client, err := c.clientFor()
 		if err != nil {
 			return c.fail(parent, err)
 		}
@@ -326,19 +306,19 @@ func (c *Client) do(ctx context.Context, call lookup) error {
 		var nssErr *api.NSSError
 		switch {
 		case err == nil:
-			c.online(url)
+			c.online()
 			return nil
 		case errors.Is(err, api.ErrNSSNotFound):
-			c.online(url)
+			c.online()
 			return ErrNotFound
 		case errors.As(err, &nssErr) && nssErr.StatusCode == http.StatusBadRequest:
-			c.online(url)
+			c.online()
 			return fmt.Errorf("%w: %s", ErrInvalid, nssErr.ErrorCode)
 		case errors.Is(err, api.ErrNSSUnauthorized):
-			c.latch(url)
+			c.latch()
 			return ErrUnauthorized
 		case errors.As(err, &nssErr) && nssErr.StatusCode == http.StatusTooManyRequests:
-			return c.rateLimited(url, nssErr.RetryAfter)
+			return c.rateLimited(nssErr.RetryAfter)
 		case nssErr != nil:
 			// Any other status is an answer from a server, not a
 			// transport failure: trying again at once would get the same.
@@ -346,15 +326,13 @@ func (c *Client) do(ctx context.Context, call lookup) error {
 		}
 		// No HTTP answer: the connection this attempt used may be dead,
 		// silently dropped by something on the path.
-		c.retire(url, client)
+		c.retire(client)
 		lastErr = err
 		if ctx.Err() != nil || last {
 			break
 		}
-		if len(servers) == 1 {
-			if err := c.sleep(ctx, retryPause); err != nil {
-				break
-			}
+		if err := c.sleep(ctx, retryPause); err != nil {
+			break
 		}
 	}
 	return c.fail(parent, lastErr)
@@ -411,7 +389,7 @@ func (c *Client) gate() error {
 	case c.state == StateUnauthorized:
 		if now.Sub(c.lastLatchAt) >= latchLogInterval {
 			c.log.Error("the server refused the fleet key; serving from cache until SIGHUP or a key file change",
-				"key_id", c.key.ID, "server", c.server)
+				"key_id", c.key.ID, "server", c.cfg.Server)
 			c.lastLatchAt = now
 		}
 		return ErrUnauthorized
@@ -443,38 +421,8 @@ func (c *Client) reloadKeyLocked(force bool) bool {
 	}
 	c.keyErr = ""
 	c.key = key
-	c.clients = map[string]api.NSSClient{}
+	c.client = nil
 	return true
-}
-
-// serverList returns the servers to try: the configured one, or the
-// discovered ones, discovering again after a failure cleared them.
-func (c *Client) serverList(ctx context.Context) ([]string, error) {
-	if c.cfg.Server != "" {
-		return []string{c.cfg.Server}, nil
-	}
-	c.mu.Lock()
-	servers := c.servers
-	c.mu.Unlock()
-	if len(servers) > 0 {
-		return servers, nil
-	}
-	servers, err := c.discover(ctx, c.cfg.Domain)
-	if err != nil {
-		return nil, fmt.Errorf("discover the server: %w", err)
-	}
-	c.mu.Lock()
-	c.servers, c.next = servers, 0
-	c.mu.Unlock()
-	return servers, nil
-}
-
-// pick returns the server for an attempt: the one that last answered
-// first, then the rest in their discovered order.
-func (c *Client) pick(servers []string, attempt int) string {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return servers[(c.next+attempt)%len(servers)]
 }
 
 // connectTimeout bounds the TCP connect of every upstream call, so an
@@ -482,28 +430,28 @@ func (c *Client) pick(servers []string, attempt int) string {
 // the whole of the timeout setting.
 const connectTimeout = 2 * time.Second
 
-// clientFor returns the HTTPS client for url, building it on first use
+// clientFor returns the server's HTTPS client, building it on first use
 // with the current key.
-func (c *Client) clientFor(url string) (api.NSSClient, error) {
+func (c *Client) clientFor() (api.NSSClient, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if client, ok := c.clients[url]; ok {
-		return client, nil
+	if c.client != nil {
+		return c.client, nil
 	}
-	client, err := c.newClient(c.apiConfig(url))
+	client, err := c.newClient(c.apiConfig())
 	if err != nil {
-		return nil, fmt.Errorf("build the client for %s: %w", url, err)
+		return nil, fmt.Errorf("build the client for %s: %w", c.cfg.Server, err)
 	}
-	c.clients[url] = client
+	c.client = client
 	return client, nil
 }
 
-// apiConfig is the client configuration for url. "tls_ca_file: system"
-// stays a word of nss.yaml: it becomes api.Config.TLSSystemRoots here, so
-// internal/api never reads a file name for a mode.
-func (c *Client) apiConfig(url string) api.Config {
+// apiConfig is the client configuration for the server. "tls_ca_file:
+// system" stays a word of nss.yaml: it becomes api.Config.TLSSystemRoots
+// here, so internal/api never reads a file name for a mode.
+func (c *Client) apiConfig() api.Config {
 	cfg := api.Config{
-		ServerURL:      url,
+		ServerURL:      c.cfg.Server,
 		TLSSPKIPins:    c.cfg.TLSSPKIPin,
 		KeyID:          c.key.ID,
 		KeySecret:      c.key.Secret,
@@ -519,7 +467,7 @@ func (c *Client) apiConfig(url string) api.Config {
 	return cfg
 }
 
-// retire replaces url's client after an attempt that got no answer, so the
+// retire replaces the client after an attempt that got no answer, so the
 // next attempt, and every lookup after it, dials a fresh connection.
 //
 // Closing the client's idle connections alone is not enough: when an
@@ -530,10 +478,10 @@ func (c *Client) apiConfig(url string) api.Config {
 // which a close of the connection itself would not allow. Its idle
 // connections are closed now; a dead busy one is closed by the transport's
 // ping within about 20 s, a live one when it has been idle for 90 s.
-func (c *Client) retire(url string, client api.NSSClient) {
+func (c *Client) retire(client api.NSSClient) {
 	c.mu.Lock()
-	if c.clients[url] == client {
-		delete(c.clients, url)
+	if c.client == client {
+		c.client = nil
 	}
 	c.mu.Unlock()
 	if closer, ok := client.(api.IdleCloser); ok {
@@ -541,41 +489,38 @@ func (c *Client) retire(url string, client api.NSSClient) {
 	}
 }
 
-// online records an answer from url.
-func (c *Client) online(url string) {
+// online records an answer from the server.
+func (c *Client) online() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.state == StateOffline || c.state == StateRateLimited {
-		c.log.Info("the directory is reachable again", "server", url)
+		c.log.Info("the directory is reachable again", "server", c.cfg.Server)
 	}
-	c.state, c.server, c.backoff, c.retryAt = StateOnline, url, 0, time.Time{}
-	if i := slices.Index(c.servers, url); i >= 0 {
-		c.next = i
-	}
+	c.state, c.backoff, c.retryAt = StateOnline, 0, time.Time{}
 }
 
 // latch records a 401 and logs it.
-func (c *Client) latch(url string) {
+func (c *Client) latch() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	now := c.now()
-	c.state, c.server, c.lastErr, c.lastErrAt, c.lastLatchAt = StateUnauthorized, url, ErrUnauthorized.Error(), now, now
+	c.state, c.lastErr, c.lastErrAt, c.lastLatchAt = StateUnauthorized, ErrUnauthorized.Error(), now, now
 	c.log.Error("the server refused the fleet key; serving from cache until SIGHUP or a key file change",
-		"key_id", c.key.ID, "server", url)
+		"key_id", c.key.ID, "server", c.cfg.Server)
 }
 
 // rateLimited records a 429: no lookup until Retry-After has passed, or
 // offline_timeout when the server gave none.
-func (c *Client) rateLimited(url string, retryAfter time.Duration) error {
+func (c *Client) rateLimited(retryAfter time.Duration) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if retryAfter <= 0 {
 		retryAfter = c.cfg.OfflineTimeout
 	}
 	now := c.now()
-	c.state, c.server, c.retryAt = StateRateLimited, url, now.Add(retryAfter)
+	c.state, c.retryAt = StateRateLimited, now.Add(retryAfter)
 	c.lastErr, c.lastErrAt = ErrRateLimited.Error(), now
-	c.log.Warn("the server is rate limiting this host", "server", url, "retry_after", retryAfter.String())
+	c.log.Warn("the server is rate limiting this host", "server", c.cfg.Server, "retry_after", retryAfter.String())
 	return ErrRateLimited
 }
 
@@ -597,8 +542,6 @@ func (c *Client) fail(parent context.Context, err error) error {
 	}
 	c.state, c.retryAt = StateOffline, now.Add(c.backoff)
 	c.lastErr, c.lastErrAt = err.Error(), now
-	// Discovery runs again on the next probe, in case the records moved.
-	c.servers = nil
 	return fmt.Errorf("%w: %w", ErrOffline, err)
 }
 

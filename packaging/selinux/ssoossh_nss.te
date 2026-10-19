@@ -142,10 +142,10 @@ files_search_pids(ssoosshd_nss_t)
 manage_dirs_pattern(ssoosshd_nss_t, ssoosshd_nss_var_run_t, ssoosshd_nss_var_run_t)
 manage_sock_files_pattern(ssoosshd_nss_t, ssoosshd_nss_var_run_t, ssoosshd_nss_var_run_t)
 
-# Upstream: HTTPS to ssoosshd and the DNS lookups that find it, SRV
-# included. http_port_t is 80, 443, 8008, 8009, 8443 and the other ports the
-# base policy calls HTTP; an ssoosshd elsewhere needs its port labelled
-# (semanage port -a -t http_port_t -p tcp PORT), not a wider module.
+# Upstream: HTTPS to ssoosshd and the DNS lookup of its name. http_port_t
+# is 80, 443, 8008, 8009, 8443 and the other ports the base policy calls
+# HTTP; an ssoosshd elsewhere needs its port labelled (semanage port -a -t
+# http_port_t -p tcp PORT), not a wider module.
 allow ssoosshd_nss_t self:tcp_socket create_stream_socket_perms;
 corenet_tcp_connect_http_port(ssoosshd_nss_t)
 sysnet_dns_name_resolve(ssoosshd_nss_t)

@@ -113,7 +113,7 @@ func TestNSSExampleShouldMatchTheDaemonDefaults(t *testing.T) {
 	}
 
 	want := config.Defaults()
-	want.Server, want.TLSSPKIPin, want.Domain = server, []string{pin}, got.Domain
+	want.Server, want.TLSSPKIPin = server, []string{pin}
 	for _, diff := range configDiff(*got, want) {
 		t.Errorf("%s: %s", nssExample, diff)
 	}
