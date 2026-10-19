@@ -197,6 +197,36 @@ func TestServerDiscovery_Failures(t *testing.T) {
 			want:     []string{"https://sso.example.com:443"},
 		},
 		{
+			name:     "should refuse every record when each names a server outside the domain",
+			domain:   "example.com",
+			resolver: &fakeResolver{records: []*net.SRV{{Target: "evil.attacker.net.", Port: 443}, {Target: "example.com.attacker.net.", Port: 443}}},
+			wantErr:  ErrServerOutsideDomain,
+		},
+		{
+			name:     "should refuse a record when its target only ends in the domain's letters",
+			domain:   "example.com",
+			resolver: &fakeResolver{records: []*net.SRV{{Target: "notexample.com.", Port: 443}}},
+			wantErr:  ErrServerOutsideDomain,
+		},
+		{
+			name:     "should drop a record outside the domain when others are inside it",
+			domain:   "example.com",
+			resolver: &fakeResolver{records: []*net.SRV{{Target: "evil.attacker.net.", Port: 443}, {Target: "sso.example.com.", Port: 443}}},
+			want:     []string{"https://sso.example.com:443"},
+		},
+		{
+			name:     "should accept the domain itself as a target",
+			domain:   "example.com",
+			resolver: &fakeResolver{records: []*net.SRV{{Target: "example.com.", Port: 8443}}},
+			want:     []string{"https://example.com:8443"},
+		},
+		{
+			name:     "should compare the target and the domain without case",
+			domain:   "Example.COM.",
+			resolver: &fakeResolver{records: []*net.SRV{{Target: "SSO.example.com.", Port: 443}}},
+			want:     []string{"https://SSO.example.com:443"},
+		},
+		{
 			name:     "should use the valid records when the resolver dropped some",
 			domain:   "example.com",
 			resolver: &fakeResolver{records: []*net.SRV{{Target: "sso.example.com.", Port: 443}}, err: lookupErr},

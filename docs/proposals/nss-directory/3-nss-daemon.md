@@ -223,14 +223,17 @@ No `members`; `nss-systemd` fetches them through `GetMemberships`.
   daemon's environment (the unit's, under systemd). Every CA the host
   trusts can answer for the server, so the daemon logs a warning at start
   when no pin is set as well, and `status` names the trust on its `trust:`
-  line. With SRV discovery and no pin, a spoofed record can name a host
-  any public CA certified, which passes; see the user docs.
+  line. With SRV discovery and no pin, a spoofed record could name a host
+  any public CA certified; discovery therefore refuses a target outside the
+  discovery domain (added 2026-10-19), see the user docs.
 - `Config.Headers` or a dedicated `KeyID/KeySecret` pair sent on NSS calls
   only; secret redacted in `traceRequest`/`logHeaders`.
 - `DiscoverServer(ctx, domain)`: `net.Resolver.LookupSRV("ssoossh", "tcp",
-  domain)`, RFC 2782 priority/weight order. Pin unchanged: a spoofed SRV
-  points at a server that fails the pin (or a private CA; not the system
-  store or a public CA's roots alone, see `Config.TLSSystemRoots`).
+  domain)`, RFC 2782 priority/weight order. A target that is not the domain
+  or a name under it is refused (`ErrServerOutsideDomain`, added
+  2026-10-19), so a spoofed SRV cannot point at a server a public CA
+  certified for someone else's domain; with a pin or a private CA the
+  server would fail anyway.
 - `GetNSSUser(ctx, byName|byUID)`, `GetNSSGroup(ctx, byName|byGID)`
   returning typed structs in `internal/apitypes`; distinguish 404, 401, 429
   (honour `Retry-After`), other.

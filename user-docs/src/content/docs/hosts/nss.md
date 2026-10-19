@@ -310,12 +310,28 @@ the store is read once, when the daemon starts: restart it after the
 distribution updates the store.
 
 Leave `server` empty to discover it from the `_ssoossh._tcp` SRV records of
-`dns_discovery_domain` (the host's own domain when that is empty). A key pin
-or a private CA still applies, so a spoofed record leads to a server that
-fails it. A public CA's roots or `tls_ca_file: system` alone do not protect
-discovery: the name checked is the one the record names, and a public CA
-certifies any name its owner controls. With either, set `server`, or add a
-pin.
+`dns_discovery_domain` (the host's own domain when that is empty). Each record
+gives a priority, a weight, a port and a target host; the daemon tries the
+lowest priority first, and spreads load by weight within one priority:
+
+```text
+_ssoossh._tcp.example.com. 300 IN SRV 10 60 443 ssh1.example.com.
+_ssoossh._tcp.example.com. 300 IN SRV 10 40 443 ssh2.example.com.
+_ssoossh._tcp.example.com. 300 IN SRV 20  0 443 ssh-dr.example.com.
+```
+
+Check what a host sees with `dig +short SRV _ssoossh._tcp.example.com`.
+
+A record whose target is not `dns_discovery_domain` itself or a name under it
+is refused, and when every record is refused `ssoosshd-nss status` says so.
+That is what keeps a spoofed record from pointing the host at another server
+when the trust root is a public CA's roots or `tls_ca_file: system`: the name
+checked is the record's target, a public CA certifies any name for whoever
+controls it, but only certifies a name under your domain for whoever controls
+your domain. A key pin or a private CA would refuse such a server anyway. A
+host in `web1.corp.example.com` discovers from `corp.example.com`; set
+`dns_discovery_domain: example.com` when the server lives at the parent, or
+set `server`.
 
 **4. Enable the socket, not the service.**
 

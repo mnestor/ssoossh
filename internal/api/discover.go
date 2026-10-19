@@ -17,6 +17,11 @@ import (
 // the service is decidedly not offered there.
 var ErrNoServerRecords = errors.New("no ssoossh server is published for the domain")
 
+// ErrServerOutsideDomain is a domain whose _ssoossh._tcp SRV records only
+// name servers outside it. Such a record is refused rather than tried: see
+// ServerDiscovery.
+var ErrServerOutsideDomain = errors.New("the domain's SRV records name only servers outside it")
+
 // SRVResolver is the part of *net.Resolver that server discovery uses, so a
 // test can answer the query itself.
 type SRVResolver interface {
@@ -28,11 +33,15 @@ type SRVResolver interface {
 //
 // Discovery chooses where to connect, never whom to trust: a spoofed record
 // points at a server that then fails the TLS pin (see Config.TLSSPKIPins)
-// or a private CA (Config.TLSCAFile), so with either nothing here needs
-// DNSSEC to be safe. Config.TLSSystemRoots alone, or a CA file holding a
-// public CA's roots, is not such a bound: the host name verified is the
-// one the record names, and a public CA certifies any name its owner
-// controls.
+// or a private CA (Config.TLSCAFile). Config.TLSSystemRoots, or a CA file
+// holding a public CA's roots, is not such a bound on its own, because the
+// host name verified is the one the record names and a public CA certifies
+// any name its owner controls. So a record whose target is not the domain
+// itself or a name under it is refused: a public CA certifies a name under
+// the domain only for whoever controls the domain, which a spoofed DNS
+// answer does not give, and with a pin or a private CA the rule costs
+// nothing. A server in another domain is reached by setting server, or by
+// discovering from that domain.
 type ServerDiscovery struct {
 	// Resolver answers the SRV query. Nil means net.DefaultResolver.
 	Resolver SRVResolver
@@ -83,6 +92,18 @@ func (d ServerDiscovery) DiscoverServer(ctx context.Context, domain string) ([]s
 	if len(usable) == 0 {
 		return nil, fmt.Errorf("%w: _ssoossh._tcp.%s", ErrNoServerRecords, domain)
 	}
+	var outside []string
+	usable = slices.DeleteFunc(usable, func(r *net.SRV) bool {
+		if inDomain(r.Target, domain) {
+			return false
+		}
+		outside = append(outside, strings.TrimSuffix(r.Target, "."))
+		return true
+	})
+	if len(usable) == 0 {
+		return nil, fmt.Errorf("%w: _ssoossh._tcp.%s names %s, none of them %s or a name under it",
+			ErrServerOutsideDomain, domain, strings.Join(outside, ", "), domain)
+	}
 
 	ordered := orderSRV(usable, intN)
 	urls := make([]string, 0, len(ordered))
@@ -91,6 +112,15 @@ func (d ServerDiscovery) DiscoverServer(ctx context.Context, domain string) ([]s
 		urls = append(urls, "https://"+net.JoinHostPort(host, strconv.Itoa(int(r.Port))))
 	}
 	return urls, nil
+}
+
+// inDomain reports whether target, an SRV record's host name, is domain
+// itself or a name under it. DNS names compare case-insensitively, and a
+// trailing dot on either is dropped first.
+func inDomain(target, domain string) bool {
+	t := strings.ToLower(strings.TrimSuffix(target, "."))
+	d := strings.ToLower(strings.TrimSuffix(domain, "."))
+	return d != "" && (t == d || strings.HasSuffix(t, "."+d))
 }
 
 // orderSRV sorts records into RFC 2782 order: ascending priority, and
