@@ -26,6 +26,23 @@ func writeFile(t *testing.T, dir, name, content string, mode os.FileMode) string
 	return path
 }
 
+// nonRootUID is the owner given to a file that must not be root's when the
+// test itself runs as root: nobody on Linux.
+const nonRootUID = 65534
+
+// ownByNonRoot makes path owned by someone other than root. A test run as
+// root (as CI does) chowns it to nonRootUID; any other run already owns it
+// as the non-root test user.
+func ownByNonRoot(t *testing.T, path string) {
+	t.Helper()
+	if os.Geteuid() != 0 {
+		return
+	}
+	if err := os.Chown(path, nonRootUID, nonRootUID); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestLoadShouldApplyDefaultsWhenTheFileSetsOnlyTheServer(t *testing.T) {
 	t.Parallel()
 	path := writeFile(t, t.TempDir(), "nss.yaml", minimalYAML, 0o600)
@@ -125,11 +142,13 @@ func TestLoadShouldRefuseTheFile(t *testing.T) {
 		content string
 		mode    os.FileMode
 		euid    int
-		wantErr string
+		// foreignOwner gives the file a non-root owner.
+		foreignOwner bool
+		wantErr      string
 	}{
 		{name: "should refuse a group-readable file when it may hold secrets", content: minimalYAML, mode: 0o640, euid: os.Geteuid(), wantErr: "group- or world-accessible"},
 		{name: "should refuse a world-readable file when it may hold secrets", content: minimalYAML, mode: 0o604, euid: os.Geteuid(), wantErr: "group- or world-accessible"},
-		{name: "should refuse a file not owned by root when running as root", content: minimalYAML, mode: 0o600, euid: 0, wantErr: "not root"},
+		{name: "should refuse a file not owned by root when running as root", content: minimalYAML, mode: 0o600, euid: 0, foreignOwner: true, wantErr: "not root"},
 		{name: "should refuse an unknown key when it is probably a typo", content: minimalYAML + "entry_cache_timout: 5s\n", mode: 0o600, euid: os.Geteuid(), wantErr: "entry_cache_timout"},
 		{name: "should refuse dns_discovery_domain when it is no longer an option", content: minimalYAML + "dns_discovery_domain: example.com\n", mode: 0o600, euid: os.Geteuid(), wantErr: "dns_discovery_domain"},
 		{name: "should refuse a file with no server when server is required", content: "tls_spki_pin: [AAAA]\n", mode: 0o600, euid: os.Geteuid(), wantErr: "server is required"},
@@ -140,10 +159,10 @@ func TestLoadShouldRefuseTheFile(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if tt.euid == 0 && os.Geteuid() == 0 {
-				t.Skip("the owner check cannot fail for a root-owned temporary file")
-			}
 			path := writeFile(t, t.TempDir(), "nss.yaml", tt.content, tt.mode)
+			if tt.foreignOwner {
+				ownByNonRoot(t, path)
+			}
 			_, err := load(path, tt.euid)
 			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 				t.Fatalf("got %v, want an error containing %q", err, tt.wantErr)

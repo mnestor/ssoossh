@@ -60,24 +60,26 @@ func TestLoadOverrides(t *testing.T) {
 		mode    os.FileMode
 		missing bool
 		euid    int
-		wantLen int
-		wantErr string
+		// foreignOwner gives the file a non-root owner.
+		foreignOwner bool
+		wantLen      int
+		wantErr      string
 	}{
 		{name: "should return none when the file is missing", missing: true, euid: os.Geteuid()},
 		{name: "should read a world-readable file when only root can write it", content: "alice:\n  uid: 5001\n", mode: 0o644, euid: os.Geteuid(), wantLen: 1},
 		{name: "should refuse a group-writable file when others could change uids", content: "alice:\n  uid: 5001\n", mode: 0o664, euid: os.Geteuid(), wantErr: "writable"},
-		{name: "should refuse a file not owned by root when running as root", content: "", mode: 0o644, euid: 0, wantErr: "not root"},
+		{name: "should refuse a file not owned by root when running as root", content: "", mode: 0o644, euid: 0, foreignOwner: true, wantErr: "not root"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if tt.euid == 0 && os.Geteuid() == 0 {
-				t.Skip("a root-owned temporary file passes the check")
-			}
 			dir := t.TempDir()
 			path := filepath.Join(dir, "nss-overrides.yaml")
 			if !tt.missing {
 				writeFile(t, dir, "nss-overrides.yaml", tt.content, tt.mode)
+			}
+			if tt.foreignOwner {
+				ownByNonRoot(t, path)
 			}
 			got, err := loadOverrides(path, tt.euid)
 			if tt.wantErr != "" {

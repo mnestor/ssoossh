@@ -7,6 +7,11 @@ import (
 	"testing"
 )
 
+// leakCanary is the secret line of every key file a test expects refused:
+// distinctive enough that finding it in an error proves the error carries
+// the secret.
+const leakCanary = "S3CRET-MUST-NOT-LEAK"
+
 func TestReadKeyFile(t *testing.T) {
 	t.Parallel()
 
@@ -20,9 +25,9 @@ func TestReadKeyFile(t *testing.T) {
 	}{
 		{name: "should read the id and secret when the file has two lines", content: "nss_abc\nssoossh_nss_secret\n", mode: 0o600, wantID: "nss_abc", wantSecret: "ssoossh_nss_secret"},
 		{name: "should ignore blank lines and CRLF when they surround the key", content: "\r\nnss_abc\r\n\r\nssoossh_nss_secret\r\n\n", mode: 0o600, wantID: "nss_abc", wantSecret: "ssoossh_nss_secret"},
-		{name: "should refuse one line when the secret is missing", content: "nss_abc\n", mode: 0o600, wantErr: "holds 1"},
-		{name: "should refuse three lines when there is a stray one", content: "a\nb\nc\n", mode: 0o600, wantErr: "holds 3"},
-		{name: "should refuse a group-readable file when the secret would leak", content: "a\nb\n", mode: 0o640, wantErr: "group- or world-accessible"},
+		{name: "should refuse one line when it is only the secret", content: leakCanary + "\n", mode: 0o600, wantErr: "holds 1"},
+		{name: "should refuse three lines when there is a stray one", content: "nss_abc\n" + leakCanary + "\nextra\n", mode: 0o600, wantErr: "holds 3"},
+		{name: "should refuse a group-readable file when the secret would leak", content: "nss_abc\n" + leakCanary + "\n", mode: 0o640, wantErr: "group- or world-accessible"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -33,8 +38,8 @@ func TestReadKeyFile(t *testing.T) {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 					t.Fatalf("got %v, want an error containing %q", err, tt.wantErr)
 				}
-				if strings.Contains(err.Error(), "b") && strings.Contains(tt.content, "secret") {
-					t.Fatal("the error carries the secret")
+				if strings.Contains(err.Error(), leakCanary) {
+					t.Fatalf("the error carries the secret: %v", err)
 				}
 				return
 			}
@@ -47,12 +52,14 @@ func TestReadKeyFile(t *testing.T) {
 
 func TestReadKeyFileShouldRefuseAFileNotOwnedByRootWhenRunningAsRoot(t *testing.T) {
 	t.Parallel()
-	if os.Geteuid() == 0 {
-		t.Skip("a root-owned temporary file passes the check")
-	}
-	path := writeFile(t, t.TempDir(), "nss.key", "a\nb\n", 0o600)
-	if _, err := readKeyFile(path, 0); err == nil || !strings.Contains(err.Error(), "not root") {
+	path := writeFile(t, t.TempDir(), "nss.key", "nss_abc\n"+leakCanary+"\n", 0o600)
+	ownByNonRoot(t, path)
+	_, err := readKeyFile(path, 0)
+	if err == nil || !strings.Contains(err.Error(), "not root") {
 		t.Fatalf("got %v", err)
+	}
+	if strings.Contains(err.Error(), leakCanary) {
+		t.Fatalf("the error carries the secret: %v", err)
 	}
 }
 
