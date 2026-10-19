@@ -103,6 +103,11 @@ type Status struct {
 	Server string `json:"server"`
 	// KeyID is the fleet key id in use.
 	KeyID string `json:"key_id"`
+	// TLSCAFile is tls_ca_file as configured: a path, config.TLSCASystem
+	// or empty. With TLSPins it is what status names as the trust.
+	TLSCAFile string `json:"tls_ca_file,omitempty"`
+	// TLSPins counts the tls_spki_pin entries.
+	TLSPins int `json:"tls_spki_pins,omitempty"`
 	// LastError is the last failure, empty when none.
 	LastError string `json:"last_error,omitempty"`
 	// LastErrorAt is when it happened.
@@ -202,6 +207,13 @@ func New(opts Options) (*Client, error) {
 		return nil, fmt.Errorf("fleet key: %w", err)
 	}
 	c.key, c.keyStamp = key, stamp
+
+	// Said once, at start: New runs once per daemon, and SIGHUP resets
+	// the client without building a new one. With a pin as well the pin
+	// decides which key may answer, so the store alone is not the trust.
+	if c.cfg.TLSSystemRoots() && len(c.cfg.TLSSPKIPin) == 0 {
+		c.log.Warn("tls_ca_file is system: every CA in this host's trust store can answer for the server, a TLS-inspection root included")
+	}
 	return c, nil
 }
 
@@ -253,6 +265,8 @@ func (c *Client) Status() Status {
 		State:       c.state,
 		Server:      c.server,
 		KeyID:       c.key.ID,
+		TLSCAFile:   c.cfg.TLSCAFile,
+		TLSPins:     len(c.cfg.TLSSPKIPin),
 		LastError:   c.lastErr,
 		LastErrorAt: c.lastErrAt,
 		RetryAt:     c.retryAt,
@@ -476,21 +490,33 @@ func (c *Client) clientFor(url string) (api.NSSClient, error) {
 	if client, ok := c.clients[url]; ok {
 		return client, nil
 	}
-	client, err := c.newClient(api.Config{
+	client, err := c.newClient(c.apiConfig(url))
+	if err != nil {
+		return nil, fmt.Errorf("build the client for %s: %w", url, err)
+	}
+	c.clients[url] = client
+	return client, nil
+}
+
+// apiConfig is the client configuration for url. "tls_ca_file: system"
+// stays a word of nss.yaml: it becomes api.Config.TLSSystemRoots here, so
+// internal/api never reads a file name for a mode.
+func (c *Client) apiConfig(url string) api.Config {
+	cfg := api.Config{
 		ServerURL:      url,
-		TLSCAFile:      c.cfg.TLSCAFile,
 		TLSSPKIPins:    c.cfg.TLSSPKIPin,
 		KeyID:          c.key.ID,
 		KeySecret:      c.key.Secret,
 		RequestTimeout: c.cfg.Timeout,
 		DialTimeout:    connectTimeout,
 		UserAgent:      "ssoosshd-nss/" + version.Version,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("build the client for %s: %w", url, err)
 	}
-	c.clients[url] = client
-	return client, nil
+	if c.cfg.TLSSystemRoots() {
+		cfg.TLSSystemRoots = true
+	} else {
+		cfg.TLSCAFile = c.cfg.TLSCAFile
+	}
+	return cfg
 }
 
 // retire replaces url's client after an attempt that got no answer, so the

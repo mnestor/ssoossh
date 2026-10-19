@@ -150,7 +150,9 @@ allow ssoosshd_nss_t self:tcp_socket create_stream_socket_perms;
 corenet_tcp_connect_http_port(ssoosshd_nss_t)
 sysnet_dns_name_resolve(ssoosshd_nss_t)
 
-# tls_ca_file, when it names a bundle under /etc/pki or /etc/ssl.
+# tls_ca_file, when it names a bundle under /etc/pki or /etc/ssl, and
+# tls_ca_file: system, which reads the distribution's bundle and the
+# certificate directories there.
 miscfiles_read_generic_certs(ssoosshd_nss_t)
 
 # Recognising sshd. For a uid 0 caller the daemon reads

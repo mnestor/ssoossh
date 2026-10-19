@@ -1,9 +1,11 @@
 # ssoosshd-nss configuration, ssoosshd-nss(8).
 #
 # Installed as /etc/ssoossh/nss.yaml, root-only (0600). The daemon refuses a
-# file anyone but root can read or write, and never consults the
+# file anyone but root can read or write, and never consults a caller's
 # environment, so nothing a caller's environment says can change which
-# server this host trusts or how it maps names to ids.
+# server this host trusts or how it maps names to ids. (With
+# "tls_ca_file: system" the daemon's own environment, set by its unit, can:
+# see tls_ca_file below.)
 #
 # Every option is listed below at its default, commented out. A line
 # starting "#name:" is an option; uncomment it to change it. Option names
@@ -15,8 +17,9 @@
 #   - tls_ca_file or tls_spki_pin, and
 #   - the fleet key file named by api_key_file,
 # then `systemctl enable --now ssoosshd-nss.socket`. As shipped the daemon
-# refuses to start: the system trust store is never used, so it has nothing
-# to trust until one of the two TLS options is set.
+# refuses to start: it has nothing to trust until one of the two TLS
+# options is set, and it uses the system trust store only when tls_ca_file
+# says so.
 
 # --- server ---------------------------------------------------------------
 
@@ -30,11 +33,20 @@
 # /etc/resolv.conf.
 #dns_discovery_domain: ""
 
-# The one trust root. One of the two is required. tls_ca_file is a private
-# CA bundle (PEM) the server's certificate must chain to; tls_spki_pin is a
-# list of base64 (standard encoding) SHA-256 digests of the server's
-# SubjectPublicKeyInfo. With both, the certificate must chain to the CA and
-# carry a pinned key. TLS 1.3 only; proxy variables are ignored.
+# The one trust root. One of the two is required. tls_ca_file is a CA bundle
+# (PEM) the server's certificate must chain to, a private CA or a public
+# CA's roots; tls_spki_pin is a list of base64 (standard encoding) SHA-256
+# digests of the server's SubjectPublicKeyInfo. With both, the certificate
+# must chain to the CA and carry a pinned key. TLS 1.3 only; proxy
+# variables are ignored.
+#
+# tls_ca_file: system (exactly, lower case) trusts the host's system trust
+# store instead of a file: every CA the host trusts, a TLS-inspection root
+# included, can then answer for the server, and the daemon warns at start
+# while no pin is set as well. Unlike a CA file it honours SSL_CERT_FILE
+# and SSL_CERT_DIR from the daemon's environment, which under systemd is
+# the unit's (the shipped unit sets neither). The store is read at start;
+# restart the daemon after it changes.
 #tls_ca_file: ""
 #tls_spki_pin: []
 

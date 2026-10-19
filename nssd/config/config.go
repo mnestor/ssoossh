@@ -5,7 +5,9 @@
 //
 // Only the file is read: the environment is never consulted, so nothing a
 // caller's environment says can change which server the host trusts or how
-// it maps names to ids.
+// it maps names to ids. The one exception is "tls_ca_file: system", where
+// Go builds the system trust store and honours SSL_CERT_FILE and
+// SSL_CERT_DIR from the daemon's own environment, which its unit decides.
 package config
 
 import (
@@ -77,6 +79,11 @@ const (
 	MinSocketIdleTimeout = time.Second
 )
 
+// TLSCASystem is the tls_ca_file value that trusts the host's system
+// trust store instead of a file. Exactly this spelling: any other case of
+// it is refused, so a typo is never read as a file name or as the store.
+const TLSCASystem = "system"
+
 // Cache modes.
 const (
 	// CacheModePersistent keeps the cache in SQLite across restarts.
@@ -94,7 +101,9 @@ type Config struct {
 	// DNSDiscoveryDomain is the domain SRV discovery queries. Empty means
 	// the host's own domain.
 	DNSDiscoveryDomain string `mapstructure:"dns_discovery_domain"`
-	// TLSCAFile is a private CA bundle; it or TLSSPKIPin is required.
+	// TLSCAFile is a CA bundle the server's chain must end in, or
+	// TLSCASystem for the host's system trust store; it or TLSSPKIPin is
+	// required.
 	TLSCAFile string `mapstructure:"tls_ca_file"`
 	// TLSSPKIPin are base64 SHA-256 digests of the server's public key.
 	TLSSPKIPin []string `mapstructure:"tls_spki_pin"`
@@ -304,6 +313,12 @@ func (c *Config) SweepInterval() time.Duration {
 	return min(c.TTLUser(), c.TTLGroup()) * 3 / 4
 }
 
+// TLSSystemRoots reports whether tls_ca_file asks for the host's system
+// trust store rather than naming a file.
+func (c *Config) TLSSystemRoots() bool {
+	return c.TLSCAFile == TLSCASystem
+}
+
 // InRange reports whether id lies within min_id..max_id.
 func (c *Config) InRange(id uint32) bool {
 	return id >= c.MinID && (c.MaxID == 0 || id <= c.MaxID)
@@ -338,7 +353,10 @@ func (c *Config) validateServer(add func(string, ...any)) {
 		add("server is empty and no dns_discovery_domain or host domain is known to discover it from")
 	}
 	if c.TLSCAFile == "" && len(c.TLSSPKIPin) == 0 {
-		add("one of tls_ca_file and tls_spki_pin is required: the system trust store is never used")
+		add("one of tls_ca_file and tls_spki_pin is required: set tls_ca_file to a CA bundle, or to %s to trust the host's system store", TLSCASystem)
+	}
+	if c.TLSCAFile != TLSCASystem && strings.EqualFold(strings.TrimSpace(c.TLSCAFile), TLSCASystem) {
+		add("tls_ca_file %q is not a value the daemon knows: write %s, in lower case, to trust the host's system store", c.TLSCAFile, TLSCASystem)
 	}
 	if c.APIKeyFile == "" {
 		add("api_key_file is required")

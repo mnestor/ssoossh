@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mnestor/ssoossh/nssd/config"
 	"github.com/mnestor/ssoossh/nssd/policy"
 	"github.com/mnestor/ssoossh/nssd/server"
 	"github.com/mnestor/ssoossh/nssd/userdb"
@@ -27,7 +28,8 @@ func newStatusCommand(root *RootCommand) *leaf {
 		name:  "status",
 		short: "Show the daemon's state and check that this host consults it.",
 		long: "Prints the directory connection's state (online, offline, unauthorized or rate limited), the " +
-			"server, the fleet key id, the cache counts and the last error, from the running daemon, with any " +
+			"server, the trust in force (system store, CA file, key pin, or a trust root and a pin), the fleet key id, " +
+			"the cache counts and the last error, from the running daemon, with any " +
 			"group name collisions (a directory group with a local group's name and another gid, which is not " +
 			"resolved on this host) and refused groups (outside min_id..max_id) met since the start or the last " +
 			"SIGHUP; then " +
@@ -78,6 +80,7 @@ func printDaemonStatus(out io.Writer, s *userdb.Status) {
 	up := s.Upstream
 	fmt.Fprintf(out, "state:         %s\n", up.State)
 	fmt.Fprintf(out, "server:        %s\n", orDash(up.Server))
+	fmt.Fprintf(out, "trust:         %s\n", describeTrust(up.TLSCAFile, up.TLSPins))
 	fmt.Fprintf(out, "key id:        %s\n", orDash(up.KeyID))
 	if !up.RetryAt.IsZero() {
 		fmt.Fprintf(out, "retry at:      %s\n", up.RetryAt.Format(time.RFC3339))
@@ -93,6 +96,25 @@ func printDaemonStatus(out io.Writer, s *userdb.Status) {
 	fmt.Fprintf(out, "overrides:     %d\n", s.Overrides)
 	printGroupFindings(out, s.Groups)
 	fmt.Fprintf(out, "started:       %s\n", s.StartedAt.Format(time.RFC3339))
+}
+
+// describeTrust names what the daemon trusts to be the server, from
+// tls_ca_file and the number of tls_spki_pin entries: the system store,
+// a CA file, a key pin, or a trust root and a pin, both of which must
+// hold. "-" when neither is set, which validation never lets start.
+func describeTrust(caFile string, pins int) string {
+	var parts []string
+	switch caFile {
+	case "":
+	case config.TLSCASystem:
+		parts = append(parts, "system store (any CA this host trusts)")
+	default:
+		parts = append(parts, "CA file "+caFile)
+	}
+	if pins > 0 {
+		parts = append(parts, fmt.Sprintf("key pin (%d %s)", pins, plural(pins, "pin", "pins")))
+	}
+	return orDash(strings.Join(parts, " and "))
 }
 
 // printGroupFindings writes the refused directory groups, when there are

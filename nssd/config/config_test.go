@@ -215,6 +215,12 @@ func TestValidate(t *testing.T) {
 		{name: "should refuse an unparsable server when the URL is malformed", mutate: func(c *Config) { c.Server = "https://a b\x7f" }, wantErr: "https URL"},
 		{name: "should refuse discovery when no domain is known", mutate: func(c *Config) { c.Server = "" }, wantErr: "discover"},
 		{name: "should refuse no trust root when neither CA nor pin is set", mutate: func(c *Config) { c.TLSSPKIPin = nil }, wantErr: "tls_ca_file"},
+		{name: "should accept a CA file when no pin is set", mutate: func(c *Config) { c.TLSSPKIPin = nil; c.TLSCAFile = "/etc/ssoossh/ca.pem" }},
+		{name: "should accept the system store when no pin is set", mutate: func(c *Config) { c.TLSSPKIPin = nil; c.TLSCAFile = "system" }},
+		{name: "should accept the system store when pins are set as well", mutate: func(c *Config) { c.TLSCAFile = "system" }},
+		{name: "should refuse System with the suggestion when it is not lower case", mutate: func(c *Config) { c.TLSCAFile = "System" }, wantErr: `tls_ca_file "System" is not a value the daemon knows: write system, in lower case`},
+		{name: "should refuse SYSTEM with the suggestion when it is upper case", mutate: func(c *Config) { c.TLSCAFile = "SYSTEM" }, wantErr: "write system"},
+		{name: "should refuse a padded system with the suggestion when it has spaces", mutate: func(c *Config) { c.TLSCAFile = " system " }, wantErr: "write system"},
 		{name: "should refuse no key file when it is empty", mutate: func(c *Config) { c.APIKeyFile = "" }, wantErr: "api_key_file"},
 		{name: "should refuse a zero timeout when it must be positive", mutate: func(c *Config) { c.Timeout = 0 }, wantErr: "timeout must be greater"},
 		{name: "should refuse a negative soft TTL when it must not be negative", mutate: func(c *Config) { c.LoginSoftTTL = -1 }, wantErr: "login_soft_ttl"},
@@ -258,6 +264,43 @@ func TestValidate(t *testing.T) {
 				t.Fatalf("got %v, want an ErrInvalid containing %q", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestTLSSystemRoots(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		caFile string
+		want   bool
+	}{
+		{name: "should trust the system store when tls_ca_file is system", caFile: "system", want: true},
+		{name: "should not when tls_ca_file is a path", caFile: "/etc/ssl/certs/ca-certificates.crt"},
+		{name: "should not when tls_ca_file is empty", caFile: ""},
+		{name: "should not when the spelling differs", caFile: "System"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			c := Config{TLSCAFile: tt.caFile}
+			if got := c.TLSSystemRoots(); got != tt.want {
+				t.Fatalf("got %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLoadShouldReadTheSystemStoreWhenTheFileSaysSystem(t *testing.T) {
+	t.Parallel()
+	path := writeFile(t, t.TempDir(), "nss.yaml", "server: https://sso.example.com\ntls_ca_file: system\n", 0o600)
+
+	c, err := load(path, os.Geteuid(), noDomain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.TLSSystemRoots() {
+		t.Fatalf("got tls_ca_file %q, want the system store", c.TLSCAFile)
 	}
 }
 
