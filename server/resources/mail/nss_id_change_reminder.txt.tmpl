@@ -1,0 +1,24 @@
+{{ .Total }} NSS id {{ if eq .Total 1 }}change is{{ else }}changes are{{ end }} still waiting for an admin{{ if .ServerURL }} on {{ .ServerURL }}{{ end }}.
+Hosts keep the stored number until an admin accepts the change, so files
+owned by it stay where they are.
+
+Re-own the files on hosts first (chown), then accept the change on the
+directory page{{ if .DirectoryURL }}:
+{{ .DirectoryURL }}{{ end }}
+Reverting the value in the directory clears the change instead.
+
+{{ range .Changes }}  {{ .Entry }} {{ .Name }}: {{ .Attribute }} {{ .Stored }} stored, {{ .Pending }} in the directory, waiting {{ approx .Waiting }}
+{{ end }}{{ if .More }}  and {{ .More }} more. The full list is on the directory page.
+{{ end }}{{ if .Advanced }}
+DETAILS
+{{ range .Changes }}
+  {{ .Entry }} {{ .Name }} ({{ .Attribute }})
+  DN                {{ if .DN }}{{ .DN }}{{ else }}not recorded{{ end }}
+  Directory id      {{ if .DirectoryID }}{{ .DirectoryID }}{{ else }}not recorded{{ end }}
+  Waiting since     {{ datetime .PendingSince }}
+{{ end }}{{ end }}
+You will get this every Monday while any change is still waiting.
+
+Sent because "Weekly reminder of waiting directory id changes" is on in your
+notification preferences{{ if .ServerURL }} ({{ .ServerURL }}/preferences){{ end }}. It goes to
+every admin, as of each admin's last login.

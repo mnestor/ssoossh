@@ -109,7 +109,8 @@ func (s *NSSDirectoryService) acceptUserTx(tx *gorm.DB, uid uint32, actor *Audit
 		}
 	}
 	if err := tx.Model(&model.PosixUser{}).Where("id = ?", row.ID).Updates(map[string]any{
-		"uid": newUID, "gid": newGID, "pending_uid": nil, "pending_gid": nil, "pending_since": nil, "updated_at": now,
+		"uid": newUID, "gid": newGID, "pending_uid": nil, "pending_gid": nil, "pending_since": nil,
+		"pending_notified_at": nil, "updated_at": now,
 	}).Error; err != nil {
 		return AuditEvent{}, fmt.Errorf("apply the pending id change: %w", err)
 	}
@@ -204,7 +205,7 @@ func (s *NSSDirectoryService) AcceptGroupIDChange(ctx context.Context, gid uint3
 			return err
 		}
 		if err := tx.Model(&model.PosixGroup{}).Where("id = ?", row.ID).Updates(map[string]any{
-			"gid": newGID, "pending_gid": nil, "pending_since": nil, "updated_at": now,
+			"gid": newGID, "pending_gid": nil, "pending_since": nil, "pending_notified_at": nil, "updated_at": now,
 		}).Error; err != nil {
 			return fmt.Errorf("apply the pending gid change: %w", err)
 		}
@@ -279,7 +280,7 @@ func (s *NSSDirectoryService) rekeyGroup(tx *gorm.DB, oldGID, newGID uint32, now
 	}
 	if err := tx.Model(&model.PosixUser{}).
 		Where("pending_uid IS NULL AND pending_gid IS NULL AND pending_since IS NOT NULL").
-		Update("pending_since", nil).Error; err != nil {
+		Updates(map[string]any{"pending_since": nil, "pending_notified_at": nil}).Error; err != nil {
 		return 0, fmt.Errorf("clear settled pending clocks: %w", err)
 	}
 	return moved.RowsAffected, nil

@@ -152,6 +152,11 @@ stored account's uid or primary gid, or of a group's gid:
 - The sync keeps serving the stored number and records the directory's value
   as **pending**, with the time it was first seen. The
   `nss.id_change_pending` alert fires at most daily per row.
+- Every admin is mailed about it once (`nss_id_change_pending`, one message
+  per sync run or per batch of on-demand and login reads), and every Monday
+  while anything is still waiting (`nss_id_change_reminder`). Recipients are
+  the admins as of each one's last login; see
+  [Directory id changes, for admins](/ssoossh/operations/email-notifications/#directory-id-changes-for-admins).
 - The directory reverting the value clears the pending change.
 - An admin accepts it explicitly. Only then do hosts see the new number,
   so re-own the files on hosts first (`chown -R`).

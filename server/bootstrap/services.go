@@ -123,9 +123,13 @@ func (a *app) initServices() (*services, error) {
 	// disabled them.
 	svc.notification = service.NewNotificationService(a.db, a.pubSub.Publisher, a.config.Mail.Enabled, a.config.LDAP.Enabled,
 		a.config.CertOptions.Service.AllowUserAccounts)
+	svc.notification.SetAdminConfig(&a.config.Admin)
 	svc.certRequest.SetNotifier(svc.notification)
 	svc.enrollment.SetNotifier(svc.notification)
 	svc.ldap.SetNotifier(svc.notification)
+	// The NSS directory mails the admins the uid and gid changes waiting
+	// for them, and asks the notification service who the admins are.
+	svc.nss.SetNotifications(svc.notification, svc.notification)
 
 	// The audit recorder is wired the same way and for the same reason: the
 	// services that mutate state append their audit rows in their own

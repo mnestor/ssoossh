@@ -197,6 +197,8 @@ func samplePayload(t *testing.T, kind notify.Kind) any {
 			RevokedByUsername: "alice",
 			ServerURL:         "https://ssoossh.example.com",
 		}
+	case notify.KindNSSIDChangePending, notify.KindNSSIDChangeReminder:
+		return sampleNSSIDChanges()
 	default:
 		t.Fatalf("no sample payload for kind %q", kind)
 		return nil
@@ -1038,5 +1040,156 @@ func TestRender_shouldCountTheAddressesThatAreNotListed(t *testing.T) {
 				t.Errorf("text body carries %q, want it left out", tc.wantAbsent)
 			}
 		})
+	}
+}
+
+// sampleNSSIDChanges is a two-change payload: an account's uid and a
+// group's gid, one with a directory id and one without.
+func sampleNSSIDChanges() *notify.NSSIDChanges {
+	return &notify.NSSIDChanges{
+		Changes: []notify.NSSIDChange{
+			{
+				Entry: "account", Attribute: "uid", Name: "alice", DN: "uid=alice,ou=people,dc=example,dc=com",
+				DirectoryID: "7f3c1a2e-0000-4000-8000-000000000001", Stored: 1001, Pending: 2001,
+				PendingSince: time.Now().Add(-9 * 24 * time.Hour), Waiting: 9 * 24 * time.Hour,
+			},
+			{
+				Entry: "group", Attribute: "gid", Name: "devs", DN: "cn=devs,ou=groups,dc=example,dc=com",
+				Stored: 5000, Pending: 5050, PendingSince: time.Now().Add(-3 * time.Hour), Waiting: 3 * time.Hour,
+			},
+		},
+		Total:        2,
+		DirectoryURL: "https://ssoossh.example.com/admin/directory#pending-id-changes",
+		ServerURL:    "https://ssoossh.example.com",
+	}
+}
+
+// The id change mail names every listed change, its stored and new number
+// and the page to accept it on at both levels; the DN and the directory id
+// are reserved for the advanced Details section.
+func TestRender_shouldListTheNSSIDChangesAtEachLevel(t *testing.T) {
+	r, err := NewRenderer("", "")
+	if err != nil {
+		t.Fatalf("NewRenderer: %v", err)
+	}
+
+	advancedOnly := []string{"uid=alice,ou=people,dc=example,dc=com", "cn=devs,ou=groups,dc=example,dc=com", "7f3c1a2e-0000-4000-8000-000000000001"}
+	tests := []struct {
+		name     string
+		kind     notify.Kind
+		advanced bool
+		present  []string
+		absent   []string
+	}{
+		{
+			name: "should list the changes without directory coordinates when the pending mail is simplified",
+			kind: notify.KindNSSIDChangePending, present: []string{"alice", "devs", "1001", "2001", "5000", "5050", "account", "group", "/admin/directory#pending-id-changes", "chown"},
+			absent: advancedOnly,
+		},
+		{
+			name: "should add the DN and directory id when the pending mail is advanced",
+			kind: notify.KindNSSIDChangePending, advanced: true, present: advancedOnly,
+		},
+		{
+			name: "should say how long each change has waited when the reminder is simplified",
+			kind: notify.KindNSSIDChangeReminder, present: []string{"alice", "devs", "2001", "5050", "9 days", "3 hours", "/admin/directory#pending-id-changes"},
+			absent: advancedOnly,
+		},
+		{
+			name: "should add the DN and directory id when the reminder is advanced",
+			kind: notify.KindNSSIDChangeReminder, advanced: true, present: advancedOnly,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := r.Render(tc.kind, sampleNSSIDChanges(), tc.advanced)
+			if err != nil {
+				t.Fatalf("Render: %v", err)
+			}
+			for _, want := range tc.present {
+				if !strings.Contains(out.Text, want) {
+					t.Errorf("text body does not carry %q", want)
+				}
+				if !strings.Contains(out.HTML, want) {
+					t.Errorf("html body does not carry %q", want)
+				}
+			}
+			for _, unwanted := range tc.absent {
+				if strings.Contains(out.Text, unwanted) || strings.Contains(out.HTML, unwanted) {
+					t.Errorf("message carries %q below the advanced level", unwanted)
+				}
+			}
+		})
+	}
+}
+
+// The subject names the count, in the singular for one change, so an admin
+// can tell from the inbox how much is waiting.
+func TestRender_shouldCountTheNSSIDChangesInTheSubject(t *testing.T) {
+	r, err := NewRenderer("", "")
+	if err != nil {
+		t.Fatalf("NewRenderer: %v", err)
+	}
+
+	tests := []struct {
+		name  string
+		kind  notify.Kind
+		total int
+		want  string
+	}{
+		{name: "should use the plural when two changes are new", kind: notify.KindNSSIDChangePending, total: 2, want: "2 NSS id changes are waiting for approval"},
+		{name: "should use the singular when one change is new", kind: notify.KindNSSIDChangePending, total: 1, want: "1 NSS id change is waiting for approval"},
+		{name: "should mark the reminder when changes are still waiting", kind: notify.KindNSSIDChangeReminder, total: 3, want: "Reminder: 3 NSS id changes are still waiting for approval"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			payload := sampleNSSIDChanges()
+			payload.Total = tc.total
+			out, err := r.Render(tc.kind, payload, false)
+			if err != nil {
+				t.Fatalf("Render: %v", err)
+			}
+			if out.Subject != tc.want {
+				t.Errorf("subject = %q, want %q", out.Subject, tc.want)
+			}
+		})
+	}
+}
+
+// A capped list says how many changes it left out, and a complete one
+// says nothing about more.
+func TestRender_shouldCountTheNSSIDChangesThatAreNotListed(t *testing.T) {
+	r, err := NewRenderer("", "")
+	if err != nil {
+		t.Fatalf("NewRenderer: %v", err)
+	}
+
+	tests := []struct {
+		name string
+		more int
+		want bool
+	}{
+		{name: "should say how many more changes there are when the list is cut short", more: 7, want: true},
+		{name: "should leave the more line out when the list is complete", more: 0, want: false},
+	}
+	for _, kind := range []notify.Kind{notify.KindNSSIDChangePending, notify.KindNSSIDChangeReminder} {
+		for _, tc := range tests {
+			t.Run(string(kind)+"/"+tc.name, func(t *testing.T) {
+				payload := sampleNSSIDChanges()
+				payload.More = tc.more
+				out, err := r.Render(kind, payload, false)
+				if err != nil {
+					t.Fatalf("Render: %v", err)
+				}
+				for part, body := range map[string]string{"text": out.Text, "html": out.HTML} {
+					if got := strings.Contains(body, "and 7 more"); got != tc.want {
+						t.Errorf("%s body carries the more line = %v, want %v", part, got, tc.want)
+					}
+					if !tc.want && strings.Contains(body, "more. The full list") {
+						t.Errorf("%s body carries a more line for a complete list", part)
+					}
+				}
+			})
+		}
 	}
 }

@@ -59,6 +59,11 @@ CREATE TABLE posix_users (
     pending_uid     BIGINT NULL,
     pending_gid     BIGINT NULL,
     pending_since   TIMESTAMPTZ NULL,
+    -- When the admins were mailed about the change now pending, NULL until
+    -- they are. Set by the guarded UPDATE that claims the send, so one
+    -- instance mails it; cleared with pending_since, and when a different
+    -- number turns pending, so a new change mails again.
+    pending_notified_at TIMESTAMPTZ NULL,
     -- Mapped attributes, following the directory. NULL when the entry has
     -- none.
     home            TEXT NULL,
@@ -104,6 +109,10 @@ CREATE UNIQUE INDEX idx_posix_users_user_id ON posix_users (user_id);
 -- Partial, as idx_user_ldap_directory_id: the empty string means "no ID"
 -- and is not worth indexing.
 CREATE INDEX idx_posix_users_directory_id ON posix_users (directory_id) WHERE directory_id <> '';
+-- The pending id changes, for the admin mail and its weekly reminder.
+-- Partial: pending_since is set exactly while something is pending, which
+-- is rare, so the index holds only those rows.
+CREATE INDEX idx_posix_users_pending ON posix_users (pending_since) WHERE pending_since IS NOT NULL;
 
 -- One row per directory group with the mapped gid attribute. Private groups
 -- (nss.auto_private_groups) are worked out when an account is read and are
@@ -120,6 +129,8 @@ CREATE TABLE posix_groups (
     gid             BIGINT NOT NULL,
     pending_gid     BIGINT NULL,
     pending_since   TIMESTAMPTZ NULL,
+    -- As posix_users.pending_notified_at.
+    pending_notified_at TIMESTAMPTZ NULL,
     -- The mapped group name attribute, held to the same validator as user
     -- names. A separate namespace from posix_users.name: a private group
     -- shares its user's name.
@@ -151,6 +162,8 @@ CREATE UNIQUE INDEX idx_posix_groups_name ON posix_groups (name);
 -- so it is unique, as posix_users.dn is.
 CREATE INDEX idx_posix_groups_directory_id ON posix_groups (directory_id) WHERE directory_id <> '';
 CREATE UNIQUE INDEX idx_posix_groups_dn ON posix_groups (dn) WHERE dn <> '';
+-- As idx_posix_users_pending.
+CREATE INDEX idx_posix_groups_pending ON posix_groups (pending_since) WHERE pending_since IS NOT NULL;
 
 -- Group membership by number. Keyed by uid rather than users.id because
 -- members include accounts that never log in. No foreign keys: an accepted

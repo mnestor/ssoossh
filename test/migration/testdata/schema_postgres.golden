@@ -278,6 +278,7 @@ table posix_groups
   column missing_since type=timestamp with time zone nullable=true default=<none>
   column name type=text nullable=false default=<none>
   column pending_gid type=bigint nullable=true default=<none>
+  column pending_notified_at type=timestamp with time zone nullable=true default=<none>
   column pending_since type=timestamp with time zone nullable=true default=<none>
   column updated_at type=timestamp with time zone nullable=false default=<none>
   column withheld_at type=timestamp with time zone nullable=true default=<none>
@@ -286,6 +287,7 @@ table posix_groups
   index idx_posix_groups_dn CREATE UNIQUE INDEX idx_posix_groups_dn ON public.posix_groups USING btree (dn) WHERE (dn <> ''::text)
   index idx_posix_groups_gid CREATE UNIQUE INDEX idx_posix_groups_gid ON public.posix_groups USING btree (gid)
   index idx_posix_groups_name CREATE UNIQUE INDEX idx_posix_groups_name ON public.posix_groups USING btree (name)
+  index idx_posix_groups_pending CREATE INDEX idx_posix_groups_pending ON public.posix_groups USING btree (pending_since) WHERE (pending_since IS NOT NULL)
   index posix_groups_pkey CREATE UNIQUE INDEX posix_groups_pkey ON public.posix_groups USING btree (id)
 table posix_users
   column created_at type=timestamp with time zone nullable=false default=<none>
@@ -301,6 +303,7 @@ table posix_users
   column missing_since type=timestamp with time zone nullable=true default=<none>
   column name type=text nullable=false default=<none>
   column pending_gid type=bigint nullable=true default=<none>
+  column pending_notified_at type=timestamp with time zone nullable=true default=<none>
   column pending_since type=timestamp with time zone nullable=true default=<none>
   column pending_uid type=bigint nullable=true default=<none>
   column shell type=text nullable=true default=<none>
@@ -313,6 +316,7 @@ table posix_users
   index idx_posix_users_directory_id CREATE INDEX idx_posix_users_directory_id ON public.posix_users USING btree (directory_id) WHERE (directory_id <> ''::text)
   index idx_posix_users_dn CREATE UNIQUE INDEX idx_posix_users_dn ON public.posix_users USING btree (dn) WHERE (dn <> ''::text)
   index idx_posix_users_name CREATE UNIQUE INDEX idx_posix_users_name ON public.posix_users USING btree (name)
+  index idx_posix_users_pending CREATE INDEX idx_posix_users_pending ON public.posix_users USING btree (pending_since) WHERE (pending_since IS NOT NULL)
   index idx_posix_users_uid CREATE UNIQUE INDEX idx_posix_users_uid ON public.posix_users USING btree (uid)
   index idx_posix_users_user_id CREATE UNIQUE INDEX idx_posix_users_user_id ON public.posix_users USING btree (user_id)
   index posix_users_pkey CREATE UNIQUE INDEX posix_users_pkey ON public.posix_users USING btree (id)

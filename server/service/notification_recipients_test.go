@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/notify"
 	"github.com/mnestor/ssoossh/test/testdb"
@@ -474,5 +475,87 @@ func TestNotificationNSSKeyRecipients_shouldLogTheKeyIDWhenTheKeyIsMissing(t *te
 	}
 	if !strings.Contains(buf.String(), `"key_id":"nss_GONE0000"`) {
 		t.Errorf("the log does not name the missing key by id: %s", buf.String())
+	}
+}
+
+// StoredUserIsAdmin is the one place a stored user is judged an admin for
+// the admin mail, so its answer has to follow config.AdminConfig.GrantsAdmin
+// and fail closed with no role configuration attached.
+func TestStoredUserIsAdmin_ShouldFollowTheConfiguredAdminGroup(t *testing.T) {
+	t.Parallel()
+
+	admin := &config.AdminConfig{RequireGroup: "ssh-admins", SOCGroup: "soc"}
+	tests := []struct {
+		name   string
+		admin  *config.AdminConfig
+		groups []string
+		want   bool
+	}{
+		{name: "should answer true when the stored groups hold the admin group", admin: admin, groups: []string{"soc", "ssh-admins"}, want: true},
+		{name: "should answer false when the stored groups hold only SOC", admin: admin, groups: []string{"soc"}},
+		{name: "should answer false when there are no stored groups", admin: admin},
+		{name: "should answer false when no admin group is configured", admin: &config.AdminConfig{}, groups: []string{"ssh-admins"}},
+		{name: "should answer false when no role configuration is attached", groups: []string{"ssh-admins"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			svc := NewNotificationService(nil, nil, true, true, false)
+			svc.SetAdminConfig(tc.admin)
+			if got := svc.StoredUserIsAdmin(&model.User{}, tc.groups); got != tc.want {
+				t.Errorf("StoredUserIsAdmin(%v) = %v, want %v", tc.groups, got, tc.want)
+			}
+		})
+	}
+}
+
+// AdminRecipients reads each user's stored OIDC groups and asks
+// StoredUserIsAdmin, leaving out the users fan-out never reaches.
+func TestAdminRecipients_ShouldApplyTheExclusionRules(t *testing.T) {
+	t.Parallel()
+
+	db := recipientsDB(t)
+	svc := NewNotificationService(db, nil, true, true, false)
+	svc.SetAdminConfig(&config.AdminConfig{RequireGroup: "ssh-admins", SOCGroup: "soc"})
+
+	for _, u := range []struct {
+		name, email string
+		disabled    bool
+		group       string
+		source      model.GroupSource
+	}{
+		{name: "alice", email: "alice@example.com", group: "ssh-admins", source: model.GroupSourceOIDC},
+		{name: "bob", email: "bob@example.com", group: "ssh-admins", source: model.GroupSourceOIDC},
+		{name: "mallory", email: "mallory@example.com", disabled: true, group: "ssh-admins", source: model.GroupSourceOIDC},
+		{name: "nomail", group: "ssh-admins", source: model.GroupSourceOIDC},
+		{name: "socuser", email: "soc@example.com", group: "soc", source: model.GroupSourceOIDC},
+		{name: "dironly", email: "dir@example.com", group: "ssh-admins", source: model.GroupSourceLDAP},
+		{name: "nogroups", email: "none@example.com"},
+	} {
+		user := addUser(t, db, u.name, u.email, "", u.disabled)
+		if u.group != "" {
+			addGroupRow(t, db, user.ID, u.group, u.source)
+		}
+	}
+
+	got, err := svc.AdminRecipients(context.Background())
+	if err != nil {
+		t.Fatalf("AdminRecipients: %v", err)
+	}
+	if names := strings.Join(usernames(got), ","); names != "alice,bob" {
+		t.Errorf("recipients = %s, want alice,bob", names)
+	}
+}
+
+// With no admin group configured nobody is an admin, so the query is not
+// even run.
+func TestAdminRecipients_ShouldFindNobodyWhenNoAdminGroupIsConfigured(t *testing.T) {
+	t.Parallel()
+
+	svc := NewNotificationService(nil, nil, true, true, false)
+	svc.SetAdminConfig(&config.AdminConfig{})
+	got, err := svc.AdminRecipients(context.Background())
+	if err != nil || len(got) != 0 {
+		t.Errorf("AdminRecipients() = %v, %v, want nobody and no error", got, err)
 	}
 }

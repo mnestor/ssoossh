@@ -14,6 +14,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/logging"
 	"github.com/mnestor/ssoossh/server/mail"
 	"github.com/mnestor/ssoossh/server/model"
@@ -98,6 +99,13 @@ type NotificationService struct {
 	// created would notify nobody, which is the one thing an expiry
 	// reminder exists to prevent. See ServiceAccountRecipients.
 	userAccountsAsService bool
+
+	// admin is the role configuration, attached by SetAdminConfig. It
+	// decides who counts as an admin for the admin-only kinds: which
+	// session is offered them on the preferences page, and which stored
+	// users the admin mail goes to. Nil until attached, which offers the
+	// admin-only kinds to nobody and finds no admin recipients.
+	admin *config.AdminConfig
 }
 
 // NewNotificationService constructs the service. enabled comes from
@@ -112,6 +120,15 @@ func NewNotificationService(db *gorm.DB, publisher message.Publisher, enabled, l
 		enabled:               enabled,
 		ldapEnabled:           ldapEnabled,
 		userAccountsAsService: userAccountsAsService,
+	}
+}
+
+// SetAdminConfig attaches the role configuration the admin-only kinds are
+// decided by. Wired at startup, as the notifier and the auditor are on the
+// services that hold those.
+func (s *NotificationService) SetAdminConfig(admin *config.AdminConfig) {
+	if s != nil {
+		s.admin = admin
 	}
 }
 
@@ -354,12 +371,30 @@ func (s *NotificationService) PreferencesForIdentity(ctx context.Context, identi
 	if err != nil {
 		return NotificationSettings{}, err
 	}
+	kinds = s.offeredTo(identity, kinds)
 
 	return NotificationSettings{
 		MailEnabled: s.enabled,
 		Address:     user.Email,
 		Kinds:       kinds,
 	}, nil
+}
+
+// offeredTo drops the admin-only kinds from kinds unless the session
+// identity holds the admin role, read from the session as every admin
+// route reads it. A non-admin is never sent those kinds, so a switch for
+// them would be a setting that does nothing.
+func (s *NotificationService) offeredTo(identity *Identity, kinds []KindPreference) []KindPreference {
+	if s.admin != nil && s.admin.GrantsAdmin(identity.Groups) {
+		return kinds
+	}
+	offered := make([]KindPreference, 0, len(kinds))
+	for _, pref := range kinds {
+		if !notify.AdminOnly(pref.Kind) {
+			offered = append(offered, pref)
+		}
+	}
+	return offered
 }
 
 // SetPreferencesForIdentity is SetPreferences for a session identity.
@@ -831,4 +866,75 @@ func (s *NotificationService) ServiceAccountRecipients(ctx context.Context, acco
 		holders = append(holders, holding.User)
 	}
 	return holders, nil
+}
+
+// AdminRecipientResolver finds the users an admin-only notification is
+// addressed to. Implemented by *NotificationService; an interface so the
+// code publishing such a kind holds the question, not the service.
+type AdminRecipientResolver interface {
+	AdminRecipients(ctx context.Context) ([]model.User, error)
+}
+
+// StoredUserIsAdmin reports whether a stored user counts as an admin for
+// the admin mail, from oidcGroups: the OIDC groups the user's last login
+// recorded in user_groups. It is the one place that decision is made, so
+// every admin recipient query goes through it; the rule itself is
+// config.AdminConfig.GrantsAdmin, as for a session.
+//
+// The answer is only as fresh as the last login: someone removed from the
+// admin group at the identity provider still counts until they log in
+// again. It decides who is told, never what anyone may do.
+func (s *NotificationService) StoredUserIsAdmin(_ *model.User, oidcGroups []string) bool {
+	return s.admin != nil && s.admin.GrantsAdmin(oidcGroups)
+}
+
+// AdminRecipients returns every user the admin mail should reach: enabled,
+// with an address, and an admin by StoredUserIsAdmin. Only the OIDC rows
+// of user_groups are read, because only the OIDC groups claim grants a role
+// (see config.AdminConfig.GrantsAdmin); a directory group of the same name
+// grants nothing and must not make anyone a recipient. Ordered by username,
+// so the sends go out in a stable order.
+func (s *NotificationService) AdminRecipients(ctx context.Context) ([]model.User, error) {
+	if s.admin == nil || !s.admin.IsAdminEnabled() {
+		return nil, nil
+	}
+
+	var users []model.User
+	if err := s.db.WithContext(ctx).
+		Where("disabled_at IS NULL").
+		Where("email <> ''").
+		Where("id IN (?)", s.db.Model(&model.UserGroup{}).Select("user_id").Where("source = ?", model.GroupSourceOIDC)).
+		Order("username, id").
+		Find(&users).Error; err != nil {
+		return nil, fmt.Errorf("find the admin notification recipients: %w", err)
+	}
+	if len(users) == 0 {
+		return nil, nil
+	}
+
+	ids := make([]string, 0, len(users))
+	for _, u := range users {
+		ids = append(ids, u.ID)
+	}
+	groups := make(map[string][]string, len(users))
+	for start := 0; start < len(ids); start += nssBatchSize {
+		end := min(start+nssBatchSize, len(ids))
+		var rows []model.UserGroup
+		if err := s.db.WithContext(ctx).
+			Where("source = ? AND user_id IN ?", model.GroupSourceOIDC, ids[start:end]).
+			Find(&rows).Error; err != nil {
+			return nil, fmt.Errorf("read the groups of the admin notification candidates: %w", err)
+		}
+		for _, row := range rows {
+			groups[row.UserID] = append(groups[row.UserID], row.GroupName)
+		}
+	}
+
+	admins := make([]model.User, 0, len(users))
+	for i := range users {
+		if s.StoredUserIsAdmin(&users[i], groups[users[i].ID]) {
+			admins = append(admins, users[i])
+		}
+	}
+	return admins, nil
 }

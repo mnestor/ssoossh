@@ -91,6 +91,12 @@ type NSSDirectoryService struct {
 
 	auditor *AuditService
 
+	// notifier and admins send the pending id change mail to the admins
+	// (see nss_pendingmail.go). Both nil until SetNotifications, which
+	// leaves that mail off.
+	notifier Notifier
+	admins   AdminRecipientResolver
+
 	// gecos is nss.gecos_template, parsed once at construction.
 	gecos *template.Template
 

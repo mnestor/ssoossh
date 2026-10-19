@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
+<meta name="supported-color-schemes" content="light">
+</head>
+<body style="margin:0;padding:0;background:#f2f0ec">
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#f2f0ec"><tr><td align="center" style="padding:24px 12px">
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width:600px;background:#ffffff"><tr><td style="padding:28px 24px;font-family:'IBM Plex Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#1e1a16">
+
+<p style="margin:0 0 8px;font-size:16px;line-height:1.5;color:#1e1a16">The directory has changed {{ .Total }} stored NSS {{ if eq .Total 1 }}uid or gid{{ else }}uids and gids{{ end }}{{ if .ServerURL }} on <span style="font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">{{ .ServerURL }}</span>{{ end }}.</p>
+<p style="margin:0 0 24px;font-size:14px;line-height:1.5;color:#5d5751">Hosts keep the stored number until an admin accepts the change, so files owned by it stay where they are. Re-own the files on hosts first (<span style="font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">chown</span>), then accept the change on the {{ if .DirectoryURL }}<a href="{{ .DirectoryURL }}" style="color:#2858cd">directory page</a>{{ else }}directory page{{ end }}. Reverting the value in the directory clears the change instead.</p>
+
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse">
+<tr><th style="padding:8px 12px 8px 0;border-bottom:1px solid #e0ddda;font-size:12px;font-weight:600;line-height:1.25;color:#5d5751;text-align:left;white-space:nowrap;vertical-align:bottom">Entry</th><th style="padding:8px 12px 8px 0;border-bottom:1px solid #e0ddda;font-size:12px;font-weight:600;line-height:1.25;color:#5d5751;text-align:left;white-space:nowrap;vertical-align:bottom">Name</th><th style="padding:8px 12px 8px 0;border-bottom:1px solid #e0ddda;font-size:12px;font-weight:600;line-height:1.25;color:#5d5751;text-align:left;white-space:nowrap;vertical-align:bottom">Stored</th><th style="padding:8px 12px 8px 0;border-bottom:1px solid #e0ddda;font-size:12px;font-weight:600;line-height:1.25;color:#5d5751;text-align:left;white-space:nowrap;vertical-align:bottom">Directory</th><th style="padding:8px 12px 8px 0;border-bottom:1px solid #e0ddda;font-size:12px;font-weight:600;line-height:1.25;color:#5d5751;text-align:left;white-space:nowrap;vertical-align:bottom">Since</th></tr>
+{{ range .Changes }}<tr><td style="padding:12px 12px 12px 0;border-bottom:1px solid #e0ddda;font-size:14px;line-height:1.375;color:#1e1a16;vertical-align:top;word-break:break-word;white-space:nowrap">{{ .Entry }} {{ .Attribute }}</td><td style="padding:12px 12px 12px 0;border-bottom:1px solid #e0ddda;font-size:14px;line-height:1.375;color:#1e1a16;vertical-align:top;word-break:break-word;font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">{{ .Name }}</td><td style="padding:12px 12px 12px 0;border-bottom:1px solid #e0ddda;font-size:14px;line-height:1.375;color:#1e1a16;vertical-align:top;word-break:break-word;font-variant-numeric:tabular-nums;white-space:nowrap">{{ .Stored }}</td><td style="padding:12px 12px 12px 0;border-bottom:1px solid #e0ddda;font-size:14px;line-height:1.375;color:#1e1a16;vertical-align:top;word-break:break-word;font-variant-numeric:tabular-nums;white-space:nowrap">{{ .Pending }}</td><td style="padding:12px 12px 12px 0;border-bottom:1px solid #e0ddda;font-size:14px;line-height:1.375;color:#1e1a16;vertical-align:top;word-break:break-word;font-variant-numeric:tabular-nums;white-space:nowrap">{{ datetime .PendingSince }}</td></tr>
+{{ end }}</table>
+{{ if .More }}<p style="margin:16px 0 0;font-size:14px;line-height:1.5;color:#5d5751">and {{ .More }} more. The full list is on the directory page.</p>
+{{ end }}
+{{ if .Advanced }}
+<p style="margin:32px 0 4px;font-size:11px;font-weight:600;line-height:1.25;letter-spacing:.06em;text-transform:uppercase;color:#5d5751">Details</p>
+{{ range .Changes }}<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;margin:0 0 12px">
+<tr><td style="padding:8px 16px 8px 0;border-bottom:1px solid #e0ddda;font-size:13px;line-height:1.25;color:#5d5751;white-space:nowrap;vertical-align:top;width:1%">Entry</td><td style="padding:8px 0;border-bottom:1px solid #e0ddda;font-size:13px;line-height:1.25;color:#1e1a16;vertical-align:top;word-break:break-word;font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">{{ .Entry }} {{ .Name }} ({{ .Attribute }})</td></tr>
+<tr><td style="padding:8px 16px 8px 0;border-bottom:1px solid #e0ddda;font-size:13px;line-height:1.25;color:#5d5751;white-space:nowrap;vertical-align:top;width:1%">DN</td><td style="padding:8px 0;border-bottom:1px solid #e0ddda;font-size:13px;line-height:1.25;color:#1e1a16;vertical-align:top;word-break:break-word;font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">{{ if .DN }}{{ .DN }}{{ else }}not recorded{{ end }}</td></tr>
+<tr><td style="padding:8px 16px 8px 0;border-bottom:1px solid #e0ddda;font-size:13px;line-height:1.25;color:#5d5751;white-space:nowrap;vertical-align:top;width:1%">Directory id</td><td style="padding:8px 0;border-bottom:1px solid #e0ddda;font-size:13px;line-height:1.25;color:#1e1a16;vertical-align:top;word-break:break-word;font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">{{ if .DirectoryID }}{{ .DirectoryID }}{{ else }}not recorded{{ end }}</td></tr>
+</table>
+{{ end }}{{ end }}
+<p style="margin:24px 0 0;font-size:14px;line-height:1.5;color:#5d5751">You will hear about each change once, and every Monday while any change is still waiting.</p>
+
+<p style="margin:32px 0 0;padding-top:16px;border-top:1px solid #e0ddda;font-size:12px;line-height:1.5;color:#5d5751">
+Sent because &ldquo;Directory id change waiting for approval&rdquo; is on in your {{ if .ServerURL }}<a href="{{ .ServerURL }}/preferences" style="color:#2858cd">notification preferences</a>{{ else }}notification preferences{{ end }}. It goes to every admin, as of each admin's last login.
+</p>
+
+</td></tr></table>
+</td></tr></table>
+</body>
+</html>

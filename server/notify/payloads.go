@@ -495,3 +495,47 @@ type NSSKeyRevoked struct {
 
 	ServerURL string `json:"server_url"`
 }
+
+// NSSIDChanges is the payload for KindNSSIDChangePending and
+// KindNSSIDChangeReminder: stored NSS numbers the directory now gives
+// differently, which hosts do not see until an admin accepts them. The
+// pending kind lists what is new since the last send; the reminder lists
+// everything still waiting.
+type NSSIDChanges struct {
+	Reader
+
+	// Changes lists at most 50 changes, oldest first. Total counts every
+	// change the message is about and More those beyond the list, omitted
+	// when there are none.
+	Changes []NSSIDChange `json:"changes"`
+	Total   int           `json:"total"`
+	More    int           `json:"more,omitempty"`
+
+	// DirectoryURL is the pending changes on the admin directory page,
+	// where they are accepted.
+	DirectoryURL string `json:"directory_url"`
+	ServerURL    string `json:"server_url"`
+}
+
+// NSSIDChange is one stored number the directory gives differently. An
+// account whose uid and gid both changed is two of these.
+type NSSIDChange struct {
+	// Entry is "account" or "group", and Attribute "uid" or "gid".
+	Entry     string `json:"entry"`
+	Attribute string `json:"attribute"`
+
+	// Name and DN are the stored row's. DirectoryID is its
+	// ldap.id_attribute value, empty when none is configured.
+	Name        string `json:"name"`
+	DN          string `json:"dn"`
+	DirectoryID string `json:"directory_id,omitempty"`
+
+	// Stored is the number hosts are served, Pending the directory's.
+	Stored  uint32 `json:"stored"`
+	Pending uint32 `json:"pending"`
+
+	// PendingSince is when the server first saw the pending number, and
+	// Waiting how long before the message was built that was.
+	PendingSince time.Time     `json:"pending_since"`
+	Waiting      time.Duration `json:"waiting"`
+}

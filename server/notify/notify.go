@@ -96,6 +96,18 @@ const (
 
 	// KindNSSKeyRevoked fires at once when a fleet key is revoked.
 	KindNSSKeyRevoked Kind = "nss_key_revoked"
+
+	// KindNSSIDChangePending fires when the directory gives stored NSS
+	// accounts or groups a different uid or gid, which the server holds
+	// until an admin accepts it. One message per admin per batch: what one
+	// sync run made pending, or what on-demand and login reads made pending
+	// since the last send. It lists only what is new.
+	KindNSSIDChangePending Kind = "nss_id_change_pending"
+
+	// KindNSSIDChangeReminder fires once a week while any uid or gid change
+	// is still waiting for an admin, and lists all of them with how long
+	// each has waited.
+	KindNSSIDChangeReminder Kind = "nss_id_change_reminder"
 )
 
 // Field documents one variable a template for this kind may reference.
@@ -118,6 +130,9 @@ const (
 	// GroupCertificates is the "was this you?" mail: one message per
 	// certificate issued in the reader's name.
 	GroupCertificates Group = "certificates"
+	// GroupNSSDirectory is the NSS directory mail admins act on. Every kind
+	// in it is AdminOnly, so the group is shown to admins alone.
+	GroupNSSDirectory Group = "nss_directory"
 )
 
 // GroupDefinition is how the preferences page heads and explains a group.
@@ -139,6 +154,11 @@ var groups = []GroupDefinition{
 		Group:       GroupCertificates,
 		Title:       "Certificates issued to you",
 		Description: "One email for every login, sudo or console login, so these are off by default. Turn one on to hear about every certificate issued in your name.",
+	},
+	{
+		Group:       GroupNSSDirectory,
+		Title:       "NSS directory",
+		Description: "Shown to admins only. Directory changes to a stored uid or gid, which hosts do not see until an admin accepts them under Admin > Directory.",
 	},
 }
 
@@ -176,6 +196,13 @@ type Definition struct {
 	// refused. Such a kind has no Group, since no page lists it, and its
 	// DefaultEnabled is true, since that is what it does.
 	AlwaysSent bool
+
+	// AdminOnly marks a kind that only admins are sent. The preferences
+	// page lists it only to a session holding the admin role, so nobody
+	// else is offered a switch for mail they never get. It changes nothing
+	// at delivery: the code that publishes such a kind addresses admins
+	// alone.
+	AdminOnly bool
 
 	// Fields documents the template variables. Kept honest by
 	// TestDefinitions_shouldDocumentOnlyRealPayloadFields, which fails when
@@ -451,6 +478,37 @@ var definitions = []Definition{
 			readerField,
 		},
 	},
+	{
+		Kind:           KindNSSIDChangePending,
+		Group:          GroupNSSDirectory,
+		Title:          "Directory id change waiting for approval",
+		Description:    "Sent to every admin when the directory gives a stored NSS account or group a different uid or gid. Hosts keep the stored number until an admin accepts the change. One message per sync run, or per batch of on-demand and login reads, listing only the changes that are new.",
+		DefaultEnabled: true,
+		AdminOnly:      true,
+		NewPayload:     func() any { return &NSSIDChanges{} },
+		Fields:         nssIDChangeFields,
+	},
+	{
+		Kind:           KindNSSIDChangeReminder,
+		Group:          GroupNSSDirectory,
+		Title:          "Weekly reminder of waiting directory id changes",
+		Description:    "Sent to every admin on Monday at 09:00 server time while any uid or gid change is still waiting, listing all of them with how long each has waited.",
+		DefaultEnabled: true,
+		AdminOnly:      true,
+		NewPayload:     func() any { return &NSSIDChanges{} },
+		Fields:         nssIDChangeFields,
+	},
+}
+
+// nssIDChangeFields documents NSSIDChanges, shared by the two kinds that
+// render it, for the reason certificateIssuedFields is shared.
+var nssIDChangeFields = []Field{
+	{"Changes", "[]notify.NSSIDChange", "The listed changes, oldest first, at most 50. Each has Entry (\"account\" or \"group\"), Attribute (\"uid\" or \"gid\"), Name, DN, DirectoryID (the ldap.id_attribute value, or empty), Stored (the number hosts are served), Pending (the directory's new number), PendingSince (when the server first saw it) and Waiting (how long it has waited, as a time.Duration). An account whose uid and gid both changed is two changes."},
+	{"Total", "int", "How many changes the message is about, the listed ones included."},
+	{"More", "int", "How many changes there are beyond the listed ones, or zero."},
+	{"DirectoryURL", "string", "The pending changes on the admin directory page, where an admin accepts them: ServerURL followed by /admin/directory#pending-id-changes."},
+	{"ServerURL", "string", "The server's public origin, naming the deployment the directory belongs to."},
+	readerField,
 }
 
 // certificateIssuedFields documents CertificateIssued, shared by the three
@@ -526,6 +584,13 @@ func Lookup(k Kind) (Definition, bool) {
 func DefaultEnabled(k Kind) bool {
 	def, ok := Lookup(k)
 	return ok && def.DefaultEnabled
+}
+
+// AdminOnly reports whether k is sent to admins alone, so only they are
+// offered it. An unregistered kind answers false.
+func AdminOnly(k Kind) bool {
+	def, ok := Lookup(k)
+	return ok && def.AdminOnly
 }
 
 // AlwaysSent reports whether k is sent whatever its recipient has chosen.

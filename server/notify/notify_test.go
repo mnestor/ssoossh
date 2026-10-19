@@ -423,3 +423,66 @@ func TestNewNSSKeyEvent_shouldRejectAnUnregisteredKind(t *testing.T) {
 		t.Error("NewNSSKeyEvent accepted an unregistered kind")
 	}
 }
+
+// A group mixing admin-only kinds with kinds everyone gets would show a
+// non-admin a heading over a partial set. Admin-only kinds therefore keep a
+// group of their own, and are never always sent: an admin may switch them
+// off, so they have to be a preference.
+func TestDefinitions_shouldKeepAdminOnlyKindsInAGroupOfTheirOwn(t *testing.T) {
+	adminGroup := map[Group]bool{}
+	sharedGroup := map[Group]bool{}
+	for _, def := range Definitions() {
+		if def.AdminOnly {
+			adminGroup[def.Group] = true
+			if def.AlwaysSent {
+				t.Errorf("%s is admin-only and always sent, want it a preference", def.Kind)
+			}
+			continue
+		}
+		sharedGroup[def.Group] = true
+	}
+	for g := range adminGroup {
+		if sharedGroup[g] {
+			t.Errorf("group %q holds admin-only kinds and kinds everyone gets", g)
+		}
+	}
+}
+
+// The directory id change mail is for admins, defaults on and can be
+// switched off, which is what the preferences page and delivery read.
+func TestLookup_shouldRegisterTheNSSIDChangeKindsAsAdminPreferences(t *testing.T) {
+	for _, kind := range []Kind{KindNSSIDChangePending, KindNSSIDChangeReminder} {
+		t.Run(string(kind), func(t *testing.T) {
+			def, ok := Lookup(kind)
+			switch {
+			case !ok:
+				t.Fatalf("Lookup(%q) reported the kind as unregistered", kind)
+			case !def.AdminOnly || !AdminOnly(kind):
+				t.Error("the kind is not admin-only")
+			case def.AlwaysSent || !def.DefaultEnabled:
+				t.Errorf("AlwaysSent = %v, DefaultEnabled = %v, want a preference that defaults on", def.AlwaysSent, def.DefaultEnabled)
+			case def.Group != GroupNSSDirectory:
+				t.Errorf("Group = %q, want %q", def.Group, GroupNSSDirectory)
+			}
+		})
+	}
+}
+
+// AdminOnly answers false for an unregistered kind and for one everyone
+// can receive.
+func TestAdminOnly_shouldAnswerFalseWhenTheKindIsNotAdminOnly(t *testing.T) {
+	tests := []struct {
+		name string
+		kind Kind
+	}{
+		{name: "should answer false when the kind is unregistered", kind: "nope"},
+		{name: "should answer false when everyone can receive the kind", kind: KindServiceEnrollmentCreated},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if AdminOnly(tc.kind) {
+				t.Errorf("AdminOnly(%q) = true, want false", tc.kind)
+			}
+		})
+	}
+}

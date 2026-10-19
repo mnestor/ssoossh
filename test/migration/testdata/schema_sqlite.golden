@@ -276,6 +276,7 @@ table posix_groups
   column missing_since type=DATETIME nullable=true pk=false default=<none>
   column name type=TEXT nullable=false pk=false default=<none>
   column pending_gid type=INTEGER nullable=true pk=false default=<none>
+  column pending_notified_at type=DATETIME nullable=true pk=false default=<none>
   column pending_since type=DATETIME nullable=true pk=false default=<none>
   column updated_at type=DATETIME nullable=false pk=false default=<none>
   column withheld_at type=DATETIME nullable=true pk=false default=<none>
@@ -284,6 +285,7 @@ table posix_groups
   index idx_posix_groups_dn unique=true columns=dn
   index idx_posix_groups_gid unique=true columns=gid
   index idx_posix_groups_name unique=true columns=name
+  index idx_posix_groups_pending unique=false columns=pending_since
   index sqlite_autoindex_posix_groups_1 unique=true columns=id
 table posix_users
   column created_at type=DATETIME nullable=false pk=false default=<none>
@@ -299,6 +301,7 @@ table posix_users
   column missing_since type=DATETIME nullable=true pk=false default=<none>
   column name type=TEXT nullable=false pk=false default=<none>
   column pending_gid type=INTEGER nullable=true pk=false default=<none>
+  column pending_notified_at type=DATETIME nullable=true pk=false default=<none>
   column pending_since type=DATETIME nullable=true pk=false default=<none>
   column pending_uid type=INTEGER nullable=true pk=false default=<none>
   column shell type=TEXT nullable=true pk=false default=<none>
@@ -311,6 +314,7 @@ table posix_users
   index idx_posix_users_directory_id unique=false columns=directory_id
   index idx_posix_users_dn unique=true columns=dn
   index idx_posix_users_name unique=true columns=name
+  index idx_posix_users_pending unique=false columns=pending_since
   index idx_posix_users_uid unique=true columns=uid
   index idx_posix_users_user_id unique=true columns=user_id
   index sqlite_autoindex_posix_users_1 unique=true columns=id

@@ -404,3 +404,32 @@ func TestNSSSyncJobError_ShouldTreatAnOverlapAsRoutineWhenAnotherRunIsGoing(t *t
 		})
 	}
 }
+
+func TestRegisterNSSIDChangeMailJobs_ShouldRegisterOnlyWhenMailIsOn(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		mail bool
+	}{
+		{name: "should register the sweep and the weekly reminder when mail is on", mail: true},
+		{name: "should register nothing and need no scheduler when mail is off", mail: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			c := &config.Config{}
+			svc := newTestNSSService(t, c)
+			a := &app{config: c, svc: &services{nss: svc}}
+			if tt.mail {
+				setEnabledMail(c)
+				a.scheduler = newTestScheduler(t)
+			}
+
+			if err := a.registerNSSIDChangeMailJobs(t.Context()); err != nil {
+				t.Errorf("registerNSSIDChangeMailJobs() = %v, want nil", err)
+			}
+		})
+	}
+}

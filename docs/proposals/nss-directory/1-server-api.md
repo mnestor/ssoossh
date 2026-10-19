@@ -239,7 +239,9 @@ attribute.
   matched row's `uid` and `gid` never change on sync. When the entry's uid
   or gid attribute differs, the sync writes `pending_uid` or `pending_gid`
   with `pending_since`, keeps serving the stored values, and raises the
-  audit alert `nss_id_change_pending` at most daily per row. The directory
+  audit alert `nss_id_change_pending` at most daily per row. Every admin is
+  also mailed once per change and weekly while it waits (added 2026-10-19;
+  see Mail). The directory
   reverting the value clears the pending columns. Name, home, shell and
   gecos follow the directory on every sync. Without an id attribute, a
   moved entry (new DN) is seen as missing plus new; the new entry then
@@ -586,9 +588,33 @@ Reuses `mail.*` and the `mail.template_dir` override scheme. Templates:
 | `nss_key_rotation_cleanup` | silent for `mail.rotation_quiet_period` (**new key**, default 168h) after rotation; then daily while any IP still presents the previous generation; stops when drained or grace ends |
 | `nss_key_expired_attempt`, `nss_key_revoked_attempt` | rate-limited by `mail.expired_attempt_window` (existing key) |
 | `nss_key_rotated`, `nss_key_revoked` | immediately |
+| `nss_id_change_pending` (added 2026-10-19) | a uid or gid change turns pending: one message per admin per sync run, sent when the run ends, or per batch of on-demand and login reads, sent by a sweep every 5 minutes; lists only changes not mailed before |
+| `nss_id_change_reminder` (added 2026-10-19) | Monday 09:00 server time while any mailed change is still pending; lists all of them with how long each has waited |
 
 All off when `mail.enabled` is false. The rotation report endpoint and the
 cleanup digest read the same aggregate query.
+
+**Pending id change mail** (added 2026-10-19 at the owner's request). Both
+kinds go to every admin: users whose OIDC groups as of their last login
+(`user_groups`, source `oidc`) grant the admin role by
+`AdminConfig.GrantsAdmin`, through the single seam
+`NotificationService.StoredUserIsAdmin`, with an email and not disabled. No
+configured address list; someone removed from the admin group at the IdP
+keeps getting them until their next login. They are preferences, default
+on, offered on the preferences page only to an admin session
+(`Definition.AdminOnly`). Each lists at most 50 changes, oldest first, with
+"and N more" and a link to `/admin/directory#pending-id-changes`. A change is
+claimed per row on `posix_users.pending_notified_at` or
+`posix_groups.pending_notified_at` with a guarded `UPDATE` that repeats the
+pending numbers read; the column is cleared with `pending_since`, by an
+accept, and whenever a different number turns pending, so a new change mails
+again and an accepted or reverted one never does. Nothing is claimed while no
+admin can be mailed. The weekly reminder is claimed on `nss_alerts`
+(`id_change_reminder`, subject `directory`, six-day window) and lists only
+changes already mailed once. Pending rows are read through the partial
+indexes `idx_posix_users_pending` and `idx_posix_groups_pending` on
+`pending_since`. No audit event is written for the sends, as for every other
+mail: delivery logs "notification sent" per recipient.
 
 ## Configuration
 
