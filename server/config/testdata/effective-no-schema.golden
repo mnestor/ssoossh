@@ -87,8 +87,8 @@ http.service_code_rate_limit.limit = 1
 http.console_code_rate_limit.limit = 1
 http.console_code_rate_limit.burst = 5
 http.hsts = max-age=31536000; includeSubDomains
-http.tls.certificateinfo.certificate_file = 
-http.tls.certificateinfo.private_key_file = 
+http.tls.certificate_file = 
+http.tls.private_key_file = 
 http.tls.cipher_suites = 
 http.tls.min_version = TLS1.3
 http.tls.curves = 
