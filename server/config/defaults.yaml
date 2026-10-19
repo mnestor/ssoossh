@@ -409,6 +409,14 @@ http:
   # ::1) bypasses the limit, so health probes and tests from the local
   # frontend are not throttled.
   #
+  # Two kinds of path are not counted against this bucket: the NSS lookups
+  # (carried by their own per-fleet-key limiter) and the content-hashed
+  # frontend assets under /_app/immutable/. The assets are immutable static
+  # files with no database or audit cost, and a single cold page load pulls
+  # dozens of them, which would otherwise exhaust the burst for a user who is
+  # only browsing. Flooding those paths is the reverse proxy's or firewall's
+  # job, not this limit's.
+  #
   # Keep it on for an internet-facing deployment. Some requests write an audit
   # event without a session, such as a console request from outside
   # cert_options.console.allowed_networks, and this limit is what stops one

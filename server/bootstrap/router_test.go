@@ -146,6 +146,47 @@ func TestInitRouter_ShouldEnforceRateLimitWhenRateLimitPositive(t *testing.T) {
 	}
 }
 
+// TestInitRouter_ShouldSkipRateLimitForImmutableFrontendAssets proves the
+// router wires frontend.RateLimitSkipURLPrefixes into the global limiter: a
+// content-hashed asset is served even once the caller's per-IP burst is
+// spent, so a cold first paint cannot 429 a new user (issue #210).
+func TestInitRouter_ShouldSkipRateLimitForImmutableFrontendAssets(t *testing.T) {
+	t.Parallel()
+
+	c := &config.Config{}
+	c.HTTP.RateLimit = 1
+	c.HTTP.RateDuration = time.Minute // burst of 1
+
+	a := newTestApp(t, c)
+
+	srv, err := a.initRouter()
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	ip := "203.0.113.52:12345"
+
+	// Spend the per-IP burst of 1 on a limited path.
+	w1 := httptest.NewRecorder()
+	req1 := httptest.NewRequest(http.MethodGet, "/api/ca", nil)
+	req1.RemoteAddr = ip
+	srv.router.ServeHTTP(w1, req1)
+	if w1.Code != http.StatusOK {
+		t.Fatalf("expected the first request to succeed, got status %d", w1.Code)
+	}
+
+	// With the bucket now empty, a content-hashed asset from the same IP must
+	// still reach its handler rather than be rejected. A missing file is a
+	// 404; the point is only that it is not a 429.
+	w2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest(http.MethodGet, "/_app/immutable/chunks/does-not-exist.js", nil)
+	req2.RemoteAddr = ip
+	srv.router.ServeHTTP(w2, req2)
+	if w2.Code == http.StatusTooManyRequests {
+		t.Errorf("expected the immutable asset to bypass the rate limiter, got status %d", w2.Code)
+	}
+}
+
 func TestInitRouter_ShouldRejectMismatchedHostWhenPublicURLConfigured(t *testing.T) {
 	t.Parallel()
 
