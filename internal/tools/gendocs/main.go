@@ -124,7 +124,7 @@ func run(outDir string) error {
 	if err := generateNSSManpage(outDir, date); err != nil {
 		return fmt.Errorf("generate NSS daemon man page: %w", err)
 	}
-	fmt.Printf("Generated %s\n", filepath.Join(outDir, "ssoosshd-nss.8"))
+	fmt.Printf("Generated %s\n", filepath.Join(outDir, "ssoossh-nss.8"))
 
 	return nil
 }
@@ -174,13 +174,13 @@ func generateClientManpage(outDir string, date time.Time) error {
 	}, outDir)
 }
 
-// generateNSSManpage generates the ssoosshd-nss(8) pages, one per
+// generateNSSManpage generates the ssoossh-nss(8) pages, one per
 // subcommand, from the daemon's real command tree, as the client's are.
 // Section 8 like ssoosshd's: it is a system daemon an administrator runs.
 //
 // The pages land beside ssoosshd's and share its "ssoosshd" prefix, so the
 // server packages name their own pages in a way that leaves these out
-// (.goreleaser.yml), and test/packaging assigns them to the ssoosshd-nss
+// (.goreleaser.yml), and test/packaging assigns them to the ssoossh-nss
 // package.
 func generateNSSManpage(outDir string, date time.Time) error {
 	c, err := nsscmd.NewCommand(nsscmd.DefaultEnvironment())
@@ -193,9 +193,9 @@ func generateNSSManpage(outDir string, date time.Time) error {
 
 	escapeTree(root)
 	return doc.GenManTree(root, &doc.GenManHeader{
-		Title:   "SSOOSSHD-NSS",
+		Title:   "SSOOSSH-NSS",
 		Section: "8",
-		Source:  "ssoosshd-nss",
+		Source:  "ssoossh-nss",
 		Date:    &date,
 	}, outDir)
 }

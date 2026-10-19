@@ -37,7 +37,7 @@ func (o Override) IsZero() bool {
 type Overrides map[string]Override
 
 // overridesHeader is written at the top of the file by WriteOverrides.
-const overridesHeader = "# ssoosshd-nss host overrides. Managed by `ssoosshd-nss override`;\n" +
+const overridesHeader = "# ssoossh-nss host overrides. Managed by `ssoossh-nss override`;\n" +
 	"# hand edits are kept but comments are not.\n"
 
 // LoadOverrides reads the override file at path. A missing file is no

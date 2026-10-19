@@ -104,7 +104,7 @@ func groupRecordFor(g policy.Group) recordReply {
 func info() infoReply {
 	return infoReply{
 		Vendor:     "ssoossh",
-		Product:    "ssoosshd-nss",
+		Product:    "ssoossh-nss",
 		Version:    version.Version,
 		URL:        version.Github,
 		Interfaces: []string{InterfaceVarlink, InterfaceUserDatabase, InterfaceNSS},

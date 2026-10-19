@@ -10,7 +10,7 @@ import (
 	"github.com/mnestor/ssoossh/nssd/upstream"
 )
 
-// Status is what `ssoosshd-nss status` shows of a running daemon.
+// Status is what `ssoossh-nss status` shows of a running daemon.
 type Status struct {
 	// Upstream is the directory connection's state.
 	Upstream upstream.Status `json:"upstream"`
@@ -52,7 +52,7 @@ func (d *Daemon) Status(ctx context.Context) Status {
 	return s
 }
 
-// Invalidate marks entries stale, `ssoosshd-nss cache`'s work: they are
+// Invalidate marks entries stale, `ssoossh-nss cache`'s work: they are
 // refetched on their next lookup and still served while the directory is
 // unreachable. Never deleted. The matching remembered misses are forgotten
 // too, so a name just added to the directory resolves at once.
@@ -75,7 +75,7 @@ func (d *Daemon) Invalidate(ctx context.Context, sel cache.Selector) (int, error
 }
 
 // ReloadPolicy re-reads the host files, for the admin socket's reload
-// after `ssoosshd-nss override` changed the override file.
+// after `ssoossh-nss override` changed the override file.
 func (d *Daemon) ReloadPolicy() {
 	d.policy.Reload()
 	d.log.Info("host files reloaded")

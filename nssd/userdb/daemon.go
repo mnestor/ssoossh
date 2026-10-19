@@ -1,4 +1,4 @@
-// Package userdb is ssoosshd-nss's userdb service: systemd's
+// Package userdb is ssoossh-nss's userdb service: systemd's
 // io.systemd.UserDatabase interface (docs/USER_GROUP_API.md in systemd),
 // the daemon's own com.github.mnestor.ssoossh.NSS.RefreshUser, and
 // org.varlink.service.GetInfo, over the cache, the policy and the upstream

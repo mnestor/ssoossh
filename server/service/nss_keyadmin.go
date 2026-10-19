@@ -198,7 +198,7 @@ func (s *NSSKeyService) AdminList(ctx context.Context, filter NSSAdminKeyFilter)
 // the key's name or group or the creator's username or email, ignoring
 // case, or the start of the key's id. An id is "nss_" and eight lower-case
 // base32 symbols (newNSSKeyID), so a whole id or a prefix of one, pasted
-// from an alert or `ssoosshd-nss status` in either case, finds its key.
+// from an alert or `ssoossh-nss status` in either case, finds its key.
 // The id is a plain column, never a JSON payload. "" when q is empty.
 func nssAdminKeyTextWhere(q string) (string, []any) {
 	text, textArgs := paging.Filter(q, "nss_keys.name", "nss_keys.group_name", "users.username", "users.email")

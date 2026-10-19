@@ -1,4 +1,4 @@
-// Command fakeupstream stands in for ssoosshd in the ssoosshd-nss
+// Command fakeupstream stands in for ssoosshd in the ssoossh-nss
 // integration tests (test/nss) and in the SELinux test on a real host. It
 // serves the four /api/nss lookups over TLS 1.3 with the Part 1 wire types
 // from internal/apitypes, a fixed directory and a fleet key it insists on,
@@ -246,7 +246,7 @@ func newCertificates(hosts []string) (tls.Certificate, []byte, error) {
 	now := time.Now()
 	caTmpl := &x509.Certificate{
 		SerialNumber:          big.NewInt(1),
-		Subject:               pkix.Name{CommonName: "ssoosshd-nss integration CA"},
+		Subject:               pkix.Name{CommonName: "ssoossh-nss integration CA"},
 		NotBefore:             now.Add(-time.Hour),
 		NotAfter:              now.Add(24 * time.Hour),
 		KeyUsage:              x509.KeyUsageCertSign,

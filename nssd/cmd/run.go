@@ -40,7 +40,7 @@ func (f *runFlags) register(cmd *cobra.Command) {
 	flags.StringVar(&f.logLevel, "log-level", "info", "debug, info, warn or error")
 }
 
-// newRunCommand is `ssoosshd-nss run`.
+// newRunCommand is `ssoossh-nss run`.
 func newRunCommand(root *RootCommand) *runCommand { return &runCommand{leaf: leaf{root: root}} }
 
 // runCommand is `run`, the daemon. Its flags are its own copy of the
@@ -55,7 +55,7 @@ func (c *runCommand) Init(cd *simplecobra.Commandeer) error {
 	c.name = "run"
 	c.short = "Run the daemon (the default with no subcommand)."
 	c.long = "Runs the userdb service. Under systemd the userdb socket comes from " +
-		"ssoosshd-nss.socket (socket activation); otherwise --listen binds one. " +
+		"ssoossh-nss.socket (socket activation); otherwise --listen binds one. " +
 		"SIGHUP re-reads the host files and the fleet key and clears the 401 latch, the offline backoff and " +
 		"the group name collisions and refused groups that status lists."
 	if err := c.leaf.Init(cd); err != nil {
@@ -151,7 +151,7 @@ func (r *RootCommand) runDaemon(ctx context.Context, flags runFlags) error {
 		Log:            log,
 	})
 
-	log.Info("ssoosshd-nss started",
+	log.Info("ssoossh-nss started",
 		"version", version.Version, "userdb_socket", userdbL.Addr().String(), "admin_socket", r.adminSocket,
 		"cache_mode", cfg.CacheMode, "server", cfg.Server, "key_id", up.Status().KeyID)
 
@@ -161,7 +161,7 @@ func (r *RootCommand) runDaemon(ctx context.Context, flags runFlags) error {
 	g.Go(func() error { return srv.ServeAdmin(ctx, adminL) })
 	g.Go(func() error { reloadOn(ctx, hup, daemon, log); return nil })
 	err = g.Wait()
-	log.Info("ssoosshd-nss stopped")
+	log.Info("ssoossh-nss stopped")
 	return err
 }
 
@@ -183,7 +183,7 @@ func (r *RootCommand) userdbListener(listen string) (net.Listener, error) {
 	case !errors.Is(err, server.ErrNotActivated):
 		return nil, err
 	case listen == "":
-		return nil, errors.New("not socket-activated and no --listen given: start ssoosshd-nss.socket, or pass --listen PATH")
+		return nil, errors.New("not socket-activated and no --listen given: start ssoossh-nss.socket, or pass --listen PATH")
 	default:
 		// 0666 like the socket unit's SocketMode: every process resolves
 		// users.

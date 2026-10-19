@@ -1,5 +1,5 @@
 #!/bin/sh
-# Reloads systemd after the ssoosshd-nss units are gone.
+# Reloads systemd after the ssoossh-nss units are gone.
 #
 # The cache in /var/lib/ssoossh-nss is left for the administrator: systemd
 # owns that directory through StateDirectory=, and a reinstall resolves the

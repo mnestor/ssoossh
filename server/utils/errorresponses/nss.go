@@ -8,7 +8,7 @@ import (
 
 // NSSError is a failed answer from the NSS endpoints, carrying one of
 // internal/apitypes' ErrorCodeNSS* codes rather than a general one. The
-// ssoosshd-nss daemon acts on the difference: only nss_not_found is an
+// ssoossh-nss daemon acts on the difference: only nss_not_found is an
 // authoritative miss it may cache, so a bad request, a disabled server or a
 // refused key must never be rendered with that code, and none of them with
 // a code the daemon cannot tell apart from it.

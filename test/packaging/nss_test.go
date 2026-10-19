@@ -16,7 +16,7 @@ import (
 	"github.com/mnestor/ssoossh/nssd/userdb"
 )
 
-// nssExample is the example configuration the ssoosshd-nss package ships as
+// nssExample is the example configuration the ssoossh-nss package ships as
 // /etc/ssoossh/nss.yaml. It lists every option at its default, commented
 // out, and nssd/config holds the defaults themselves: the tests below keep
 // the two from drifting apart.
@@ -223,7 +223,7 @@ func TestNSSBuildShouldMatchTheServerBuildEnvironment(t *testing.T) {
 		ok   bool
 		msg  string
 	}{
-		{name: "should build cmd/ssoosshd-nss", ok: build.Dir == "./cmd/ssoosshd-nss", msg: "dir is " + build.Dir},
+		{name: "should build cmd/ssoossh-nss", ok: build.Dir == "./cmd/ssoossh-nss", msg: "dir is " + build.Dir},
 		{name: "should build for linux only", ok: slices.Equal(build.Goos, []string{"linux"}), msg: fmt.Sprint("goos ", build.Goos)},
 		{name: "should build amd64 and arm64", ok: slices.Equal(build.Goarch, []string{"amd64", "arm64"}), msg: fmt.Sprint("goarch ", build.Goarch)},
 		{name: "should not override the environment", ok: len(build.Env) == 0, msg: fmt.Sprint("env ", build.Env)},
@@ -320,10 +320,10 @@ func TestNSSPackageShouldShipItsFiles(t *testing.T) {
 		typ  string
 		mode int
 	}{
-		{name: "should ship the socket unit", dst: "/usr/lib/systemd/system/ssoosshd-nss.socket", src: "deploy/ssoosshd-nss.socket", mode: 0o644},
-		{name: "should ship the service unit", dst: "/usr/lib/systemd/system/ssoosshd-nss.service", src: "deploy/ssoosshd-nss.service", mode: 0o644},
+		{name: "should ship the socket unit", dst: "/usr/lib/systemd/system/ssoossh-nss.socket", src: "deploy/ssoossh-nss.socket", mode: 0o644},
+		{name: "should ship the service unit", dst: "/usr/lib/systemd/system/ssoossh-nss.service", src: "deploy/ssoossh-nss.service", mode: 0o644},
 		{name: "should ship the example configuration root-only", dst: "/etc/ssoossh/nss.yaml", src: nssExample, typ: "config|noreplace", mode: 0o600},
-		{name: "should ship the man pages", dst: "/usr/share/man/man8/", src: "docs/man/ssoosshd-nss*.8"},
+		{name: "should ship the man pages", dst: "/usr/share/man/man8/", src: "docs/man/ssoossh-nss*.8"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -353,11 +353,11 @@ func TestNSSPackageShouldShipItsFiles(t *testing.T) {
 func TestNSSUnitsShouldNameTheInstalledPaths(t *testing.T) {
 	t.Parallel()
 
-	service, err := os.ReadFile(filepath.Join(repoRoot(t), "deploy/ssoosshd-nss.service"))
+	service, err := os.ReadFile(filepath.Join(repoRoot(t), "deploy/ssoossh-nss.service"))
 	if err != nil {
 		t.Fatalf("read the service unit: %v", err)
 	}
-	socket, err := os.ReadFile(filepath.Join(repoRoot(t), "deploy/ssoosshd-nss.socket"))
+	socket, err := os.ReadFile(filepath.Join(repoRoot(t), "deploy/ssoossh-nss.socket"))
 	if err != nil {
 		t.Fatalf("read the socket unit: %v", err)
 	}
@@ -367,7 +367,7 @@ func TestNSSUnitsShouldNameTheInstalledPaths(t *testing.T) {
 		unit []byte
 		want string
 	}{
-		{name: "should exec the installed binary", unit: service, want: "ExecStart=" + bindir + "/ssoosshd-nss run\n"},
+		{name: "should exec the installed binary", unit: service, want: "ExecStart=" + bindir + "/ssoossh-nss run\n"},
 		{name: "should listen on the userdb socket", unit: socket, want: "ListenStream=" + config.UserdbSocket + "\n"},
 		{name: "should keep the daemon out of its own lookups", unit: service, want: "Environment=SYSTEMD_BYPASS_USERDB=com.github.mnestor.ssoossh\n"},
 		{name: "should own the admin socket's directory", unit: service, want: "RuntimeDirectory=" + filepath.Base(filepath.Dir(config.DefaultAdminSocket)) + "\n"},
@@ -515,7 +515,7 @@ func TestNSSClientRefreshShouldNameTheDaemonsSocketAndMethod(t *testing.T) {
 func TestNSSServiceShouldReachItsStartLimitWhenTheDaemonCannotStart(t *testing.T) {
 	t.Parallel()
 
-	service, err := os.ReadFile(filepath.Join(repoRoot(t), "deploy/ssoosshd-nss.service"))
+	service, err := os.ReadFile(filepath.Join(repoRoot(t), "deploy/ssoossh-nss.service"))
 	if err != nil {
 		t.Fatalf("read the service unit: %v", err)
 	}
@@ -549,7 +549,7 @@ func TestNSSServiceShouldReachItsStartLimitWhenTheDaemonCannotStart(t *testing.T
 func TestNSSServiceLimitsShouldExceedWhatTheDaemonAdmits(t *testing.T) {
 	t.Parallel()
 
-	service, err := os.ReadFile(filepath.Join(repoRoot(t), "deploy/ssoosshd-nss.service"))
+	service, err := os.ReadFile(filepath.Join(repoRoot(t), "deploy/ssoossh-nss.service"))
 	if err != nil {
 		t.Fatalf("read the service unit: %v", err)
 	}

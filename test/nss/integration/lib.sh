@@ -1,4 +1,4 @@
-# lib.sh: shared helpers for the ssoosshd-nss integration jobs, sourced by
+# lib.sh: shared helpers for the ssoossh-nss integration jobs, sourced by
 # direct.sh and systemd.sh inside the container. /it/sh holds these scripts,
 # /it/bin the daemon and the fake upstream built on the host, and /it/units
 # the shipped units.
@@ -74,7 +74,7 @@ lookup_asserts() {
 
 # collision_asserts STATUS LOG: the gid rule for alice's directory group
 # users (gid 60200), named like the local users (gid 100), and oldstaff
-# (gid 500, below min_id), from `ssoosshd-nss status` and the daemon's log.
+# (gid 500, below min_id), from `ssoossh-nss status` and the daemon's log.
 collision_asserts() {
 	check "collision: alice gets neither the local nor the directory gid" "60001 60100" "$(id -G alice)"
 	getent group 60200 >/dev/null

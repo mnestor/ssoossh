@@ -18,6 +18,6 @@ case "$1" in
 esac
 
 if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
-	systemctl stop ssoosshd-nss.socket ssoosshd-nss.service >/dev/null 2>&1 || true
-	systemctl disable ssoosshd-nss.socket ssoosshd-nss.service >/dev/null 2>&1 || true
+	systemctl stop ssoossh-nss.socket ssoossh-nss.service >/dev/null 2>&1 || true
+	systemctl disable ssoossh-nss.socket ssoossh-nss.service >/dev/null 2>&1 || true
 fi

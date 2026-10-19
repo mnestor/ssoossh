@@ -13,10 +13,10 @@
 
 | Path | Purpose |
 | --- | --- |
-| `/cmd` | entrypoints only: `ssoossh` (client), `ssoosshd` (server), `ssoosshd-nss` (NSS daemon, Linux only) |
+| `/cmd` | entrypoints only: `ssoossh` (client), `ssoosshd` (server), `ssoossh-nss` (NSS daemon, Linux only) |
 | `/server` | ssoosshd server code |
 | `/client` | client code |
-| `/nssd` | ssoosshd-nss, the host-side systemd userdb daemon; imports only `/internal`, never `/server` or `/client` |
+| `/nssd` | ssoossh-nss, the host-side systemd userdb daemon; imports only `/internal`, never `/server` or `/client` |
 | `/internal` | internal code shared between server and client |
 | `/frontend` | pnpm/SvelteKit web UI, embedded in ssoosshd by `server/frontend`; see `frontend/DESIGN.md` for the design system |
 | `/test` | e2e, load, migration, packaging and Postgres suites, plus shared test helpers |

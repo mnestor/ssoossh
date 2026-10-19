@@ -1,4 +1,4 @@
-// Package cmd is ssoosshd-nss's command tree, built with bep/simplecobra
+// Package cmd is ssoossh-nss's command tree, built with bep/simplecobra
 // as server/cmd builds ssoosshd's: run (the default), cache, override,
 // status and lookup. Part 3 of docs/proposals/nss-directory ("Admin
 // interface and CLI").
@@ -50,7 +50,7 @@ func DefaultEnvironment() Environment {
 	}
 }
 
-// RootCommand is `ssoosshd-nss`. It holds the environment and the global
+// RootCommand is `ssoossh-nss`. It holds the environment and the global
 // flags every subcommand reads, and with no subcommand runs the daemon.
 type RootCommand struct {
 	env      Environment
@@ -74,7 +74,7 @@ type RootCommand struct {
 var _ simplecobra.Commander = (*RootCommand)(nil)
 
 // Name implements simplecobra.Commander.
-func (r *RootCommand) Name() string { return "ssoosshd-nss" }
+func (r *RootCommand) Name() string { return "ssoossh-nss" }
 
 // Commands implements simplecobra.Commander.
 func (r *RootCommand) Commands() []simplecobra.Commander { return r.commands }
@@ -84,7 +84,7 @@ func (r *RootCommand) Init(cd *simplecobra.Commandeer) error {
 	cmd := cd.CobraCommand
 	r.cobraRoot = cmd
 	cmd.Short = "The ssoossh NSS daemon: directory users and groups for this host through systemd userdb."
-	cmd.Long = "ssoosshd-nss answers systemd's io.systemd.UserDatabase varlink interface on " +
+	cmd.Long = "ssoossh-nss answers systemd's io.systemd.UserDatabase varlink interface on " +
 		config.UserdbSocket + ", so nss-systemd resolves directory users and groups " +
 		"(getpwnam, getgrnam, initgroups) from ssoosshd over pinned HTTPS with a fleet key. " +
 		"It caches every answer, serves the cache while the server is unreachable, and never " +
@@ -158,7 +158,7 @@ func Main() int {
 		err = c.Execute(ctx, os.Args[1:])
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "ssoosshd-nss:", err)
+		fmt.Fprintln(os.Stderr, "ssoossh-nss:", err)
 		return 1
 	}
 	return 0

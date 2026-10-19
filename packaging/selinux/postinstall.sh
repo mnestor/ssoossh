@@ -1,5 +1,5 @@
 #!/bin/sh
-# Loads the ssoosshd-nss policy module and relabels what it labels.
+# Loads the ssoossh-nss policy module and relabels what it labels.
 #
 # Runs on install and on upgrade: semodule -i replaces a module of the same
 # name, so loading needs no separate upgrade path.
@@ -30,7 +30,7 @@ fi
 # binary bin_t, which runs unconfined). Each path may not exist yet; the
 # daemon's package may come later, and systemd makes the two directories
 # at the service's first start, labelled from the policy by then.
-for path in /usr/sbin/ssoosshd-nss /etc/ssoossh/nss.yaml /etc/ssoossh/nss.key \
+for path in /usr/sbin/ssoossh-nss /etc/ssoossh/nss.yaml /etc/ssoossh/nss.key \
 	/etc/ssoossh/nss-overrides.yaml /var/lib/ssoossh-nss /run/ssoossh-nss; do
 	if [ -e "$path" ] && command -v restorecon >/dev/null 2>&1; then
 		restorecon -R "$path" || true
@@ -46,7 +46,7 @@ done
 # "not found". try-restart touches only a running unit, so a host that has
 # not enabled the daemon is left alone.
 if [ "${1:-1}" = 1 ] && [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
-	systemctl try-restart ssoosshd-nss.socket >/dev/null 2>&1 || true
+	systemctl try-restart ssoossh-nss.socket >/dev/null 2>&1 || true
 fi
 
 exit 0

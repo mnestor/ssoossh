@@ -978,7 +978,7 @@ ldap:
     # has to pull fields back out.
     #log_json: false
 
-# Serves POSIX accounts and groups from the directory to the ssoosshd-nss
+# Serves POSIX accounts and groups from the directory to the ssoossh-nss
 # daemon on each host, authenticated by fleet API keys. Disabled by default.
 #
 # Every account and group comes from the directory, people and shared or

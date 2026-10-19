@@ -68,7 +68,7 @@ func runSetup(_ context.Context, args []string, out io.Writer) error {
 // newServerCertificate makes a self-signed ECDSA certificate for host,
 // localhost and 127.0.0.1, valid around now, and returns it and its key
 // in PEM with the base64 SHA-256 of its SubjectPublicKeyInfo, the form
-// ssoosshd-nss pins.
+// ssoossh-nss pins.
 func newServerCertificate(host string, now time.Time) (certPEM, keyPEM []byte, pin string, err error) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {

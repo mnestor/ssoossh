@@ -1,21 +1,21 @@
 .nh
-.TH "SSOOSSHD-NSS" "8" "Aug 2026" "ssoosshd-nss" ""
+.TH "SSOOSSH-NSS" "8" "Aug 2026" "ssoossh-nss" ""
 
 .SH NAME
-ssoosshd-nss-lookup-user - GetUserRecord by userName.
+ssoossh-nss-override-list - Print the overrides in the override file.
 
 
 .SH SYNOPSIS
-\fBssoosshd-nss lookup user NAME [flags]\fP
+\fBssoossh-nss override list [flags] [args]\fP
 
 
 .SH DESCRIPTION
-GetUserRecord by userName.
+Print the overrides in the override file.
 
 
 .SH OPTIONS
 \fB-h\fP, \fB--help\fP[=false]
-	help for user
+	help for list
 
 
 .SH OPTIONS INHERITED FROM PARENT COMMANDS
@@ -30,13 +30,9 @@ GetUserRecord by userName.
 \fB--overrides\fP="/etc/ssoossh/nss-overrides.yaml"
 	the host override file
 
-.PP
-\fB--socket\fP="/run/systemd/userdb/com.github.mnestor.ssoossh"
-	the userdb socket
-
 
 .SH SEE ALSO
-\fBssoosshd-nss-lookup(8)\fP
+\fBssoossh-nss-override(8)\fP
 
 
 .SH HISTORY

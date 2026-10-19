@@ -4,13 +4,13 @@ import (
 	"time"
 )
 
-// The ssoosshd-nss contract `host principals` uses: the daemon's userdb
+// The ssoossh-nss contract `host principals` uses: the daemon's userdb
 // socket here, and the one-way method that asks it to refresh a user in
 // host_refresh_linux.go. Spelled out rather than imported, because the
 // client never imports the daemon's packages; test/packaging checks both
 // against nssd.
 const (
-	// nssUserdbSocket is where ssoosshd-nss.socket listens.
+	// nssUserdbSocket is where ssoossh-nss.socket listens.
 	nssUserdbSocket = "/run/systemd/userdb/com.github.mnestor.ssoossh"
 	// nssRefreshTimeout bounds the whole call, connect and write. sshd
 	// waits on this command before every certificate login, so the call
@@ -18,7 +18,7 @@ const (
 	nssRefreshTimeout = 50 * time.Millisecond
 )
 
-// nssRefresh asks a host's ssoosshd-nss to refresh a user just before
+// nssRefresh asks a host's ssoossh-nss to refresh a user just before
 // sshd resolves them, so a group the directory removed is gone at this
 // login rather than at cache expiry (docs/proposals/nss-directory, Part 3,
 // "Client change"). It is a hint and nothing more: the call is one-way,

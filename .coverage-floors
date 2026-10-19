@@ -37,7 +37,7 @@ internal/tools/gendocs          71.0
 internal/tools/genwirecontract  76.0
 internal/tracelog               93.0
 
-# ssoosshd-nss, the NSS daemon. Measured 2026-10-18 less the usual margin.
+# ssoossh-nss, the NSS daemon. Measured 2026-10-18 less the usual margin.
 nssd/cache                      94.0
 nssd/cmd                        94.0
 nssd/config                     92.0
@@ -94,7 +94,7 @@ server/utils/tracing           100.0
 # test dirs — produce no profile entries and so cannot be listed.)
 cmd/ssoossh                      0.0
 cmd/ssoosshd                     0.0
-cmd/ssoosshd-nss                 0.0
+cmd/ssoossh-nss                 0.0
 internal/tools/genconfdocs       0.0
 server/testutil                  0.0
 test/configgolden                0.0
