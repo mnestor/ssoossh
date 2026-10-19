@@ -121,7 +121,7 @@ case "${1:-}" in
 start)
 	mkdir -p "$E2E"
 	"$BIN/e2ehelper" setup -out "$E2E" -host server >/dev/null || exit 1
-	"$BIN/e2ehelper" oidc -listen 127.0.0.1:9000 2>"$E2E/oidc.log" &
+	"$BIN/e2ehelper" oidc -listen 127.0.0.1:9000 -redirect-uri https://server:8443/auth/callback 2>"$E2E/oidc.log" &
 	write_config 2s
 	start_server
 	"$BIN/e2ehelper" seed-key -db "$DB" -key-file "$E2E/nss.key" >"$E2E/key-id" || exit 1

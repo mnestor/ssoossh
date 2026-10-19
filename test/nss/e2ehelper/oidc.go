@@ -34,10 +34,16 @@ const idpKeyID = "nss-e2e"
 // suite's (test/e2e/harness/idp.go) without its testing.T: discovery, an
 // authorization endpoint whose form signs in whatever username is posted,
 // the code exchange and a JWKS. go-oidc in ssoosshd verifies the tokens it
-// signs, so a login through it takes the server's real path.
+// signs, so a login through it takes the server's real path. Like a real
+// provider it knows its one client's registered redirect URI and sends a
+// browser nowhere else.
 type identityProvider struct {
 	base string
 	key  *rsa.PrivateKey
+	// redirectURI is the registered redirect URI, exactly as the client
+	// must send it; redirect is it parsed.
+	redirectURI string
+	redirect    *url.URL
 
 	mu    sync.Mutex
 	codes map[string]pendingAuth
@@ -51,14 +57,19 @@ type pendingAuth struct {
 }
 
 // newIdentityProvider makes a provider that names itself base, with a
-// fresh signing key.
-func newIdentityProvider(base string) (*identityProvider, error) {
+// fresh signing key, for a client whose registered redirect URI is
+// redirectURI, an absolute URL.
+func newIdentityProvider(base, redirectURI string) (*identityProvider, error) {
+	redirect, err := url.Parse(redirectURI)
+	if err != nil || !redirect.IsAbs() || redirect.Host == "" {
+		return nil, fmt.Errorf("redirect URI %q is not an absolute URL", redirectURI)
+	}
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		// not covered: crypto/rand failure (see .claude/rules/test-go.md).
 		return nil, fmt.Errorf("generate the signing key: %w", err)
 	}
-	return &identityProvider{base: base, key: key, codes: map[string]pendingAuth{}}, nil
+	return &identityProvider{base: base, key: key, redirectURI: redirectURI, redirect: redirect, codes: map[string]pendingAuth{}}, nil
 }
 
 // handler routes the provider's four endpoints.
@@ -85,8 +96,15 @@ func (p *identityProvider) discovery(w http.ResponseWriter, _ *http.Request) {
 }
 
 // authorize renders a one-field form on GET and, on POST, mints a code for
-// the posted username and redirects back to the client.
+// the posted username and redirects back to the client. A redirect_uri
+// that is not exactly the registered one is refused with 400 on either,
+// before anything is minted, as a real provider refuses it.
 func (p *identityProvider) authorize(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	if q.Get("redirect_uri") != p.redirectURI {
+		http.Error(w, "redirect_uri is not the registered one", http.StatusBadRequest)
+		return
+	}
 	if r.Method == http.MethodGet {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		fmt.Fprint(w, `<!DOCTYPE html><form method="POST"><input name="username"><button>Sign in</button></form>`)
@@ -102,20 +120,17 @@ func (p *identityProvider) authorize(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "generate a code", http.StatusInternalServerError)
 		return
 	}
-	q := r.URL.Query()
 	p.mu.Lock()
 	p.codes[code] = pendingAuth{nonce: q.Get("nonce"), username: r.PostFormValue("username")}
 	p.mu.Unlock()
-	dest, err := url.Parse(q.Get("redirect_uri"))
-	if err != nil {
-		http.Error(w, "bad redirect_uri", http.StatusBadRequest)
-		return
-	}
+	// The registered URI, not the request's copy of it: equal by the
+	// check above, and nothing the request sent decides where it goes.
+	dest := *p.redirect
 	values := dest.Query()
 	values.Set("code", code)
 	values.Set("state", q.Get("state"))
 	dest.RawQuery = values.Encode()
-	http.Redirect(w, r, dest.String(), http.StatusFound) //nolint:gosec // G710: redirecting to the client's redirect_uri is the authorization endpoint's job; this provider is a loopback test fixture.
+	http.Redirect(w, r, dest.String(), http.StatusFound)
 }
 
 // token exchanges a code for a signed ID token naming its user.
@@ -200,10 +215,11 @@ func randomHex(n int) (string, error) {
 func runOIDC(ctx context.Context, args []string, _ io.Writer) error {
 	fs := flag.NewFlagSet("oidc", flag.ContinueOnError)
 	listen := fs.String("listen", "127.0.0.1:9000", "loopback address to serve on")
+	redirectURI := fs.String("redirect-uri", "https://server:8443/auth/callback", "the client's registered redirect URI")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	p, err := newIdentityProvider("http://" + *listen)
+	p, err := newIdentityProvider("http://"+*listen, *redirectURI)
 	if err != nil {
 		return err
 	}

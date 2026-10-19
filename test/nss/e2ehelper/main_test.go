@@ -21,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -305,14 +306,19 @@ func TestDatabaseSubcommands_ShouldFailWhenTheDatabaseIsNotNamed(t *testing.T) {
 	}
 }
 
-// providerServer starts the identity provider on an httptest server.
-func providerServer(t *testing.T) (*identityProvider, *httptest.Server) {
+// e2eRedirectURI is the redirect URI the e2e job's ssoosshd sends, its
+// public URL's /auth/callback.
+const e2eRedirectURI = "https://server:8443/auth/callback"
+
+// providerServer starts the identity provider on an httptest server, for a
+// client whose registered redirect URI is redirectURI.
+func providerServer(t *testing.T, redirectURI string) (*identityProvider, *httptest.Server) {
 	t.Helper()
 	var p *identityProvider
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { p.handler().ServeHTTP(w, r) }))
 	t.Cleanup(srv.Close)
 	var err error
-	if p, err = newIdentityProvider(srv.URL); err != nil {
+	if p, err = newIdentityProvider(srv.URL, redirectURI); err != nil {
 		t.Fatal(err)
 	}
 	return p, srv
@@ -324,11 +330,11 @@ func noRedirect() *http.Client {
 }
 
 func TestIdentityProvider_ShouldSignInThePostedUserWhenTheCodeIsExchanged(t *testing.T) {
-	p, srv := providerServer(t)
+	p, srv := providerServer(t, e2eRedirectURI)
 	client := noRedirect()
 
 	authorize := srv.URL + "/authorize?" + url.Values{
-		"redirect_uri": {"https://server:8443/auth/callback"}, "state": {"st"}, "nonce": {"nc"},
+		"redirect_uri": {e2eRedirectURI}, "state": {"st"}, "nonce": {"nc"},
 	}.Encode()
 	resp, err := client.PostForm(authorize, url.Values{"username": {"ada"}})
 	if err != nil {
@@ -366,6 +372,7 @@ func TestIdentityProvider_ShouldSignInThePostedUserWhenTheCodeIsExchanged(t *tes
 		name string
 		ok   bool
 	}{
+		{name: "should send the browser to the registered redirect URI when the form is posted", ok: callback.Scheme+"://"+callback.Host+callback.Path == e2eRedirectURI},
 		{name: "should carry the state back when the form is posted", ok: callback.Query().Get("state") == "st"},
 		{name: "should sign a token the JWKS key verifies when the code is exchanged", ok: verifyErr == nil},
 		{name: "should name the posted user when the token is read", ok: std.Subject == "ada" && private.Username == "ada"},
@@ -383,8 +390,13 @@ func TestIdentityProvider_ShouldSignInThePostedUserWhenTheCodeIsExchanged(t *tes
 }
 
 func TestIdentityProvider_ShouldRefuseBadRequestsWhenServing(t *testing.T) {
-	_, srv := providerServer(t)
+	_, srv := providerServer(t, e2eRedirectURI)
 	client := noRedirect()
+	// authorize is the authorization endpoint with redirectURI as the
+	// client's redirect_uri.
+	authorize := func(redirectURI string) string {
+		return srv.URL + "/authorize?" + url.Values{"redirect_uri": {redirectURI}, "state": {"st"}}.Encode()
+	}
 	tests := []struct {
 		name   string
 		do     func() (*http.Response, error)
@@ -395,9 +407,23 @@ func TestIdentityProvider_ShouldRefuseBadRequestsWhenServing(t *testing.T) {
 		{name: "should serve the JWKS when asked", status: http.StatusOK,
 			do: func() (*http.Response, error) { return client.Get(srv.URL + "/jwks") }},
 		{name: "should render the form when the authorization endpoint is fetched", status: http.StatusOK,
-			do: func() (*http.Response, error) { return client.Get(srv.URL + "/authorize") }},
+			do: func() (*http.Response, error) { return client.Get(authorize(e2eRedirectURI)) }},
 		{name: "should refuse a form post when it names no user", status: http.StatusBadRequest,
-			do: func() (*http.Response, error) { return client.PostForm(srv.URL+"/authorize", url.Values{}) }},
+			do: func() (*http.Response, error) { return client.PostForm(authorize(e2eRedirectURI), url.Values{}) }},
+		{name: "should refuse the form when the redirect_uri is foreign", status: http.StatusBadRequest,
+			do: func() (*http.Response, error) { return client.Get(authorize("https://attacker.example/auth/callback")) }},
+		{name: "should refuse a sign-in when the redirect_uri is foreign", status: http.StatusBadRequest,
+			do: func() (*http.Response, error) {
+				return client.PostForm(authorize("https://attacker.example/auth/callback"), url.Values{"username": {"ada"}})
+			}},
+		{name: "should refuse a sign-in when the redirect_uri only extends the registered one", status: http.StatusBadRequest,
+			do: func() (*http.Response, error) {
+				return client.PostForm(authorize(e2eRedirectURI+"/../../evil"), url.Values{"username": {"ada"}})
+			}},
+		{name: "should refuse a sign-in when the redirect_uri is missing", status: http.StatusBadRequest,
+			do: func() (*http.Response, error) {
+				return client.PostForm(srv.URL+"/authorize", url.Values{"username": {"ada"}})
+			}},
 		{name: "should refuse a code when it was never issued", status: http.StatusBadRequest,
 			do: func() (*http.Response, error) {
 				return client.PostForm(srv.URL+"/token", url.Values{"code": {"never"}})
@@ -413,20 +439,24 @@ func TestIdentityProvider_ShouldRefuseBadRequestsWhenServing(t *testing.T) {
 			if resp.StatusCode != tt.status {
 				t.Errorf("status %d, want %d", resp.StatusCode, tt.status)
 			}
+			if tt.status == http.StatusBadRequest && resp.Header.Get("Location") != "" {
+				t.Errorf("a refused request redirected to %s", resp.Header.Get("Location"))
+			}
 		})
 	}
 }
 
 // fakeServer stands in for ssoosshd's login: /auth/login sends the browser
 // to the provider, /auth/callback lands it on /api/users/me, which names
-// the user the provider's code was for. It returns the server and its
-// certificate's PEM file.
-func fakeServer(t *testing.T, idp string) (*httptest.Server, string) {
+// the user the provider's code was for. idp returns the provider's URL,
+// read at each login. It returns the server and its certificate's PEM
+// file.
+func fakeServer(t *testing.T, idp func() string) (*httptest.Server, string) {
 	t.Helper()
 	var srv *httptest.Server
 	mux := http.NewServeMux()
 	mux.HandleFunc("/auth/login", func(w http.ResponseWriter, r *http.Request) {
-		target := idp + "/authorize?" + url.Values{"redirect_uri": {srv.URL + "/auth/callback"}, "state": {"st"}}.Encode()
+		target := idp() + "/authorize?" + url.Values{"redirect_uri": {srv.URL + "/auth/callback"}, "state": {"st"}}.Encode()
 		http.Redirect(w, r, target, http.StatusFound)
 	})
 	mux.HandleFunc("/auth/callback", func(w http.ResponseWriter, r *http.Request) {
@@ -450,8 +480,12 @@ func fakeServer(t *testing.T, idp string) (*httptest.Server, string) {
 }
 
 func TestRunLogin_ShouldPrintTheSignedInUserWhenTheFlowCompletes(t *testing.T) {
-	_, idp := providerServer(t)
-	srv, caFile := fakeServer(t, idp.URL)
+	// The server first, so the provider can be registered with its
+	// callback; the server reads the provider's URL only once asked.
+	var idpURL string
+	srv, caFile := fakeServer(t, func() string { return idpURL })
+	_, idp := providerServer(t, srv.URL+"/auth/callback")
+	idpURL = idp.URL
 	tests := []struct {
 		name    string
 		args    []string
@@ -487,5 +521,22 @@ func TestRunOIDC_ShouldServeUntilCanceledWhenStarted(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Error("oidc did not stop when canceled")
+	}
+}
+
+func TestNewIdentityProvider_ShouldRefuseARedirectURIWhenItIsNotAbsolute(t *testing.T) {
+	for _, uri := range []string{"", "/auth/callback", "server:8443/auth/callback", "https://", "://bad"} {
+		t.Run("should refuse "+strconv.Quote(uri)+" when it is the registered redirect URI", func(t *testing.T) {
+			if _, err := newIdentityProvider("http://127.0.0.1:9000", uri); err == nil {
+				t.Errorf("newIdentityProvider accepted redirect URI %q", uri)
+			}
+		})
+	}
+}
+
+func TestRunOIDC_ShouldFailWhenTheRedirectURIIsNotAbsolute(t *testing.T) {
+	err := run(t.Context(), []string{"oidc", "-listen", "127.0.0.1:0", "-redirect-uri", "/auth/callback"}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "not an absolute URL") {
+		t.Errorf("oidc with a relative redirect URI = %v, want it refused", err)
 	}
 }
