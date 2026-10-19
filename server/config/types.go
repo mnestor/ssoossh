@@ -50,7 +50,7 @@ type Config struct {
 	LDAP LDAPConfig `mapstructure:"ldap"`
 
 	// NSS serves POSIX accounts and groups from the directory to the
-	// ssoosshd-nss daemon on each host, authenticated by fleet API keys.
+	// ssoossh-nss daemon on each host, authenticated by fleet API keys.
 	// Disabled by default. See NSSConfig.
 	NSS NSSConfig `mapstructure:"nss"`
 

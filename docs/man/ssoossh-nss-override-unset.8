@@ -1,21 +1,21 @@
 .nh
-.TH "SSOOSSHD-NSS" "8" "Aug 2026" "ssoosshd-nss" ""
+.TH "SSOOSSH-NSS" "8" "Aug 2026" "ssoossh-nss" ""
 
 .SH NAME
-ssoosshd-nss-lookup-group - GetGroupRecord by groupName.
+ssoossh-nss-override-unset - Remove one user's override.
 
 
 .SH SYNOPSIS
-\fBssoosshd-nss lookup group NAME [flags]\fP
+\fBssoossh-nss override unset USER [flags]\fP
 
 
 .SH DESCRIPTION
-GetGroupRecord by groupName.
+Remove one user's override.
 
 
 .SH OPTIONS
 \fB-h\fP, \fB--help\fP[=false]
-	help for group
+	help for unset
 
 
 .SH OPTIONS INHERITED FROM PARENT COMMANDS
@@ -30,13 +30,9 @@ GetGroupRecord by groupName.
 \fB--overrides\fP="/etc/ssoossh/nss-overrides.yaml"
 	the host override file
 
-.PP
-\fB--socket\fP="/run/systemd/userdb/com.github.mnestor.ssoossh"
-	the userdb socket
-
 
 .SH SEE ALSO
-\fBssoosshd-nss-lookup(8)\fP
+\fBssoossh-nss-override(8)\fP
 
 
 .SH HISTORY

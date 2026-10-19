@@ -21,7 +21,7 @@ import (
 // not answer, after everything it could find out was printed.
 var errStatusFailed = errors.New("status: a check failed")
 
-// newStatusCommand is `ssoosshd-nss status`.
+// newStatusCommand is `ssoossh-nss status`.
 func newStatusCommand(root *RootCommand) *leaf {
 	return &leaf{
 		root:  root,

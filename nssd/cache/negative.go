@@ -67,7 +67,7 @@ func (n *Negative) Delete(key string) {
 	delete(n.entries, key)
 }
 
-// Clear forgets every miss, for `ssoosshd-nss cache -E`.
+// Clear forgets every miss, for `ssoossh-nss cache -E`.
 func (n *Negative) Clear() {
 	n.mu.Lock()
 	defer n.mu.Unlock()

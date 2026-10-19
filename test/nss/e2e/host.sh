@@ -1,8 +1,8 @@
 #!/bin/sh
 # host.sh: the NSS end-to-end job's host container, a Debian 12 machine
 # with nss-systemd on passwd, group and shadow and no systemd as PID 1, so
-# ssoosshd-nss binds the userdb socket itself (as test/nss/integration's
-# job one). /e2e/bin holds ssoosshd-nss built on the host; /e2e/it is
+# ssoossh-nss binds the userdb socket itself (as test/nss/integration's
+# job one). /e2e/bin holds ssoossh-nss built on the host; /e2e/it is
 # test/nss/integration for lib.sh.
 #
 #   host.sh daemon    the container's command: wait for the fleet key and
@@ -40,7 +40,7 @@ api_key_file: /etc/ssoossh/nss.key
 entry_cache_timeout: $TTL
 EOC
 	chmod 0600 /etc/ssoossh/nss.yaml /etc/ssoossh/nss.key
-	SYSTEMD_BYPASS_USERDB=com.github.mnestor.ssoossh exec /e2e/bin/ssoosshd-nss run \
+	SYSTEMD_BYPASS_USERDB=com.github.mnestor.ssoossh exec /e2e/bin/ssoossh-nss run \
 		--listen "$SOCK" --cache-file "$CACHE" 2>>"$LOG"
 	;;
 synced)

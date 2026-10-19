@@ -1,21 +1,21 @@
 .nh
-.TH "SSOOSSHD-NSS" "8" "Aug 2026" "ssoosshd-nss" ""
+.TH "SSOOSSH-NSS" "8" "Aug 2026" "ssoossh-nss" ""
 
 .SH NAME
-ssoosshd-nss-override-unset - Remove one user's override.
+ssoossh-nss-lookup-memberships - GetMemberships by userName, streamed.
 
 
 .SH SYNOPSIS
-\fBssoosshd-nss override unset USER [flags]\fP
+\fBssoossh-nss lookup memberships NAME [flags]\fP
 
 
 .SH DESCRIPTION
-Remove one user's override.
+GetMemberships by userName, streamed.
 
 
 .SH OPTIONS
 \fB-h\fP, \fB--help\fP[=false]
-	help for unset
+	help for memberships
 
 
 .SH OPTIONS INHERITED FROM PARENT COMMANDS
@@ -30,9 +30,13 @@ Remove one user's override.
 \fB--overrides\fP="/etc/ssoossh/nss-overrides.yaml"
 	the host override file
 
+.PP
+\fB--socket\fP="/run/systemd/userdb/com.github.mnestor.ssoossh"
+	the userdb socket
+
 
 .SH SEE ALSO
-\fBssoosshd-nss-override(8)\fP
+\fBssoossh-nss-lookup(8)\fP
 
 
 .SH HISTORY

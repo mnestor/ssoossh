@@ -1,5 +1,5 @@
 #!/bin/sh
-# Runs the ssoosshd-nss integration jobs (test/nss/integration) in docker,
+# Runs the ssoossh-nss integration jobs (test/nss/integration) in docker,
 # the same way CI's nss-integration workflow does.
 #
 #   scripts/nss-integration.sh            # both jobs
@@ -35,7 +35,7 @@ fi
 # which is how CI runs it: the Go toolchain lives in the build image, and
 # the jobs need a bare runner's docker.
 if [ "${NSS_IT_PREBUILT:-}" = 1 ]; then
-	for f in ssoosshd-nss nss-fakeupstream; do
+	for f in ssoossh-nss nss-fakeupstream; do
 		[ -f "$bin/$f" ] || {
 			echo "nss-integration: NSS_IT_PREBUILT=1 but $bin/$f is missing" >&2
 			exit 1
@@ -44,7 +44,7 @@ if [ "${NSS_IT_PREBUILT:-}" = 1 ]; then
 	done
 else
 	mkdir -p "$bin"
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOFIPS140=v1.0.0 go build -trimpath -o "$bin/ssoosshd-nss" ./cmd/ssoosshd-nss
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOFIPS140=v1.0.0 go build -trimpath -o "$bin/ssoossh-nss" ./cmd/ssoossh-nss
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o "$bin/nss-fakeupstream" ./test/nss/fakeupstream
 fi
 docker build -q -t "$image" test/nss/integration >/dev/null

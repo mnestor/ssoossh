@@ -1,6 +1,6 @@
 // Package varlink is a minimal varlink codec with a client half and a
 // server half, enough to speak systemd's io.systemd.UserDatabase interface
-// from ssoosshd-nss and to send it one-way calls from the ssoossh client.
+// from ssoossh-nss and to send it one-way calls from the ssoossh client.
 //
 // The wire format (https://varlink.org/Method-Call): every message is one
 // JSON object followed by a NUL byte. A call is

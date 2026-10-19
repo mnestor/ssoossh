@@ -1,8 +1,8 @@
-## <summary>ssoosshd-nss, the ssoossh NSS daemon (a systemd userdb service).</summary>
+## <summary>ssoossh-nss, the ssoossh NSS daemon (a systemd userdb service).</summary>
 
 ########################################
 ## <summary>
-##	Execute ssoosshd-nss in its domain.
+##	Execute ssoossh-nss in its domain.
 ## </summary>
 ## <param name="domain">
 ##	<summary>
@@ -12,16 +12,16 @@
 #
 interface(`ssoossh_nss_domtrans',`
 	gen_require(`
-		type ssoosshd_nss_t, ssoosshd_nss_exec_t;
+		type ssoossh_nss_t, ssoossh_nss_exec_t;
 	')
 
 	corecmd_search_bin($1)
-	domtrans_pattern($1, ssoosshd_nss_exec_t, ssoosshd_nss_t)
+	domtrans_pattern($1, ssoossh_nss_exec_t, ssoossh_nss_t)
 ')
 
 ########################################
 ## <summary>
-##	Connect to ssoosshd-nss over a unix stream socket. Every
+##	Connect to ssoossh-nss over a unix stream socket. Every
 ##	nsswitch_domain may already; this is for a domain that resolves
 ##	users without being one.
 ## </summary>
@@ -33,15 +33,15 @@ interface(`ssoossh_nss_domtrans',`
 #
 interface(`ssoossh_nss_stream_connect',`
 	gen_require(`
-		type ssoosshd_nss_t;
+		type ssoossh_nss_t;
 	')
 
-	allow $1 ssoosshd_nss_t:unix_stream_socket connectto;
+	allow $1 ssoossh_nss_t:unix_stream_socket connectto;
 ')
 
 ########################################
 ## <summary>
-##	Read the ssoosshd-nss configuration, the fleet key included.
+##	Read the ssoossh-nss configuration, the fleet key included.
 ## </summary>
 ## <param name="domain">
 ##	<summary>
@@ -51,9 +51,9 @@ interface(`ssoossh_nss_stream_connect',`
 #
 interface(`ssoossh_nss_read_config',`
 	gen_require(`
-		type ssoosshd_nss_conf_t;
+		type ssoossh_nss_conf_t;
 	')
 
 	files_search_etc($1)
-	read_files_pattern($1, ssoosshd_nss_conf_t, ssoosshd_nss_conf_t)
+	read_files_pattern($1, ssoossh_nss_conf_t, ssoossh_nss_conf_t)
 ')

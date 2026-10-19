@@ -1,4 +1,4 @@
-# ssoosshd-nss configuration, ssoosshd-nss(8).
+# ssoossh-nss configuration, ssoossh-nss(8).
 #
 # Installed as /etc/ssoossh/nss.yaml, root-only (0600). The daemon refuses a
 # file anyone but root can read or write, and never consults a caller's
@@ -16,7 +16,7 @@
 #   - server,
 #   - tls_ca_file or tls_spki_pin, and
 #   - the fleet key file named by api_key_file,
-# then `systemctl enable --now ssoosshd-nss.socket`. As shipped the daemon
+# then `systemctl enable --now ssoossh-nss.socket`. As shipped the daemon
 # refuses to start: it has nothing to trust until one of the two TLS
 # options is set, and it uses the system trust store only when tls_ca_file
 # says so.

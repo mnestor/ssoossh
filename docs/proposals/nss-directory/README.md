@@ -23,7 +23,7 @@ references drift; re-check before relying on one.
 | --- | --- | --- | --- |
 | 1 | [Server API](1-server-api.md): `/api/nss/*`, `posix_users`, attribute mapping, gecos template, fleet keys, usage table, mail, config | `mnestor/ssoossh` | nothing |
 | 2 | [Server web UI](2-server-webui.md): key admin pages, rotation report (the shell preference was removed 2026-10-18 after the threat review: the shell comes from the directory and host policy only) | `mnestor/ssoossh` (`frontend/`) | 1 |
-| 3 | [NSS daemon](3-nss-daemon.md): `ssoosshd-nss` as a systemd userdb service, `internal/varlink`, packaging, SELinux | `mnestor/ssoossh` | 1 (wire) |
+| 3 | [NSS daemon](3-nss-daemon.md): `ssoossh-nss` as a systemd userdb service, `internal/varlink`, packaging, SELinux | `mnestor/ssoossh` | 1 (wire) |
 
 Parts 1 and 3 can proceed in parallel once the wire JSON in Part 1 is
 frozen. Run the [open checks](#open-checks) before starting Part 3.
@@ -125,7 +125,7 @@ systemd's rather than ours:
 ```
  caller (sudo, sshd, ls)                        host                      server
  +----------------------+   varlink, AF_UNIX  +----------------+  HTTPS  +-----------+
- | glibc -> nss-systemd | ------------------> | ssoosshd-nss   | ------> | ssoosshd  |
+ | glibc -> nss-systemd | ------------------> | ssoossh-nss   | ------> | ssoosshd  |
  | systemd's module,    | /run/systemd/userdb/| Go, root       | pinned  | /api/nss/*|
  | not ours             | com.github.mnestor. | cache, policy  | + key   | Part 1    |
  +----------------------+ ssoossh             | Part 3         |         +-----------+
@@ -136,7 +136,7 @@ systemd's rather than ours:
   queries every socket in `/run/systemd/userdb/` in parallel and turns
   JSON user and group records into `struct passwd` / `struct group`. We
   write no code that runs inside callers.
-- `ssoosshd-nss` implements systemd's `io.systemd.UserDatabase` varlink
+- `ssoossh-nss` implements systemd's `io.systemd.UserDatabase` varlink
   interface and does everything else: pinned HTTPS with the fleet key, the
   cache, host-side options. One process to audit.
 
@@ -194,11 +194,11 @@ Taken 2026-10-09 and 2026-10-10:
 - Service enrollment codes: left as is.
 - PAM hardening PRs ship first; SELinux ships as `ssoossh-nss-selinux`,
   built from this repo (2026-10-10).
-- ~~Packaging (2026-10-10): one `ssoosshd-nss` package carries the daemon
+- ~~Packaging (2026-10-10): one `ssoossh-nss` package carries the daemon
   and `libnss_ssoossh.so.2`, the module built here with `zig cc`.~~
   Superseded 2026-10-11: the package carries the daemon and its systemd
   units only (U1).
-- Daemon placement: `ssoosshd-nss` is its own binary (`cmd/ssoosshd-nss`,
+- Daemon placement: `ssoossh-nss` is its own binary (`cmd/ssoossh-nss`,
   Linux-only) in `mnestor/ssoossh`, sharing `internal/` packages; never a
   subcommand of the `ssoossh` client. ~~`mnestor/ssoossh-nss` is C-only.~~
   No `mnestor/ssoossh-nss` repo (U1).
@@ -222,7 +222,7 @@ Taken 2026-10-09 and 2026-10-10:
 
 Taken 2026-10-11:
 
-- Host interface: systemd userdb. `ssoosshd-nss` implements
+- Host interface: systemd userdb. `ssoossh-nss` implements
   `io.systemd.UserDatabase` on
   `/run/systemd/userdb/com.github.mnestor.ssoossh`; stock `nss-systemd`
   is the glibc side; the module part was removed (U1).
@@ -320,7 +320,7 @@ are resolved. R35 is a new requirement from the same review, not a defect.
 | R23 | No rule for the POSIX `name` from directory attribute to certificate principal to `getpwnam`. The server lower-cased, the daemon did not, and the regex rejected dots and upper case that directories and IdPs use | Name attribute stored verbatim; byte-for-byte match on server and daemon; validation is systemd's relaxed rules (`valid_user_group_name(VALID_USER_RELAX)`, `src/basic/user-util.c`) plus a 32-byte cap, because `nss-systemd` applies exactly those before calling any service; lower-casing and `case_sensitive` removed; the sync raises an audit alert when a linked person's `username` claim differs from their POSIX name, since that principal can then never log in | 1, 3 |
 | R24 | `status` had no transitions and no bridge to the existing `users.disabled_at` / `disabled_source` | Derived at response time: `deleted_at` set is `deleted`; else the linked person's `users.disabled_at` (admin, SOC or ldap_sync) or the directory's own `dir_disabled` is `disabled`; else `active`. A SOC disable locks hosts on the next refresh with no new path | 1 |
 | R25 | Part 2 gated on `nss.enabled` and the key-group role, which Part 1 never exposed | Part 1 adds `nss_enabled` beside `mail_enabled` in the settings payload and `is_nss_key_admin` beside `is_admin`/`is_soc`/`is_auditor` on `/api/users/me` | 1, 2 |
-| R26 | Nothing created home directories or warned about nscd | `hosts/nss.md` requires `pam_mkhomedir` or `oddjob-mkhomedir` in the session stack and says nscd/unscd must not cache passwd and group; `ssoosshd-nss status` reports a running nscd | 3 |
+| R26 | Nothing created home directories or warned about nscd | `hosts/nss.md` requires `pam_mkhomedir` or `oddjob-mkhomedir` in the session stack and says nscd/unscd must not cache passwd and group; `ssoossh-nss status` reports a running nscd | 3 |
 | R27 | The `privileged` section was undecided and open check 1 was speculative | Sent only when the peer uid is 0, else omitted with `incomplete: true`. From source: `["*"]` gives `sp_pwdp = *`, an empty list gives `!*`, `locked` gives `sp_expire = 1`, and `sp_lstchg` is -1 when unset (`userdb-glue.c:160-178`). OpenSSH's `UsePAM no` path treats only a `!` prefix as locked, so `*` passes; check 1 is now a confirmation | 3 |
 | R28 | Multi-instance behaviour unstated | Usage flush is an additive upsert; the rate limiter, server negative cache and miss-alert counters are per instance and accepted as such. Scheduler jobs run in `serve` and `serve api` only (`BootstrapSigner` registers none) | 1 |
 | R29 | Two entries sharing a uid was unspecified | Neither is served while the collision lasts; audit alert `nss_uid_collision` at most daily per uid; fail closed | 1 |
@@ -342,7 +342,7 @@ systemd `main` source unless marked otherwise.
 
 | # | Change | Resolution | Part |
 | --- | --- | --- | --- |
-| U1 | No NSS module of our own | `ssoosshd-nss` implements `io.systemd.UserDatabase`; `nss-systemd` does the glibc side. The module part was removed; no `ssoossh-nss` repo, no zig module build, no socket protocol doc. `nss-systemd` sets `USERDB_EXCLUDE_SERVER_NSS` by default (`src/nss-systemd/userdb-glue.c:16-30`; split out of `USERDB_EXCLUDE_NSS` on 2026-10-15 with no functional change), which skips the `io.systemd.Multiplexer` relay (`src/shared/userdb.c:690`), so user and membership lookups arrive from the calling process and R5's sshd check works; U13 covers the environment override | 3 |
+| U1 | No NSS module of our own | `ssoossh-nss` implements `io.systemd.UserDatabase`; `nss-systemd` does the glibc side. The module part was removed; no `ssoossh-nss` repo, no zig module build, no socket protocol doc. `nss-systemd` sets `USERDB_EXCLUDE_SERVER_NSS` by default (`src/nss-systemd/userdb-glue.c:16-30`; split out of `USERDB_EXCLUDE_NSS` on 2026-10-15 with no functional change), which skips the `io.systemd.Multiplexer` relay (`src/shared/userdb.c:690`), so user and membership lookups arrive from the calling process and R5's sshd check works; U13 covers the environment override | 3 |
 | U2 | Platform floor | systemd 245+ (userdb arrived in 245, systemd `NEWS`), glibc, `systemd` in `nsswitch.conf`. The daemon checks the `passwd:`/`group:` lines at start and reports a missing entry in `status`. RHEL 8 and musl out of scope; a musl route, if ever needed, is an nscd v2 listener in the same daemon | 3 |
 | U3 | "Unavailable" reaches callers as "not found" | Accepted. `nss-systemd` queries every service in parallel and a `NoRecordFound` from any of them wins over other errors (`src/shared/userdb.c:440-448`); systemd's own services always answer `NoRecordFound` for our users. Mitigated by socket activation (lookups wait through restarts) and the persistent cache | 3 |
 | U4 | Caller timeout is systemd's, not ours | varlink's default is 45 s (`src/libsystemd/sd-varlink/sd-varlink.c:47`) and userdb sets no shorter one. The daemon answers every call within `socket_answer_deadline` and never leaves a connection unaccepted; over the concurrency cap it answers `ServiceNotAvailable` at once | 3 |
@@ -353,7 +353,7 @@ systemd `main` source unless marked otherwise.
 | U9 | `SYSTEMD_BYPASS_USERDB` / `SYSTEMD_ONLY_USERDB` honoured in setuid callers | Threat model item 6: fail-closed except deny-by-group rules. The daemon's own unit sets `SYSTEMD_BYPASS_USERDB` to its service name so it can never recurse into itself | README, 3 |
 | U10 | `refresh_user` op had no home | `com.github.mnestor.ssoossh.NSS.RefreshUser` varlink method on the same socket, sent one-way by `ssoossh host principals`; R6 limits apply | 3 |
 | U11 | SELinux for a socket systemd creates under `/run/systemd/userdb/` | Open (check 3): confirm the label systemd gives the activation socket and that `nsswitch_domain` may connect to it | 3 |
-| U12 | `GetMemberships` carries a membership as a group name, and `initgroups` resolves each name with the NSS exclusion cleared (`src/nss-systemd/nss-systemd.c:1025`), so through `files` first. A membership listed by its directory name was therefore granted the local group of that name: a directory `users` (gid 2005) made its members members of the local `users` (gid 100), and a directory `wheel` or `docker` would do the same, while the directory group itself, refused as a local name (U8), resolved to nothing and nothing was logged (seen on AlmaLinux 9) | Memberships match on gid, never on name (decided 2026-10-18 by the owner). Per membership, first match wins: a gid outside `min_id..max_id` is dropped; a gid a local group has is listed under the local group's name, which resolves to that same gid; a name a local group has with another gid is a name collision, dropped (userdb cannot carry a gid without a name that resolves to it, so the member does not get the directory gid on that host) and warned about once per daemon run; an invalid or `filter_groups` name is dropped; otherwise the directory name is listed. A colliding group answer is still not served by name or gid. `require_groups` is checked against the memberships kept. `ssoosshd-nss status` lists collisions and range refusals until SIGHUP. Renaming one of the two groups is the fix. Those per-group lookups go through `systemd-userdbd` when it is running, so they are never the sshd peer | 3 |
+| U12 | `GetMemberships` carries a membership as a group name, and `initgroups` resolves each name with the NSS exclusion cleared (`src/nss-systemd/nss-systemd.c:1025`), so through `files` first. A membership listed by its directory name was therefore granted the local group of that name: a directory `users` (gid 2005) made its members members of the local `users` (gid 100), and a directory `wheel` or `docker` would do the same, while the directory group itself, refused as a local name (U8), resolved to nothing and nothing was logged (seen on AlmaLinux 9) | Memberships match on gid, never on name (decided 2026-10-18 by the owner). Per membership, first match wins: a gid outside `min_id..max_id` is dropped; a gid a local group has is listed under the local group's name, which resolves to that same gid; a name a local group has with another gid is a name collision, dropped (userdb cannot carry a gid without a name that resolves to it, so the member does not get the directory gid on that host) and warned about once per daemon run; an invalid or `filter_groups` name is dropped; otherwise the directory name is listed. A colliding group answer is still not served by name or gid. `require_groups` is checked against the memberships kept. `ssoossh-nss status` lists collisions and range refusals until SIGHUP. Renaming one of the two groups is the fix. Those per-group lookups go through `systemd-userdbd` when it is running, so they are never the sshd peer | 3 |
 | U13 | `SYSTEMD_NSS_SERVER_SIDE_NSS=1` in a caller's environment clears `USERDB_EXCLUDE_SERVER_NSS` (`userdb-glue.c:23`), so its lookups go through the multiplexer and the daemon's peer is `systemd-userwork` | Threat model item 6: the sshd freshness refresh is skipped for that caller and the entry ages out at the normal TTL. Fail-safe; no mitigation | 3 |
 
 ## Open checks
@@ -395,7 +395,7 @@ service. Evidence is kept with the implementation work.
 | --- | --- |
 | 1 | Passes where `shadow:` lists `systemd`: `getent shadow` gives `*` and empty change fields, `locked` gives `sp_expire = 1`, certificate logins succeed and locked records are refused under both `UsePAM` settings. Without it (Alma 9 as shipped) `UsePAM yes` refuses every directory user and `UsePAM no` admits a locked one, so `systemd` on `shadow:` joins the platform floor |
 | 2 | Passes: no lookup failed across restarts (longest wait 21 ms). Past the start limit the socket unit fails too and lookups are a quick not-found until `reset-failed` |
-| 3 | First half: the socket file is `systemd_userdbd_runtime_t`; the socket takes the domain of the service process, so the policy needs `allow nsswitch_domain ssoosshd_nss_t:unix_stream_socket connectto;`. Every caller seen (`sshd_t`, `sshd_session_t`, `systemd_logind_t`, `systemd_userdbd_t`) was denied only that. When `systemd-userwork` cannot connect (EL10), a directory user's supplementary groups drop out silently. The policy itself is untested |
+| 3 | First half: the socket file is `systemd_userdbd_runtime_t`; the socket takes the domain of the service process, so the policy needs `allow nsswitch_domain ssoossh_nss_t:unix_stream_socket connectto;`. Every caller seen (`sshd_t`, `sshd_session_t`, `systemd_logind_t`, `systemd_userdbd_t`) was denied only that. When `systemd-userwork` cannot connect (EL10), a directory user's supplementary groups drop out silently. The policy itself is untested |
 | 4 | `sshd-session` lives at three distro paths and `/usr/sbin/sshd-session` exists nowhere; moot, because the exe check cannot work with an empty bounding set (R5 now uses the cgroup) |
 | 5 | rpm dependency `libnss_systemd.so.2()(64bit)` on every family (`systemd-libs` on EL and Fedora, `systemd` on Leap); file-path dependencies fail on EL10. deb `libnss-systemd`, `systemd (>= 245)`; the oldest target is Ubuntu 20.04's 245.4 |
 | 6 | Passes on 245 (direct connection), 252 and 257: lookups come from the calling process; `ServiceNotAvailable` is a not-found in 2 to 5 ms; a service that never answers holds callers the full 45 s; local group memberships survive (U12; since 2026-10-18 only by gid) |

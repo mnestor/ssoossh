@@ -2,7 +2,7 @@ package apitypes
 
 // The NSS directory lookups: GET /api/nss/user/name/:name,
 // /api/nss/user/uid/:uid, /api/nss/group/name/:name and
-// /api/nss/group/gid/:gid. A host's ssoosshd-nss daemon calls them to
+// /api/nss/group/gid/:gid. A host's ssoossh-nss daemon calls them to
 // resolve a POSIX name or id, authenticated by a fleet key rather than a
 // session. Every response is wrapped in Envelope like the rest of the API.
 // See docs/proposals/nss-directory/1-server-api.md.

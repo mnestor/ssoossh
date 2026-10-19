@@ -1,6 +1,6 @@
 [Unit]
 Description=ssoossh NSS daemon userdb socket
-Documentation=man:ssoosshd-nss(8) https://github.com/mnestor/ssoossh
+Documentation=man:ssoossh-nss(8) https://github.com/mnestor/ssoossh
 # nss-user-lookup.target is the point after which user and group lookups
 # are expected to work. Pulling it in and ordering this socket before it
 # means that once anything waits for the target, a lookup of a directory
@@ -13,7 +13,7 @@ Wants=nss-user-lookup.target
 # The userdb service name, com.github.mnestor.ssoossh, is the socket's file
 # name: nss-systemd queries every socket in /run/systemd/userdb/ and sends
 # that name in each call. systemd holds this socket across daemon restarts,
-# so a lookup issued while ssoosshd-nss restarts waits and then succeeds
+# so a lookup issued while ssoossh-nss restarts waits and then succeeds
 # rather than failing (measured on systemd 252 and 257).
 ListenStream=/run/systemd/userdb/com.github.mnestor.ssoossh
 # World-connectable: every process on the host resolves users, setuid

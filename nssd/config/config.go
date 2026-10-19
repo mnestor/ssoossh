@@ -1,4 +1,4 @@
-// Package config loads and validates ssoosshd-nss's configuration,
+// Package config loads and validates ssoossh-nss's configuration,
 // /etc/ssoossh/nss.yaml, together with the fleet key file and the host
 // override file it names. Option names follow sssd.conf(5), as Part 3 of
 // docs/proposals/nss-directory says.

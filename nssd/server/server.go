@@ -1,4 +1,4 @@
-// Package server owns ssoosshd-nss's sockets: the userdb socket, from
+// Package server owns ssoossh-nss's sockets: the userdb socket, from
 // socket activation (LISTEN_FDS) or bound itself for development and
 // tests, its accept loop with the timing rules, peer credentials and the
 // sshd check, and the admin socket the CLI talks to. Part 3 of

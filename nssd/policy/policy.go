@@ -1,4 +1,4 @@
-// Package policy holds ssoosshd-nss's host-side rules: the local
+// Package policy holds ssoossh-nss's host-side rules: the local
 // short-circuit against /etc/passwd and /etc/group, the sanity rules every
 // upstream answer must pass, host overrides, and the home and shell
 // resolution, all from Part 3 of docs/proposals/nss-directory ("Request
@@ -94,7 +94,7 @@ func New(cfg *config.Config, paths Paths, log *slog.Logger) *Engine {
 }
 
 // Reload makes the next lookup re-read every host file, for SIGHUP and
-// the admin socket's reload after `ssoosshd-nss override` edits the file.
+// the admin socket's reload after `ssoossh-nss override` edits the file.
 func (e *Engine) Reload() {
 	e.passwd.invalidate()
 	e.group.invalidate()

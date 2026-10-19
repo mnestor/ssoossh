@@ -128,7 +128,7 @@ Worth doing eventually; not started because nothing needs it yet.
 
 The [NSS directory](/ssoossh/operations/nss/) serves POSIX users and groups
 to hosts through systemd userdb: `nss-systemd`, which systemd ships, is the
-module inside every caller, and `ssoosshd-nss` is a userdb service. These were
+module inside every caller, and `ssoossh-nss` is a userdb service. These were
 considered and declined.
 
 ### Declined: an NSS module of our own

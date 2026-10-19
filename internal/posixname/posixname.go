@@ -1,5 +1,5 @@
 // Package posixname holds the POSIX account name rules and the gecos
-// sanitiser shared by ssoosshd and ssoosshd-nss, so the server never stores
+// sanitiser shared by ssoosshd and ssoossh-nss, so the server never stores
 // or serves a name a host would refuse, and never serves a gecos field a
 // host would have to mangle.
 //

@@ -385,7 +385,7 @@ var manOwners = map[string]manPageOwner{
 	// The server's root and per-subcommand pages, plus its config page.
 	"ssoosshd": {packages: serverPackageIDs},
 	// The NSS daemon's root and per-subcommand pages.
-	"ssoosshd-nss": {packages: []string{"nss"}},
+	"ssoossh-nss": {packages: []string{"nss"}},
 }
 
 // ownerFor returns the owner key for a man page filename.
@@ -394,8 +394,8 @@ func ownerFor(name string) string {
 	// Longest prefix first: every NSS daemon page name starts with the
 	// server's prefix, and every server page name with the client's, so
 	// the order here is the whole discrimination.
-	case strings.HasPrefix(name, "ssoosshd-nss"):
-		return "ssoosshd-nss"
+	case strings.HasPrefix(name, "ssoossh-nss"):
+		return "ssoossh-nss"
 	case strings.HasPrefix(name, "ssoosshd"):
 		return "ssoosshd"
 	case strings.HasPrefix(name, "ssoossh"):

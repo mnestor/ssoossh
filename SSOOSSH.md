@@ -47,7 +47,7 @@
 
   ### Client (ssoossh)
   - Runs on macOS, Linux and Windows.
-  - Commands: `ssh login|logout|proxycommand|inspect|config`, `host principals|mapping list|add|remove|check`, `service enroll|retrieve`, `ca`, `version`. `host principals` also asks the local ssoosshd-nss to refresh the user: one-way, over its local socket, never the network.
+  - Commands: `ssh login|logout|proxycommand|inspect|config`, `host principals|mapping list|add|remove|check`, `service enroll|retrieve`, `ca`, `version`. `host principals` also asks the local ssoossh-nss to refresh the user: one-way, over its local socket, never the network.
   - A new keypair is generated for every new certificate. Keys go to ssh-agent, or to files when `fallback_file_agent` allows. A preflight store-and-remove round trip runs before the request is made.
   - Key type and size are steered, FIPS-aware. CA public keys are cached and can be a list. `service retrieve` has an offline grace period.
   - Certificate extensions can be opted out in config or with the `--no-*` flags.
@@ -64,11 +64,11 @@
   - `forbidden_certificate_extensions` is subtracted after flags and cannot be re-added.
   - This is a guardrail, not a security boundary, but the shipped client must honour it.
 
-  ### ssoosshd-nss (host daemon, Linux)
+  ### ssoossh-nss (host daemon, Linux)
   - A systemd userdb service on /run/systemd/userdb/com.github.mnestor.ssoossh, socket-activated; nss-systemd is the glibc side. Floor: systemd 245+, glibc, `systemd` on the passwd, group and shadow lines.
-  - Local accounts and groups always win: a directory membership is matched to a local group by gid, never by name, and out-of-range ids and name collisions are refused and listed in `ssoosshd-nss status`.
+  - Local accounts and groups always win: a directory membership is matched to a local group by gid, never by name, and out-of-range ids and name collisions are refused and listed in `ssoossh-nss status`.
   - TLS trust named explicitly: a CA file, an SPKI digest, or the host's system store as `tls_ca_file: system`, never by default; fleet key in a root-only file, a persistent cache whose user and group entries correct each other, a fresh read for an sshd login once an entry is older than `login_soft_ttl` (sshd recognised by uid 0 and its cgroup), a connection cap with a share kept for uid 0, an empty capability bounding set.
-  - Packages `ssoosshd-nss` (deb, rpm) and `ssoossh-nss-selinux` (rpm).
+  - Packages `ssoossh-nss` (deb, rpm) and `ssoossh-nss-selinux` (rpm).
 
   ### Web UI (SvelteKit, embedded in ssoosshd)
   - Approval page:

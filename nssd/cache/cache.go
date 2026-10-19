@@ -1,4 +1,4 @@
-// Package cache is ssoosshd-nss's record cache: a Store interface with a
+// Package cache is ssoossh-nss's record cache: a Store interface with a
 // memory and a SQLite implementation, the TTL rules that say whether an
 // entry is fresh, due a background refresh or expired, the in-memory
 // negative cache, the singleflight that lets a slow fetch finish into the
@@ -43,7 +43,7 @@ type UserEntry struct {
 	FetchedAt time.Time
 	// ExpiresAt is FetchedAt plus the user TTL.
 	ExpiresAt time.Time
-	// Stale is set by `ssoosshd-nss cache`: the entry is refetched on its
+	// Stale is set by `ssoossh-nss cache`: the entry is refetched on its
 	// next lookup but still served while the server is unreachable.
 	Stale bool
 }

@@ -94,7 +94,7 @@ func collect(into *[]int) func(json.RawMessage) error {
 }
 
 // TestClientOverUnixSocket runs several calls of every kind on one AF_UNIX
-// connection, in order, the way ssoosshd-nss and nss-systemd use one.
+// connection, in order, the way ssoossh-nss and nss-systemd use one.
 func TestClientOverUnixSocket(t *testing.T) {
 	// Short and outside t.TempDir(): macOS caps a socket path at 104 bytes,
 	// and a test's temporary directory there can be longer than that.

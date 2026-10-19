@@ -382,7 +382,7 @@ func TestRunBothManpagesExist(t *testing.T) {
 		t.Fatalf("run() failed: %v", err)
 	}
 
-	files := []string{"ssoossh.1", "ssoosshd.8", "ssoosshd-nss.8", "ssoosshd-nss-run.8", "ssoosshd-nss-lookup.8"}
+	files := []string{"ssoossh.1", "ssoosshd.8", "ssoossh-nss.8", "ssoossh-nss-run.8", "ssoossh-nss-lookup.8"}
 	for _, file := range files {
 		path := filepath.Join(outDir, file)
 		if _, err := os.Stat(path); err != nil {
@@ -557,9 +557,9 @@ func TestGenerateNSSManpage_ShouldWriteSectionEightPagesWhenRun(t *testing.T) {
 		page string
 		want string
 	}{
-		{name: "should title the root page for the daemon", page: "ssoosshd-nss.8", want: `.TH "SSOOSSHD-NSS" "8"`},
-		{name: "should document the run command's listen flag", page: "ssoosshd-nss-run.8", want: "listen"},
-		{name: "should document the override subcommands", page: "ssoosshd-nss-override-set.8", want: "override"},
+		{name: "should title the root page for the daemon", page: "ssoossh-nss.8", want: `.TH "SSOOSSH-NSS" "8"`},
+		{name: "should document the run command's listen flag", page: "ssoossh-nss-run.8", want: "listen"},
+		{name: "should document the override subcommands", page: "ssoossh-nss-override-set.8", want: "override"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -578,7 +578,7 @@ func TestGenerateNSSManpage_ShouldWriteSectionEightPagesWhenRun(t *testing.T) {
 // write failure is returned, not swallowed.
 func TestGenerateNSSManpage_ShouldFailWhenThePageCannotBeWritten(t *testing.T) {
 	outDir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(outDir, "ssoosshd-nss.8"), 0o755); err != nil {
+	if err := os.Mkdir(filepath.Join(outDir, "ssoossh-nss.8"), 0o755); err != nil {
 		t.Fatalf("create blocking directory: %v", err)
 	}
 	if err := generateNSSManpage(outDir, testManPageDateValue()); err == nil {

@@ -1,16 +1,16 @@
 .nh
-.TH "SSOOSSHD-NSS" "8" "Aug 2026" "ssoosshd-nss" ""
+.TH "SSOOSSH-NSS" "8" "Aug 2026" "ssoossh-nss" ""
 
 .SH NAME
-ssoosshd-nss-run - Run the daemon (the default with no subcommand).
+ssoossh-nss-run - Run the daemon (the default with no subcommand).
 
 
 .SH SYNOPSIS
-\fBssoosshd-nss run [flags] [args]\fP
+\fBssoossh-nss run [flags] [args]\fP
 
 
 .SH DESCRIPTION
-Runs the userdb service. Under systemd the userdb socket comes from ssoosshd-nss.socket (socket activation); otherwise --listen binds one. SIGHUP re-reads the host files and the fleet key and clears the 401 latch, the offline backoff and the group name collisions and refused groups that status lists.
+Runs the userdb service. Under systemd the userdb socket comes from ssoossh-nss.socket (socket activation); otherwise --listen binds one. SIGHUP re-reads the host files and the fleet key and clears the 401 latch, the offline backoff and the group name collisions and refused groups that status lists.
 
 
 .SH OPTIONS
@@ -44,7 +44,7 @@ Runs the userdb service. Under systemd the userdb socket comes from ssoosshd-nss
 
 
 .SH SEE ALSO
-\fBssoosshd-nss(8)\fP
+\fBssoossh-nss(8)\fP
 
 
 .SH HISTORY

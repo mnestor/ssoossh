@@ -16,7 +16,7 @@ import (
 	"github.com/mnestor/ssoossh/nssd/server"
 )
 
-// newOverrideCommand is `ssoosshd-nss override`.
+// newOverrideCommand is `ssoossh-nss override`.
 func newOverrideCommand(root *RootCommand) *leaf {
 	return &leaf{
 		root:  root,

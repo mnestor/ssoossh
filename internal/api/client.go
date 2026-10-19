@@ -97,7 +97,7 @@ type Config struct {
 	// decides which server is reached. With TLSCAFile the system trust
 	// store is never consulted, and SSL_CERT_FILE and SSL_CERT_DIR are
 	// ignored. Empty, with neither of the others, keeps the system trust
-	// store outside pinned mode. ssoosshd-nss sets it from its
+	// store outside pinned mode. ssoossh-nss sets it from its
 	// tls_ca_file.
 	TLSCAFile string
 
@@ -107,7 +107,7 @@ type Config struct {
 	// Linux Go builds that store from the distribution's bundle, or from
 	// SSL_CERT_FILE and SSL_CERT_DIR when the process environment sets
 	// them. It cannot be combined with TLSCAFile or SkipVerifySSL; with
-	// TLSSPKIPins both must hold. ssoosshd-nss sets it for
+	// TLSSPKIPins both must hold. ssoossh-nss sets it for
 	// "tls_ca_file: system".
 	TLSSystemRoots bool
 
@@ -139,13 +139,13 @@ type Config struct {
 	// DialTimeout bounds the TCP connect of each ordinary call, so an
 	// unreachable server fails fast while a slow answer still gets all of
 	// RequestTimeout. Zero keeps the standard library's 30 seconds. Like
-	// RequestTimeout it does not apply to the events stream. ssoosshd-nss
+	// RequestTimeout it does not apply to the events stream. ssoossh-nss
 	// sets it to 2 seconds.
 	DialTimeout time.Duration
 
 	// UserAgent replaces the User-Agent header this client sends, for a
-	// program other than the ssoossh client (ssoosshd-nss sends
-	// "ssoosshd-nss/<version>"). Empty keeps "ssoossh/<version> (<repo>)".
+	// program other than the ssoossh client (ssoossh-nss sends
+	// "ssoossh-nss/<version>"). Empty keeps "ssoossh/<version> (<repo>)".
 	UserAgent string
 
 	// Logger receives per-request tracing. Nil means none, and the caller
@@ -350,7 +350,7 @@ func (c *HTTPClient) send(ctx context.Context, method, path string, payload []by
 	c.traceRequest(ctx, req, payload)
 
 	// The bound a timeout here is reported against: the client's own, or
-	// the caller's deadline when that is sooner (ssoosshd-nss gives each
+	// the caller's deadline when that is sooner (ssoossh-nss gives each
 	// attempt its own).
 	timeout := c.timeout
 	if deadline, ok := ctx.Deadline(); ok {

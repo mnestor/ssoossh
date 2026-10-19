@@ -8,7 +8,7 @@ import (
 
 // The NSS directory's session-authenticated shapes: the fleet API key
 // administration under /api/nss/keys. The host-facing lookups are in
-// internal/apitypes, because the ssoosshd-nss daemon decodes them in Go.
+// internal/apitypes, because the ssoossh-nss daemon decodes them in Go.
 
 // NSSKeyResponse is one fleet API key. The secret is never part of it:
 // only NSSKeySecretResponse carries one, once.

@@ -1,13 +1,13 @@
 ---
 title: NSS directory
-description: Serve POSIX users and groups from the directory to hosts running ssoosshd-nss, with fleet keys, frozen ids and fail-closed collisions.
+description: Serve POSIX users and groups from the directory to hosts running ssoossh-nss, with fleet keys, frozen ids and fail-closed collisions.
 sidebar:
   order: 11
 ---
 
 The server half of host user lookups. With `nss.enabled`, `ssoosshd` keeps
 the directory's POSIX accounts and groups in its database and answers
-`ssoosshd-nss` on each host over `/api/nss/*`: a name or uid in, the account's
+`ssoossh-nss` on each host over `/api/nss/*`: a name or uid in, the account's
 uid, primary gid, groups, home, shell and display name out. The host side --
 installing the daemon, `nsswitch.conf`, SELinux, caching -- is on
 [Directory users on a host](/ssoossh/hosts/nss/).
@@ -275,7 +275,7 @@ The server sends the directory's home (else
 is the name) and shell (else
 [`nss.default_shell`](/ssoossh/reference/config/nss/#default_shell)). Nobody
 picks their own shell: it comes from the directory, and each host's
-`ssoosshd-nss` shell policy (see
+`ssoossh-nss` shell policy (see
 [Shells and overrides](/ssoossh/hosts/nss/#shells-and-overrides)) decides
 what it serves. The web UI's shell preference was
 removed on 2026-10-18 after the threat review: the shell comes from the
@@ -416,7 +416,7 @@ All NSS keys has one search field:
 
 - Text matches the key's name or group, or its creator's username or
   email, ignoring case, or the start of the key's id: paste a whole id
-  (`nss_5vqsreyx`) from an alert or `ssoosshd-nss status`, or its first
+  (`nss_5vqsreyx`) from an alert or `ssoossh-nss status`, or its first
   few characters, in either case.
 - An IP address (IPv4 or IPv6; an IPv4-mapped one is read as IPv4) or a CIDR
   range searches the usage instead: the keys a host used from that address

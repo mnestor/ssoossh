@@ -182,7 +182,7 @@ frontend-clean: ## Remove the built web UI
 # package until this has run; `make linux` and `make binaries` build no
 # packages and do not need it.
 .PHONY: selinux-nss selinux-nss-check
-selinux-nss: ## Build the ssoosshd-nss SELinux module (docker when no selinux-policy-devel)
+selinux-nss: ## Build the ssoossh-nss SELinux module (docker when no selinux-policy-devel)
 	scripts/build-nss-selinux.sh
 
 # What the policy CI job asks: the module builds against EL9's headers and
@@ -196,20 +196,20 @@ selinux-nss-check: ## Build the SELinux module and link it into the EL9 and EL10
 
 .PHONY: test test-server test-client test-internal test-nssd test-race cover cover-ci frontend-test csp-check
 
-# The ssoosshd-nss integration jobs, as the nss-integration workflow runs
+# The ssoossh-nss integration jobs, as the nss-integration workflow runs
 # them: the daemon against nss-systemd in Debian 12 containers, once
 # self-bound and once under systemd as PID 1. Needs docker; see
 # scripts/nss-integration.sh.
 .PHONY: nss-integration
-nss-integration: ## Run the ssoosshd-nss integration jobs in docker
+nss-integration: ## Run the ssoossh-nss integration jobs in docker
 	scripts/nss-integration.sh
 
 # The NSS end-to-end job, as the nss-integration workflow runs it: a
-# throwaway OpenLDAP, the real ssoosshd over HTTPS and ssoosshd-nss behind
+# throwaway OpenLDAP, the real ssoosshd over HTTPS and ssoossh-nss behind
 # nss-systemd, each in a Debian 12 container. Needs docker; see
 # scripts/nss-e2e.sh.
 .PHONY: nss-e2e
-nss-e2e: ## Run the NSS end-to-end job (OpenLDAP, ssoosshd, ssoosshd-nss) in docker
+nss-e2e: ## Run the NSS end-to-end job (OpenLDAP, ssoosshd, ssoossh-nss) in docker
 	scripts/nss-e2e.sh
 # server/frontend embeds server/frontend/dist. The unit suite includes tests
 # that assert on real UI assets, so the UI has to exist first.
@@ -592,14 +592,14 @@ REDOCLY ?= $(shell command -v redocly 2>/dev/null || echo "npx @redocly/cli@2.57
 openapi-lint:
 	$(REDOCLY) lint docs/openapi.yaml --config .redoclyrc.yaml
 
-# Generate man pages (ssoossh.1, ssoosshd.8 and ssoosshd-nss.8) from cobra commands.
+# Generate man pages (ssoossh.1, ssoosshd.8 and ssoossh-nss.8) from cobra commands.
 # Config format pages (ssoossh.yaml.5, ssoosshd.yaml.5) are hand-written and
 # not regenerated.
 # CGO_ENABLED=1 for the same reason `build` needs it: gendocs imports the
 # server command tree, which reaches the HSM key source's libpkcs11 binding.
 gendocs: ## Regenerate man pages from the cobra commands
 	CGO_ENABLED=1 go run ./internal/tools/gendocs docs/man
-	@echo "Man pages regenerated (ssoossh.1, ssoosshd.8, ssoosshd-nss.8)"
+	@echo "Man pages regenerated (ssoossh.1, ssoosshd.8, ssoossh-nss.8)"
 
 # The pages gendocs produces: the two roots plus one per cobra subcommand.
 # The glob matters. Hashing only ssoossh.1 and ssoosshd.8 (as this did
@@ -614,7 +614,7 @@ gendocs: ## Regenerate man pages from the cobra commands
 #
 # The .5 config-format pages are hand-written and are deliberately outside
 # this set; a gendocs run leaves them byte-identical.
-GENERATED_MAN := docs/man/ssoossh*.1 docs/man/ssoosshd*.8
+GENERATED_MAN := docs/man/ssoossh*.1 docs/man/ssoossh*.8
 
 STALE_MAN := Man pages are stale: a cobra command's name, description, or \
 subcommand set changed without the pages being regenerated -- a new \

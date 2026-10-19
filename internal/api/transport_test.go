@@ -243,7 +243,7 @@ func TestNewClient_UserAgent(t *testing.T) {
 		wantExact  bool
 	}{
 		{"should send the ssoossh client's user agent when none is configured", "", "ssoossh/", false},
-		{"should send the configured user agent verbatim when one is set", "ssoosshd-nss/1.2.3", "ssoosshd-nss/1.2.3", true},
+		{"should send the configured user agent verbatim when one is set", "ssoossh-nss/1.2.3", "ssoossh-nss/1.2.3", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

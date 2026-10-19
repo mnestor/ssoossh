@@ -10,7 +10,7 @@ import (
 	"github.com/mnestor/ssoossh/nssd/server"
 )
 
-// newCacheCommand is `ssoosshd-nss cache`, sss_cache's counterpart.
+// newCacheCommand is `ssoossh-nss cache`, sss_cache's counterpart.
 func newCacheCommand(root *RootCommand) *leaf {
 	var all, allUsers, allGroups bool
 	var user, group string

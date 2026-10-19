@@ -21,7 +21,7 @@ import (
 // configuration allows, shorter than systemd's 45 s.
 const lookupTimeout = 10 * time.Second
 
-// newLookupCommand is `ssoosshd-nss lookup`.
+// newLookupCommand is `ssoossh-nss lookup`.
 func newLookupCommand(root *RootCommand) *leaf {
 	var socket string
 	return &leaf{

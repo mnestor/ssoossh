@@ -66,7 +66,7 @@ import (
 // @tag.name                   auth
 // @tag.description            Browser-facing OIDC redirects
 // @tag.name                   nss
-// @tag.description            Called by the ssoosshd-nss host daemon, authenticated by a fleet API key
+// @tag.description            Called by the ssoossh-nss host daemon, authenticated by a fleet API key
 //
 // @securityDefinitions.apikey sessionCookie
 // @in                         cookie

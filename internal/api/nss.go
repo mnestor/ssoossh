@@ -14,7 +14,7 @@ import (
 	"github.com/mnestor/ssoossh/internal/apitypes"
 )
 
-// NSSClient is the set of NSS directory lookups ssoosshd-nss makes, each
+// NSSClient is the set of NSS directory lookups ssoossh-nss makes, each
 // authenticated by the fleet key in Config.KeyID and Config.KeySecret.
 // HTTPClient implements it. Kept apart from Client so the certificate
 // client's fakes do not have to grow four methods they never use.

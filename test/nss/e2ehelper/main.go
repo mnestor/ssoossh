@@ -1,6 +1,6 @@
 // Command e2ehelper is the test-only helper for the NSS end-to-end job
 // (test/nss/e2e, scripts/nss-e2e.sh), which runs the real ssoosshd against
-// a throwaway OpenLDAP and the real ssoosshd-nss behind nss-systemd. It
+// a throwaway OpenLDAP and the real ssoossh-nss behind nss-systemd. It
 // does the parts of that job no shipped binary does:
 //
 //	setup     write the server's TLS certificate and key, its SPKI pin and

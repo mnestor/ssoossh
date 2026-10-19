@@ -2,7 +2,7 @@ package api
 
 // Test methodology: an httptest TLS server with HTTP/2 enabled sits behind
 // a blackhole.Proxy, and the client is pinned to the server's key, as
-// ssoosshd-nss runs it. Dropping the client-to-server half of the proxied
+// ssoossh-nss runs it. Dropping the client-to-server half of the proxied
 // connection reproduces the field failure: the client's frames are
 // accepted by the socket and never reach the server, nothing is refused or
 // reset, and the connection stays in the client's pool.

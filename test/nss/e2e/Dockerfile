@@ -2,7 +2,7 @@
 # with what all three of the job's containers need, so one image serves
 # them all. The directory container runs slapd from it, the server
 # container runs ssoosshd and the helper, and the host container runs
-# ssoosshd-nss behind nss-systemd. The binaries and the scripts are mounted
+# ssoossh-nss behind nss-systemd. The binaries and the scripts are mounted
 # in at run time, not built in.
 FROM debian:12
 

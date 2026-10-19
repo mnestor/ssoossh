@@ -301,7 +301,7 @@ func TestDaemonEndToEnd(t *testing.T) {
 		t.Fatalf("override alone should print help: %v\n%s", err, out)
 	}
 
-	if !strings.Contains(h.errOut.String(), `"msg":"ssoosshd-nss started"`) {
+	if !strings.Contains(h.errOut.String(), `"msg":"ssoossh-nss started"`) {
 		t.Fatalf("should log the start:\n%s", h.errOut)
 	}
 }
@@ -482,11 +482,11 @@ func TestMainShouldReturnTheExitStatusWhenRun(t *testing.T) {
 	saved := os.Args
 	t.Cleanup(func() { os.Args = saved })
 
-	os.Args = []string{"ssoosshd-nss", "cache", "--help"}
+	os.Args = []string{"ssoossh-nss", "cache", "--help"}
 	if code := Main(); code != 0 {
 		t.Fatalf("got %d for --help", code)
 	}
-	os.Args = []string{"ssoosshd-nss", "no-such-command"}
+	os.Args = []string{"ssoossh-nss", "no-such-command"}
 	if code := Main(); code != 1 {
 		t.Fatalf("got %d for an unknown command", code)
 	}
@@ -503,8 +503,8 @@ func TestCommandShouldExposeTheRealTreeWhenAskedForManPages(t *testing.T) {
 		t.Fatalf("build the tree: %v", err)
 	}
 	root := c.Command()
-	if root == nil || root.Name() != "ssoosshd-nss" {
-		t.Fatalf("got root %v, want ssoosshd-nss", root)
+	if root == nil || root.Name() != "ssoossh-nss" {
+		t.Fatalf("got root %v, want ssoossh-nss", root)
 	}
 	tests := []struct {
 		name string
@@ -522,7 +522,7 @@ func TestCommandShouldExposeTheRealTreeWhenAskedForManPages(t *testing.T) {
 	// so parallel subtests race on it.
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			want := "ssoosshd-nss"
+			want := "ssoossh-nss"
 			if len(tt.path) > 0 {
 				want = tt.path[len(tt.path)-1]
 			}

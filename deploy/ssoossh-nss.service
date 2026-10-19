@@ -1,22 +1,22 @@
 [Unit]
 Description=ssoossh NSS daemon: directory users and groups through systemd userdb
-Documentation=man:ssoosshd-nss(8) https://github.com/mnestor/ssoossh
-# Socket-activated: ssoosshd-nss.socket owns the listening socket and starts
+Documentation=man:ssoossh-nss(8) https://github.com/mnestor/ssoossh
+# Socket-activated: ssoossh-nss.socket owns the listening socket and starts
 # this service on the first lookup. There is deliberately no ordering after
 # network-online.target. The daemon opens its cache and answers from it
 # before any upstream call, and a lookup that arrives during boot would
 # otherwise wait for the network to come up.
-Requires=ssoosshd-nss.socket
-After=ssoosshd-nss.socket
+Requires=ssoossh-nss.socket
+After=ssoossh-nss.socket
 # Pinned rather than inherited from system.conf, so the reasoning at
 # RestartSec below holds on every host: a 6th start within 60 s is refused.
 StartLimitIntervalSec=60s
 StartLimitBurst=5
 
 [Service]
-# The ssoosshd-nss package installs the binary at /usr/sbin/ssoosshd-nss and
+# The ssoossh-nss package installs the binary at /usr/sbin/ssoossh-nss and
 # the configuration at /etc/ssoossh/nss.yaml, the daemon's default.
-ExecStart=/usr/sbin/ssoosshd-nss run
+ExecStart=/usr/sbin/ssoossh-nss run
 Restart=always
 # A daemon that cannot start must reach the start limit above, and soon.
 # While this service fails and restarts, systemd keeps the socket
@@ -26,7 +26,7 @@ Restart=always
 # a daemon failing at start made sudo and an ssh login as a local user take
 # minutes. Past the start limit the socket unit fails too, and lookups are
 # a quick "not found" (measured on systemd 252 and 257) until the cause is
-# fixed and `systemctl reset-failed ssoosshd-nss.socket ssoosshd-nss.service`
+# fixed and `systemctl reset-failed ssoossh-nss.socket ssoossh-nss.service`
 # brings the socket back.
 #
 # So: restart after 1 s, which a single crash costs the lookups queued
@@ -92,7 +92,7 @@ UMask=0077
 CapabilityBoundingSet=
 NoNewPrivileges=true
 ProtectSystem=strict
-# Read, never written by the daemon. `ssoosshd-nss override` edits
+# Read, never written by the daemon. `ssoossh-nss override` edits
 # nss-overrides.yaml from an administrator's shell, outside this sandbox,
 # and signals the daemon to re-read it.
 ReadOnlyPaths=/etc/ssoossh
@@ -114,5 +114,5 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 
 [Install]
 # The socket starts the service, so the socket is what to enable; this makes
-# `systemctl enable ssoosshd-nss.service` enable the socket as well.
-Also=ssoosshd-nss.socket
+# `systemctl enable ssoossh-nss.service` enable the socket as well.
+Also=ssoossh-nss.socket

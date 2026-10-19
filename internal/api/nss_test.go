@@ -2,7 +2,7 @@ package api
 
 // Test methodology: an httptest TLS server stands in for ssoosshd's
 // /api/nss/* routes and records what each request carried; the client is
-// pinned to that server's key, the way ssoosshd-nss will run it. Error
+// pinned to that server's key, the way ssoossh-nss will run it. Error
 // classes are driven by the status, error code and Retry-After the server
 // returns.
 
