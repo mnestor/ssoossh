@@ -77,17 +77,17 @@
 	// too, but it is not a live region.
 	let liveMessage = $state('');
 
-	// The reader's own groups, offered as suggestions, and for the admin
-	// area's roles the groups other keys use, from the first page of every
-	// key (the list of keys a reader's groups manage would add nothing to
-	// their own groups). The server takes any group name here (it is free
-	// text, matched later against each caller's session groups), so the
-	// list is not a limit, and the help under the field says what it holds.
-	// A failed read only loses the suggestions.
-	const seesEveryKey = $derived(session.user?.is_auditor ?? false);
+	// The reader's own groups, offered as suggestions, and the groups other
+	// keys use, from the first page of every key: the fleet key admin role
+	// this form needs also reads that list, whatever other role it holds
+	// (the list of keys a reader's groups manage would add nothing to their
+	// own groups). The server takes any group name here (it is free text,
+	// matched later against each caller's session groups), so the list is
+	// not a limit, and the help under the field says what it holds. A
+	// failed read only loses those suggestions.
 	let knownGroups = $state<string[]>([]);
 	$effect(() => {
-		if (!allowed || !seesEveryKey) return;
+		if (!allowed) return;
 		const controller = new AbortController();
 		listAdminNSSKeys({ limit: 100, signal: controller.signal })
 			.then((result) => {
@@ -310,8 +310,8 @@
 						</datalist>
 						<span class="text-xs text-ink-muted">
 							Members of this group can rotate, edit and revoke the key without an admin role. Any
-							group name is accepted; the suggestions are
-							{seesEveryKey ? 'the groups other keys use and the groups' : 'the groups'} you are in.
+							group name is accepted; the suggestions are the groups other keys use and the groups
+							you are in.
 						</span>
 					</label>
 

@@ -446,6 +446,46 @@ describe('app rail', () => {
 		});
 	});
 
+	// The fleet key admin role manages every key without an admin area
+	// role, so its Admin group holds All NSS keys and nothing else.
+	describe('admin group for a fleet key admin', () => {
+		it('should offer only NSS keys (all) in the admin group when the viewer holds no other role', async () => {
+			routeFetch({ 'GET /api/nss/keys': envelope({ keys: [], can_create: true }) });
+			session.user = userFixture({ is_nss_key_admin: true });
+			session.resolved = true;
+
+			render(AppRail, { onsignout: () => {} });
+			await settle();
+
+			const group = screen.getByTestId('rail-admin-group').parentElement as HTMLElement;
+			expect(
+				within(group)
+					.getAllByRole('link')
+					.map((link) => [link.textContent?.trim(), link.getAttribute('href')])
+			).toEqual([['NSS keys (all)', '/admin/nss/keys']]);
+		});
+
+		it('should not offer the admin group to a fleet key admin while NSS is off', () => {
+			session.user = userFixture({ is_nss_key_admin: true, nss_enabled: false });
+			session.resolved = true;
+
+			render(AppRail, { onsignout: () => {} });
+
+			expect(screen.queryByTestId('rail-admin-group')).not.toBeInTheDocument();
+		});
+
+		it('should not offer the admin group to a viewer with no role while NSS is on', async () => {
+			routeFetch({ 'GET /api/nss/keys': envelope({ keys: [], can_create: false }) });
+			session.user = userFixture();
+			session.resolved = true;
+
+			render(AppRail, { onsignout: () => {} });
+			await settle();
+
+			expect(screen.queryByTestId('rail-admin-group')).not.toBeInTheDocument();
+		});
+	});
+
 	describe('NSS directory entry', () => {
 		const cases: { name: string; user: Parameters<typeof userFixture>[0]; shown: boolean }[] = [
 			{ name: 'an auditor', user: { is_auditor: true }, shown: true },
@@ -471,7 +511,7 @@ describe('app rail', () => {
 			});
 		}
 
-		it('should mark only NSS keys current in the admin group on the every-key list', async () => {
+		it('should mark only NSS keys (all) current in the admin group on the every-key list', async () => {
 			resetFakePage('http://localhost/admin/nss/keys');
 			routeFetch({ 'GET /api/nss/keys': envelope({ keys: [], can_create: false }) });
 			session.user = userFixture({ is_auditor: true });

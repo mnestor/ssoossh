@@ -58,13 +58,12 @@
 	// once per identity. Every key is in the admin group instead.
 	$effect(() => nssAccess.check(session.user));
 	const nssItem = $derived(showNSSKeys(session.user, nssAccess.hasKeys) ? nssKeysNav() : null);
-	const isAuditor = $derived(session.user?.is_auditor ?? false);
 	// The admin group as this viewer may use it: an admin-only section is
-	// left out for SOC and auditors rather than offered and then refused,
-	// and the NSS directory wherever the server does not serve NSS.
-	const adminItems = $derived(
-		adminNavFor(session.user?.is_admin ?? false, session.user?.nss_enabled ?? false)
-	);
+	// left out for SOC and auditors rather than offered and then refused, a
+	// fleet key admin with no admin area role gets All NSS keys alone, and
+	// the NSS sections are left out wherever the server does not serve NSS.
+	// No section, no group.
+	const adminItems = $derived(adminNavFor(session.user));
 	// One admin row is current: the NSS keys page sits under the NSS
 	// directory's /admin/nss and must not light both.
 	const adminCurrent = $derived(
@@ -201,7 +200,7 @@
 			/>
 		{/if}
 
-		{#if isAuditor}
+		{#if adminItems.length > 0}
 			<div class="my-2 border-t border-border-subtle" class:mx-1.5={!collapsed}></div>
 
 			<RailGroup

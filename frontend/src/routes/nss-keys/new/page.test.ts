@@ -109,17 +109,7 @@ describe('New NSS key', () => {
 		);
 	});
 
-	it('should say the suggestions are the reader own groups when the reader sees no other key', () => {
-		answers();
-		render(Page);
-
-		expect(screen.getByText(/Any group name is accepted/)).toHaveTextContent(
-			'the suggestions are the groups you are in.'
-		);
-	});
-
-	it('should say the suggestions include other keys groups when the reader sees every key', () => {
-		session.user = userFixture({ is_nss_key_admin: true, is_auditor: true });
+	it('should say the suggestions include other keys groups when the reader holds the role', () => {
 		answers();
 		render(Page);
 
@@ -128,8 +118,10 @@ describe('New NSS key', () => {
 		);
 	});
 
-	it('should suggest the groups every key uses when the reader sees every key', async () => {
-		session.user = userFixture({ is_nss_key_admin: true, is_auditor: true, groups: [] });
+	// The fleet key admin role reads every key without an admin area role,
+	// so its suggestions come from that list too.
+	it('should suggest the groups every key uses when the reader holds no admin area role', async () => {
+		session.user = userFixture({ is_nss_key_admin: true, groups: [] });
 		routeFetch({
 			'GET /api/admin/nss/keys': envelope({
 				keys: [{ group_name: 'db-admins' }, { group_name: '' }],

@@ -443,6 +443,8 @@ func (a *app) registerRoutes(r *gin.Engine) error {
 	adminAuth := middleware.NewAdminAuthMiddleware(a.config).Add()
 	socAuth := middleware.NewSOCAuthMiddleware(a.config).Add()
 	auditorAuth := middleware.NewAuditorAuthMiddleware(a.config).Add()
+	// The one admin route a fleet key admin also reads: every fleet key.
+	nssKeyListAuth := middleware.NewNSSKeyListAuthMiddleware(a.config).Add()
 
 	// Browser-facing OIDC login/callback, outside /api since these are
 	// redirects rather than JSON API calls.
@@ -544,7 +546,7 @@ func (a *app) registerRoutes(r *gin.Engine) error {
 	}
 	controller.NewLDAPAdminController(apiGroup, a.config, a.db, ldapDiagnostics, nssSync,
 		sessionAuth, adminAuth, csrf, probeRateLimit, a.svc.audit)
-	controller.NewNSSAdminController(apiGroup, a.db, nssAdmin, a.nssViewer(), a.svc.nssKeys, sessionAuth, adminAuth, auditorAuth, csrf)
+	controller.NewNSSAdminController(apiGroup, a.db, nssAdmin, a.nssViewer(), a.svc.nssKeys, sessionAuth, adminAuth, auditorAuth, nssKeyListAuth, csrf)
 	controller.NewIdentityEchoController(apiGroup, a.svc.auth, sessionAuth, adminAuth, csrf)
 
 	// The diagnostics run makes the server open an outbound connection to

@@ -459,3 +459,57 @@ func TestAuditorAuthMiddleware_Add(t *testing.T) {
 		})
 	}
 }
+
+func TestNSSKeyListAuthMiddleware_Add(t *testing.T) {
+	t.Parallel()
+
+	// One config for every case: each role has its own group, so a case
+	// names the role by the group it carries.
+	cfg := adminConfig("ssh-admins", "ssh-soc", "ssh-auditors")
+	cfg.Admin.NSSKeyGroup = "nss-key-admins"
+	// The same with nss_key_group left unset, which narrows the fleet key
+	// role to admins.
+	noKeyGroup := adminConfig("ssh-admins", "ssh-soc", "ssh-auditors")
+
+	tests := []struct {
+		name        string
+		cfg         *config.Config
+		mode        identityMode
+		groups      []string
+		wantStatus  int
+		wantReached bool
+	}{
+		{name: "should allow a fleet key admin who holds no admin area role", cfg: cfg, mode: identityPresent,
+			groups: []string{"nss-key-admins"}, wantStatus: http.StatusOK, wantReached: true},
+		{name: "should allow an auditor who is not a fleet key admin", cfg: cfg, mode: identityPresent,
+			groups: []string{"ssh-auditors"}, wantStatus: http.StatusOK, wantReached: true},
+		{name: "should allow a SOC member who is not a fleet key admin", cfg: cfg, mode: identityPresent,
+			groups: []string{"ssh-soc"}, wantStatus: http.StatusOK, wantReached: true},
+		{name: "should allow an admin", cfg: cfg, mode: identityPresent,
+			groups: []string{"ssh-admins"}, wantStatus: http.StatusOK, wantReached: true},
+		{name: "should allow an admin when nss_key_group is unconfigured", cfg: noKeyGroup, mode: identityPresent,
+			groups: []string{"ssh-admins"}, wantStatus: http.StatusOK, wantReached: true},
+		{name: "should deny the would-be fleet key group when nss_key_group is unconfigured", cfg: noKeyGroup, mode: identityPresent,
+			groups: []string{"nss-key-admins"}, wantStatus: http.StatusForbidden},
+		{name: "should deny when the caller holds neither role", cfg: cfg, mode: identityPresent,
+			groups: []string{"staff"}, wantStatus: http.StatusForbidden},
+		{name: "should deny when the caller has no groups at all", cfg: cfg, mode: identityPresent,
+			groups: nil, wantStatus: http.StatusForbidden},
+		{name: "should deny when the caller carries an empty group", cfg: noKeyGroup, mode: identityPresent,
+			groups: []string{""}, wantStatus: http.StatusForbidden},
+		{name: "should deny when no identity is on the context", cfg: cfg, mode: identityAbsent,
+			wantStatus: http.StatusForbidden},
+		{name: "should deny when the identity on the context is nil", cfg: cfg, mode: identityNil,
+			wantStatus: http.StatusForbidden},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			status, reached := runAuthMiddleware(t, NewNSSKeyListAuthMiddleware(tt.cfg).Add(), tt.mode, tt.groups)
+			if status != tt.wantStatus || reached != tt.wantReached {
+				t.Errorf("status = %d, reached = %v; want %d, %v", status, reached, tt.wantStatus, tt.wantReached)
+			}
+		})
+	}
+}

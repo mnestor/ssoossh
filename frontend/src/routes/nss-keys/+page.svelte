@@ -228,7 +228,9 @@
 		     where they go next. -->
 		<EmptyState icon="server-2" title="No NSS keys in your groups" testid="nss-keys-empty">
 			A key is listed here once its group is one you are in.
-			{#if session.user?.is_auditor}
+			<!-- Auditors and above, and the fleet key admin role, read every
+			     key on All NSS keys. -->
+			{#if session.user?.is_auditor || session.user?.is_nss_key_admin}
 				<span data-testid="nss-keys-empty-admin">
 					Every key in the fleet, a key with no group included, is on
 					<a href={resolve('/admin/nss/keys')} class="text-accent hover:underline">All NSS keys</a>.

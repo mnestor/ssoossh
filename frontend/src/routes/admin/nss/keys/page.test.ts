@@ -6,7 +6,8 @@ import { envelope, routeFetch, userFixture } from '#lib/testing/nss.js';
 
 // Test methodology: the route around NSSKeyAdminList (whose own suite
 // covers the list): its title, and New key for the fleet key admin role
-// alone, pointing the create form back here.
+// alone, whatever other role it holds, pointing the create form back here.
+// Who reaches the page at all is the admin layout's (layout.test.ts).
 
 vi.mock('$app/state', async () => {
 	const { fakePage } = await import('#lib/testing/page.svelte.js');
@@ -46,6 +47,13 @@ describe('all NSS keys route', () => {
 			'href',
 			'/nss-keys/new?from=admin'
 		);
+	});
+
+	it('should offer New key when the viewer is a fleet key admin with no admin area role', () => {
+		session.user = userFixture({ is_nss_key_admin: true });
+		render(Page);
+
+		expect(screen.getByTestId('nss-admin-keys-new')).toBeInTheDocument();
 	});
 
 	it('should not offer New key when the viewer does not hold the fleet key admin role', () => {
