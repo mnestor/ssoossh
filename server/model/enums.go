@@ -213,8 +213,8 @@ const (
 	// presented the current secret.
 	NSSRotationBucketSwitched NSSRotationBucket = "switched"
 	// NSSRotationBucketNotSwitched is an address whose latest lookup
-	// presented an older secret: it stops resolving accounts when the
-	// grace ends.
+	// presented an older secret: when the grace ends it resolves no new
+	// accounts and serves only what it had cached.
 	NSSRotationBucketNotSwitched NSSRotationBucket = "not_switched"
 	// NSSRotationBucketGone is an address seen before the rotation and
 	// not since, a host retired or one that has not booted since.

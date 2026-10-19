@@ -1,4 +1,5 @@
 import { render, screen, waitFor, within } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -38,7 +39,7 @@ vi.mock('$app/state', async () => {
 	return { page: fakePage };
 });
 
-import { fakePage } from '#lib/testing/page.svelte.js';
+import { fakePage, resetFakePage } from '#lib/testing/page.svelte.js';
 import Page from './+page.svelte';
 
 const now = new Date('2026-10-18T12:00:00Z');
@@ -50,6 +51,7 @@ beforeEach(() => {
 	session.user = userFixture();
 	session.resolved = true;
 	fakePage.params = { id: 'nss_k7m4qp2x' };
+	resetFakePage('http://localhost/nss-keys/nss_k7m4qp2x');
 	guards.length = 0;
 });
 
@@ -86,6 +88,34 @@ describe('NSS key detail', () => {
 
 		expect(await screen.findByTestId('nss-key-missing')).toBeInTheDocument();
 	});
+
+	const backCases: { name: string; search: string; want: string }[] = [
+		{ name: 'the list carried no filters', search: '', want: '/nss-keys' },
+		{
+			name: 'the list carried its filters',
+			search: `?back=${encodeURIComponent('?status=revoked&sort=expiry')}`,
+			want: '/nss-keys?status=revoked&sort=expiry'
+		},
+		{
+			name: 'the carried value is not a query string',
+			search: `?back=${encodeURIComponent('https://elsewhere.example/')}`,
+			want: '/nss-keys'
+		},
+		{
+			name: 'the carried value has a fragment',
+			search: `?back=${encodeURIComponent('?status=revoked#x')}`,
+			want: '/nss-keys'
+		}
+	];
+	for (const { name, search, want } of backCases) {
+		it(`should point the back chip at ${want} when ${name}`, async () => {
+			resetFakePage(`http://localhost/nss-keys/nss_k7m4qp2x${search}`);
+			serve(keyFixture());
+			await loaded();
+
+			expect(screen.getByTestId('nss-key-back')).toHaveAttribute('href', want);
+		});
+	}
 
 	it('should offer Try again when the key fails to load', async () => {
 		routeFetch({
@@ -165,11 +195,103 @@ describe('NSS key detail', () => {
 			expect(screen.getByTestId('nss-key-expires')).toHaveTextContent('Never');
 		});
 
+		const renewLineCases: { name: string; key: NSSKey; shown: boolean }[] = [
+			{
+				name: 'the key expires within 30 days',
+				key: keyFixture({ expires_at: '2026-11-01T12:00:00Z' }),
+				shown: true
+			},
+			{
+				name: 'the key has expired',
+				key: keyFixture({ status: 'expired', expires_at: '2026-10-01T12:00:00Z' }),
+				shown: true
+			},
+			{ name: 'the key expires in months', key: keyFixture(), shown: false },
+			{
+				name: 'the key is revoked',
+				key: keyFixture({ status: 'revoked', expires_at: '2026-11-01T12:00:00Z' }),
+				shown: false
+			}
+		];
+		for (const { name, key, shown } of renewLineCases) {
+			it(`should ${shown ? 'say' : 'not say'} that rotating renews the expiry when ${name}`, async () => {
+				serve(key);
+				await loaded();
+
+				expect(screen.queryByTestId('nss-key-expires-renew') !== null).toBe(shown);
+			});
+		}
+
+		it('should draw the warning glyph beside the expiry when it is within 30 days', async () => {
+			serve(keyFixture({ expires_at: '2026-11-01T12:00:00Z' }));
+			await loaded();
+
+			expect(screen.getByTestId('nss-key-expires').querySelector('svg')).not.toBeNull();
+		});
+
+		const expiredCases: { name: string; key: NSSKey; shown: boolean }[] = [
+			{
+				name: 'the key has expired',
+				key: keyFixture({ status: 'expired', expires_at: '2026-10-01T12:00:00Z' }),
+				shown: true
+			},
+			{ name: 'the key is active', key: keyFixture(), shown: false },
+			{
+				name: 'the key is revoked after its expiry',
+				key: keyFixture({ status: 'revoked', expires_at: '2026-10-01T12:00:00Z' }),
+				shown: false
+			}
+		];
+		for (const { name, key, shown } of expiredCases) {
+			it(`should ${shown ? 'show' : 'not show'} the expired notice when ${name}`, async () => {
+				serve(key);
+				await loaded();
+
+				expect(screen.queryByTestId('nss-key-expired') !== null).toBe(shown);
+			});
+		}
+
+		it('should say rotating revives an expired key when it has expired', async () => {
+			serve(keyFixture({ status: 'expired', expires_at: '2026-10-01T12:00:00Z' }));
+			await loaded();
+
+			expect(screen.getByTestId('nss-key-expired')).toHaveTextContent(
+				'The server refuses it, so hosts using it serve only the accounts they already cached, until their cache_expire_offline runs out, and resolve no new ones. Rotating issues a new secret and renews the expiry; the old secret is not accepted again.'
+			);
+		});
+
 		it('should say the key is read-only when the caller may only view it', async () => {
 			serve(keyFixture());
 			await loaded();
 
 			expect(screen.getByTestId('nss-key-readonly')).toBeInTheDocument();
+		});
+
+		const revokeOnlyCases: { name: string; permissions: NSSKeyPermission[]; shown: boolean }[] = [
+			{ name: 'the caller may only revoke (SOC)', permissions: ['view', 'revoke'], shown: true },
+			{
+				name: 'the caller may also rotate and edit',
+				permissions: ['view', 'rotate', 'revoke', 'edit'],
+				shown: false
+			},
+			{ name: 'the caller may only view', permissions: ['view'], shown: false }
+		];
+		for (const { name, permissions, shown } of revokeOnlyCases) {
+			it(`should ${shown ? 'say' : 'not say'} who may rotate and edit when ${name}`, async () => {
+				serve(keyFixture({ permissions }));
+				await loaded();
+
+				expect(screen.queryByTestId('nss-key-revoke-only') !== null).toBe(shown);
+			});
+		}
+
+		it('should name the roles that may rotate and edit when the caller may only revoke', async () => {
+			serve(keyFixture({ permissions: ['view', 'revoke'] }));
+			await loaded();
+
+			expect(screen.getByTestId('nss-key-revoke-only')).toHaveTextContent(
+				'Rotating and editing it need the fleet key admin role or membership of its group.'
+			);
 		});
 	});
 
@@ -214,6 +336,29 @@ describe('NSS key detail', () => {
 
 			expect(await screen.findByTestId('nss-key-revoked')).toBeInTheDocument();
 		});
+
+		it('should put the caret on the revoked notice when the revoke lands', async () => {
+			await openRevoke();
+			await userEvent.type(screen.getByTestId('nss-key-revoke-typed'), 'nss_k7m4qp2x');
+			await userEvent.click(screen.getByTestId('nss-key-revoke-confirm'));
+			await waitFor(() =>
+				expect(screen.queryByTestId('nss-key-revoke-confirm')).not.toBeInTheDocument()
+			);
+			await tick();
+
+			expect(document.activeElement).toBe(screen.getByTestId('nss-key-revoked').parentElement);
+		});
+
+		it('should put the caret back on Revoke key when the dialog is cancelled', async () => {
+			await openRevoke();
+			await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+			await waitFor(() =>
+				expect(screen.queryByTestId('nss-key-revoke-confirm')).not.toBeInTheDocument()
+			);
+			await tick();
+
+			expect(document.activeElement).toBe(screen.getByTestId('nss-key-revoke'));
+		});
 	});
 
 	describe('rotate', () => {
@@ -252,12 +397,29 @@ describe('NSS key detail', () => {
 			expect(document.activeElement).toBe(screen.getByTestId('secret-panel-focus'));
 		});
 
-		it('should scroll to the new secret at the top of the page when the rotation lands', async () => {
-			const scroll = vi.spyOn(window, 'scrollTo');
+		it('should scroll the new secret into view when the rotation lands', async () => {
+			const scroll = vi.fn();
+			Element.prototype.scrollIntoView = scroll;
+			await rotateOnce();
+			delete (Element.prototype as Partial<Element>).scrollIntoView;
+
+			expect(scroll).toHaveBeenCalledWith({ block: 'start' });
+		});
+
+		it('should say the expiry the server set when the rotation lands', async () => {
 			await rotateOnce();
 
-			expect(scroll).toHaveBeenCalledWith({ top: 0 });
-			scroll.mockRestore();
+			expect(screen.getByTestId('secret-panel-expiry')).toHaveTextContent(
+				`The key now expires ${formatDateTime('2027-01-10T12:00:00Z')}.`
+			);
+		});
+
+		it('should announce the new expiry when the rotation lands', async () => {
+			await rotateOnce();
+
+			expect(screen.getByTestId('nss-key-live')).toHaveTextContent(
+				`Key rotated. Store the new secret. The key now expires ${formatDateTime('2027-01-10T12:00:00Z')}.`
+			);
 		});
 
 		it('should say when the previous secret stops when the rotation lands', async () => {
@@ -274,6 +436,29 @@ describe('NSS key detail', () => {
 			expect(container.innerHTML).not.toContain(SECRET);
 		});
 
+		it('should hide Rotate secret when a new secret is on screen', async () => {
+			await rotateOnce();
+
+			expect(screen.queryByTestId('nss-key-rotate')).not.toBeInTheDocument();
+		});
+
+		it('should say why Rotate secret is gone when a new secret is on screen', async () => {
+			await rotateOnce();
+
+			expect(screen.getByTestId('nss-key-rotate-held')).toHaveTextContent(
+				'Rotate again once the new secret above is stored and you press Done.'
+			);
+		});
+
+		it('should put the caret on Rotate secret when Done is pressed', async () => {
+			await rotateOnce();
+			await userEvent.click(screen.getByLabelText('I have stored this secret'));
+			await userEvent.click(screen.getByTestId('secret-panel-done'));
+			await tick();
+
+			expect(document.activeElement).toBe(screen.getByTestId('nss-key-rotate'));
+		});
+
 		it('should ask before leaving while the new secret is on screen', async () => {
 			vi.stubGlobal('confirm', () => false);
 			await rotateOnce();
@@ -281,6 +466,16 @@ describe('NSS key detail', () => {
 			guards.forEach((guard) => guard({ cancel, type: 'link' }));
 
 			expect(cancel).toHaveBeenCalled();
+		});
+
+		it('should let the reader leave without asking when the secret is ticked as stored', async () => {
+			const ask = vi.fn(() => false);
+			vi.stubGlobal('confirm', ask);
+			await rotateOnce();
+			await userEvent.click(screen.getByLabelText('I have stored this secret'));
+			guards.forEach((guard) => guard({ cancel: vi.fn(), type: 'link' }));
+
+			expect(ask).not.toHaveBeenCalled();
 		});
 
 		it('should warn that a live previous secret stops at once when rotating again', async () => {
@@ -328,10 +523,16 @@ describe('NSS key detail', () => {
 				want: `renewed to ${formatDateTime('2027-10-18T12:00:00.000Z')}`
 			},
 			{
-				name: 'the server limits keys to 30 days',
+				name: 'the server limits keys to 30 days, earlier than the current expiry',
 				key: keyFixture({ permissions: ALL }),
 				settings: envelope({ max_lifetime_seconds: 2592000, rotation_grace_seconds: 0 }),
-				want: `renewed to ${formatDateTime('2026-11-17T12:00:00.000Z')}`
+				want: `The key's expiry moves earlier, to ${formatDateTime('2026-11-17T12:00:00.000Z')}, because the server's limit is now 1mo.`
+			},
+			{
+				name: 'the key never expired and the server now limits keys to a year',
+				key: keyFixture({ permissions: ALL, expires_at: undefined }),
+				settings: envelope({ max_lifetime_seconds: 31536000, rotation_grace_seconds: 0 }),
+				want: `The key now gets an expiry: ${formatDateTime('2027-10-18T12:00:00.000Z')}. Until now it never expired.`
 			},
 			{
 				name: 'the key never expires and the server sets no limit',
@@ -489,13 +690,158 @@ describe('NSS key detail', () => {
 			});
 			await loaded();
 			await userEvent.click(screen.getByTestId('nss-key-clear-previous'));
+			await settle();
 			await userEvent.click(screen.getByTestId('nss-key-clear-confirm'));
 
 			expect(calls.some((call) => call.method === 'DELETE')).toBe(true);
 		});
+
+		const holdCases: {
+			name: string;
+			report: Route | Response;
+			disabled: boolean;
+		}[] = [
+			{
+				name: 'the count is still loading',
+				report: () => new Promise<Response>(() => {}),
+				disabled: true
+			},
+			{
+				name: 'the count has loaded',
+				report: envelope(reportFixture([reportRow('10.0.0.1', 'switched')])),
+				disabled: false
+			},
+			{
+				name: 'the count failed to load',
+				report: envelope(null, 500, 'boom'),
+				disabled: false
+			}
+		];
+		for (const { name, report, disabled } of holdCases) {
+			it(`should ${disabled ? 'hold' : 'offer'} End previous secret when ${name}`, async () => {
+				serve(key, { 'GET /api/nss/keys/nss_k7m4qp2x/rotation-report': report });
+				await loaded();
+				await userEvent.click(screen.getByTestId('nss-key-clear-previous'));
+				await settle();
+
+				expect(screen.getByTestId('nss-key-clear-confirm').hasAttribute('disabled')).toBe(disabled);
+			});
+		}
+
+		it('should link to the rotation report from the dialog when the count fails', async () => {
+			serve(key, {
+				'GET /api/nss/keys/nss_k7m4qp2x/rotation-report': envelope(null, 500, 'boom')
+			});
+			await loaded();
+			await userEvent.click(screen.getByTestId('nss-key-clear-previous'));
+			await settle();
+
+			expect(screen.getByTestId('nss-key-clear-report-link')).toHaveAttribute(
+				'href',
+				'/nss-keys/nss_k7m4qp2x/rotation'
+			);
+		});
+
+		it('should show the count of the latest opening when an earlier answer lands last', async () => {
+			const answers: Array<(response: Response) => void> = [];
+			serve(key, {
+				'GET /api/nss/keys/nss_k7m4qp2x/rotation-report': () =>
+					new Promise<Response>((resolve) => answers.push(resolve))
+			});
+			await loaded();
+			await userEvent.click(screen.getByTestId('nss-key-clear-previous'));
+			await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+			await waitFor(() =>
+				expect(screen.queryByTestId('nss-key-clear-confirm')).not.toBeInTheDocument()
+			);
+			await userEvent.click(screen.getByTestId('nss-key-clear-previous'));
+			answers[1](envelope(reportFixture([reportRow('10.0.0.1', 'not_switched')])));
+			await settle();
+			answers[0](envelope(reportFixture([reportRow('10.0.0.2', 'switched')])));
+			await settle();
+
+			expect(screen.getByTestId('nss-key-clear-count')).toHaveTextContent(
+				'1 host still on the old secret will start failing.'
+			);
+		});
+
+		it('should put the caret on the previous secret row when it has been ended', async () => {
+			serve(key, {
+				'GET /api/nss/keys/nss_k7m4qp2x/rotation-report': envelope(reportFixture([])),
+				'DELETE /api/nss/keys/nss_k7m4qp2x/previous': envelope(keyFixture({ permissions: ALL }))
+			});
+			await loaded();
+			await userEvent.click(screen.getByTestId('nss-key-clear-previous'));
+			await settle();
+			await userEvent.click(screen.getByTestId('nss-key-clear-confirm'));
+			await waitFor(() =>
+				expect(screen.queryByTestId('nss-key-clear-confirm')).not.toBeInTheDocument()
+			);
+			await tick();
+
+			expect(document.activeElement).toBe(screen.getByTestId('nss-key-previous'));
+		});
 	});
 
 	describe('inline edits', () => {
+		const fields = ['description', 'group', 'email'];
+
+		/** openEdit loads an editable key and opens one field's form. */
+		async function openEdit(field: string) {
+			serve(keyFixture({ permissions: ALL }), {
+				'PATCH /api/nss/keys/nss_k7m4qp2x': envelope(keyFixture({ permissions: ALL }))
+			});
+			await loaded();
+			await userEvent.click(screen.getByTestId(`nss-key-edit-${field}`));
+		}
+
+		for (const field of fields) {
+			it(`should put the caret in the field when Edit ${field} is pressed`, async () => {
+				await openEdit(field);
+
+				expect(document.activeElement).toBe(screen.getByTestId(`nss-key-input-${field}`));
+			});
+
+			it(`should put the caret back on Edit ${field} when the edit is cancelled`, async () => {
+				await openEdit(field);
+				await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+				await tick();
+
+				expect(document.activeElement).toBe(screen.getByTestId(`nss-key-edit-${field}`));
+			});
+
+			it(`should put the caret back on Edit ${field} when Escape is pressed`, async () => {
+				await openEdit(field);
+				await userEvent.keyboard('{Escape}');
+				await tick();
+
+				expect(document.activeElement).toBe(screen.getByTestId(`nss-key-edit-${field}`));
+			});
+
+			it(`should put the caret back on Edit ${field} when the edit is saved`, async () => {
+				await openEdit(field);
+				await userEvent.click(screen.getByTestId(`nss-key-save-${field}`));
+				await waitFor(() =>
+					expect(screen.queryByTestId(`nss-key-form-${field}`)).not.toBeInTheDocument()
+				);
+				await tick();
+
+				expect(document.activeElement).toBe(screen.getByTestId(`nss-key-edit-${field}`));
+			});
+		}
+
+		it('should keep the form open when Escape is pressed while the save is in flight', async () => {
+			serve(keyFixture({ permissions: ALL }), {
+				'PATCH /api/nss/keys/nss_k7m4qp2x': () => new Promise<Response>(() => {})
+			});
+			await loaded();
+			await userEvent.click(screen.getByTestId('nss-key-edit-description'));
+			await userEvent.click(screen.getByTestId('nss-key-save-description'));
+			await userEvent.keyboard('{Escape}');
+
+			expect(screen.getByTestId('nss-key-form-description')).toBeInTheDocument();
+		});
+
 		it('should send only the edited field when a description is saved', async () => {
 			const calls = serve(keyFixture({ permissions: ALL }), {
 				'PATCH /api/nss/keys/nss_k7m4qp2x': envelope(
@@ -551,6 +897,16 @@ describe('NSS key detail', () => {
 
 			const usage = await screen.findByTestId('nss-key-usage-row');
 			expect(within(usage).getByText('10.0.0.7')).toBeInTheDocument();
+		});
+
+		it('should list both rows when the server repeats a day, address and generation', async () => {
+			serve(keyFixture(), {
+				'GET /api/nss/keys/nss_k7m4qp2x/usage': envelope({ rows: [row, row], total: 2 })
+			});
+			await loaded();
+			await screen.findAllByTestId('nss-key-usage-row');
+
+			expect(screen.getAllByTestId('nss-key-usage-row')).toHaveLength(2);
 		});
 
 		it('should show the miss rate beside the misses', async () => {

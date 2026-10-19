@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { formatDateTime } from '#lib/format.js';
 import { session } from '#lib/session.svelte.js';
 import { endOfDay, localDay } from '#lib/nss.js';
 import { envelope, keyFixture, routeFetch, settle, userFixture } from '#lib/testing/nss.js';
@@ -75,6 +76,42 @@ describe('New NSS key', () => {
 
 		expect(screen.getByTestId('nss-key-name-error')).toBeInTheDocument();
 		expect(calls.filter((call) => call.method === 'POST')).toHaveLength(0);
+	});
+
+	it('should name the name field by its label alone when its error shows', async () => {
+		answers();
+		render(Page);
+		await userEvent.click(screen.getByTestId('nss-key-create'));
+
+		expect(screen.getByRole('textbox', { name: 'Name' })).toBe(screen.getByTestId('nss-key-name'));
+	});
+
+	it('should describe the name field with its error when the name is missing', async () => {
+		answers();
+		render(Page);
+		await userEvent.click(screen.getByTestId('nss-key-create'));
+
+		expect(screen.getByTestId('nss-key-name')).toHaveAccessibleDescription(
+			'Give the key a name, such as the fleet it serves.'
+		);
+	});
+
+	it('should mark the notification email optional when the form is shown', () => {
+		answers();
+		render(Page);
+
+		expect(screen.getByLabelText(/^\s*Notification email \(optional\)/)).toBe(
+			screen.getByTestId('nss-key-email')
+		);
+	});
+
+	it('should say what the group suggestions are when the form is shown', () => {
+		answers();
+		render(Page);
+
+		expect(screen.getByText(/Any group name is accepted/)).toHaveTextContent(
+			'the suggestions are the groups other keys use and the groups you are in.'
+		);
 	});
 
 	it('should default the notification email to the caller', () => {
@@ -189,6 +226,35 @@ describe('New NSS key', () => {
 			expect(calls.some((call) => call.method === 'POST')).toBe(false);
 		});
 
+		const earlyCases: { name: string; typed: string }[] = [
+			{ name: 'a past day is typed', typed: '2026-10-01' },
+			{ name: 'today is typed', typed: '2026-10-18' }
+		];
+		for (const { name, typed } of earlyCases) {
+			it(`should refuse the day without asking the server when ${name}`, async () => {
+				const calls = withSettings(YEAR);
+				render(Page);
+				await settle();
+				await userEvent.clear(screen.getByTestId('nss-key-expires'));
+				await userEvent.type(screen.getByTestId('nss-key-expires'), typed);
+				await createNamed();
+
+				expect(calls.some((call) => call.method === 'POST')).toBe(false);
+			});
+		}
+
+		it('should say to choose a later day when a past day is typed', async () => {
+			withSettings(envelope(null, 500, 'database unavailable'));
+			render(Page);
+			await settle();
+			await userEvent.type(screen.getByTestId('nss-key-expires'), '2026-10-01');
+			await createNamed();
+
+			expect(screen.getByTestId('nss-key-expires-error')).toHaveTextContent(
+				'Choose a day after today.'
+			);
+		});
+
 		it('should send no expiry when the limit is under a day', async () => {
 			const calls = withSettings(
 				envelope({ max_lifetime_seconds: 3600, rotation_grace_seconds: 0 })
@@ -211,15 +277,59 @@ describe('New NSS key', () => {
 			);
 		});
 
-		it('should say the expiry is fixed once the key exists', async () => {
+		it('should say each rotation renews the expiry when the form is shown', async () => {
 			withSettings(YEAR);
 			render(Page);
 			await settle();
 
 			expect(screen.getByTestId('nss-key-expires-hint')).toHaveTextContent(
-				'The expiry cannot be changed once the key exists.'
+				"The expiry is set now. Each rotation renews it by the same length, up to the server's limit."
 			);
 		});
+
+		const createdCases: {
+			name: string;
+			typed: string;
+			expiresAt: string | undefined;
+			want: string;
+		}[] = [
+			{
+				name: 'the server keeps the day asked for',
+				typed: '2027-01-10',
+				expiresAt: endOfDay('2027-01-10').toISOString(),
+				want: `It expires ${formatDateTime(endOfDay('2027-01-10').toISOString())}.`
+			},
+			{
+				name: "the server's limit trims the day asked for",
+				typed: '2030-01-01',
+				expiresAt: '2027-10-18T12:00:00.000Z',
+				want: `It expires ${formatDateTime('2027-10-18T12:00:00.000Z')}, the latest the server's limit allows, not the day you chose.`
+			},
+			{
+				name: 'the key never expires',
+				typed: '',
+				expiresAt: undefined,
+				want: 'It never expires.'
+			}
+		];
+		for (const { name, typed, expiresAt, want } of createdCases) {
+			it(`should say the expiry the key got when ${name}`, async () => {
+				routeFetch({
+					'GET /api/nss/keys': envelope({ keys: [], can_create: true }),
+					'GET /api/nss/key-settings': envelope(null, 500, 'database unavailable'),
+					'POST /api/nss/keys': envelope({
+						key: keyFixture({ expires_at: expiresAt }),
+						secret: SECRET
+					})
+				});
+				render(Page);
+				await settle();
+				if (typed) await userEvent.type(screen.getByTestId('nss-key-expires'), typed);
+				await createNamed();
+
+				expect(await screen.findByTestId('nss-key-created-expiry')).toHaveTextContent(want);
+			});
+		}
 	});
 
 	it('should show the server reason when the create is refused', async () => {
@@ -289,6 +399,29 @@ describe('New NSS key', () => {
 			guards.forEach((guard) => guard({ cancel, type: 'link' }));
 
 			expect(cancel).toHaveBeenCalled();
+		});
+
+		it('should let the reader leave without asking when the secret is ticked as stored', async () => {
+			answers();
+			const confirm = vi.fn(() => false);
+			vi.stubGlobal('confirm', confirm);
+			render(Page);
+			await createNamed();
+			await userEvent.click(await screen.findByLabelText('I have stored this secret'));
+			guards.forEach((guard) => guard({ cancel: vi.fn(), type: 'link' }));
+
+			expect(confirm).not.toHaveBeenCalled();
+		});
+
+		it('should announce the new key when it is created', async () => {
+			answers();
+			render(Page);
+			await createNamed();
+			await screen.findByTestId('secret-panel');
+
+			expect(screen.getByTestId('nss-key-new-live')).toHaveTextContent(
+				`Key web fleet created. It expires ${formatDateTime('2027-01-10T12:00:00Z')}. Store its secret now.`
+			);
 		});
 
 		it('should let a navigation through once the secret is dismissed', async () => {

@@ -50,6 +50,18 @@ describe('ConfirmModal', () => {
 		expect(onconfirm).toHaveBeenCalledWith('');
 	});
 
+	const heldCases: { name: string; confirmDisabled: boolean; disabled: boolean }[] = [
+		{ name: 'the caller is still gathering what to show', confirmDisabled: true, disabled: true },
+		{ name: 'the caller has nothing left to gather', confirmDisabled: false, disabled: false }
+	];
+	for (const { name, confirmDisabled, disabled } of heldCases) {
+		it(`should ${disabled ? 'hold' : 'offer'} the confirming button when ${name}`, () => {
+			render(ConfirmModal, { ...props(vi.fn(), true), confirmDisabled });
+
+			expect(screen.getByTestId('confirm').hasAttribute('disabled')).toBe(disabled);
+		});
+	}
+
 	describe('focus once the dialog has gone', () => {
 		/** openFrom focuses a button outside the dialog, as its opener. */
 		function openFrom(): HTMLButtonElement {

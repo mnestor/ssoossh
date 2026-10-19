@@ -54,6 +54,12 @@
 		/** `danger` for anything that takes access away. */
 		variant?: 'primary' | 'danger';
 		busy?: boolean;
+		/**
+		 * Holds the confirming button while the dialog is still finding out
+		 * what the reader must know before confirming, such as how many hosts
+		 * an action breaks. The body says what it is waiting for.
+		 */
+		confirmDisabled?: boolean;
 		/** Shown above the buttons when the last attempt failed. */
 		error?: string | null;
 		errorTitle?: string;
@@ -88,6 +94,7 @@
 		confirmTextNoun = 'the name',
 		confirmTextTestid,
 		busy = false,
+		confirmDisabled = false,
 		error = null,
 		errorTitle = 'That did not go through',
 		reasonTestid,
@@ -107,7 +114,9 @@
 	// Surrounding blanks are forgiven, since a pasted name often carries one;
 	// anything else has to match exactly, case included.
 	const typedMatches = $derived(confirmText === undefined || typed.trim() === confirmText);
-	const ready = $derived((reasonless || reason.trim().length > 0) && typedMatches && !busy);
+	const ready = $derived(
+		(reasonless || reason.trim().length > 0) && typedMatches && !busy && !confirmDisabled
+	);
 
 	// <dialog> only gets top-layer stacking, a ::backdrop and a focus trap
 	// from showModal(); the open attribute alone gives none of it. Same

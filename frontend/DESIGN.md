@@ -663,17 +663,25 @@ rounded-md border-border-control bg-surface px-3 text-base`, `text-base`
     The value to type is in the label, in mono; the button wakes on an exact
     match, surrounding blanks forgiven. These actions take no server
     reason, so the mode is used with `reasonless`.
+  - `confirmDisabled` holds the confirming button while the dialog is
+    still finding out what the reader must know first, such as how many
+    hosts ending a fleet key's previous secret breaks. The body says what
+    it is waiting for.
 - **SecretPanel**: a fleet key's secret, the once the server sends it (after
   a create or a rotation). The two-line `nss.key` file first, ready to paste,
   then the key id and secret, each with its own copy button; a warning that
   it cannot be shown again; and Done held until "I have stored this secret"
   is ticked, with the reason beside it. The secret is only ever a prop: the
   page drops it on Done, and a navigation away before the box is ticked
-  asks first. It opens at the top of the page, so on mount it scrolls the
-  page to the top and takes the caret (`tabindex="-1"`, never a Tab stop):
-  the control that asked for it sits further down, and the warning and the
-  box would otherwise be out of sight above the reader. After a rotation
-  the dialog's `returnFocus` hands the caret to it again.
+  asks first (the page binds the panel's `stored`). It opens at the top of
+  the page, so on mount it scrolls itself into view and takes the caret
+  (`tabindex="-1"`, never a Tab stop): the control that asked for it sits
+  further down, and the warning and the box would otherwise be out of
+  sight above the reader. The focus target is a region named "New secret,
+  shown once" and described by the warning. After a rotation the dialog's
+  `returnFocus` hands the caret to it again, the panel names the expiry the
+  server set (`expiresAt`), and the page keys the panel on the generation
+  and hides Rotate until Done, which puts the caret back on Rotate.
 - **ConsentModal**: the blocking sign-in notice, typically a government
   system-use warning that a reader must accept before anything works. No
   visible title (the notice is the deployment's own approved wording; the

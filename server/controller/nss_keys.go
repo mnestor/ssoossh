@@ -371,7 +371,7 @@ func (k *nssKeyController) usageHandler(g *gin.Context) {
 //
 // @Summary     A fleet API key's rotation report
 // @Description Per source address, whether it has switched to the current secret since the last rotation:
-// @Description switched, not_switched (still presenting the previous secret, so it stops resolving accounts
+// @Description switched, not_switched (still presenting the previous secret, so it resolves no new accounts
 // @Description when the grace ends) or gone (not seen since the rotation). With format=csv the rows come as
 // @Description a CSV download instead. Whoever may view the key.
 // @Tags        web

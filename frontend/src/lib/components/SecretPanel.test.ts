@@ -28,12 +28,52 @@ describe('SecretPanel', () => {
 		expect(document.activeElement).toBe(screen.getByTestId('secret-panel-focus'));
 	});
 
-	it('should scroll the page to the top when it appears', () => {
-		const scroll = vi.spyOn(window, 'scrollTo');
+	it('should scroll its own top into view when it appears', () => {
+		const scroll = vi.fn();
+		Element.prototype.scrollIntoView = scroll;
+		render(SecretPanel, props);
+		delete (Element.prototype as Partial<Element>).scrollIntoView;
+
+		expect(scroll).toHaveBeenCalledWith({ block: 'start' });
+	});
+
+	it('should name its focus target as the new secret when it appears', () => {
 		render(SecretPanel, props);
 
-		expect(scroll).toHaveBeenCalledWith({ top: 0 });
+		expect(screen.getByRole('region', { name: 'New secret, shown once' })).toBe(
+			screen.getByTestId('secret-panel-focus')
+		);
 	});
+
+	it('should describe its focus target with the shown-once warning when it appears', () => {
+		render(SecretPanel, props);
+
+		expect(screen.getByTestId('secret-panel-focus')).toHaveAccessibleDescription(
+			'It cannot be shown again. If it is lost, rotate the key and update every host.'
+		);
+	});
+
+	const storedCases: { name: string; tick: boolean; want: boolean }[] = [
+		{ name: 'the box is ticked', tick: true, want: true },
+		{ name: 'the box is left alone', tick: false, want: false }
+	];
+	for (const { name, tick, want } of storedCases) {
+		it(`should report stored as ${want} to its caller when ${name}`, async () => {
+			let stored = false;
+			render(SecretPanel, {
+				...props,
+				get stored() {
+					return stored;
+				},
+				set stored(value: boolean) {
+					stored = value;
+				}
+			});
+			if (tick) await userEvent.click(screen.getByLabelText('I have stored this secret'));
+
+			expect(stored).toBe(want);
+		});
+	}
 
 	it('should show the nss.key file as the key id then the secret', () => {
 		render(SecretPanel, props);
@@ -94,6 +134,26 @@ describe('SecretPanel', () => {
 			'The previous secret is accepted until'
 		);
 	});
+
+	const expiryCases: { name: string; expiresAt: string | null | undefined; want: string | null }[] =
+		[
+			{
+				name: 'the rotation gave the key an expiry',
+				expiresAt: '2027-10-18T12:00:00Z',
+				want: 'The key now expires'
+			},
+			{ name: 'the key never expires', expiresAt: null, want: 'The key never expires.' },
+			{ name: 'no expiry is given', expiresAt: undefined, want: null }
+		];
+	for (const { name, expiresAt, want } of expiryCases) {
+		it(`should ${want ? 'say' : 'not mention'} the key's expiry when ${name}`, () => {
+			render(SecretPanel, { ...props, expiresAt });
+
+			expect(screen.queryByTestId('secret-panel-expiry')?.textContent?.trim() ?? null).toEqual(
+				want === null ? null : expect.stringContaining(want)
+			);
+		});
+	}
 
 	it('should not mention a previous secret when none is given', () => {
 		render(SecretPanel, props);

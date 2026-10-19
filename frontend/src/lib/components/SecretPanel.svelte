@@ -28,14 +28,30 @@
 		secret: string;
 		/** Set after a rotation: when the previous secret stops being accepted. */
 		previousExpiresAt?: string;
+		/**
+		 * Set after a rotation: the expiry the server gave the key, null when
+		 * it never expires. Left out, the panel says nothing about it.
+		 */
+		expiresAt?: string | null;
 		/** Called by Done, once the reader has ticked the acknowledgement. */
 		ondismiss: () => void;
+		/**
+		 * Whether "I have stored this secret" is ticked. Bound by a caller
+		 * whose leave prompt should stop warning once it is.
+		 */
+		stored?: boolean;
 		testid?: string;
 	}
 
-	let { keyId, secret, previousExpiresAt, ondismiss, testid = 'secret-panel' }: Props = $props();
-
-	let stored = $state(false);
+	let {
+		keyId,
+		secret,
+		previousExpiresAt,
+		expiresAt,
+		ondismiss,
+		stored = $bindable(false),
+		testid = 'secret-panel'
+	}: Props = $props();
 	// Per value: which one last landed on the clipboard, and which one the
 	// browser refused.
 	let copied = $state<string | null>(null);
@@ -51,15 +67,17 @@
 	let panel = $state<HTMLDivElement | undefined>(undefined);
 
 	/**
-	 * reveal scrolls the page to the top, where the panel opens, and moves
-	 * the caret onto it, so the reader starts at the warning and the
-	 * acknowledgement is not left out of sight above them. It runs on
-	 * mount; a caller whose dialog was modal at that moment, and so kept
-	 * the caret, calls it again once the dialog has gone.
+	 * reveal scrolls the panel's top into view and moves the caret onto
+	 * it, so the reader starts at the warning and the acknowledgement is
+	 * not left out of sight above them. It scrolls to the panel itself
+	 * rather than to the top of the page, so a banner above it can never
+	 * push the warning out of view. It runs on mount; a caller whose
+	 * dialog was modal at that moment, and so kept the caret, calls it
+	 * again once the dialog has gone.
 	 */
 	export function reveal() {
 		panel?.focus({ preventScroll: true });
-		window.scrollTo({ top: 0 });
+		panel?.scrollIntoView?.({ block: 'start' });
 	}
 
 	$effect(() => {
@@ -91,8 +109,18 @@
 {/snippet}
 
 <!-- tabindex="-1": where reveal puts the caret, never a Tab stop. Rounded
-     like the section so the focus ring follows its corners. -->
-<div bind:this={panel} tabindex="-1" class="rounded-lg" data-testid="{testid}-focus">
+     like the section so the focus ring follows its corners. A named region
+     described by the warning, so a screen reader landing here says what it
+     is and that it is shown once, rather than reading a nameless block. -->
+<div
+	bind:this={panel}
+	tabindex="-1"
+	role="region"
+	aria-label="New secret, shown once"
+	aria-describedby="{testid}-warning-text"
+	class="rounded-lg"
+	data-testid="{testid}-focus"
+>
 	<PageSection
 		title="Secret"
 		description="Shown this once. The server keeps only a hash, so nobody can read it back later."
@@ -100,7 +128,9 @@
 	>
 		<div class="flex max-w-[70ch] flex-col gap-5">
 			<Alert variant="warning" title="Store the secret now" testid="{testid}-warning">
-				It cannot be shown again. If it is lost, rotate the key and update every host.
+				<span id="{testid}-warning-text"
+					>It cannot be shown again. If it is lost, rotate the key and update every host.</span
+				>
 			</Alert>
 
 			<div class="flex flex-col gap-2">
@@ -144,8 +174,18 @@
 
 			{#if previousExpiresAt}
 				<p class="text-dense text-ink" data-testid="{testid}-grace">
-					The previous secret is accepted until {formatDateTime(previousExpiresAt)}. Hosts still
-					presenting it after that stop resolving accounts.
+					The previous secret is accepted until {formatDateTime(previousExpiresAt)}. After that,
+					hosts still presenting it resolve no new accounts and serve only what they had cached.
+				</p>
+			{/if}
+
+			{#if expiresAt !== undefined}
+				<p class="text-dense text-ink" data-testid="{testid}-expiry">
+					{#if expiresAt}
+						The key now expires {formatDateTime(expiresAt)}.
+					{:else}
+						The key never expires.
+					{/if}
 				</p>
 			{/if}
 

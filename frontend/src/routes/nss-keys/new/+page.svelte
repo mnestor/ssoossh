@@ -13,7 +13,7 @@
 	import PageSection from '#lib/components/PageSection.svelte';
 	import PageShell from '#lib/components/PageShell.svelte';
 	import SecretPanel from '#lib/components/SecretPanel.svelte';
-	import { formatDuration } from '#lib/format.js';
+	import { formatDateTime, formatDuration } from '#lib/format.js';
 	import { endOfDay, latestExpiryDay, localDay } from '#lib/nss.js';
 	import { session } from '#lib/session.svelte.js';
 
@@ -26,8 +26,9 @@
 	// the expiry at the last day nss.key_max_lifetime allows, read from the
 	// server, and the address at the reader's own. An empty expiry still
 	// takes the server's default, so a failed read costs only the proposal
-	// and the bound, which the server enforces anyway. The expiry is fixed
-	// once the key exists, so the form says so.
+	// and the bound, which the server enforces anyway. Once the key exists
+	// only a rotation moves the expiry, renewing it by the same length, so
+	// the form says so.
 
 	const allowed = $derived(session.user?.is_nss_key_admin ?? false);
 
@@ -38,7 +39,9 @@
 	let email = $state(session.user?.email ?? '');
 
 	let nameError = $state(false);
-	let expiresError = $state(false);
+	// Which bound a typed expiry broke: the field's min and max are advice
+	// a typed date can pass, so both are checked before the server is asked.
+	let expiresError = $state<'early' | 'late' | null>(null);
 	let busy = $state(false);
 	let submitError = $state<string | null>(null);
 	let nameInput = $state<HTMLInputElement>();
@@ -47,10 +50,26 @@
 	// The answer while its secret is on screen. Dropped on Done, so nothing
 	// on the page holds the secret afterwards.
 	let issued = $state<NSSKeySecret | null>(null);
+	// The expiry the form sent, so the answer can say when the server's
+	// limit trimmed it to an earlier one.
+	let requestedExpiry = $state<string | undefined>(undefined);
+	const trimmed = $derived(
+		!!issued?.key.expires_at &&
+			!!requestedExpiry &&
+			new Date(issued.key.expires_at).getTime() < new Date(requestedExpiry).getTime() - 1000
+	);
+	// The panel's "I have stored this secret" tick, so leaving stops
+	// warning once the reader has said the secret is safe.
+	let secretStored = $state(false);
+	// What a screen reader hears once the key exists: the sub line changes
+	// too, but it is not a live region.
+	let liveMessage = $state('');
 
 	// Groups other keys already use, and the reader's own, offered as
-	// suggestions; any name may still be typed. A failed read only loses
-	// the suggestions.
+	// suggestions. The server takes any group name here (it is free text,
+	// matched later against each caller's session groups), so the list is
+	// not a limit, and the help under the field says what it holds. A
+	// failed read only loses the suggestions.
 	let knownGroups = $state<string[]>([]);
 	$effect(() => {
 		if (!allowed) return;
@@ -96,7 +115,7 @@
 	// A key whose secret has not been stored yet is lost by leaving, so
 	// leaving asks first. Closing the tab gets the browser's own prompt.
 	beforeNavigate(({ cancel, type }) => {
-		if (!issued) return;
+		if (!issued || secretStored) return;
 		if (type === 'leave') {
 			cancel();
 			return;
@@ -114,24 +133,37 @@
 			return;
 		}
 		nameError = false;
-		// The field's max is advice a typed date can pass, so it is checked
-		// here too rather than left for the server to trim.
-		if (expires && maxDate && expires > maxDate && !noDay) {
-			expiresError = true;
+		// The field's min and max are advice a typed date can pass, so they
+		// are checked here too rather than left for the server to refuse or
+		// trim.
+		if (expires && !noDay && expires < minDate) {
+			expiresError = 'early';
 			expiresInput?.focus();
 			return;
 		}
-		expiresError = false;
+		if (expires && maxDate && expires > maxDate && !noDay) {
+			expiresError = 'late';
+			expiresInput?.focus();
+			return;
+		}
+		expiresError = null;
 		busy = true;
 		submitError = null;
 		try {
+			secretStored = false;
+			const expiresAt = expires && !noDay ? endOfDay(expires).toISOString() : undefined;
+			requestedExpiry = expiresAt;
 			issued = await createNSSKey({
 				name: name.trim(),
 				description: description.trim() || undefined,
 				group_name: group.trim() || undefined,
-				expires_at: expires && !noDay ? endOfDay(expires).toISOString() : undefined,
+				expires_at: expiresAt,
 				notification_email: email.trim()
 			});
+			const expiry = issued.key.expires_at
+				? `It expires ${formatDateTime(issued.key.expires_at)}.`
+				: 'It never expires.';
+			liveMessage = `Key ${issued.key.name} created. ${expiry} Store its secret now.`;
 		} catch (cause) {
 			if (redirectIfUnauthenticated(cause)) return;
 			submitError =
@@ -170,8 +202,14 @@
 			{#snippet sub()}
 				{#if issued}
 					<span data-testid="nss-key-created">
-						Created <span class="font-mono text-ink">{issued.key.name}</span>. Store its secret
-						before you leave this page.
+						Created <span class="font-mono text-ink">{issued.key.name}</span>.
+						<span data-testid="nss-key-created-expiry"
+							>{#if issued.key.expires_at && trimmed}It expires {formatDateTime(
+									issued.key.expires_at
+								)}, the latest the server's limit allows, not the day you chose.{:else if issued.key.expires_at}It
+								expires {formatDateTime(issued.key.expires_at)}.{:else}It never expires.{/if}</span
+						>
+						Store its secret before you leave this page.
 					</span>
 				{:else}
 					One key per fleet of hosts. The secret is shown once, when you create it.
@@ -179,8 +217,13 @@
 			{/snippet}
 		</PageHeading>
 
+		<div aria-live="polite" aria-atomic="true" class="sr-only" data-testid="nss-key-new-live">
+			{liveMessage}
+		</div>
+
 		{#if issued}
 			<SecretPanel
+				bind:stored={secretStored}
 				keyId={issued.key.id}
 				secret={issued.secret}
 				ondismiss={dismiss}
@@ -194,11 +237,14 @@
 					novalidate
 					data-testid="nss-key-form"
 				>
-					<label class="flex flex-col gap-1">
-						<span class="text-sm font-medium text-ink">Name</span>
+					<!-- The error sits outside the label, so it is the field's
+					     description only and not read again as part of its name. -->
+					<div class="flex flex-col gap-1">
+						<label for="nss-key-name-input" class="text-sm font-medium text-ink">Name</label>
 						<input
 							bind:this={nameInput}
 							bind:value={name}
+							id="nss-key-name-input"
 							type="text"
 							autocomplete="off"
 							aria-invalid={nameError}
@@ -214,7 +260,7 @@
 								>Give the key a name, such as the fleet it serves.</span
 							>
 						{/if}
-					</label>
+					</div>
 
 					<label class="flex flex-col gap-1">
 						<span class="text-sm font-medium text-ink">
@@ -245,7 +291,9 @@
 							{/each}
 						</datalist>
 						<span class="text-xs text-ink-muted">
-							Members of this group can rotate, edit and revoke the key without an admin role.
+							Members of this group can rotate, edit and revoke the key without an admin role. Any
+							group name is accepted; the suggestions are the groups other keys use and the groups
+							you are in.
 						</span>
 					</label>
 
@@ -260,12 +308,18 @@
 							min={minDate}
 							max={maxDate ?? undefined}
 							disabled={noDay}
-							aria-invalid={expiresError}
+							aria-invalid={!!expiresError}
 							aria-describedby={expiresError ? 'nss-key-expires-error' : 'nss-key-expires-hint'}
 							data-testid="nss-key-expires"
 							class="{field} max-w-[420px]"
 						/>
-						{#if expiresError && maxLifetime}
+						{#if expiresError === 'early'}
+							<span
+								id="nss-key-expires-error"
+								class="text-xs text-danger"
+								data-testid="nss-key-expires-error">Choose a day after today.</span
+							>
+						{:else if expiresError === 'late' && maxLifetime}
 							<span
 								id="nss-key-expires-error"
 								class="text-xs text-danger"
@@ -288,12 +342,14 @@
 							{:else}
 								At the end of that day. Leave it empty for the server's default.
 							{/if}
-							The expiry cannot be changed once the key exists.
+							The expiry is set now. Each rotation renews it by the same length, up to the server's limit.
 						</span>
 					</label>
 
 					<label class="flex flex-col gap-1">
-						<span class="text-sm font-medium text-ink">Notification email</span>
+						<span class="text-sm font-medium text-ink">
+							Notification email <span class="font-normal text-ink-muted">(optional)</span>
+						</span>
 						<input
 							bind:value={email}
 							type="email"
