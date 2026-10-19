@@ -604,8 +604,11 @@
 						{/if}
 						{#if cert.enrollment_id}
 							<DetailRow label="Service code">
-								<!-- Resolved above, per back target. -->
-								<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
+								<!-- serviceCodeHref is already built from resolve() above
+								     (ternary on the back target); the rule cannot see
+								     that through the $derived. Block form because the
+								     report lands on the href line inside this tag. -->
+								<!-- eslint-disable svelte/no-navigation-without-resolve -->
 								<a
 									href={serviceCodeHref}
 									class="inline-flex min-h-target items-center gap-1.5 text-accent underline-offset-2 hover:underline"
@@ -614,6 +617,7 @@
 									View the code this came from
 									<Icon name="arrow-right" size="xs" />
 								</a>
+								<!-- eslint-enable svelte/no-navigation-without-resolve -->
 							</DetailRow>
 						{/if}
 					</dl>

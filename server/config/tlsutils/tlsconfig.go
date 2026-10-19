@@ -70,7 +70,11 @@ func (t CertificateInfo) LoadX509KeyPair() (tls.Certificate, error) {
 // CipherSuites) should shut the server down rather than be logged and
 // ignored.
 type TLSConfig struct {
-	CertificateInfo
+	// Squashed so certificate_file and private_key_file sit directly under
+	// http.tls, as documented: viper's decoder does not squash an untagged
+	// embed, and without the tag both keys were dropped and the server ran
+	// without TLS.
+	CertificateInfo `mapstructure:",squash"`
 
 	// CipherSuites restricts the TLS 1.0-1.2 cipher suites offered (Go
 	// does not allow configuring TLS 1.3 suites). Names must exactly match
