@@ -9,6 +9,8 @@
 // RailItem.svelte rather than here.
 import { resolve } from '$app/paths';
 
+import type { CurrentUser } from '#lib/api/types.js';
+
 /** One destination in the rail. */
 export interface NavItem {
 	/** A final URL, not a route id: the admin entries cannot be resolved. */
@@ -22,6 +24,20 @@ export interface NavItem {
 	 * auditors by adminNavFor, and their route renders AccessDenied.
 	 */
 	adminOnly?: boolean;
+	/**
+	 * Set on a section that exists only where the server serves NSS
+	 * (nss.enabled, CurrentUser.nss_enabled); adminNavFor drops it
+	 * elsewhere, the same signal that decides the NSS keys entry.
+	 */
+	nssOnly?: boolean;
+	/**
+	 * Set on the one admin section the fleet key admin role
+	 * (CurrentUser.is_nss_key_admin, admin.nss_key_group) opens without an
+	 * admin area role: every fleet key, which that role manages. To such a
+	 * viewer adminNavFor offers these alone, and adminRouteOpen lets the
+	 * admin layout render them and nothing else.
+	 */
+	keyAdmin?: boolean;
 }
 
 /**
@@ -57,6 +73,17 @@ export function primaryNav(): NavItem[] {
 	];
 }
 
+/**
+ * nssKeysNav is the destination for the fleet keys a viewer's groups
+ * manage. Top level rather than in the admin group: a key's own group
+ * manages it without an admin role, so the entry is shown by showNSSKeys in
+ * #lib/nss, not by the admin gate. Every key is the admin group's own NSS
+ * keys entry.
+ */
+export function nssKeysNav(): NavItem {
+	return { href: resolve('/nss-keys'), label: 'NSS keys', icon: 'server-2' };
+}
+
 /** adminNav is the admin group, shown to auditors and above. Entries marked
  * adminOnly are for admins alone; the rail reads adminNavFor, not this list.
  * See the file header on why these are plain hrefs. */
@@ -75,6 +102,22 @@ export const adminNav: readonly NavItem[] = [
 	// Admin-only (issue #136): the status names the directory connection
 	// and the sync settings, and the sync and the probe were already admin's.
 	{ href: '/admin/directory', label: 'Directory', icon: 'address-book', adminOnly: true },
+	// Not admin-only: the stored accounts and groups, and what hosts are
+	// served for each, are read by auditors, SOC and admins alike. Only
+	// where NSS is on.
+	{ href: '/admin/nss', label: 'NSS directory', icon: 'database-search', nssOnly: true },
+	// Every fleet key, whoever manages it, for auditors and above and the
+	// fleet key admin role, only where NSS is on. "(all)" tells it from the
+	// top-level NSS keys, the keys the viewer's groups manage, which a
+	// collapsed rail's glyphs alone cannot; the glyph is another drawing of
+	// the fleet key noun.
+	{
+		href: '/admin/nss/keys',
+		label: 'NSS keys (all)',
+		icon: 'server',
+		nssOnly: true,
+		keyAdmin: true
+	},
 	// Admin-only (issue #161): starting an echo is the page's only action,
 	// and the server refuses it below admin.
 	{ href: '/admin/identity/echo', label: 'Claims echo', icon: 'braces', adminOnly: true },
@@ -89,16 +132,52 @@ export const adminNav: readonly NavItem[] = [
 	}
 ] as const;
 
+/** AdminViewer is what of the session decides the admin area's reach. */
+export type AdminViewer = Pick<
+	CurrentUser,
+	'is_admin' | 'is_auditor' | 'is_nss_key_admin' | 'nss_enabled'
+>;
+
+/** opensSection reports whether viewer's roles open item, whatever NSS is. */
+function opensSection(viewer: AdminViewer, item: NavItem): boolean {
+	if (viewer.is_admin) return true;
+	if (viewer.is_auditor) return !item.adminOnly;
+	return viewer.is_nss_key_admin && !!item.keyAdmin;
+}
+
 /**
  * adminNavFor is the admin group as one viewer may use it: every section for
- * an admin, and every section not marked adminOnly for SOC and auditors.
+ * an admin, every section not marked adminOnly for SOC and auditors, and
+ * the sections marked keyAdmin alone for a fleet key admin with no admin
+ * area role; sections marked nssOnly only where the server serves NSS. An
+ * empty list for anyone else, which hides the group.
  *
  * Display only, like the admin layout's gate: the server refuses the
- * sections' reads on its own. Dropping the entry is what keeps a SOC member
- * or auditor from being offered a page that can only refuse them.
+ * sections' reads on its own. Dropping the entry is what keeps a viewer
+ * from being offered a page that can only refuse them.
  */
-export function adminNavFor(isAdmin: boolean): NavItem[] {
-	return adminNav.filter((item) => isAdmin || !item.adminOnly);
+export function adminNavFor(viewer: AdminViewer | null): NavItem[] {
+	if (!viewer) return [];
+	return adminNav.filter(
+		(item) => opensSection(viewer, item) && (viewer.nss_enabled || !item.nssOnly)
+	);
+}
+
+/**
+ * adminRouteOpen is the admin layout's gate: whether viewer may see the
+ * admin page at pathname. Every page for an auditor and above (an
+ * adminOnly section still gates itself in its own layout); for a fleet key
+ * admin without an admin area role, only the sections marked keyAdmin and
+ * what lies beneath them. NSS being off does not close the page: it says
+ * so itself.
+ *
+ * Display only: the server refuses every admin read on its own.
+ */
+export function adminRouteOpen(viewer: AdminViewer | null, pathname: string): boolean {
+	if (!viewer) return false;
+	if (viewer.is_auditor) return true;
+	if (!viewer.is_nss_key_admin) return false;
+	return adminNav.some((item) => item.keyAdmin && isCurrent(item.href, pathname));
 }
 
 /** accountNav sits in the rail's footer, below the destinations. */
@@ -152,6 +231,22 @@ export function isFocusRoute(pathname: string): boolean {
  */
 export function isCurrent(href: string, pathname: string): boolean {
 	return pathname === href || pathname.startsWith(href + '/');
+}
+
+/**
+ * currentHref is the one href of hrefs that names the page at pathname: the
+ * longest that isCurrent matches, or null for none. A section nested under
+ * another (the NSS keys under the NSS directory's /admin/nss) then marks
+ * only itself, not its parent too.
+ */
+export function currentHref(hrefs: readonly string[], pathname: string): string | null {
+	let best: string | null = null;
+	for (const href of hrefs) {
+		if (isCurrent(href, pathname) && (best === null || href.length > best.length)) {
+			best = href;
+		}
+	}
+	return best;
 }
 
 /** isAdminRoute reports whether pathname is inside the admin area, which is

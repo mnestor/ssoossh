@@ -18,6 +18,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/mail"
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/notify"
@@ -641,8 +642,16 @@ func TestPreferencesForIdentity_shouldResolveTheUserBySubject(t *testing.T) {
 	if settings.Address != f.user.Email {
 		t.Errorf("Address = %q, want %q", settings.Address, f.user.Email)
 	}
-	if len(settings.Kinds) != len(optionalDefinitions()) {
-		t.Errorf("got %d kinds, want %d", len(settings.Kinds), len(optionalDefinitions()))
+	// A session without the admin role is offered every optional kind but
+	// the admin-only ones.
+	want := 0
+	for _, def := range optionalDefinitions() {
+		if !def.AdminOnly {
+			want++
+		}
+	}
+	if len(settings.Kinds) != want {
+		t.Errorf("got %d kinds, want %d", len(settings.Kinds), want)
 	}
 	if !settings.MailEnabled {
 		t.Error("MailEnabled is false, want it to mirror the server configuration")
@@ -1033,5 +1042,189 @@ func TestNotificationHandler_shouldTagItsRecordsForTheMailLog(t *testing.T) {
 
 	if !strings.Contains(buf.String(), `"type":"mail"`) {
 		t.Errorf("expected the record to carry type=mail, got: %s", buf.String())
+	}
+}
+
+// recordingPublisher keeps every message published to it, so a test can see
+// what the publishing half queued without a broker or a router in the way.
+type recordingPublisher struct {
+	mu   sync.Mutex
+	msgs []*message.Message
+}
+
+// Publish records msgs.
+func (p *recordingPublisher) Publish(_ string, msgs ...*message.Message) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.msgs = append(p.msgs, msgs...)
+	return nil
+}
+
+// Close does nothing: there is no broker to disconnect from.
+func (p *recordingPublisher) Close() error { return nil }
+
+// published returns a copy of every message recorded so far.
+func (p *recordingPublisher) published() []*message.Message {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	out := make([]*message.Message, len(p.msgs))
+	copy(out, p.msgs)
+	return out
+}
+
+// seedNSSKey adds a fleet key row carrying address, which is what delivery
+// reads to decide where a fleet key event goes. The row needs a creator, so
+// one is seeded alongside it.
+func seedNSSKey(t *testing.T, db *gorm.DB, id, address string) {
+	t.Helper()
+
+	key := model.NSSKey{
+		ID:                id,
+		CurrentGeneration: 1,
+		SecretHash:        "hash-" + id,
+		Name:              "deploy-fleet",
+		CreatedBy:         seedUser(t, db, "creator-"+id),
+		ExpiresAt:         ptr(time.Now().Add(24 * time.Hour)),
+		NotificationEmail: address,
+		CreatedAt:         time.Now(),
+		UpdatedAt:         time.Now(),
+	}
+	if err := db.Create(&key).Error; err != nil {
+		t.Fatalf("failed to create the NSS key %q: %v", id, err)
+	}
+}
+
+// A fleet key notification is queued carrying the key's id, which is how
+// delivery finds the address to send to.
+func TestNotifyNSSKey_shouldQueueAnEventCarryingTheKeyID(t *testing.T) {
+	pub := &recordingPublisher{}
+	svc := NewNotificationService(nil, pub, true, false, false)
+
+	svc.NotifyNSSKey(context.Background(), notify.KindNSSKeyRotated, "nss_ABCD2345",
+		&notify.NSSKeyRotated{KeyID: "nss_ABCD2345", KeyName: "deploy-fleet"})
+
+	msgs := pub.published()
+	if len(msgs) != 1 {
+		t.Fatalf("queued %d messages, want 1", len(msgs))
+	}
+	var event notify.Event
+	if err := json.Unmarshal(msgs[0].Payload, &event); err != nil {
+		t.Fatalf("unmarshal the queued event: %v", err)
+	}
+	if event.NSSKeyID != "nss_ABCD2345" || event.Kind != notify.KindNSSKeyRotated {
+		t.Errorf("queued event is kind %q for key %q, want %q for nss_ABCD2345",
+			event.Kind, event.NSSKeyID, notify.KindNSSKeyRotated)
+	}
+}
+
+// With mail disabled a fleet key notification is a no-op, as every kind is.
+func TestNotifyNSSKey_shouldQueueNothingWhenMailIsDisabled(t *testing.T) {
+	pub := &recordingPublisher{}
+	svc := NewNotificationService(nil, pub, false, false, false)
+
+	svc.NotifyNSSKey(context.Background(), notify.KindNSSKeyRotated, "nss_ABCD2345", &notify.NSSKeyRotated{})
+
+	if got := len(pub.published()); got != 0 {
+		t.Errorf("queued %d messages with mail disabled, want 0", got)
+	}
+}
+
+// An empty key id names no address to read, so it is skipped rather than
+// queued for delivery to nobody.
+func TestNotifyNSSKey_shouldQueueNothingForAnEmptyKeyID(t *testing.T) {
+	pub := &recordingPublisher{}
+	svc := NewNotificationService(nil, pub, true, false, false)
+
+	svc.NotifyNSSKey(context.Background(), notify.KindNSSKeyRotated, "", &notify.NSSKeyRotated{})
+
+	if got := len(pub.published()); got != 0 {
+		t.Errorf("queued %d messages for an empty key id, want 0", got)
+	}
+}
+
+// The end-to-end path: a queued fleet key event is delivered to the key's
+// notification address, not to any user.
+func TestNotifyNSSKey_shouldDeliverToTheKeysAddress(t *testing.T) {
+	f := newNotificationFixture(t)
+	seedNSSKey(t, f.db, "nss_ABCD2345", "fleet@example.com")
+
+	f.svc.NotifyNSSKey(context.Background(), notify.KindNSSKeyRotated, "nss_ABCD2345",
+		&notify.NSSKeyRotated{KeyID: "nss_ABCD2345", KeyName: "deploy-fleet"})
+
+	got := f.recipients(t, 1)
+	if !slices.Equal(got, []string{"fleet@example.com"}) {
+		t.Errorf("delivered to %v, want only the key's address", got)
+	}
+}
+
+// The handler sends a fleet key event to the key's address and logs the key
+// by id, never the address, and never as an enrollment.
+func TestNotificationNSSKeyHandle_shouldLogTheKeyIDAndNotTheAddress(t *testing.T) {
+	f := newNotificationFixture(t)
+	seedNSSKey(t, f.db, "nss_ABCD2345", "fleet@example.com")
+	buf := captureDefaultLogger(t)
+
+	event, err := notify.NewNSSKeyEvent(notify.KindNSSKeyRotated, "nss_ABCD2345",
+		&notify.NSSKeyRotated{KeyID: "nss_ABCD2345", KeyName: "deploy-fleet"})
+	if err != nil {
+		t.Fatalf("NewNSSKeyEvent: %v", err)
+	}
+	payload, err := json.Marshal(event)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	handler := NewNotificationHandler(f.db, mustRenderer(t), f.sender)
+	if err := handler.handle(message.NewMessage(watermill.NewUUID(), payload)); err != nil {
+		t.Fatalf("handle: %v", err)
+	}
+
+	logged := buf.String()
+	if !strings.Contains(logged, `"key_id":"nss_ABCD2345"`) {
+		t.Errorf("the send log does not carry the key id: %s", logged)
+	}
+	if strings.Contains(logged, "enrollment_id") {
+		t.Errorf("the send log names an enrollment for a fleet key: %s", logged)
+	}
+	if strings.Contains(logged, "fleet@example.com") {
+		t.Errorf("the send log carries the key's address: %s", logged)
+	}
+}
+
+// The admin-only kinds are offered only to a session holding the admin
+// role, read from the session's own groups.
+func TestPreferencesForIdentity_shouldOfferTheAdminOnlyKindsOnlyToAnAdmin(t *testing.T) {
+	tests := []struct {
+		name   string
+		admin  *config.AdminConfig
+		groups []string
+		want   bool
+	}{
+		{name: "should offer the admin-only kinds when the session holds the admin group", admin: &config.AdminConfig{RequireGroup: "ssh-admins"}, groups: []string{"ssh-admins"}, want: true},
+		{name: "should leave the admin-only kinds out when the session does not hold the admin group", admin: &config.AdminConfig{RequireGroup: "ssh-admins"}, groups: []string{"soc"}},
+		{name: "should leave the admin-only kinds out when no role configuration is attached", groups: []string{"ssh-admins"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newNotificationFixture(t)
+			f.svc.SetAdminConfig(tc.admin)
+
+			settings, err := f.svc.PreferencesForIdentity(context.Background(), &Identity{Subject: f.user.Subject, Groups: tc.groups})
+			if err != nil {
+				t.Fatalf("PreferencesForIdentity: %v", err)
+			}
+			offered := map[notify.Kind]bool{}
+			for _, k := range settings.Kinds {
+				offered[k.Kind] = true
+			}
+			for _, kind := range []notify.Kind{notify.KindNSSIDChangePending, notify.KindNSSIDChangeReminder} {
+				if offered[kind] != tc.want {
+					t.Errorf("%s offered = %v, want %v", kind, offered[kind], tc.want)
+				}
+			}
+			if !offered[notify.KindServiceEnrollmentCreated] {
+				t.Error("a kind everyone gets was left out")
+			}
+		})
 	}
 }

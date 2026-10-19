@@ -90,6 +90,15 @@ type CurrentUserResponse struct {
 	IsAdmin   bool `json:"is_admin" validate:"required"`
 	IsSOC     bool `json:"is_soc" validate:"required"`
 	IsAuditor bool `json:"is_auditor" validate:"required"`
+	// IsNSSKeyAdmin reports the fleet key admin role (admin.nss_key_group,
+	// which admin implies): create keys and manage every one. Members of a
+	// single key's group manage that key without it. Display only, like
+	// the three above.
+	IsNSSKeyAdmin bool `json:"is_nss_key_admin" validate:"required"`
+
+	// NSSEnabled reports nss.enabled, so the UI shows the fleet keys only
+	// where the server serves them.
+	NSSEnabled bool `json:"nss_enabled" validate:"required"`
 
 	// DetailLevel is how much of the covered pages this person sees:
 	// "simplified" or "advanced". Stored on the server so it follows the
@@ -1381,6 +1390,12 @@ type LDAPSyncRunResponse struct {
 	// failed bind. Empty for a pass that completed, whatever it concluded
 	// about individual users.
 	Error string `json:"error,omitempty"`
+
+	// NSS is what the NSS directory's full sync concluded when an admin
+	// ran this pass by hand with nss.enabled on: POST /api/admin/ldap/sync
+	// runs both, except on a dry run. Absent otherwise, and on every
+	// scheduled pass, which the NSS sync does not ride on.
+	NSS *NSSSyncRunResponse `json:"nss,omitempty"`
 }
 
 // LDAPStatusResponse answers "is the sync even running", and describes the

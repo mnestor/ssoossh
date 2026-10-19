@@ -113,10 +113,14 @@ func (UserLDAP) TableName() string { return "user_ldap" }
 //
 // Rows rather than JSON so "everyone in soc" is one indexed query.
 //
-// **Never an authorization input.** Authorization — admin, SOC, auditor,
-// and certificate policy gates — is evaluated from the session identity
-// only, and this table answers "who should this reach", never "may this
-// caller do this". See https://mnestor.github.io/ssoossh/internals/invariants/.
+// **Never grants anything.** Authorization — admin, SOC, auditor, fleet key
+// admin, and certificate policy gates — is evaluated from the session
+// identity only, and this table answers "who should this reach", never
+// "may this caller do this". The one exception narrows: with
+// ldap.authoritative_role_groups on, a role group the user's ldap rows no
+// longer list is removed from the session identity
+// (service.LDAPService.NarrowRoleGroups). See
+// https://mnestor.github.io/ssoossh/internals/invariants/.
 //
 // Only group names the configuration references are persisted; membership
 // outside that allowlist is discarded at capture time. The server does not

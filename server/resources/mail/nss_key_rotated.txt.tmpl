@@ -1,0 +1,24 @@
+{{ if .RotatedByName }}{{ .RotatedByName }} ({{ .RotatedByUsername }}){{ else }}{{ .RotatedByUsername }}{{ end }} rotated NSS key {{ .KeyName }} ({{ .KeyID }}) at {{ datetime .RotatedAt }}.
+The key is now on generation {{ .Generation }}. Hosts should present the new
+secret that the rotation issued. {{ if .ExpiresAt.IsZero }}The key still never expires.{{ else }}The rotation renewed the key's
+expiry to {{ datetime .ExpiresAt }}.{{ end }}
+{{ if .PreviousExpiresAt.Equal .RotatedAt }}
+The previous secret stopped working at the same moment, so a host that still
+presents it is refused.
+{{ else }}
+The previous secret keeps working until {{ datetime .PreviousExpiresAt }}
+({{ until .PreviousExpiresAt }}). Hosts have until then to switch over, and
+are refused after it.
+{{ end }}
+  Rotated at        {{ datetime .RotatedAt }}
+  Key expires       {{ if .ExpiresAt.IsZero }}never{{ else }}{{ datetime .ExpiresAt }} ({{ remaining .ExpiresAt }}){{ end }}
+{{ if .Advanced }}
+DETAILS
+
+  Key ID            {{ .KeyID }}
+  Generation        {{ .Generation }}
+  Previous expires  {{ datetime .PreviousExpiresAt }}
+{{ end }}
+Sent to the notification address of NSS key {{ .KeyName }}, which defaults to
+its creator. This message is always sent: it is not a notification preference
+and cannot be turned off.

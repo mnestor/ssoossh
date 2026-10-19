@@ -81,11 +81,10 @@ func TestNewClient_ShouldDefaultTheRequestTimeout(t *testing.T) {
 func TestDescribeTransportError_ShouldPassThroughAnUnrecognisedError(t *testing.T) {
 	t.Parallel()
 
-	c := &HTTPClient{serverURL: "https://ssh.example.test"}
 	original := errors.New("something else")
 
 	var transportErr *TransportError
-	if got := c.describeTransportError(original); errors.As(got, &transportErr) {
+	if got := describeTransport("https://ssh.example.test", time.Second, connFresh, original); errors.As(got, &transportErr) {
 		t.Errorf("got %v, want the original error unchanged", got)
 	}
 }
@@ -98,6 +97,8 @@ func TestClassifyTransportError(t *testing.T) {
 	tests := []struct {
 		name       string
 		err        error
+		timeout    time.Duration
+		conn       connUse
 		wantReason string
 	}{
 		{
@@ -131,6 +132,43 @@ func TestClassifyTransportError(t *testing.T) {
 			wantReason: "could not connect (network is unreachable)",
 		},
 		{
+			name:       "should call a dial that timed out a connect failure when the dialer gave up",
+			err:        &net.OpError{Op: "dial", Err: timeoutErr{}},
+			conn:       connNone,
+			wantReason: "could not connect (i/o timeout)",
+		},
+		{
+			name:       "should say it could not connect when the deadline passed before a connection",
+			err:        context.DeadlineExceeded,
+			conn:       connNone,
+			wantReason: "could not connect within 1s",
+		},
+		{
+			name:       "should name the reused connection when one went silent",
+			err:        context.DeadlineExceeded,
+			conn:       connReused,
+			wantReason: "no response within 1s on a reused connection",
+		},
+		{
+			name:       "should name the timeout when a fresh connection went silent",
+			err:        context.DeadlineExceeded,
+			conn:       connFresh,
+			wantReason: "no response within 1s",
+		},
+		{
+			name:       "should name the timeout when the call did not record its connection",
+			err:        context.DeadlineExceeded,
+			conn:       connUnknown,
+			wantReason: "no response within 1s",
+		},
+		{
+			name:       "should say only that it timed out when no bound is known",
+			err:        context.DeadlineExceeded,
+			timeout:    -1,
+			conn:       connReused,
+			wantReason: "the connection timed out",
+		},
+		{
 			name:       "should leave an unknown error alone",
 			err:        errors.New("something else"),
 			wantReason: "",
@@ -140,12 +178,23 @@ func TestClassifyTransportError(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if reason, _ := classifyTransportError(tt.err, time.Second); reason != tt.wantReason {
+			timeout := tt.timeout
+			if timeout == 0 {
+				timeout = time.Second
+			}
+			if reason, _ := classifyTransportError(tt.err, timeout, tt.conn); reason != tt.wantReason {
 				t.Errorf("reason = %q, want %q", reason, tt.wantReason)
 			}
 		})
 	}
 }
+
+// timeoutErr is a net.Error that timed out, as a dialer's i/o timeout is.
+type timeoutErr struct{}
+
+func (timeoutErr) Error() string   { return "i/o timeout" }
+func (timeoutErr) Timeout() bool   { return true }
+func (timeoutErr) Temporary() bool { return true }
 
 func TestUndecodableError(t *testing.T) {
 	t.Parallel()
@@ -180,5 +229,75 @@ func TestUndecodableError(t *testing.T) {
 				t.Errorf("got %q, want %q", err.Error(), tt.want)
 			}
 		})
+	}
+}
+
+// TestNewClient_UserAgent covers the default header and a caller's own.
+func TestNewClient_UserAgent(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		userAgent  string
+		wantPrefix string
+		wantExact  bool
+	}{
+		{"should send the ssoossh client's user agent when none is configured", "", "ssoossh/", false},
+		{"should send the configured user agent verbatim when one is set", "ssoosshd-nss/1.2.3", "ssoosshd-nss/1.2.3", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := make(chan string, 1)
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				got <- r.Header.Get("User-Agent")
+				http.Error(w, "not here", http.StatusNotFound)
+			}))
+			t.Cleanup(ts.Close)
+
+			c, err := NewClient(Config{ServerURL: ts.URL, UserAgent: tt.userAgent})
+			if err != nil {
+				t.Fatalf("unexpected error building client: %v", err)
+			}
+			_, _ = c.GetCA(context.Background())
+
+			ua := <-got
+			if tt.wantExact && ua != tt.wantPrefix {
+				t.Errorf("User-Agent = %q, want %q", ua, tt.wantPrefix)
+			}
+			if !tt.wantExact && !strings.HasPrefix(ua, tt.wantPrefix) {
+				t.Errorf("User-Agent = %q, want the prefix %q", ua, tt.wantPrefix)
+			}
+		})
+	}
+}
+
+// TestNewClient_ShouldStillConnectWhenADialTimeoutIsSet proves the
+// replacement dialer is installed and dials, and leaves the request
+// timeout alone.
+func TestNewClient_ShouldStillConnectWhenADialTimeoutIsSet(t *testing.T) {
+	t.Parallel()
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "not here", http.StatusNotFound)
+	}))
+	t.Cleanup(ts.Close)
+
+	c, err := NewClient(Config{ServerURL: ts.URL, DialTimeout: 2 * time.Second})
+	if err != nil {
+		t.Fatalf("unexpected error building client: %v", err)
+	}
+	transport, ok := c.http.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("transport is %T, want *http.Transport", c.http.Transport)
+	}
+	conn, err := transport.DialContext(context.Background(), "tcp", ts.Listener.Addr().String())
+	if err != nil {
+		t.Fatalf("DialContext() error = %v, want a connection", err)
+	}
+	_ = conn.Close()
+	if c.http.Timeout != DefaultRequestTimeout {
+		t.Errorf("Timeout = %s, want the default %s untouched", c.http.Timeout, DefaultRequestTimeout)
 	}
 }

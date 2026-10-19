@@ -143,7 +143,7 @@
 
 <PageShell width="wide">
 	<!-- "Preferences", not "Notification preferences": the page holds the
-	     display level as well, and will hold the login shell. -->
+	     display level as well. -->
 	<PageHeading title="Preferences" />
 
 	<div aria-live="polite" aria-atomic="true" class="sr-only" data-testid="preferences-status">

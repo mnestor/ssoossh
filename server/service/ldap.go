@@ -55,6 +55,10 @@ type LDAPService struct {
 	// discards until bootstrap attaches the real one (see SetNotifier).
 	notifier Notifier
 
+	// nss links the NSS account a person's entry carries at login. Nil
+	// when NSS is disabled (see SetNSSDirectory).
+	nss *NSSDirectoryService
+
 	// running is the single-flight guard on Sync. One pass at a time per
 	// instance, so an operator pressing the button repeatedly cannot stack
 	// passes over the same users.
@@ -117,6 +121,14 @@ func parseLDAPFields(c *config.Config) (fields []parsedLDAPField, primaryAttrs [
 	if c.LDAP.IDAttribute != "" {
 		attrs[c.LDAP.IDAttribute] = true
 	}
+	// The NSS link reads the mapped name and uid off the same entry the
+	// login resolves, so they ride on the primary read rather than costing
+	// a second one. Only when NSS is on: without it the read requests
+	// exactly what it always did.
+	if c.NSS.Enabled {
+		attrs[c.NSS.Attributes.Name] = true
+		attrs[c.NSS.Attributes.UID] = true
+	}
 	for _, name := range sortedFieldNames(c.LDAP.Fields) {
 		field := c.LDAP.Fields[name]
 		parsed := parsedLDAPField{name: name, attribute: field.Attribute}
@@ -163,6 +175,14 @@ func (s *LDAPService) SetAuditor(a *AuditService) {
 	}
 }
 
+// SetNSSDirectory attaches the NSS directory, so a login links the person
+// to the POSIX account their entry carries. Nil leaves logins unlinked.
+func (s *LDAPService) SetNSSDirectory(n *NSSDirectoryService) {
+	if s != nil {
+		s.nss = n
+	}
+}
+
 // sortedFieldNames gives map iteration a stable order, so the requested
 // attribute list and any error message read the same across runs.
 func sortedFieldNames(fields map[string]config.LDAPField) []string {
@@ -190,6 +210,10 @@ func groupAllowlist(c *config.Config) []string {
 	add(c.Admin.RequireGroup)
 	add(c.Admin.SOCGroup)
 	add(c.Admin.AuditorGroup)
+	// Fleet key admin is a role like the three above, and
+	// ldap.authoritative_role_groups narrows it by these rows, so it has to
+	// be stored for the directory to be able to keep it.
+	add(c.Admin.NSSKeyGroup)
 	for _, n := range c.LDAP.Sync.ExtraGroups {
 		add(n)
 	}
@@ -275,7 +299,7 @@ func (s *LDAPService) Enrich(ctx context.Context, identity *Identity, userID str
 			"subject", identity.Subject, "error", err)
 	}
 
-	entry, err := s.lookup(ctx, identity, anchors)
+	entry, err := s.lookup(ctx, identity, userID, anchors)
 	if err != nil {
 		s.log.WarnContext(ctx, "directory lookup failed; continuing with the OIDC identity",
 			"subject", identity.Subject, "username", identity.Username, "error", err)
@@ -287,20 +311,23 @@ func (s *LDAPService) Enrich(ctx context.Context, identity *Identity, userID str
 
 	applyLDAPValues(identity, entry.Values)
 
-	if err := s.persist(ctx, userID, entry); err != nil {
+	if err := s.persist(ctx, userID, entry, roleNarrowedAtLogin); err != nil {
 		s.log.ErrorContext(ctx, "failed to persist directory enrichment",
 			"subject", identity.Subject, "error", err)
 	}
 }
 
 // lookup dials the directory and resolves identity's entry through the
-// shared anchor walk, then runs each field's searches.
+// shared anchor walk, then runs each field's searches. With NSS on, the
+// resolved entry's POSIX account is linked to userID on the same
+// connection before it closes (NSSDirectoryService.linkLogin), which never
+// fails the lookup.
 //
 // row is the caller's stored bookkeeping, or nil for a user who has never
 // been enriched — a first login, or the first pass after ldap.id_attribute
 // was configured. Nil simply means there are no anchors yet and the walk
 // starts at the filter.
-func (s *LDAPService) lookup(ctx context.Context, identity *Identity, row *model.UserLDAP) (*ldapEntry, error) {
+func (s *LDAPService) lookup(ctx context.Context, identity *Identity, userID string, row *model.UserLDAP) (*ldapEntry, error) {
 	conn, err := s.dial(&s.config.LDAP)
 	if err != nil {
 		return nil, err
@@ -314,6 +341,7 @@ func (s *LDAPService) lookup(ctx context.Context, identity *Identity, row *model
 	entry, outcome := s.resolveAnchored(ctx, conn, identity, row)
 	switch outcome {
 	case syncFound:
+		s.nss.linkLogin(ctx, conn, identity, userID, entry)
 		return entry, nil
 	case syncMissing:
 		return nil, errors.New("no directory entry matched")
@@ -378,6 +406,7 @@ func (s *LDAPService) resolveAnchored(ctx context.Context, conn ldapConn, identi
 				s.log.WarnContext(ctx, "directory read by DN failed; falling back to a filter search",
 					append(logAttrs, "dn", row.DN, "error", err)...)
 			case entry != nil:
+				s.warnChangedDirectoryID(ctx, row, entry, logAttrs)
 				return s.finishResolve(ctx, conn, identity, entry, logAttrs)
 			}
 		}
@@ -401,6 +430,26 @@ func (s *LDAPService) resolveAnchored(ctx context.Context, conn ldapConn, identi
 		return nil, syncMissing
 	}
 	return s.finishResolve(ctx, conn, identity, entry, logAttrs)
+}
+
+// warnChangedDirectoryID warns when the entry found at a row's stored DN
+// carries a different unique id from the one stored for it. Either the
+// entry was deleted and re-created at the same DN, or ldap.id_attribute
+// changed (by hand or through an ldap.schema preset) on a database that
+// holds ids read from another attribute. Login enrichment recovers either
+// way, since the DN read found the person and the new id is stored with
+// the result; the warning exists for the NSS directory, which anchors on
+// the same ids and treats such an entry as a new one.
+func (s *LDAPService) warnChangedDirectoryID(ctx context.Context, row *model.UserLDAP, entry *ldap.Entry, logAttrs []any) {
+	if row.DirectoryID == "" {
+		return
+	}
+	got := directoryIDValue(entry, s.config.LDAP.IDAttribute)
+	if got == "" || got == row.DirectoryID {
+		return
+	}
+	s.log.WarnContext(ctx, "the directory entry at the stored DN has a different unique id: it was re-created, or ldap.id_attribute changed on a database holding ids from another attribute, which the NSS directory reads as a new entry; keep the old ldap.id_attribute set explicitly until a migration tool exists",
+		append(logAttrs, "dn", entry.DN, "id_attribute", s.config.LDAP.IDAttribute, "stored_id", row.DirectoryID, "entry_id", got)...)
 }
 
 // finishResolve runs the field searches over a located entry. A failure
@@ -556,8 +605,13 @@ func applyLDAPValues(identity *Identity, values map[string][]string) {
 				identity.DisplayName = vals[0]
 			}
 		case config.LDAPFieldGroups:
-			// Persisted, never merged into the session identity: see the
-			// invariant in https://mnestor.github.io/ssoossh/internals/invariants/.
+			// Persisted, never merged into the session identity, so the
+			// directory never grants a group. The one way these rows bear
+			// on the identity is narrowing: with
+			// ldap.authoritative_role_groups on, a role group the latest
+			// read no longer lists is removed from it (see
+			// LDAPService.NarrowRoleGroups and the invariant in
+			// https://mnestor.github.io/ssoossh/internals/invariants/).
 		default:
 			// Any other name is an extra template field, on the same
 			// contract as OAuthFields.Extra.
@@ -650,8 +704,16 @@ func (s *LDAPService) storedValues(ctx context.Context, userID string) (*storedL
 }
 
 // persist writes the sync bookkeeping row and replaces the user's
-// LDAP-sourced group rows.
-func (s *LDAPService) persist(ctx context.Context, userID string, entry *ldapEntry) error {
+// LDAP-sourced group rows. It is reached only with an entry a successful
+// read resolved (Enrich and syncUser both return before it on any failure
+// or miss), which is what lets ldap.authoritative_role_groups treat these
+// rows as the latest directory read.
+//
+// trigger names the read for the user.role_narrowed_by_directory event,
+// written in the same transaction when the new rows take away a role group
+// the user holds through OIDC; a failed audit write fails the persist, so
+// the rows never narrow a role without the record of it.
+func (s *LDAPService) persist(ctx context.Context, userID string, entry *ldapEntry, trigger string) error {
 	encoded, err := json.Marshal(entry.Values)
 	if err != nil {
 		// not covered: Values is a map of string slices, so json.Marshal
@@ -679,7 +741,8 @@ func (s *LDAPService) persist(ctx context.Context, userID string, entry *ldapEnt
 		UpdatedAt:      now,
 	}
 
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	var narrowed *AuditEvent
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "user_id"}},
 			DoUpdates: clause.AssignmentColumns([]string{
@@ -688,8 +751,29 @@ func (s *LDAPService) persist(ctx context.Context, userID string, entry *ldapEnt
 		}).Create(&row).Error; err != nil {
 			return fmt.Errorf("failed to persist directory bookkeeping: %w", err)
 		}
-		return replaceGroups(tx, userID, model.GroupSourceLDAP, s.allowed(entry.Values[config.LDAPFieldGroups]), now)
+		removed, err := replaceGroups(tx, userID, model.GroupSourceLDAP, s.allowed(entry.Values[config.LDAPFieldGroups]), now)
+		if err != nil {
+			return err
+		}
+		event, err := s.roleNarrowedEvent(tx, userID, removed, trigger, now)
+		if err != nil || event == nil || s.auditor == nil {
+			return err
+		}
+		narrowed = event
+		return s.auditor.RecordTx(tx, *event)
 	})
+	if err != nil {
+		return err
+	}
+
+	// After the commit, as autoDisable does, so a rolled back write leaves
+	// no log line claiming a role was taken away.
+	if narrowed != nil {
+		s.auditor.LogOnly(*narrowed)
+		s.log.InfoContext(ctx, "the directory no longer lists a role group the user holds, so it stops counting (ldap.authoritative_role_groups)",
+			"user_id", userID, "groups", narrowed.Detail["groups"], "trigger", trigger)
+	}
+	return nil
 }
 
 // allowed reduces directory group values to comparable names and keeps only
@@ -708,23 +792,29 @@ func (s *LDAPService) allowed(values []string) []string {
 // replaceGroups rewrites one source's group rows for a user: delete then
 // insert, so a membership that disappeared is actually gone rather than
 // lingering. FirstSeenAt is preserved for rows that persist across the
-// replace, since "since when" is the part worth keeping.
-func replaceGroups(tx *gorm.DB, userID string, source model.GroupSource, names []string, now time.Time) error {
+// replace, since "since when" is the part worth keeping. Returns the names
+// the replace dropped, which is how persist sees a directory read take a
+// role group away.
+func replaceGroups(tx *gorm.DB, userID string, source model.GroupSource, names []string, now time.Time) ([]string, error) {
 	var existing []model.UserGroup
 	if err := tx.Where("user_id = ? AND source = ?", userID, source).Find(&existing).Error; err != nil {
-		return fmt.Errorf("failed to read existing group rows: %w", err)
+		return nil, fmt.Errorf("failed to read existing group rows: %w", err)
 	}
 	firstSeen := map[string]time.Time{}
+	var removed []string
 	for _, row := range existing {
 		firstSeen[row.GroupName] = row.FirstSeenAt
+		if !slices.Contains(names, row.GroupName) {
+			removed = append(removed, row.GroupName)
+		}
 	}
 
 	if err := tx.Where("user_id = ? AND source = ?", userID, source).
 		Delete(&model.UserGroup{}).Error; err != nil {
-		return fmt.Errorf("failed to clear existing group rows: %w", err)
+		return nil, fmt.Errorf("failed to clear existing group rows: %w", err)
 	}
 	if len(names) == 0 {
-		return nil
+		return removed, nil
 	}
 
 	rows := make([]model.UserGroup, 0, len(names))
@@ -743,9 +833,9 @@ func replaceGroups(tx *gorm.DB, userID string, source model.GroupSource, names [
 		})
 	}
 	if err := tx.Create(&rows).Error; err != nil {
-		return fmt.Errorf("failed to write group rows: %w", err)
+		return nil, fmt.Errorf("failed to write group rows: %w", err)
 	}
-	return nil
+	return removed, nil
 }
 
 // dedupe removes duplicates while preserving first-seen order.

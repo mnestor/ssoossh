@@ -324,9 +324,43 @@ than leaving the user to work it out:
 [`mail.enabled`](/ssoossh/reference/config/mail/#enabled) being false, and an
 identity whose provider releases no email claim.
 
+### Directory id changes, for admins
+
+When the directory gives a stored NSS account or group a different uid or gid,
+hosts keep the stored number until an admin accepts the change under
+**Admin > Directory** (see
+[Frozen uid and gid](/ssoossh/operations/nss/#frozen-uid-and-gid)). Two kinds
+tell the admins about it:
+
+- `nss_id_change_pending` lists what is new: one message per admin for
+  everything a sync run made pending, sent when the run ends, and one for
+  whatever on-demand and login reads made pending, sent by a sweep every five
+  minutes. Each change is mailed once. A change accepted, or reverted in the
+  directory, before the message goes out is not mailed, and a different new
+  number for the same entry is mailed again as new.
+- `nss_id_change_reminder` lists everything still waiting, with how long each
+  has waited, every **Monday at 09:00** in the server's local time zone, and
+  only while something is waiting.
+
+Both go to every admin: each user whose groups at their **last login** include
+[`admin.require_group`](/ssoossh/reference/config/admin/#require_group), who
+has an email address, and who is not disabled. There is no address list to
+configure. Because the groups are the ones the last login recorded, someone
+removed from the admin group at the identity provider keeps getting these
+until they log in again, and a new admin gets them from their first login. A
+change that waits while no admin can be mailed is mailed as new once one can.
+
+Both are preferences that default on, listed on the preferences page only to
+a session holding the admin role, so each admin can switch either off. Each
+message lists at most 50 changes, oldest first, says how many more there are,
+and links to the pending changes on the directory page. Every instance runs
+the sweep and the reminder; each change is claimed on its row and each week's
+reminder on `nss_alerts`, so a restart or a second instance never repeats a
+message.
+
 ## Notification kinds
 
-Eight kinds. Every one ships three templates, named
+Sixteen kinds. Every one ships three templates, named
 `<kind>.subject.tmpl`, `<kind>.txt.tmpl` and `<kind>.html.tmpl`.
 
 | Kind | Trigger | Recipients | Default |
@@ -339,6 +373,14 @@ Eight kinds. Every one ships three templates, named
 | `pam_certificate_issued` | a certificate is signed for a local `sudo` or `su` on your behalf | the person the certificate is for | off |
 | `console_certificate_issued` | a certificate is signed for a console login you approved with a typed code | the person who approved | off |
 | `admin_auto_disabled` | the directory sync disables an account whose most recent login held the admin role | the admin whose account was disabled | always sent |
+| `nss_key_expiring` | an NSS fleet key is close to expiring: weekly inside the reminder window, then daily over the final week | the key's notification address | always sent |
+| `nss_key_rotation_cleanup` | after `mail.rotation_quiet_period`, daily while any host still presents a rotated key's previous secret and its grace lasts | the key's notification address | always sent |
+| `nss_key_expired_attempt` | a host presents an expired fleet key, at most once per `mail.expired_attempt_window` | the key's notification address | always sent |
+| `nss_key_revoked_attempt` | a host presents a revoked fleet key, at most once per `mail.expired_attempt_window` | the key's notification address | always sent |
+| `nss_key_rotated` | a fleet key is rotated | the key's notification address | always sent |
+| `nss_key_revoked` | a fleet key is revoked | the key's notification address | always sent |
+| `nss_id_change_pending` | the directory gives stored NSS uids or gids a different value: one message per sync run or per batch of reads, listing what is new | every admin, as of their last login | on |
+| `nss_id_change_reminder` | every Monday at 09:00 server time while any uid or gid change is still waiting | every admin, as of their last login | on |
 
 <!-- BEGIN GENERATED NOTIFICATION REFERENCE -->
 
@@ -665,6 +707,213 @@ Templates:
 | `.Reenable` | `bool` | Whether ldap.sync.reenable is on, in which case the sync clears this disable by itself once the entry is found again. |
 | `.SupportEmail` | `string` | Who to ask about this deployment (branding.support_email), or empty if none is configured. |
 | `.ServerURL` | `string` | The server's public origin, naming the deployment the account belongs to. |
+| `.Advanced` | `bool` | True when the recipient chose the advanced email detail level, false for simplified. Set per recipient at delivery; a template that ignores it sends the same message at both levels. |
+
+
+### NSS fleet key expiring
+
+`nss_key_expiring`
+
+Sent to the key's notification address (nss_keys.notification_email, which defaults to the creator's address) while a fleet key nears expiry: weekly inside mail.expiry_reminder_lead, then daily over the final week. Always sent, and not a preference: it cannot be turned off.
+
+Always sent: it is not a preference and cannot be turned off.
+
+Templates:
+
+- `nss_key_expiring.subject.tmpl`
+- `nss_key_expiring.txt.tmpl`
+- `nss_key_expiring.html.tmpl`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `.KeyID` | `string` | The fleet key's id, "nss_" followed by 8 characters. |
+| `.KeyName` | `string` | The fleet key's name. |
+| `.Description` | `string` | The key's description, or empty if none was set. |
+| `.GroupName` | `string` | The group whose members manage the key, or empty for none. |
+| `.ExpiresAt` | `time.Time` | When the key stops being accepted. Extend it, or create a replacement, before this. |
+| `.Daily` | `bool` | True once the key is inside its final week and reminders come daily; false while they are still weekly. |
+| `.ServerURL` | `string` | The server's public origin, naming the deployment the key belongs to. |
+| `.Advanced` | `bool` | True when the recipient chose the advanced email detail level, false for simplified. Set per recipient at delivery; a template that ignores it sends the same message at both levels. |
+
+
+### NSS fleet key rotation cleanup
+
+`nss_key_rotation_cleanup`
+
+Sent to the key's notification address (nss_keys.notification_email, which defaults to the creator's address) after a rotation, once mail.rotation_quiet_period has passed, and daily while any host still presents the previous secret, until the grace period ends. It lists the addresses that have not switched. Always sent, and not a preference: it cannot be turned off.
+
+Always sent: it is not a preference and cannot be turned off.
+
+Templates:
+
+- `nss_key_rotation_cleanup.subject.tmpl`
+- `nss_key_rotation_cleanup.txt.tmpl`
+- `nss_key_rotation_cleanup.html.tmpl`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `.KeyID` | `string` | The fleet key's id, "nss_" followed by 8 characters. |
+| `.KeyName` | `string` | The fleet key's name. |
+| `.Generation` | `int` | The key's current generation, the one hosts should present. |
+| `.RotatedAt` | `time.Time` | When the key was last rotated. |
+| `.PreviousExpiresAt` | `time.Time` | When the previous secret stops working. Equal to RotatedAt when no grace period is set. |
+| `.Switched` | `int` | Addresses whose last lookup presented the current secret. |
+| `.NotSwitched` | `int` | Addresses whose last lookup presented the previous secret. |
+| `.Gone` | `int` | Addresses seen before the rotation and not since. |
+| `.NotSwitchedAddresses` | `[]string` | Up to 50 addresses that have not switched, most recently seen first. |
+| `.MoreNotSwitched` | `int` | How many more not-switched addresses there are beyond the listed ones, or zero. |
+| `.ServerURL` | `string` | The server's public origin, naming the deployment the key belongs to. |
+| `.Advanced` | `bool` | True when the recipient chose the advanced email detail level, false for simplified. Set per recipient at delivery; a template that ignores it sends the same message at both levels. |
+
+
+### Expired NSS fleet key used
+
+`nss_key_expired_attempt`
+
+Sent to the key's notification address (nss_keys.notification_email, which defaults to the creator's address) when a host presents an expired fleet key, at most once per mail.expired_attempt_window. The attempt is refused. Always sent, and not a preference: it cannot be turned off.
+
+Always sent: it is not a preference and cannot be turned off.
+
+Templates:
+
+- `nss_key_expired_attempt.subject.tmpl`
+- `nss_key_expired_attempt.txt.tmpl`
+- `nss_key_expired_attempt.html.tmpl`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `.KeyID` | `string` | The fleet key's id, "nss_" followed by 8 characters. |
+| `.KeyName` | `string` | The fleet key's name. |
+| `.SourceIP` | `string` | The address the attempt came from, as the server observed it. |
+| `.AttemptedAt` | `time.Time` | When the expired key was presented. |
+| `.ExpiredAt` | `time.Time` | When the key stopped being accepted. |
+| `.ServerURL` | `string` | The server's public origin, naming the deployment the key belongs to. |
+| `.Advanced` | `bool` | True when the recipient chose the advanced email detail level, false for simplified. Set per recipient at delivery; a template that ignores it sends the same message at both levels. |
+
+
+### Revoked NSS fleet key used
+
+`nss_key_revoked_attempt`
+
+Sent to the key's notification address (nss_keys.notification_email, which defaults to the creator's address) when a host presents a revoked fleet key, at most once per mail.expired_attempt_window. The attempt is refused. Always sent, and not a preference: it cannot be turned off.
+
+Always sent: it is not a preference and cannot be turned off.
+
+Templates:
+
+- `nss_key_revoked_attempt.subject.tmpl`
+- `nss_key_revoked_attempt.txt.tmpl`
+- `nss_key_revoked_attempt.html.tmpl`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `.KeyID` | `string` | The fleet key's id, "nss_" followed by 8 characters. |
+| `.KeyName` | `string` | The fleet key's name. |
+| `.SourceIP` | `string` | The address the attempt came from, as the server observed it. |
+| `.AttemptedAt` | `time.Time` | When the revoked key was presented. |
+| `.RevokedAt` | `time.Time` | When the key was revoked. |
+| `.ServerURL` | `string` | The server's public origin, naming the deployment the key belongs to. |
+| `.Advanced` | `bool` | True when the recipient chose the advanced email detail level, false for simplified. Set per recipient at delivery; a template that ignores it sends the same message at both levels. |
+
+
+### NSS fleet key rotated
+
+`nss_key_rotated`
+
+Sent to the key's notification address (nss_keys.notification_email, which defaults to the creator's address) at once when a fleet key is rotated. Always sent, and not a preference: it cannot be turned off.
+
+Always sent: it is not a preference and cannot be turned off.
+
+Templates:
+
+- `nss_key_rotated.subject.tmpl`
+- `nss_key_rotated.txt.tmpl`
+- `nss_key_rotated.html.tmpl`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `.KeyID` | `string` | The fleet key's id, "nss_" followed by 8 characters. |
+| `.KeyName` | `string` | The fleet key's name. |
+| `.Generation` | `int` | The new current generation. |
+| `.RotatedAt` | `time.Time` | When the key was rotated. |
+| `.RotatedByUsername` | `string` | The account that rotated the key. |
+| `.RotatedByName` | `string` | That account's human-readable name, or empty if none was captured. |
+| `.PreviousExpiresAt` | `time.Time` | When the previous secret stops working. Equal to RotatedAt when no grace period is set or the key had expired. |
+| `.ExpiresAt` | `time.Time` | The key's expiry as the rotation renewed it: its own lifetime again from the rotation, at most nss.key_max_lifetime. Zero for a key that never expires. |
+| `.ServerURL` | `string` | The server's public origin, naming the deployment the key belongs to. |
+| `.Advanced` | `bool` | True when the recipient chose the advanced email detail level, false for simplified. Set per recipient at delivery; a template that ignores it sends the same message at both levels. |
+
+
+### NSS fleet key revoked
+
+`nss_key_revoked`
+
+Sent to the key's notification address (nss_keys.notification_email, which defaults to the creator's address) at once when a fleet key is revoked. Always sent, and not a preference: it cannot be turned off.
+
+Always sent: it is not a preference and cannot be turned off.
+
+Templates:
+
+- `nss_key_revoked.subject.tmpl`
+- `nss_key_revoked.txt.tmpl`
+- `nss_key_revoked.html.tmpl`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `.KeyID` | `string` | The fleet key's id, "nss_" followed by 8 characters. |
+| `.KeyName` | `string` | The fleet key's name. |
+| `.RevokedAt` | `time.Time` | When the key was revoked. |
+| `.RevokedByUsername` | `string` | The account that revoked the key. |
+| `.RevokedByName` | `string` | That account's human-readable name, or empty if none was captured. |
+| `.ServerURL` | `string` | The server's public origin, naming the deployment the key belongs to. |
+| `.Advanced` | `bool` | True when the recipient chose the advanced email detail level, false for simplified. Set per recipient at delivery; a template that ignores it sends the same message at both levels. |
+
+
+### Directory id change waiting for approval
+
+`nss_id_change_pending`
+
+Sent to every admin when the directory gives a stored NSS account or group a different uid or gid. Hosts keep the stored number until an admin accepts the change. One message per sync run, or per batch of on-demand and login reads, listing only the changes that are new.
+
+Default: **on**.
+
+Templates:
+
+- `nss_id_change_pending.subject.tmpl`
+- `nss_id_change_pending.txt.tmpl`
+- `nss_id_change_pending.html.tmpl`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `.Changes` | `[]notify.NSSIDChange` | The listed changes, oldest first, at most 50. Each has Entry ("account" or "group"), Attribute ("uid" or "gid"), Name, DN, DirectoryID (the ldap.id_attribute value, or empty), Stored (the number hosts are served), Pending (the directory's new number), PendingSince (when the server first saw it) and Waiting (how long it has waited, as a time.Duration). An account whose uid and gid both changed is two changes. |
+| `.Total` | `int` | How many changes the message is about, the listed ones included. |
+| `.More` | `int` | How many changes there are beyond the listed ones, or zero. |
+| `.DirectoryURL` | `string` | The pending changes on the admin directory page, where an admin accepts them: ServerURL followed by /admin/directory#pending-id-changes. |
+| `.ServerURL` | `string` | The server's public origin, naming the deployment the directory belongs to. |
+| `.Advanced` | `bool` | True when the recipient chose the advanced email detail level, false for simplified. Set per recipient at delivery; a template that ignores it sends the same message at both levels. |
+
+
+### Weekly reminder of waiting directory id changes
+
+`nss_id_change_reminder`
+
+Sent to every admin on Monday at 09:00 server time while any uid or gid change is still waiting, listing all of them with how long each has waited.
+
+Default: **on**.
+
+Templates:
+
+- `nss_id_change_reminder.subject.tmpl`
+- `nss_id_change_reminder.txt.tmpl`
+- `nss_id_change_reminder.html.tmpl`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `.Changes` | `[]notify.NSSIDChange` | The listed changes, oldest first, at most 50. Each has Entry ("account" or "group"), Attribute ("uid" or "gid"), Name, DN, DirectoryID (the ldap.id_attribute value, or empty), Stored (the number hosts are served), Pending (the directory's new number), PendingSince (when the server first saw it) and Waiting (how long it has waited, as a time.Duration). An account whose uid and gid both changed is two changes. |
+| `.Total` | `int` | How many changes the message is about, the listed ones included. |
+| `.More` | `int` | How many changes there are beyond the listed ones, or zero. |
+| `.DirectoryURL` | `string` | The pending changes on the admin directory page, where an admin accepts them: ServerURL followed by /admin/directory#pending-id-changes. |
+| `.ServerURL` | `string` | The server's public origin, naming the deployment the directory belongs to. |
 | `.Advanced` | `bool` | True when the recipient chose the advanced email detail level, false for simplified. Set per recipient at delivery; a template that ignores it sends the same message at both levels. |
 
 <!-- END GENERATED NOTIFICATION REFERENCE -->

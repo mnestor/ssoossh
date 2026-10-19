@@ -103,6 +103,13 @@ type ServerOptions struct {
 	// "authentication:" key, and the later one wins, silently discarding
 	// client_id and provider_url.
 	ServiceAccountsField string
+
+	// FileDB keeps the sqlite database in a file under t.TempDir() instead
+	// of in memory, so the test can open it beside the server
+	// (Server.OpenDB) and seed rows no HTTP surface writes, such as the NSS
+	// directory's stored entries. A postgres-backed run needs nothing extra:
+	// its private database is already reachable.
+	FileDB bool
 }
 
 // Server is a running ssoosshd subprocess.
@@ -122,9 +129,19 @@ type Server struct {
 	// and the CA key.
 	ConfigPath string
 
+	// db is where this instance keeps its data, for OpenDB.
+	db dbTarget
+
 	cmd            *exec.Cmd
 	stdout, stderr *lockedBuffer
 	name           string
+}
+
+// dbTarget is the database a rendered config points the server at: the
+// provider and the connection string, exactly as written to db.*.
+type dbTarget struct {
+	provider string
+	dsn      string
 }
 
 // The OAuth credentials every harness-rendered config carries; exposed on
@@ -142,14 +159,15 @@ const (
 func NewSignerConfig(t *testing.T, idp *IdentityProvider, opts ServerOptions) (configPath, caPublicKey string) {
 	t.Helper()
 
-	configPath, _, caPublicKey = newServerConfig(t, idp, opts)
+	configPath, _, caPublicKey, _ = newServerConfig(t, idp, opts)
 	return configPath, caPublicKey
 }
 
 // newServerConfig applies ServerOptions defaults, resolves the database,
 // generates a CA key, renders the YAML, and writes it to a temp file. Both
-// StartServer and NewSignerConfig build on it.
-func newServerConfig(t *testing.T, idp *IdentityProvider, opts ServerOptions) (configPath, baseURL, caPublicKey string) {
+// StartServer and NewSignerConfig build on it. db is the database the
+// config names.
+func newServerConfig(t *testing.T, idp *IdentityProvider, opts ServerOptions) (configPath, baseURL, caPublicKey string, db dbTarget) {
 	t.Helper()
 
 	if opts.ValidDuration == "" {
@@ -166,6 +184,13 @@ func newServerConfig(t *testing.T, idp *IdentityProvider, opts ServerOptions) (c
 	dsn := opts.DSN
 	if dsn == "" && os.Getenv("SSOOSSH_E2E_POSTGRES_DSN") != "" {
 		dsn = NewPostgresDatabase(t)
+	}
+	db = dbTarget{provider: "postgres", dsn: dsn}
+	if dsn == "" {
+		db = dbTarget{provider: "sqlite", dsn: ":memory:"}
+		if opts.FileDB {
+			db.dsn = filepath.Join(t.TempDir(), "ssoosshd.db")
+		}
 	}
 
 	port := freePort(t)
@@ -193,7 +218,7 @@ func newServerConfig(t *testing.T, idp *IdentityProvider, opts ServerOptions) (c
 		AdminContactEmail:       opts.AdminContactEmail,
 		AdminDisabledMessage:    opts.AdminDisabledMessage,
 		PAMRequireGroup:         opts.PAMRequireGroup,
-		DSN:                     dsn,
+		DB:                      db,
 		UserKeyIDTemplate:       opts.UserKeyIDTemplate,
 		ExtraClaimFields:        opts.ExtraClaimFields,
 		ServiceAccountsField:    opts.ServiceAccountsField,
@@ -204,7 +229,7 @@ func newServerConfig(t *testing.T, idp *IdentityProvider, opts ServerOptions) (c
 		t.Fatalf("harness: failed to write server config: %v", err)
 	}
 
-	return configPath, baseURL, caPublicKey
+	return configPath, baseURL, caPublicKey, db
 }
 
 // StartServer renders a config pointing at idp, starts ssoosshd against it,
@@ -212,7 +237,7 @@ func newServerConfig(t *testing.T, idp *IdentityProvider, opts ServerOptions) (c
 func StartServer(t *testing.T, idp *IdentityProvider, opts ServerOptions) *Server {
 	t.Helper()
 
-	configPath, baseURL, caPublicKey := newServerConfig(t, idp, opts)
+	configPath, baseURL, caPublicKey, db := newServerConfig(t, idp, opts)
 
 	ssoosshdPath, _ := Binaries(t)
 
@@ -230,6 +255,7 @@ func StartServer(t *testing.T, idp *IdentityProvider, opts ServerOptions) *Serve
 		BaseURL:     baseURL,
 		CAPublicKey: caPublicKey,
 		ClientID:    harnessClientID,
+		db:          db,
 		cmd:         cmd,
 		stdout:      &stdout,
 		stderr:      &stderr,
@@ -423,7 +449,7 @@ type serverConfigData struct {
 	AdminContactEmail       string
 	AdminDisabledMessage    string
 	PAMRequireGroup         string
-	DSN                     string
+	DB                      dbTarget
 	UserKeyIDTemplate       string
 	ExtraClaimFields        map[string]string
 	ServiceAccountsField    string
@@ -467,20 +493,16 @@ func renderServerConfig(d serverConfigData) string {
 		}
 	}
 
-	// d.DSN empty means throwaway in-memory sqlite. Non-empty it is a
-	// postgres database this server owns outright: newServerConfig
-	// provisions a private one per server via NewPostgresDatabase (so runs
-	// with SSOOSSH_E2E_POSTGRES_DSN exercise the same flows on real dialect
-	// semantics with sqlite-equivalent isolation), or the test passed
-	// ServerOptions.DSN to deliberately share one database across servers.
+	// d.DB is throwaway sqlite (in memory, or in a temp file for a test
+	// that seeds rows) or a postgres database this server owns outright:
+	// newServerConfig provisions a private one per server via
+	// NewPostgresDatabase (so runs with SSOOSSH_E2E_POSTGRES_DSN exercise
+	// the same flows on real dialect semantics with sqlite-equivalent
+	// isolation), or the test passed ServerOptions.DSN to deliberately share
+	// one database across servers.
 	fmt.Fprintf(&b, "db:\n")
-	if d.DSN != "" {
-		fmt.Fprintf(&b, "  provider: postgres\n")
-		fmt.Fprintf(&b, "  connection_string: %q\n", d.DSN)
-	} else {
-		fmt.Fprintf(&b, "  provider: sqlite\n")
-		fmt.Fprintf(&b, "  connection_string: \":memory:\"\n")
-	}
+	fmt.Fprintf(&b, "  provider: %s\n", d.DB.provider)
+	fmt.Fprintf(&b, "  connection_string: %q\n", d.DB.dsn)
 
 	fmt.Fprintf(&b, "production: false\n")
 	fmt.Fprintf(&b, "logging:\n")

@@ -49,7 +49,9 @@ Worth doing eventually; not started because nothing needs it yet.
   the session's absolute cap bounds how stale they can get. If a shorter
   revocation window is ever needed, the fix is re-validating claims on
   session refresh -- not caching group state in the database, which drifts
-  from the identity provider.
+  from the identity provider. The opt-in `ldap.authoritative_role_groups` is
+  not that cache: it lets the directory remove a role group the claim
+  carries, between logins, and nothing stored can grant one.
 
 ## Declined: wrong for this product
 
@@ -121,3 +123,50 @@ Worth doing eventually; not started because nothing needs it yet.
   operator actually cares about -- how long a client can hang -- was
   neither of them but their sum, counting the signing share twice because
   the sweep interval derives from it as well.
+
+## Declined: how hosts get directory users
+
+The [NSS directory](/ssoossh/operations/nss/) serves POSIX users and groups
+to hosts through systemd userdb: `nss-systemd`, which systemd ships, is the
+module inside every caller, and `ssoosshd-nss` is a userdb service. These were
+considered and declined.
+
+### Declined: an NSS module of our own
+
+A `libnss_ssoossh.so.2`, in C, beside a Go daemon over a private socket. It
+puts our code inside every setuid caller (`sudo`, `su`, `passwd`, `sshd`),
+needs a private protocol to version and a second build toolchain, and still
+needs the daemon for the cache and the key. systemd userdb gives the same
+result with no code of ours in callers. The price is the platform floor
+(systemd 245, glibc) and that "service not available" reaches callers as
+"not found".
+
+### Declined: HTTP inside an NSS module
+
+A module that calls the server itself, as some cloud OS-login modules do.
+The fleet key would have to be readable by every process that resolves a
+user. Unprivileged callers cannot write a cache the next one could trust, so
+there is no offline mode. And sandboxed callers (`RestrictAddressFamilies=`,
+`PrivateNetwork=`, SELinux domains allowed only NSS sockets) and early boot
+have no network to call with.
+
+### Declined: the sssd proxy provider
+
+sssd with `id_provider = proxy` loading an HTTP module. The proxy provider
+calls the module synchronously inside sssd's backend, so one slow fetch
+stalls every lookup; there is no refresh at login, so a removed `sudo` group
+waits for the sync plus the cache lifetime; and it means sssd on every
+Debian and Ubuntu host. Hosts that can reach the directory directly are
+better served by sssd pointed straight at it; the NSS directory exists for
+hosts that cannot.
+
+### Declined: on-demand-only directory reads
+
+Reading an entry only when a host first asks for it, instead of syncing
+everything the filters select. A group's member list would then hold only
+the members the server happened to have read, which is wrong for `getent
+group` and anything deciding on it. Fetching a found group's members one
+level deep fixes the list but adds a second kind of row whose own groups are
+never read. With the full sync, `nss.user_filter` and `nss.group_filter` are
+the control over what the server stores. An unknown name is still read on
+demand, so a new account resolves before the next sync.

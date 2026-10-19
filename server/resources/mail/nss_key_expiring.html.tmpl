@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
+<meta name="supported-color-schemes" content="light">
+</head>
+<body style="margin:0;padding:0;background:#f2f0ec">
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#f2f0ec"><tr><td align="center" style="padding:24px 12px">
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width:600px;background:#ffffff"><tr><td style="padding:28px 24px;font-family:'IBM Plex Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#1e1a16">
+
+<p style="margin:0 0 8px;font-size:16px;line-height:1.5;color:#1e1a16">NSS key <span style="font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">{{ .KeyName }}</span> (<span style="font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">{{ .KeyID }}</span>) expires in {{ until .ExpiresAt }}. Hosts that present its secret are refused from then on, and they stop resolving accounts through it.</p>
+<p style="margin:0 0 24px;font-size:14px;line-height:1.5;color:#5d5751">To keep the fleet running, rotate the key in the web UI{{ if .ServerURL }} at <span style="font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">{{ .ServerURL }}</span>{{ end }}. Rotation renews the expiry and issues a new secret, which must reach the hosts before the previous one stops working.</p>
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse">
+{{ if .Description }}<tr><td style="padding:12px 16px 12px 0;border-bottom:1px solid #e0ddda;font-size:14px;line-height:1.375;color:#5d5751;white-space:nowrap;vertical-align:top;width:1%">Description</td><td style="padding:12px 0;border-bottom:1px solid #e0ddda;font-size:16px;line-height:1.375;color:#1e1a16;vertical-align:top;word-break:break-word;font-variant-numeric:tabular-nums">{{ .Description }}</td></tr>
+{{ end }}<tr><td style="padding:12px 16px 12px 0;border-bottom:1px solid #e0ddda;font-size:14px;line-height:1.375;color:#5d5751;white-space:nowrap;vertical-align:top;width:1%">Key expires</td><td style="padding:12px 0;border-bottom:1px solid #e0ddda;font-size:16px;line-height:1.375;color:#1e1a16;vertical-align:top;word-break:break-word;font-variant-numeric:tabular-nums">{{ datetime .ExpiresAt }} ({{ remaining .ExpiresAt }})</td></tr>
+</table>
+{{ if .Advanced }}
+<p style="margin:32px 0 4px;font-size:11px;font-weight:600;line-height:1.25;letter-spacing:.06em;text-transform:uppercase;color:#5d5751">Details</p>
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse">
+<tr><td style="padding:8px 16px 8px 0;border-bottom:1px solid #e0ddda;font-size:13px;line-height:1.25;color:#5d5751;white-space:nowrap;vertical-align:top;width:1%">Key ID</td><td style="padding:8px 0;border-bottom:1px solid #e0ddda;font-size:13px;line-height:1.25;color:#1e1a16;vertical-align:top;word-break:break-word;font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">{{ .KeyID }}</td></tr>
+<tr><td style="padding:8px 16px 8px 0;border-bottom:1px solid #e0ddda;font-size:13px;line-height:1.25;color:#5d5751;white-space:nowrap;vertical-align:top;width:1%">Group</td><td style="padding:8px 0;border-bottom:1px solid #e0ddda;font-size:13px;line-height:1.25;color:#1e1a16;vertical-align:top;word-break:break-word;font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">{{ if .GroupName }}{{ .GroupName }}{{ else }}none{{ end }}</td></tr>
+</table>
+{{ end }}
+<p style="margin:24px 0 0;font-size:14px;line-height:1.5;color:#5d5751">{{ if .Daily }}You will get this every day until the key expires.{{ else }}You will get this again in a week, then every day over its final week.{{ end }}</p>
+<p style="margin:32px 0 0;padding-top:16px;border-top:1px solid #e0ddda;font-size:12px;line-height:1.5;color:#5d5751">
+Sent to the notification address of NSS key {{ .KeyName }}, which defaults to its creator. This message is always sent: it is not a notification preference and cannot be turned off.
+</p>
+</td></tr></table>
+</td></tr></table>
+</body>
+</html>

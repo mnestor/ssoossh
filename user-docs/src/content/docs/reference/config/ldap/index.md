@@ -22,8 +22,10 @@ LDAP is enrichment, never a requirement. If directory data is available a user g
 | [`ldap.fields.<name>.searches[].base_dn`](#fieldsnamesearchesbase_dn) | string | `empty` |
 | [`ldap.fields.<name>.searches[].filter`](#fieldsnamesearchesfilter) | string | `empty` |
 | [`ldap.fields.<name>.searches[].value`](#fieldsnamesearchesvalue) | string | `empty` |
+| [`ldap.schema`](#schema) | string | `empty` |
 | [`ldap.id_attribute`](#id_attribute) | string | `empty` |
 | [`ldap.group_name_attribute`](#group_name_attribute) | string | `empty` |
+| [`ldap.authoritative_role_groups`](#authoritative_role_groups) | bool | `false` |
 | [`ldap.sync.interval`](/ssoossh/reference/config/ldap/sync/#interval) | duration | `15m` |
 | [`ldap.sync.disable_after`](/ssoossh/reference/config/ldap/sync/#disable_after) | duration | `45m` |
 | [`ldap.sync.reenable`](/ssoossh/reference/config/ldap/sync/#reenable) | bool | `true` |
@@ -197,17 +199,34 @@ ldap:
         - value: uid
 ```
 
+## `schema`
+
+`string`, default `empty`
+
+Selects a preset for the keys whose right value depends on the directory: ldap.id_attribute, nss.user_filter, nss.group_filter, nss.disabled_filter and nss.attributes. One of rfc2307, rfc2307bis, active-directory, lldap or freeipa; any other value fails startup. Empty (the default) applies no preset, and every key keeps its own default. Each preset's values, and the source each came from, are listed at https://mnestor.github.io/ssoossh/operations/ldap-schema-presets/.
+
+A preset sits between the built-in defaults and the config file: any key the file sets beats the preset, so a preset is a starting point rather than a lock. Setting nss.attributes.shell to an attribute of your own with active-directory selected keeps every other active-directory value.
+
+Every preset sets ldap.id_attribute. On a database that already holds directory ids read from another attribute (or an earlier ldap.id_attribute), set ldap.id_attribute explicitly to the attribute in use, or start from a fresh database: there is no migration tool yet, and the NSS directory treats an entry whose id changed at the same DN as a new entry where the old one used to be.
+
+```yaml
+ldap:
+  schema: rfc2307bis
+```
+
 ## `id_attribute`
 
 `string`, default `empty`
 
-Names the attribute holding the entry's unique, immutable identifier, and is what makes a directory rename survivable. Empty (the default) keeps the DN-then-filter resolution described below.
+Names the attribute holding the entry's unique, immutable identifier, and is what makes a directory rename survivable. Empty (the default) keeps the DN-then-filter resolution described below. A preset from ldap.schema may set this.
 
 Every directory has one under a different name: entryUUID on OpenLDAP and 389 Directory Server (RFC 4530), objectGUID on Active Directory, ipaUniqueID on FreeIPA. None of them is guessable from the others, so there is no useful default beyond off.
 
 With it set, the sync resolves an entry by ID first, falling back to the stored DN and then to user_filter. That ordering is the point: a DN changes when someone moves between OUs and user_filter stops matching when they are renamed, so without an ID a rename looks exactly like a deletion and walks the account toward the sync.disable_after auto-disable. The ID is read at login, stored on user_ldap.directory_id, and never used for authorization.
 
-Binary-valued attributes (objectGUID) are stored as their hex form, which is also how they must be written in a filter.
+Binary-valued attributes (objectGUID) are stored as their hex form behind a 0x marker, and searched with the RFC 4515 escape of each byte.
+
+Changing this on a database that already holds directory ids, by hand or by picking an ldap.schema preset, makes every stored id stop matching: there is no migration tool yet. Login enrichment recovers by DN and logs a warning, but the NSS directory treats an entry whose id changed at the same DN as a new entry. Keep the attribute the ids were read from set explicitly, or start from a fresh database.
 
 ```yaml
 ldap:
@@ -223,6 +242,31 @@ Names the attribute to read a group's name from when a group search is used. Whe
 ```yaml
 ldap:
   group_name_attribute: ""
+```
+
+## `authoritative_role_groups`
+
+`bool`, default `false`
+
+Lets the directory take a role away between logins. Off by default: roles then come from the OIDC groups claim alone, read at login, and the session lifetime is the revocation window for a role.
+
+With it on, a role group counts for a directory-linked user only while the latest directory read for that user still lists it. The role groups are exactly admin.require_group, admin.soc_group, admin.auditor_group and admin.nss_key_group (fleet key admin). The background sync can therefore remove someone's admin, SOC, auditor or fleet key admin role between logins, effective on their next request; a fresh login is narrowed the same way, and so is who counts as an admin for the admin email.
+
+It narrows only. The directory never grants a role: a group the directory lists but the OIDC claim does not is never added, so a person needs the group in both places to hold the role.
+
+"Linked" means the server has resolved a directory entry for the user (a user_ldap row with a DN or a directory id). A user with no entry, one never matched, or any user while LDAP is off is never narrowed. "The latest directory read" is the LDAP group rows the last successful login lookup or sync pass wrote. A read that failed (the directory unreachable, a search error) rewrites nothing, so an outage never takes a role away. A user the sync finds missing from the directory keeps the rows of their last successful read; ldap.sync.disable_after is what acts on a missing entry.
+
+Names are compared exactly, the way the role checks compare them. Directory groups are stored reduced to their CN (a memberOf DN becomes its first RDN value), so each role group name must be the same string in the identity provider's groups claim and as the directory group's CN. An identity provider that emits full DNs cannot be used with this setting: no stored CN would ever equal the configured DN, and every role would be removed.
+
+Only the role groups are narrowed. Lifetime policy group conditions, cert_options require gates and the groups that manage individual NSS keys are not affected, unless they name a role group itself: removing a role group from the identity removes it for every check that reads the identity's groups, which can only narrow.
+
+A truncated read counts as a successful one. Keep ldap.limits.max_values_per_attribute and ldap.limits.max_entries_per_search above the largest group count a role holder has, or a role group cut off by the cap is removed.
+
+Requires ldap.enabled and a mapped ldap.fields.groups; startup fails otherwise.
+
+```yaml
+ldap:
+  authoritative_role_groups: false
 ```
 
 ## `limits`

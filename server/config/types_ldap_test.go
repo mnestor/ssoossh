@@ -262,3 +262,69 @@ func TestLDAPFieldShorthandHook(t *testing.T) {
 		}
 	})
 }
+
+// ldap.authoritative_role_groups is refused at startup unless the directory
+// is on and read for groups, and the message names both keys so the fix is
+// obvious from the error alone.
+func TestLDAPConfig_ShouldValidateAuthoritativeRoleGroups(t *testing.T) {
+	t.Parallel()
+
+	memberOf := map[string]LDAPField{LDAPFieldGroups: {Attribute: "memberOf"}}
+	tests := []struct {
+		name    string
+		change  func(*LDAPConfig)
+		wantErr bool
+	}{
+		{
+			name:   "should accept the setting when LDAP is on and groups are mapped",
+			change: func(c *LDAPConfig) { c.Fields = memberOf; c.AuthoritativeRoleGroups = true },
+		},
+		{
+			name: "should accept the setting when groups come from a search",
+			change: func(c *LDAPConfig) {
+				c.Fields = map[string]LDAPField{LDAPFieldGroups: {Searches: []LDAPFieldSearch{{Filter: "(member={{.DN}})", Value: "cn"}}}}
+				c.AuthoritativeRoleGroups = true
+			},
+		},
+		{
+			name:    "should reject the setting when LDAP is off",
+			change:  func(c *LDAPConfig) { c.Fields = memberOf; c.Enabled = false; c.AuthoritativeRoleGroups = true },
+			wantErr: true,
+		},
+		{
+			name:    "should reject the setting when groups are not mapped",
+			change:  func(c *LDAPConfig) { c.AuthoritativeRoleGroups = true },
+			wantErr: true,
+		},
+		{
+			name: "should reject the setting when the groups field has no source",
+			change: func(c *LDAPConfig) {
+				c.Fields = map[string]LDAPField{LDAPFieldGroups: {}}
+				c.AuthoritativeRoleGroups = true
+			},
+			wantErr: true,
+		},
+		{
+			name:   "should accept LDAP off when the setting is off",
+			change: func(c *LDAPConfig) { c.Enabled = false },
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			c := validLDAP()
+			tt.change(&c)
+			err := c.Validate()
+			if !tt.wantErr {
+				if err != nil {
+					t.Errorf("Validate() = %v, want no error", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), "ldap.authoritative_role_groups") ||
+				!strings.Contains(err.Error(), "ldap.enabled") || !strings.Contains(err.Error(), "ldap.fields.groups") {
+				t.Errorf("Validate() = %v, want an error naming ldap.authoritative_role_groups, ldap.enabled and ldap.fields.groups", err)
+			}
+		})
+	}
+}

@@ -14,6 +14,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/logging"
 	"github.com/mnestor/ssoossh/server/mail"
 	"github.com/mnestor/ssoossh/server/model"
@@ -41,6 +42,13 @@ type Notifier interface {
 	// setting an address on an enrollment redirects all of them and not
 	// some.
 	NotifyEnrollment(ctx context.Context, kind notify.Kind, enrollmentID, serviceAccount string, payload any)
+
+	// NotifyNSSKey addresses one NSS fleet key: its notification_email,
+	// read at delivery. A fleet key has no owning user, so no preference
+	// gates the mail, and an empty keyID is skipped. It is the only
+	// recipient a fleet key event has. See the NSS directory proposal's
+	// Mail section for which events use it.
+	NotifyNSSKey(ctx context.Context, kind notify.Kind, keyID string, payload any)
 }
 
 // KindPreference is one notification kind as the preferences page sees it:
@@ -91,6 +99,19 @@ type NotificationService struct {
 	// created would notify nobody, which is the one thing an expiry
 	// reminder exists to prevent. See ServiceAccountRecipients.
 	userAccountsAsService bool
+
+	// admin is the role configuration, attached by SetAdminConfig. It
+	// decides who counts as an admin for the admin-only kinds: which
+	// session is offered them on the preferences page, and which stored
+	// users the admin mail goes to. Nil until attached, which offers the
+	// admin-only kinds to nobody and finds no admin recipients.
+	admin *config.AdminConfig
+
+	// roles narrows a stored admin's groups by the directory when
+	// ldap.authoritative_role_groups is on, the same function a session
+	// goes through. Nil until attached by SetRoleNarrower, which leaves the
+	// stored OIDC groups as the whole answer.
+	roles RoleNarrower
 }
 
 // NewNotificationService constructs the service. enabled comes from
@@ -105,6 +126,25 @@ func NewNotificationService(db *gorm.DB, publisher message.Publisher, enabled, l
 		enabled:               enabled,
 		ldapEnabled:           ldapEnabled,
 		userAccountsAsService: userAccountsAsService,
+	}
+}
+
+// SetAdminConfig attaches the role configuration the admin-only kinds are
+// decided by. Wired at startup, as the notifier and the auditor are on the
+// services that hold those.
+func (s *NotificationService) SetAdminConfig(admin *config.AdminConfig) {
+	if s != nil {
+		s.admin = admin
+	}
+}
+
+// SetRoleNarrower attaches the directory's role narrowing, so the admin
+// mail drops someone the directory has taken admin away from exactly as
+// their session does. Wired at startup; safe with a nil directory service,
+// which narrows nothing.
+func (s *NotificationService) SetRoleNarrower(roles RoleNarrower) {
+	if s != nil && roles != nil {
+		s.roles = roles
 	}
 }
 
@@ -179,6 +219,22 @@ func (s *NotificationService) NotifyEnrollment(ctx context.Context, kind notify.
 	}
 	s.publish(ctx, kind, func() (notify.Event, error) {
 		return notify.NewEnrollmentEvent(kind, enrollmentID, serviceAccount, payload)
+	})
+}
+
+// NotifyNSSKey queues one notification about an NSS fleet key. Same
+// non-blocking, never-failing contract as Notify, and the key's address is
+// deliberately not resolved here: the address in force when the event is
+// delivered is the one that counts.
+func (s *NotificationService) NotifyNSSKey(ctx context.Context, kind notify.Kind, keyID string, payload any) {
+	if keyID == "" {
+		// A key with no id has no address to read, so there is nothing to
+		// reach. The caller thought there was a key, which is worth saying.
+		s.log.WarnContext(ctx, "skipping a notification for an NSS key with no id", "kind", kind)
+		return
+	}
+	s.publish(ctx, kind, func() (notify.Event, error) {
+		return notify.NewNSSKeyEvent(kind, keyID, payload)
 	})
 }
 
@@ -331,12 +387,30 @@ func (s *NotificationService) PreferencesForIdentity(ctx context.Context, identi
 	if err != nil {
 		return NotificationSettings{}, err
 	}
+	kinds = s.offeredTo(identity, kinds)
 
 	return NotificationSettings{
 		MailEnabled: s.enabled,
 		Address:     user.Email,
 		Kinds:       kinds,
 	}, nil
+}
+
+// offeredTo drops the admin-only kinds from kinds unless the session
+// identity holds the admin role, read from the session as every admin
+// route reads it. A non-admin is never sent those kinds, so a switch for
+// them would be a setting that does nothing.
+func (s *NotificationService) offeredTo(identity *Identity, kinds []KindPreference) []KindPreference {
+	if s.admin != nil && s.admin.GrantsAdmin(identity.Groups) {
+		return kinds
+	}
+	offered := make([]KindPreference, 0, len(kinds))
+	for _, pref := range kinds {
+		if !notify.AdminOnly(pref.Kind) {
+			offered = append(offered, pref)
+		}
+	}
+	return offered
 }
 
 // SetPreferencesForIdentity is SetPreferences for a session identity.
@@ -432,8 +506,9 @@ func (h *NotificationHandler) Register(r *message.Router, subscriber message.Sub
 	r.AddConsumerHandler("notification-send", notify.Topic, subscriber, h.handle)
 }
 
-// handle delivers one notification, to the one user it names or to every
-// holder of the service account it names.
+// handle delivers one notification: to the one user it names, to every
+// holder of the service account it names, or to the one notification
+// address an enrollment or a fleet key names.
 //
 // The distinction that matters here is permanent versus temporary. A
 // message that cannot be parsed, a kind this build does not know, a
@@ -473,10 +548,11 @@ func (h *NotificationHandler) handle(msg *message.Message) error {
 	wanted := make([]delivery, 0, len(recipients))
 	for _, send := range recipients {
 		if send.UserID == "" {
-			// An enrollment's own notification address. There is no single
-			// owning user whose preference could gate it, and the address
-			// is the account's deliberate subscription — see
-			// model.Enrollment.NotificationEmail.
+			// An enrollment's or a fleet key's own notification address.
+			// There is no single owning user whose preference could gate
+			// it, and the address is the deliberate subscription of the
+			// enrollment or key it belongs to. See
+			// model.Enrollment.NotificationEmail and model.NSSKey.
 			wanted = append(wanted, send)
 			continue
 		}
@@ -501,12 +577,16 @@ func (h *NotificationHandler) handle(msg *message.Message) error {
 		if err := h.sender.Send(ctx, mail.Outgoing{To: send.Address, Rendered: rendered[send.Advanced]}); err != nil {
 			return fmt.Errorf("failed to send the %s notification: %w", event.Kind, err)
 		}
-		// The address itself is never logged: a send to an enrollment's
-		// address is identified by the enrollment instead, which is what an
-		// operator would look it up by anyway.
-		if send.UserID != "" {
+		// The address itself is never logged: a send to an enrollment's or a
+		// fleet key's address is identified by the enrollment or key instead,
+		// which is what an operator would look it up by anyway.
+		switch {
+		case send.UserID != "":
 			h.log.InfoContext(ctx, "notification sent", "kind", event.Kind, "user_id", send.UserID)
-		} else {
+		case event.NSSKeyID != "":
+			h.log.InfoContext(ctx, "notification sent to an NSS key's notification address",
+				"kind", event.Kind, "key_id", event.NSSKeyID)
+		default:
 			h.log.InfoContext(ctx, "notification sent to an enrollment's notification address",
 				"kind", event.Kind, "enrollment_id", event.EnrollmentID)
 		}
@@ -543,10 +623,10 @@ func (h *NotificationHandler) renderByLevel(ctx context.Context, kind notify.Kin
 // delivery is one resolved send: the address it goes to, the user whose
 // per-kind preference gates it, and the detail level it is rendered at.
 //
-// UserID empty means ungated — an enrollment's own notification address,
-// which has no owning user to hold a preference. Splitting this out of
-// model.User is what lets the two recipient shapes (a users row, a bare
-// configured address) travel through one delivery loop.
+// UserID empty means ungated: the send is an enrollment's or a fleet key's
+// own notification address, which has no owning user to hold a preference.
+// Splitting this out of model.User is what lets the two recipient shapes (a
+// users row, a bare configured address) travel through one delivery loop.
 //
 // Advanced is the user's email detail level. A bare address has no person
 // behind it to have chosen, so it reads simplified, as does a user who has
@@ -566,15 +646,21 @@ func deliveryFor(user model.User) delivery {
 	}
 }
 
-// recipients resolves where an event should go: the enrollment's own
-// notification address, every holder of the service account it names, or
-// the one user it names.
+// recipients resolves where an event should go: a fleet key's own
+// notification address, the enrollment's own notification address, every
+// holder of the service account it names, or the one user it names.
 //
 // An empty result is a normal outcome, not an error — a user who has since
 // been deleted, an identity provider that releases no email claim, a
 // service account nobody who has logged in holds — so it is logged and the
 // message acknowledged rather than retried.
 func (h *NotificationHandler) recipients(ctx context.Context, event notify.Event) ([]delivery, error) {
+	// A fleet key event is about the key alone, so its address is the only
+	// recipient and is checked before the enrollment and user forms.
+	if event.NSSKeyID != "" {
+		return h.nssKeyRecipients(ctx, event)
+	}
+
 	// EnrollmentID as well as ServiceAccount, because an enrollment whose
 	// principals never parsed has no account but may still carry an
 	// address — and an event with neither is user-addressed.
@@ -627,6 +713,34 @@ func (h *NotificationHandler) recipients(ctx context.Context, event notify.Event
 	return []delivery{deliveryFor(user)}, nil
 }
 
+// nssKeyRecipients resolves a fleet key event to the key's notification
+// address, read from nss_keys at delivery. The result is one bare delivery:
+// no owning user, so ungated, and simplified.
+//
+// A key that no longer exists, or one with no address set, yields nobody and
+// is logged by key id, never by address. A database failure is returned, so
+// the message is redelivered rather than lost.
+func (h *NotificationHandler) nssKeyRecipients(ctx context.Context, event notify.Event) ([]delivery, error) {
+	var key model.NSSKey
+	err := h.db.WithContext(ctx).
+		Select("notification_email").
+		First(&key, "id = ?", event.NSSKeyID).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			h.log.InfoContext(ctx, "dropping a notification for an NSS key that no longer exists",
+				"kind", event.Kind, "key_id", event.NSSKeyID)
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to look up the notification address of NSS key %q: %w", event.NSSKeyID, err)
+	}
+	if key.NotificationEmail == "" {
+		h.log.DebugContext(ctx, "skipping a notification for an NSS key with no notification address",
+			"kind", event.Kind, "key_id", event.NSSKeyID)
+		return nil, nil
+	}
+	return []delivery{{Address: key.NotificationEmail}}, nil
+}
+
 // enrollmentAddress reads the notification address of the enrollment an
 // event is about, or "" when the event names no enrollment, the row is
 // gone, or no address is set.
@@ -668,6 +782,9 @@ func (discardNotifications) NotifyServiceAccount(context.Context, notify.Kind, s
 
 // NotifyEnrollment discards the notification.
 func (discardNotifications) NotifyEnrollment(context.Context, notify.Kind, string, string, any) {}
+
+// NotifyNSSKey discards the notification.
+func (discardNotifications) NotifyNSSKey(context.Context, notify.Kind, string, any) {}
 
 // NotificationPreferenceProvider is the preferences controller's view of
 // NotificationService: read and write the caller's own answers, nothing
@@ -765,4 +882,95 @@ func (s *NotificationService) ServiceAccountRecipients(ctx context.Context, acco
 		holders = append(holders, holding.User)
 	}
 	return holders, nil
+}
+
+// AdminRecipientResolver finds the users an admin-only notification is
+// addressed to. Implemented by *NotificationService; an interface so the
+// code publishing such a kind holds the question, not the service.
+type AdminRecipientResolver interface {
+	AdminRecipients(ctx context.Context) ([]model.User, error)
+}
+
+// StoredUserIsAdmin reports whether a stored user counts as an admin for
+// the admin mail, from oidcGroups: the OIDC groups the user's last login
+// recorded in user_groups. It is the one place that decision is made, so
+// every admin recipient query goes through it; the rule itself is
+// config.AdminConfig.GrantsAdmin, as for a session, after the same
+// narrowing a session gets (LDAPService.NarrowRoleGroups): with
+// ldap.authoritative_role_groups on, a directory-linked user whose latest
+// directory read no longer lists the admin group is not an admin here
+// either.
+//
+// Otherwise the answer is only as fresh as the last login: someone removed
+// from the admin group at the identity provider still counts until they
+// log in again. It decides who is told, never what anyone may do. An error
+// is a failed read of the directory rows, and answers false with it.
+func (s *NotificationService) StoredUserIsAdmin(ctx context.Context, user *model.User, oidcGroups []string) (bool, error) {
+	if s.admin == nil || !s.admin.GrantsAdmin(oidcGroups) {
+		return false, nil
+	}
+	if s.roles == nil || user == nil {
+		return true, nil
+	}
+	groups, err := s.roles.NarrowRoleGroups(ctx, user.ID, oidcGroups)
+	if err != nil {
+		return false, fmt.Errorf("check the admin role of user %s against the directory: %w", user.ID, err)
+	}
+	return s.admin.GrantsAdmin(groups), nil
+}
+
+// AdminRecipients returns every user the admin mail should reach: enabled,
+// with an address, and an admin by StoredUserIsAdmin. Only the OIDC rows
+// of user_groups are read as candidates, because only the OIDC groups claim
+// grants a role (see config.AdminConfig.GrantsAdmin); a directory group of
+// the same name grants nothing and must not make anyone a recipient. The
+// directory rows can only take a candidate away, through StoredUserIsAdmin. Ordered by username,
+// so the sends go out in a stable order.
+func (s *NotificationService) AdminRecipients(ctx context.Context) ([]model.User, error) {
+	if s.admin == nil || !s.admin.IsAdminEnabled() {
+		return nil, nil
+	}
+
+	var users []model.User
+	if err := s.db.WithContext(ctx).
+		Where("disabled_at IS NULL").
+		Where("email <> ''").
+		Where("id IN (?)", s.db.Model(&model.UserGroup{}).Select("user_id").Where("source = ?", model.GroupSourceOIDC)).
+		Order("username, id").
+		Find(&users).Error; err != nil {
+		return nil, fmt.Errorf("find the admin notification recipients: %w", err)
+	}
+	if len(users) == 0 {
+		return nil, nil
+	}
+
+	ids := make([]string, 0, len(users))
+	for _, u := range users {
+		ids = append(ids, u.ID)
+	}
+	groups := make(map[string][]string, len(users))
+	for start := 0; start < len(ids); start += nssBatchSize {
+		end := min(start+nssBatchSize, len(ids))
+		var rows []model.UserGroup
+		if err := s.db.WithContext(ctx).
+			Where("source = ? AND user_id IN ?", model.GroupSourceOIDC, ids[start:end]).
+			Find(&rows).Error; err != nil {
+			return nil, fmt.Errorf("read the groups of the admin notification candidates: %w", err)
+		}
+		for _, row := range rows {
+			groups[row.UserID] = append(groups[row.UserID], row.GroupName)
+		}
+	}
+
+	admins := make([]model.User, 0, len(users))
+	for i := range users {
+		admin, err := s.StoredUserIsAdmin(ctx, &users[i], groups[users[i].ID])
+		if err != nil {
+			return nil, fmt.Errorf("find the admin notification recipients: %w", err)
+		}
+		if admin {
+			admins = append(admins, users[i])
+		}
+	}
+	return admins, nil
 }

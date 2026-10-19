@@ -62,6 +62,11 @@ flowchart TD
     S --> V["admin.auditor_group<br/>read-only views"]
 ```
 
+A fourth group sits outside that chain:
+[`admin.nss_key_group`](/ssoossh/reference/config/admin/#nss_key_group)
+administers the [NSS fleet keys](/ssoossh/operations/nss/#fleet-keys).
+Admins hold it too; SOC may revoke any key and auditors read them.
+
 Containment is symmetric: whoever can disable an account can also re-enable
 it, whichever role or the directory sync disabled it. A SOC disable of every
 admin therefore never needs a database edit to undo. Every re-enable requires
@@ -281,6 +286,13 @@ present to supply one. View events carry none.
 Authorization is evaluated from the session identity, and group membership is
 read at login. So removing someone from an admin group in the identity
 provider takes effect **at their next login**, not immediately.
+
+With a directory, that window can be shortened for the role groups:
+[`ldap.authoritative_role_groups`](/ssoossh/reference/config/ldap/#authoritative_role_groups)
+lets the sync take admin, SOC, auditor or fleet key admin away from a linked
+user between logins, effective on their next request, while still never
+granting a role (see
+[Authoritative role groups](/ssoossh/operations/ldap/#authoritative-role-groups)).
 
 This applies to roles only. The account lists a certificate's principals come
 from are re-read from the database on every request, so a directory sync that

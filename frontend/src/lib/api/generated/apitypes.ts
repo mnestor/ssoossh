@@ -595,3 +595,144 @@ export interface RetrieveRequestBody {
 export interface RetrieveResponse {
 	certificate: string;
 }
+
+//////////
+// source: nss.go
+
+/**
+ * HeaderNSSKeyID names the fleet key making the request.
+ */
+export const HeaderNSSKeyID = "X-Ssoossh-Key-Id";
+/**
+ * HeaderNSSKeySecret carries the fleet key's secret.
+ */
+export const HeaderNSSKeySecret = "X-Ssoossh-Key-Secret";
+/**
+ * ErrorCodeNSSNotFound means no user or group has that name or id
+ * (404 Not Found). The only code a host may cache as a miss.
+ */
+export const ErrorCodeNSSNotFound = "nss_not_found";
+/**
+ * ErrorCodeNSSBadRequest means the name or id failed validation
+ * (400 Bad Request), so the server never looked it up.
+ */
+export const ErrorCodeNSSBadRequest = "nss_bad_request";
+/**
+ * ErrorCodeNSSDisabled means nss.enabled is false on the server
+ * (404 Not Found). It says nothing about whether the name exists.
+ */
+export const ErrorCodeNSSDisabled = "nss_disabled";
+/**
+ * ErrorCodeNSSUnauthorized means the fleet key is missing, unknown,
+ * revoked, expired or wrong (401 Unauthorized). The body and timing are
+ * the same for every one of those causes.
+ */
+export const ErrorCodeNSSUnauthorized = "nss_unauthorized";
+/**
+ * ErrorCodeNSSRateLimited means the (key id, source address) bucket is
+ * empty (429 Too Many Requests); the response carries Retry-After.
+ */
+export const ErrorCodeNSSRateLimited = "nss_rate_limited";
+/**
+ * ErrorCodeNSSForbidden means the connection's source address is not in
+ * nss.source_allow_list (403 Forbidden). Checked before the key.
+ */
+export const ErrorCodeNSSForbidden = "nss_forbidden";
+/**
+ * NSSStatusActive is an account served as is.
+ */
+export const NSSStatusActive = "active";
+/**
+ * NSSStatusDisabled is an account the host serves locked, with the
+ * server's disabled shell.
+ */
+export const NSSStatusDisabled = "disabled";
+/**
+ * NSSStatusDeleted is a tombstoned account, served like a disabled one
+ * until nss.tombstone_retention ends and then not at all.
+ */
+export const NSSStatusDeleted = "deleted";
+/**
+ * NSSUserResponse is the user lookup's response body, by name or by uid.
+ */
+export interface NSSUserResponse {
+	/**
+	 * Name is the login name, stored verbatim from the directory and
+	 * matched byte for byte.
+	 */
+	name: string;
+	/**
+	 * UID is the user id. Frozen once stored: a changed directory value is
+	 * held as a pending change until an admin accepts it.
+	 */
+	uid: number /* uint32 */;
+	/**
+	 * GID is the primary group id, after nss.auto_private_groups.
+	 */
+	gid: number /* uint32 */;
+	/**
+	 * Groups is every membership, primary first, with the gid and the name
+	 * together, so one user lookup answers both "which groups" and "what is
+	 * group N called".
+	 */
+	groups: NSSMembership[];
+	/**
+	 * Home is the home directory: the directory attribute, else
+	 * nss.default_home expanded, else null.
+	 */
+	home?: string;
+	/**
+	 * Shell is the login shell path: the directory attribute, else
+	 * nss.default_shell, else null. For a disabled or deleted account it is
+	 * nss.disabled_shell.
+	 */
+	shell?: string;
+	/**
+	 * Gecos is the rendered and sanitised nss.gecos_template output.
+	 */
+	gecos: string;
+	/**
+	 * Status is one of the NSSStatus* values.
+	 */
+	status: string;
+	/**
+	 * KeyID is the fleet key that made the request, echoed for log
+	 * correlation.
+	 */
+	key_id: string;
+}
+/**
+ * NSSMembership is one entry in NSSUserResponse.Groups.
+ */
+export interface NSSMembership {
+	/**
+	 * GID is the group id.
+	 */
+	gid: number /* uint32 */;
+	/**
+	 * Name is the group name, matched byte for byte like a user name.
+	 */
+	name: string;
+}
+/**
+ * NSSGroupResponse is the group lookup's response body, by name or by gid.
+ */
+export interface NSSGroupResponse {
+	/**
+	 * Name is the group name.
+	 */
+	name: string;
+	/**
+	 * GID is the group id, frozen once stored like NSSUserResponse.UID.
+	 */
+	gid: number /* uint32 */;
+	/**
+	 * Members are the member user names, capped at nss.max_group_members.
+	 */
+	members: string[];
+	/**
+	 * MembersTruncated is true when the cap cut Members short, so a host
+	 * can log that the list is incomplete rather than serve it as whole.
+	 */
+	members_truncated: boolean;
+}

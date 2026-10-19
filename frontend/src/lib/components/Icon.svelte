@@ -44,12 +44,21 @@
 		IconHistory,
 		IconKey,
 		IconKeyboard,
+		IconServer,
+		IconClockExclamation,
+		IconSearchOff,
+		IconServer2,
+		IconServerOff,
+		IconRotate,
+		IconDownload,
+		IconPencil,
 		// Admin destinations.
 		IconShieldLock,
 		IconUsers,
 		IconFileCertificate,
 		IconAdjustmentsHorizontal,
 		IconAddressBook,
+		IconDatabaseSearch,
 		IconBraces,
 		IconLogs,
 		IconActivityHeartbeat,
@@ -127,12 +136,29 @@
 		history: IconHistory,
 		key: IconKey,
 		keyboard: IconKeyboard,
+		// NSS fleet keys: the fleet of hosts a key serves, and that fleet
+		// cut off once the key is revoked. `rotate` marks the window in
+		// which two secrets are accepted.
+		'server-2': IconServer2,
+		'server-off': IconServerOff,
+		rotate: IconRotate,
+		// Every fleet key, the admin list: another drawing of the same noun,
+		// as `circle-key` is for every service code, because a collapsed
+		// admin row has no visual parent to tell it from the keys a
+		// viewer's own groups manage.
+		server: IconServer,
+		// The admin key list's "Needs attention" filters: a clock about to
+		// run out (an expiry near), and lookups that stopped (no use in 30
+		// days), modifiers of the clock and search nouns.
+		'clock-exclamation': IconClockExclamation,
+		'search-off': IconSearchOff,
 		// Admin destinations
 		'shield-lock': IconShieldLock,
 		users: IconUsers,
 		'file-certificate': IconFileCertificate,
 		'adjustments-horizontal': IconAdjustmentsHorizontal,
 		'address-book': IconAddressBook,
+		'database-search': IconDatabaseSearch,
 		braces: IconBraces,
 		logs: IconLogs,
 		'activity-heartbeat': IconActivityHeartbeat,
@@ -155,6 +181,10 @@
 		search: IconSearch,
 		x: IconX,
 		copy: IconCopy,
+		// A file to save (the rotation report's CSV), and a value to change
+		// in place.
+		download: IconDownload,
+		pencil: IconPencil,
 		// Noun, then state: a copy that landed, not a choice. `check`
 		// means "chosen" and nothing else.
 		'copy-check': IconCopyCheck,

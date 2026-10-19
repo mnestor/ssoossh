@@ -3,6 +3,7 @@ package middleware
 import (
 	"math"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -20,11 +21,35 @@ func NewRateLimitMiddleware() *RateLimitMiddleware {
 	return &RateLimitMiddleware{}
 }
 
+// RateLimitOption adjusts what RateLimitMiddleware.Add limits.
+type RateLimitOption func(*rateLimitOptions)
+
+// rateLimitOptions is what the options set.
+type rateLimitOptions struct {
+	skipPrefixes []string
+}
+
+// SkipPathPrefixes leaves requests whose path starts with one of prefixes
+// to a limiter of their own. The NSS lookups use it: a fleet of hosts
+// behind one NAT address would share a single per-IP bucket, so they are
+// limited per fleet key and address instead (see NSSFleetKeyMiddleware).
+func SkipPathPrefixes(prefixes ...string) RateLimitOption {
+	return func(o *rateLimitOptions) {
+		o.skipPrefixes = append(o.skipPrefixes, prefixes...)
+	}
+}
+
 // Add returns a gin.HandlerFunc that enforces a rate limit of limit events
 // per second (with the given burst) per client IP, responding with
 // TooManyRequestsError once a client exceeds it. Localhost
-// requests bypass the limit, since they come from the local frontend.
-func (m *RateLimitMiddleware) Add(limit rate.Limit, burst int) gin.HandlerFunc {
+// requests bypass the limit, since they come from the local frontend, and
+// so do paths SkipPathPrefixes names.
+func (m *RateLimitMiddleware) Add(limit rate.Limit, burst int, opts ...RateLimitOption) gin.HandlerFunc {
+	var options rateLimitOptions
+	for _, opt := range opts {
+		opt(&options)
+	}
+
 	// Map to store the rate limiters per IP
 	var clients = make(map[string]*client)
 	var mu sync.Mutex
@@ -33,6 +58,13 @@ func (m *RateLimitMiddleware) Add(limit rate.Limit, burst int) gin.HandlerFunc {
 	go cleanupClients(&mu, clients)
 
 	return func(c *gin.Context) {
+		for _, prefix := range options.skipPrefixes {
+			if strings.HasPrefix(c.Request.URL.Path, prefix) {
+				c.Next()
+				return
+			}
+		}
+
 		ip := c.ClientIP()
 
 		// Skip rate limiting for localhost and test environment

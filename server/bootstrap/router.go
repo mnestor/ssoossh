@@ -162,12 +162,22 @@ func (a *app) initEngine() (*gin.Engine, error) {
 		WithSpanID:         c.HTTP.AccessLogging.WithSpanID,
 		WithTraceID:        c.HTTP.AccessLogging.WithTraceID,
 	}))
+	// The fleet key secret comes off the request here, straight after the
+	// access logger: the logger writes the request headers once the rest
+	// of the chain has run, so anything still on the request then is
+	// logged, and this is the first point after it that every request
+	// passes. See middleware.NSSKeySecretMiddleware.
+	r.Use(middleware.NewNSSKeySecretMiddleware().Add())
 	r.Use(middleware.NewErrorHandlerMiddleware().Add())
 
-	// A rate_limit of 0 (or less) disables rate limiting entirely.
+	// A rate_limit of 0 (or less) disables rate limiting entirely. The NSS
+	// lookups are left to their own limiter, per fleet key and address
+	// (see nssFleetKeyGate): a fleet behind one NAT address would share a
+	// single per-IP bucket here.
 	if c.HTTP.RateLimit > 0 {
 		rateLimitInterval := c.HTTP.RateDuration / time.Duration(c.HTTP.RateLimit)
-		r.Use(middleware.NewRateLimitMiddleware().Add(rate.Every(rateLimitInterval), c.HTTP.RateLimit))
+		r.Use(middleware.NewRateLimitMiddleware().Add(rate.Every(rateLimitInterval), c.HTTP.RateLimit,
+			middleware.SkipPathPrefixes(middleware.NSSLookupPathPrefixes()...)))
 	}
 
 	// Sent regardless of whether this server terminates TLS itself: a
@@ -433,6 +443,8 @@ func (a *app) registerRoutes(r *gin.Engine) error {
 	adminAuth := middleware.NewAdminAuthMiddleware(a.config).Add()
 	socAuth := middleware.NewSOCAuthMiddleware(a.config).Add()
 	auditorAuth := middleware.NewAuditorAuthMiddleware(a.config).Add()
+	// The one admin route a fleet key admin also reads: every fleet key.
+	nssKeyListAuth := middleware.NewNSSKeyListAuthMiddleware(a.config).Add()
 
 	// Browser-facing OIDC login/callback, outside /api since these are
 	// redirects rather than JSON API calls.
@@ -525,8 +537,16 @@ func (a *app) registerRoutes(r *gin.Engine) error {
 	if a.svc.ldap != nil {
 		ldapDiagnostics = a.svc.ldap
 	}
-	controller.NewLDAPAdminController(apiGroup, a.config, a.db, ldapDiagnostics,
+	// Explicitly nil for the same reason, for the NSS directory.
+	var nssSync service.NSSDirectorySync
+	var nssAdmin service.NSSDirectoryAdmin
+	if a.svc.nss != nil {
+		nssSync = a.svc.nss
+		nssAdmin = a.svc.nss
+	}
+	controller.NewLDAPAdminController(apiGroup, a.config, a.db, ldapDiagnostics, nssSync,
 		sessionAuth, adminAuth, csrf, probeRateLimit, a.svc.audit)
+	controller.NewNSSAdminController(apiGroup, a.db, nssAdmin, a.nssViewer(), a.svc.nssKeys, sessionAuth, adminAuth, auditorAuth, nssKeyListAuth, csrf)
 	controller.NewIdentityEchoController(apiGroup, a.svc.auth, sessionAuth, adminAuth, csrf)
 
 	// The diagnostics run makes the server open an outbound connection to
@@ -543,7 +563,61 @@ func (a *app) registerRoutes(r *gin.Engine) error {
 	controller.NewDiagnosticsController(apiGroup, diagnostics, a.db, a.svc.audit,
 		sessionAuth, adminAuth, csrf, diagnosticsRateLimit)
 
+	return a.registerNSSRoutes(apiGroup, sessionAuth, csrf)
+}
+
+// registerNSSRoutes registers the NSS directory: the host lookups behind
+// the fleet key gate, and the session routes for the keys and the shells.
+// Registered whether or not NSS is on, so a disabled server answers
+// nss_disabled rather than a 404 a host could mistake for a miss.
+func (a *app) registerNSSRoutes(apiGroup *gin.RouterGroup, sessionAuth, csrf gin.HandlerFunc) error {
+	gate, err := a.nssFleetKeyGate()
+	if err != nil {
+		return err
+	}
+	controller.NewNSSLookupController(apiGroup, a.svc.nssLookup, gate)
+	controller.NewNSSController(apiGroup, a.svc.nssKeys, sessionAuth, csrf)
 	return nil
+}
+
+// nssViewer is the NSS admin controller's directory viewer, the lookups:
+// explicitly nil rather than a typed nil in the interface when NSS is off,
+// for the reason ldapDiagnostics is in registerRoutes.
+func (a *app) nssViewer() service.NSSDirectoryViewer {
+	if a.svc.nssLookup == nil {
+		return nil
+	}
+	return a.svc.nssLookup
+}
+
+// nssFleetKeyGate builds the fleet key middleware the NSS lookups sit
+// behind. Keys that fail verification are limited per address at the
+// global http.rate_limit settings, the limit the lookups would have had
+// without a gate of their own; verified keys per key and address at
+// nss.rate_limit and nss.rate_burst.
+func (a *app) nssFleetKeyGate() (*middleware.NSSFleetKeyMiddleware, error) {
+	cfg := middleware.NSSFleetKeyConfig{
+		Enabled:         a.config.NSS.Enabled,
+		SourceAllowList: a.config.NSS.SourceAllowList,
+		KeyLimit:        rate.Limit(a.config.NSS.RateLimit),
+		KeyBurst:        a.config.NSS.RateBurst,
+	}
+	if a.config.HTTP.RateLimit > 0 {
+		cfg.FailedLimit = rate.Every(a.config.HTTP.RateDuration / time.Duration(a.config.HTTP.RateLimit))
+		cfg.FailedBurst = a.config.HTTP.RateLimit
+	}
+	// Explicitly nil interfaces when NSS is off, so the gate sees no
+	// verifier rather than a typed nil it would call.
+	var verifier service.NSSKeyVerifier
+	var observer service.NSSLookupObserver
+	if a.svc.nssKeys != nil && a.svc.nssUsage != nil {
+		verifier, observer = a.svc.nssKeys, a.svc.nssUsage
+	}
+	gate, err := middleware.NewNSSFleetKeyMiddleware(cfg, verifier, observer)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build the NSS fleet key gate: %w", err)
+	}
+	return gate, nil
 }
 
 // diagnosticsRunRateLimitKeys buckets diagnostics runs by the calling admin,

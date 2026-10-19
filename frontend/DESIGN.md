@@ -388,8 +388,20 @@ vocabulary; an unmapped name renders a visible red `?`.
   Admin group, `users` Users, `file-certificate` Certificates, `circle-key`
   Service codes (admin, a different enclosure of the same noun, because a
   collapsed admin row has no visual parent), `adjustments-horizontal`
-  Config, `address-book` Directory, `braces` Claims echo, `logs` Audit log,
-  `activity-heartbeat` Diagnostics, `user-cog` Preferences.
+  Config, `address-book` Directory, `database-search` NSS directory (the
+  stored accounts and groups, looked up: a new object, so a new noun),
+  `braces` Claims echo, `logs` Audit log, `activity-heartbeat` Diagnostics,
+  `user-cog` Preferences, `server` NSS keys (all) (admin, every key: another
+  drawing of the fleet key noun, as `circle-key` is for every service code).
+- **NSS fleet keys** (`KeyStatusBadge`, the rail): `server-2` the fleet a
+  key serves (the NSS keys destination and an active key), `rotate` a key
+  whose previous secret is still accepted, `server-off` a revoked key,
+  `clock-cancel` an expired one (time ran out, as for a request). On the
+  admin key list's Needs attention toggles, `clock-exclamation` a key whose
+  expiry is near, `search-off` one no host has looked anything up with
+  lately, and `alert-triangle` a recent usage alert.
+- **Files and edits:** `download` a file to save (the rotation report's
+  CSV), `pencil` a value changed in place.
 - **Account, theme and chrome:** `user-circle` identity, `logout`, `sun` /
   `moon` / `device-laptop` theme states (a laptop, because a monitor is what
   a console certificate is), `menu-2` drawer trigger, `layout-sidebar` rail
@@ -434,8 +446,12 @@ layout.
   collapsed. Escape is handled on its own wrapper so it closes before the
   drawer does. The trigger carries the current state for every page behind
   it.
-- **Admin group:** gated on `is_auditor`, open by default, remembered shut
-  (`ssoossh:rail-admin-open`), forced open on any `/admin` route.
+- **Admin group:** shown when `adminNavFor` leaves it a section: every
+  section for auditors and above (less the `adminOnly` ones below admin),
+  and for a fleet key admin (`is_nss_key_admin`) with no admin area role
+  only the sections marked `keyAdmin`, which is NSS keys (all). Open by
+  default, remembered shut (`ssoossh:rail-admin-open`), forced open on any
+  `/admin` route.
 - **Focus routes** render with no rail: `/login`, `/c` (a console code) and
   `/approval-unavailable`, plus any screen for a signed-out visitor.
   `isFocusRoute` in `lib/nav.ts` decides, matching on a path boundary so
@@ -576,7 +592,10 @@ rounded-md border-border-control bg-surface px-3 text-base`, `text-base`
   group has its own "any" option (the `filter-off` chip; "All", "Any" or
   "Both" in the select) rather than clearing by pressing the selected chip
   again.
-- **FilterChip**: glyph, label, pressed state. `rounded`, `min-h-target`,
+- **FilterChip**: glyph, label, pressed state. The glyph may be left out
+  where the words are the whole value (the "7 days / 30 days / 90 days"
+  choice on All NSS keys), since one glyph repeated on every chip says
+  nothing. `rounded`, `min-h-target`,
   unselected `border-control text-ink-muted`, selected ink fill plus `check`
   plus `aria-pressed`. Always named: a chip is never its glyph alone. It
   appears only from `sm` up; below that its group is a select.
@@ -612,6 +631,20 @@ rounded-md border-border-control bg-surface px-3 text-base`, `text-base`
 - **StatusBadge**: request or certificate status as a chip: glyph plus
   capitalised word, `rounded`, `text-xs font-semibold`, coloured by status.
   The signing spinner is the only animated glyph.
+- **KeyStatusBadge**: a fleet key's state in the same chip shape: `active`
+  (`granted`), `rotating` (`trimmed`: the old secret is about to stop),
+  `expired` (`ink-muted`, a settled fact) and `revoked` (`danger`).
+  `rotating` is derived in the browser from a live `previous_expires_at`;
+  the server reports `active`.
+- **NSSStateBadge**: a stored NSS account's or group's state in the same chip
+  shape, the word alone (six states would each need a glyph): `active`
+  (`granted`), `missing` and `pending` (`trimmed`: served, but want a look),
+  `disabled` and `withheld` (`danger`: locked or hidden), `tombstone`
+  (`ink-muted`, a settled fact).
+- **NSSServedVerdict**: whether hosts are served a stored entry, as a
+  `Served` (`granted`) or `Not served` (`danger`) chip and a sentence with
+  the reason. Built only from the server's `served` and `not_served`, never
+  from the state beside it.
 - **OptionDiffList**: granted against trimmed options, trimmed struck
   through.
 
@@ -631,7 +664,35 @@ rounded-md border-border-control bg-surface px-3 text-base`, `text-base`
     the server takes no reason for (the live LDAP sync).
   - It captures `document.activeElement` before opening and restores it on
     teardown, because callers dismiss it by unmounting and the caret would
-    otherwise land on `<body>`.
+    otherwise land on `<body>`. A caller whose result appears elsewhere on
+    the page passes `returnFocus`, which runs at that teardown and places
+    the caret itself; until then the dialog is modal and nothing outside it
+    can take focus.
+  - A typed mode (`confirmText`), for an ending whose target is easy to
+    mistake for the next row: revoking a fleet key (type the key id),
+    accepting a changed uid or gid and purging a tombstone (type the name).
+    The value to type is in the label, in mono; the button wakes on an exact
+    match, surrounding blanks forgiven. These actions take no server
+    reason, so the mode is used with `reasonless`.
+  - `confirmDisabled` holds the confirming button while the dialog is
+    still finding out what the reader must know first, such as how many
+    hosts ending a fleet key's previous secret breaks. The body says what
+    it is waiting for.
+- **SecretPanel**: a fleet key's secret, the once the server sends it (after
+  a create or a rotation). The two-line `nss.key` file first, ready to paste,
+  then the key id and secret, each with its own copy button; a warning that
+  it cannot be shown again; and Done held until "I have stored this secret"
+  is ticked, with the reason beside it. The secret is only ever a prop: the
+  page drops it on Done, and a navigation away before the box is ticked
+  asks first (the page binds the panel's `stored`). It opens at the top of
+  the page, so on mount it scrolls itself into view and takes the caret
+  (`tabindex="-1"`, never a Tab stop): the control that asked for it sits
+  further down, and the warning and the box would otherwise be out of
+  sight above the reader. The focus target is a region named "New secret,
+  shown once" and described by the warning. After a rotation the dialog's
+  `returnFocus` hands the caret to it again, the panel names the expiry the
+  server set (`expiresAt`), and the page keys the panel on the generation
+  and hides Rotate until Done, which puts the caret back on Rotate.
 - **ConsentModal**: the blocking sign-in notice, typically a government
   system-use warning that a reader must accept before anything works. No
   visible title (the notice is the deployment's own approved wording; the
@@ -773,11 +834,14 @@ off, and confirms through a reasonless `ConfirmModal`.
   stated once in `#lib/viewport` (`NARROW_QUERY`, `watchNarrow`).
 - **Paging:** every list pages by cursor with "Load more", a ghost button
   under the rows that goes once the last page is in. Every Load more list
-  (history, audit feed, a user's audit timeline, users, certificates, service
-  codes) renders its footer through `LoadMoreFooter`: the count line above
+  (history, audit feed, a user's audit timeline, an NSS entry's history,
+  users, certificates, service codes) renders its footer through
+  `LoadMoreFooter`: the count line above
   that button, worded once by `describeLoaded` in `#lib/listStatus`:
   `48 shown`, then `, 120 older not loaded` while the server holds more
-  (history has no server total, so it says only `48 shown`). "older" where
+  (history has no server total, so it says only `48 shown`). A list whose
+  lines are not one per counted thing names the noun: an NSS entry's
+  history says `3 events shown`. "older" where
   the list runs newest first, "more" on the user directory, which is sorted
   by name. A failed "Load more" is an error `Alert` in the button's place
   that retries that page; the rows above stay. A cursor names a page, not
@@ -963,7 +1027,9 @@ the result and drops the diagnostic detail an expert compares.
   "forget" control: unticking a chip on the next approval is the way out.
 - **Roles** (from the 2026-10-10 review): SOC may disable and enable users;
   `/api/users/me` gains `is_nss_key_admin`; NSS keys are one top-level rail
-  item, read-only for auditors. Admin, SOC and auditor powers sit behind
+  item, read-only for auditors. Since 2026-10-19 that item is the keys the
+  viewer's groups manage, and every key is the admin group's NSS keys (all),
+  which the fleet key admin role opens too. Admin, SOC and auditor powers sit behind
   admin mode (`docs/proposals/admin-elevation.md`).
 - **`/preferences` order:** Email notifications, Login shell (the NSS login
   shell setting), Display.
@@ -971,7 +1037,10 @@ the result and drops the diagnostic detail an expert compares.
 ## 13. The admin area
 
 `src/routes/admin/+layout.svelte` gates the area on auditor access and does
-nothing else. The gate is display-only (the server re-checks every read),
+nothing else, with one exception the nav model names: `adminRouteOpen`
+lets a fleet key admin with no admin area role see the sections marked
+`keyAdmin` (All NSS keys), and every other admin page gives them the
+`AccessDenied` card. The gate is display-only (the server re-checks every read),
 and a signed-in identity without auditor access is told so rather than sent
 to a login it already passed. That refusal is the `AccessDenied` card, the
 same one the error page gives a 403; a section narrower than the area (the
@@ -1009,10 +1078,111 @@ beneath it.
   Keys render in mono.
 - **Directory** (`/admin/directory`, admin only): LDAP sync status and the
   last pass's counts, Sync now (dry run by default) and the read-only Probe.
+  With NSS on, a Stored entries section counting the stored accounts and
+  groups with links into the NSS directory (it loads and fails on its own),
+  then the Pending id changes and Collisions panels, whose stored entries
+  link to their NSS directory pages. Its sections carry ids (`#sync`,
+  `#probe`, `#pending-id-changes`, `#collisions`) that the page scrolls to
+  once its status has loaded.
   The rail leaves it out for SOC and auditors, and its own layout shows them
   the `AccessDenied` card on a direct visit. The probe's three views (entry as returned, field
   mapping, merge and allowlist) are a segmented toggle group, not tabs; a
   mapped attribute carries a "mapped" label, not a colour.
+- **NSS directory** (`/admin/nss`, auditor and above, only with NSS on;
+  the rail entry carries `nssOnly`): a read-only viewer of the stored NSS
+  accounts and groups. `/admin/nss` redirects to the accounts.
+  - **Lists** (`/admin/nss/accounts`, `/admin/nss/groups`, `wide`): one
+    `NSSEntryList` for both, with an Accounts / Groups segmented switch of
+    links in the heading's `action` slot (`aria-current` on the one
+    showing). Search (name, DN, or an exact uid or gid) and a State select
+    ("Any state", and no Disabled for groups), server-side and in the
+    address (`?q=`, `?state=`); `.data-table` with the name as the link,
+    numbers right-aligned, Gecos dropped below `sm`, the state badge and
+    the last sync; Load more. No back chip: the lists are the section's top.
+    "Nothing stored yet" names the filter the sync stores from;
+    "nothing matches" offers Clear filters and, for a search, says a host
+    lookup that misses still asks the directory, pointing at the Probe.
+  - **Detail pages** (`/admin/nss/accounts/<uid>`, `/admin/nss/groups/<gid>`,
+    `wide`): no actions. The identity strip carries the state badge, the
+    name, the numbers, `CopyableId` with the uid or gid, and the
+    `NSSServedVerdict` ahead of every raw field, because the worst case is
+    an admin concluding the wrong way and fixing the wrong layer. Then
+    "What hosts get" (replaced by "Nothing" when not served), "Stored
+    entry", "Entry state" (only off active, every mark the row carries) and
+    the memberships or the paged members, then History at the bottom
+    (`NSSEntryHistory`): the row's audit events as one ruled line each
+    per thing that happened, words left and `formatDateTime` right, names
+    and numbers in the mono, built by `#lib/nssHistory` from each event's
+    detail (what was true then, never a fresh lookup). Additions draw no
+    line: the memberships and members tables carry an Added column
+    (`formatDateTime`, `whitespace-nowrap`, or "Before first import" in
+    `ink-muted` for one the first full import stored) through
+    `NSSMembershipAdded`. An account's page says only what happened to it
+    ("Removed from ops", "Renamed from a to b", and "Added to or removed
+    from ops" when it is in neither capped list, since that may be a
+    removal); a group's page draws one line per member removed ("sonia
+    removed"), with "and 412 more removed" when the event capped its list,
+    so one event can draw several lines, or none. A re-key by an
+    accepted uid change is "bob renumbered from uid 9001 to 10001" on the
+    group and no line on the account, whose own uid change says it. An
+    action with no wording falls back to its audit phrase, or its raw name.
+    No actor and no detail list: those are in the audit log. Its own
+    loading, "No recorded changes", "None of the events loaded so far is
+    listed here" when the loaded events drew no line, error with Try
+    again, and Load more by event, counted "3 events shown", following the row across a rename or
+    an accepted id change. Related accounts, groups and the linked person are
+    links. The back chip returns to the list with the
+    filters it was opened from (`?back=`, a query string only). A 404 says
+    no stored entry has that number and that a host lookup would still ask
+    the directory; a group's also links the account with that uid, since
+    private groups are never stored.
+  - **NSS keys (all)** (`/admin/nss/keys`, `wide`, titled "All NSS keys",
+    the rail entry "NSS keys (all)", `nssOnly` and `keyAdmin`, below NSS
+    directory, which `currentHref` keeps from lighting up too): every fleet
+    key, whoever manages it, read only, for auditors and above and the fleet
+    key admin role (the server's `NSSKeyListAuthMiddleware`).
+    `NSSKeyAdminList`. The primary control is one search field with a
+    visible label, "Search keys", and the hint "A name, group, creator or
+    key id, or an address (10.0.4.7) or range (10.0.4.0/24)." (plain text,
+    no `inputmode`, mono). Text searches the key (a substring of the name,
+    group or creator, or the start of the id, in any case); an address or a CIDR range
+    searches the usage the server kept, and a line under the field says
+    "Keys used from 10.0.4.0/24 in the last 90 days", with the range and the
+    window the server answered. A term shaped like an address that does not
+    parse is marked on Enter or leaving the field (`aria-invalid`, a
+    `text-danger` line naming the problem, "The list below is not searched
+    by it.") and sends nothing; the server's 400 shows there too. Then a
+    Status `FilterGroup` and a "Needs attention" group of `FilterChip`
+    toggles (Expiring, Unused 30 days, Alerts 7 days); Expiring adds an
+    "Expiring within" 7 / 30 / 90 days group, 30 by default. All of it in
+    the address (`?q=`, `?status=`, `?expiring=`, `?unused=1`, `?alerts=1`).
+    `.data-table`, five columns: Name (mono link, the group muted under it,
+    "no group" for none), Creator (username, email under it; "unknown user"
+    and the id in mono when the account is gone), Status (`KeyStatusBadge`,
+    the expiry as on `/nss-keys`, a recent usage alert in `trimmed` with
+    its glyph), Hosts, 7 days (right-aligned), Last seen. An address search
+    swaps Hosts for "Used from": each matching address in mono with when it
+    was last seen and "current secret" or "previous secret", and "and N
+    more". No row action: a row opens `/nss-keys/<id>?from=admin` with the
+    filters (`back=`), whose back chip says "All NSS keys"; its rotation
+    report carries both on (`keyListContext`), so the report's back chip
+    returns to the key page with them. New key is a
+    ghost link in the heading, for the fleet key admin role only, so it
+    never competes with the search. States: skeleton rows; "No NSS keys
+    yet", which says why a host needs a key and that a fleet key admin
+    creates them; "No keys match" with Clear filters; "No key was used from
+    <address>", which names the window and that the address is the one the
+    server observed (the forwarded one behind a proxy in
+    `http.trusted_proxies`), with Clear filters; error with Try again; Load
+    more; the NSS off notice.
+  - **The keys a viewer manages** (`/nss-keys`, outside the admin area): the
+    keys whose group is one of the viewer's groups, for every role, so its
+    top-level rail entry shows only when that list is not empty. Its empty
+    state, "No NSS keys in your groups", links auditors and fleet key admins
+    to All NSS keys and keeps New key for the fleet key admin role.
+  - **Admin-only references:** the Probe, Sync, Pending id changes and
+    Collisions live on the admin-only Directory, so `NSSDirectoryRef` links
+    to them for admins and says "An admin can ..." to everyone else.
 - **Claims echo** (`/admin/identity/echo`, admin only, gated like the
   Directory): re-authenticates
   with `prompt=login` and renders the decoded ID token, each claim annotated
@@ -1257,7 +1427,7 @@ No rulings are open.
 The tokens and this spec are ahead of the components. Remove a line when its
 change lands.
 
-- The Login shell preference section is not built.
+Nothing is outstanding.
 
 ## References
 

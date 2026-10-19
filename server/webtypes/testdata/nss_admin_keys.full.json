@@ -1,0 +1,40 @@
+{
+  "keys": [
+    {
+      "id": "nss_k7m4qp2x",
+      "name": "web fleet",
+      "group_name": "web-admins",
+      "status": "revoked",
+      "current_generation": 2,
+      "expires_at": "2027-08-14T09:30:00+02:00",
+      "previous_expires_at": "2026-09-14T09:30:00+02:00",
+      "revoked_at": "2026-08-15T09:30:00+02:00",
+      "created_at": "2026-08-14T09:30:00+02:00",
+      "creator": {
+        "user_id": "3c2b1a09-8f7e-4d6c-b5a4-938271605f4e",
+        "username": "kim",
+        "email": "kim@example.org",
+        "exists": true
+      },
+      "hosts_7d": 14,
+      "last_seen_at": "2026-08-15T09:30:00+02:00",
+      "miss_rate_alert_at": "2026-08-15T09:30:00+02:00",
+      "key_source_alert_at": "2026-08-15T09:30:00+02:00",
+      "matched": {
+        "addresses": [
+          {
+            "source_ip": "10.0.4.7",
+            "last_seen": "2026-08-15T09:30:00+02:00",
+            "generation": 1,
+            "secret": "previous"
+          }
+        ],
+        "total": 9
+      }
+    }
+  ],
+  "total": 42,
+  "next_cursor": "1792022400.2.192.0.2.10",
+  "address_search": "10.0.4.0/24",
+  "usage_retention_seconds": 7776000
+}

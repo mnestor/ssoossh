@@ -11,6 +11,9 @@
 //     configuration reference, one page per section (big sections split into
 //     a directory of subpages), regenerated wholesale, plus
 //     user-docs/config-sidebar.json declaring their sidebar order
+//   - the ldap.schema presets table in
+//     user-docs/src/content/docs/operations/ldap-schema-presets.md, between
+//     its generated-region markers, from the embedded preset files
 //
 // Usage: genconfdocs [-check]
 //
@@ -133,13 +136,25 @@ func run(check bool) error {
 	if err != nil {
 		return err
 	}
+	if err := checkPresetDocs(sections); err != nil {
+		return err
+	}
+	table, err := presetTable(sections)
+	if err != nil {
+		return err
+	}
+	presets, err := confdocs.WriteRegion(presetsPage, presetsBegin, presetsEnd, table)
+	if err != nil {
+		return err
+	}
 
 	if check {
 		reportStale(map[string]bool{
-			manPage:    man,
-			defaultsIn: yamlChanged,
-			siteDir:    site,
-			sidebarOut: sidebar,
+			manPage:     man,
+			defaultsIn:  yamlChanged,
+			siteDir:     site,
+			sidebarOut:  sidebar,
+			presetsPage: presets,
 		})
 	}
 	return nil

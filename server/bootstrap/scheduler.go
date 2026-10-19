@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -28,6 +29,41 @@ const ldapSyncJobName = "ldap-directory-sync"
 
 // expiryReminderJobName identifies the enrollment expiry reminder sweep.
 const expiryReminderJobName = "enrollment-expiry-reminder"
+
+// NSS directory job names: the incremental and full syncs and the
+// tombstone purge.
+const (
+	nssIncrementalSyncJobName = "nss-directory-incremental-sync"
+	nssFullSyncJobName        = "nss-directory-full-sync"
+	nssTombstonePurgeJobName  = "nss-tombstone-purge"
+)
+
+// NSS pending id change mail job names: the sweep that mails new changes
+// from on-demand and login reads, and the weekly reminder.
+const (
+	nssIDChangeMailJobName     = "nss-id-change-mail"
+	nssIDChangeReminderJobName = "nss-id-change-reminder"
+)
+
+// nssTombstonePurgeInterval is how often the NSS tombstone purge runs.
+// Retention is measured in days, so an hour late is nothing, and the sweep
+// is one indexed query when nothing is due.
+const nssTombstonePurgeInterval = time.Hour
+
+// nssUsagePruneJobName identifies the NSS fleet key usage retention prune.
+const nssUsagePruneJobName = "nss-usage-prune"
+
+// nssKeyExpiryReminderJobName identifies the fleet key expiry reminder.
+const nssKeyExpiryReminderJobName = "nss-key-expiry-reminder"
+
+// nssRotationCleanupJobName identifies the fleet key rotation cleanup
+// digest.
+const nssRotationCleanupJobName = "nss-key-rotation-cleanup"
+
+// nssHourly is how often the NSS prune and rotation digest sweeps run. The
+// prune works in whole days and the digest repeats daily, so an hour keeps
+// either at most an hour late.
+const nssHourly = time.Hour
 
 // expiryReminderSweepDivisor sets the reminder sweep's interval as a
 // fraction of the shortest reminder cadence (the daily one, or the lead
@@ -62,7 +98,144 @@ func (a *app) registerJobs(ctx context.Context) error {
 	if err := a.registerExpiryReminderJob(ctx); err != nil {
 		return err
 	}
-	return a.registerLDAPSyncJob(ctx)
+	if err := a.registerLDAPSyncJob(ctx); err != nil {
+		return err
+	}
+	if err := a.registerNSSDirectoryJobs(ctx); err != nil {
+		return err
+	}
+	return a.registerNSSKeyJobs(ctx)
+}
+
+// registerNSSDirectoryJobs schedules the NSS directory's jobs: the incremental sync
+// every nss.sync_interval, the full sync every nss.full_sync_interval
+// (either skipped at zero), and the hourly tombstone purge. Nothing when
+// NSS is disabled. Registered in serve and serve api, which call
+// registerJobs; sign has no scheduler.
+//
+// Not run inline at startup, as the LDAP sync is not: the first
+// incremental run, one interval after start, runs as a full sync because
+// this instance has no earlier run to read changes since.
+func (a *app) registerNSSDirectoryJobs(ctx context.Context) error {
+	if a.svc.nss == nil {
+		return nil
+	}
+	nss := a.svc.nss
+	jobs := []struct {
+		name     string
+		interval time.Duration
+		run      func(context.Context) error
+	}{
+		{nssIncrementalSyncJobName, a.config.NSS.SyncInterval, func(c context.Context) error {
+			_, err := nss.IncrementalSync(c)
+			return nssSyncJobError(c, err)
+		}},
+		{nssFullSyncJobName, a.config.NSS.FullSyncInterval, func(c context.Context) error {
+			_, err := nss.FullSync(c)
+			return nssSyncJobError(c, err)
+		}},
+		{nssTombstonePurgeJobName, nssTombstonePurgeInterval, func(c context.Context) error {
+			_, err := nss.PurgeTombstones(c)
+			return err
+		}},
+	}
+	for _, job := range jobs {
+		if job.interval <= 0 {
+			slog.DebugContext(ctx, "nss job not registered: its interval is zero", slog.String("job", job.name))
+			continue
+		}
+		if err := a.scheduler.RegisterJob(ctx, job.name, gocron.DurationJob(job.interval), job.run, service.RegisterJobOpts{}); err != nil {
+			// not covered: RegisterJob fails only on a nil context or an
+			// interval gocron rejects, and the interval here is positive.
+			return fmt.Errorf("failed to register %s: %w", job.name, err)
+		}
+		slog.DebugContext(ctx, "registered an NSS directory job",
+			slog.String("job", job.name), slog.Duration("interval", job.interval))
+	}
+	return a.registerNSSIDChangeMailJobs(ctx)
+}
+
+// registerNSSIDChangeMailJobs schedules the admin mail about pending uid
+// and gid changes when mail is on: the sweep every
+// service.NSSIDChangeMailInterval for the changes on-demand and login reads
+// make (a sync run mails its own), and the weekly reminder on its fixed
+// cadence, Monday at 09:00 server time. Every instance runs both; each
+// change and each week's reminder is claimed in the database, so one
+// instance sends it.
+func (a *app) registerNSSIDChangeMailJobs(ctx context.Context) error {
+	if !a.config.Mail.Enabled {
+		slog.DebugContext(ctx, "NSS id change mail not registered: mail is disabled")
+		return nil
+	}
+	nss := a.svc.nss
+	if err := a.scheduler.RegisterJob(ctx, nssIDChangeMailJobName, gocron.DurationJob(service.NSSIDChangeMailInterval),
+		nss.SweepPendingIDChangeMail, service.RegisterJobOpts{}); err != nil {
+		// not covered: RegisterJob fails only on a nil context or an
+		// interval gocron rejects, and the interval here is positive.
+		return fmt.Errorf("failed to register the NSS id change mail: %w", err)
+	}
+	weekly := gocron.WeeklyJob(1, gocron.NewWeekdays(service.NSSIDChangeReminderWeekday),
+		gocron.NewAtTimes(gocron.NewAtTime(service.NSSIDChangeReminderHour, 0, 0)))
+	if err := a.scheduler.RegisterJob(ctx, nssIDChangeReminderJobName, weekly,
+		nss.SweepPendingIDChangeReminder, service.RegisterJobOpts{}); err != nil {
+		// not covered: RegisterJob fails only on a nil context or a
+		// definition gocron rejects, and this weekly one is a constant.
+		return fmt.Errorf("failed to register the NSS id change reminder: %w", err)
+	}
+	return nil
+}
+
+// nssSyncJobError is a scheduled sync's result for the job wrapper. A run
+// skipped because another is still going (a full sync outlasting the
+// incremental interval) is routine, not a failure to log as one.
+func nssSyncJobError(ctx context.Context, err error) error {
+	if errors.Is(err, service.ErrNSSSyncInProgress) {
+		slog.InfoContext(ctx, "nss sync skipped: another run is still going on this instance")
+		return nil
+	}
+	return err
+}
+
+// registerNSSKeyJobs schedules the NSS fleet key jobs: the usage prune
+// whenever NSS is on and nss.usage_retention is not zero, and the two key
+// mail sweeps only when mail is on as well, with their own settings non-zero
+// (mail.expiry_reminder_lead for the reminder, mail.rotation_quiet_period
+// for the digest). None runs inline at startup: each is about days, and a
+// restart loop would otherwise repeat them on every boot. Every instance
+// runs them; the prune is idempotent and the mail is claimed per key.
+func (a *app) registerNSSKeyJobs(ctx context.Context) error {
+	if a.svc.nssUsage == nil || a.svc.nssKeys == nil {
+		return nil
+	}
+	if a.config.NSS.UsageRetention > 0 {
+		if err := a.scheduler.RegisterJob(ctx, nssUsagePruneJobName, gocron.DurationJob(nssHourly),
+			a.svc.nssUsage.PruneUsage, service.RegisterJobOpts{}); err != nil {
+			// not covered: RegisterJob fails only on a nil context or an
+			// interval gocron rejects, and the interval here is positive.
+			return fmt.Errorf("failed to register the NSS usage prune: %w", err)
+		}
+	}
+	if !a.config.Mail.Enabled {
+		slog.DebugContext(ctx, "NSS fleet key mail sweeps not registered: mail is disabled")
+		return nil
+	}
+	if lead := a.config.Mail.ExpiryReminderLead; lead > 0 {
+		if err := a.scheduler.RegisterJob(ctx, nssKeyExpiryReminderJobName, gocron.DurationJob(expiryReminderInterval(lead)),
+			a.svc.nssKeys.SweepExpiryReminders, service.RegisterJobOpts{}); err != nil {
+			// not covered: RegisterJob fails only on a nil context or an
+			// interval gocron rejects, and the interval here is positive.
+			return fmt.Errorf("failed to register the NSS fleet key expiry reminder: %w", err)
+		}
+	}
+	if a.config.Mail.RotationQuietPeriod > 0 {
+		if err := a.scheduler.RegisterJob(ctx, nssRotationCleanupJobName, gocron.DurationJob(nssHourly),
+			a.svc.nssKeys.SweepRotationCleanup, service.RegisterJobOpts{}); err != nil {
+			// not covered: RegisterJob fails only on a nil context or an
+			// interval gocron rejects, and the interval here is positive.
+			return fmt.Errorf("failed to register the NSS fleet key rotation cleanup digest: %w", err)
+		}
+	}
+	return nil
 }
 
 // registerExpiryReminderJob schedules the enrollment expiry reminder sweep,

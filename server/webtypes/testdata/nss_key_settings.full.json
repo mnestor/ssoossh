@@ -1,0 +1,4 @@
+{
+  "max_lifetime_seconds": 31536000,
+  "rotation_grace_seconds": 604800
+}

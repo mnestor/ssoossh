@@ -4,6 +4,8 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+
+	"github.com/mnestor/ssoossh/internal/apitypes"
 )
 
 func TestLevelFor(t *testing.T) {
@@ -73,6 +75,8 @@ func TestHeader(t *testing.T) {
 		// Canonicalization is not guaranteed by the time these are read, so
 		// the match cannot depend on casing.
 		{name: "should withhold regardless of casing", header: "AUTHORIZATION", wantRedact: true},
+		{name: "should withhold the fleet key secret", header: apitypes.HeaderNSSKeySecret, value: "ssoossh_nss_secret", wantRedact: true},
+		{name: "should print the fleet key id", header: apitypes.HeaderNSSKeyID, value: "nss_k7m4qp2x"},
 		{name: "should print an ordinary header", header: "Accept", value: "application/json"},
 		{name: "should print the user agent", header: "User-Agent", value: "ssoossh/0.1.0"},
 	}

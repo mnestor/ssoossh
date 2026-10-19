@@ -9,7 +9,8 @@ import Layout from './+layout.svelte';
 // Test methodology: render the admin gate around a marker child with the
 // app-wide session singleton put into each state directly. The gate is
 // display-only (the server re-checks every read), but it decides whether a
-// signed-in non-auditor gets an explanation or a redirect loop, which is
+// signed-in non-auditor gets an explanation or a redirect loop, and that the
+// fleet key admin role opens All NSS keys and no other admin page, which is
 // worth pinning.
 //
 // The section tabs this layout used to own moved to the rail, and are
@@ -26,8 +27,9 @@ const children = createRawSnippet(() => ({
 	render: () => '<p data-testid="admin-child">admin content</p>'
 }));
 
-/** signedInUser is a minimal session user with the given auditor flag. */
-function signedInUser(isAuditor: boolean) {
+/** signedInUser is a minimal session user with the given auditor flag, and
+ * optionally the fleet key admin role. */
+function signedInUser(isAuditor: boolean, { isKeyAdmin = false } = {}) {
 	return {
 		subject: 'sub-1',
 		username: 'alice',
@@ -42,6 +44,8 @@ function signedInUser(isAuditor: boolean) {
 		is_admin: false,
 		is_soc: false,
 		is_auditor: isAuditor,
+		is_nss_key_admin: isKeyAdmin,
+		nss_enabled: true,
 		detail_level: 'advanced' as const
 	};
 }
@@ -72,6 +76,44 @@ describe('admin layout', () => {
 
 		expect(screen.getByTestId('admin-access-denied')).toBeInTheDocument();
 		expect(screen.queryByTestId('admin-child')).not.toBeInTheDocument();
+	});
+
+	// The fleet key admin role manages every key, so All NSS keys opens to
+	// it without an admin area role; no other admin page does.
+	const keyAdminCases = [
+		{ pathname: '/admin/nss/keys', opens: true },
+		{ pathname: '/admin/users', opens: false },
+		{ pathname: '/admin/users/u-1', opens: false },
+		{ pathname: '/admin/certificates', opens: false },
+		{ pathname: '/admin/service-codes', opens: false },
+		{ pathname: '/admin/audit', opens: false },
+		{ pathname: '/admin/nss', opens: false },
+		{ pathname: '/admin/nss/accounts', opens: false },
+		{ pathname: '/admin/config', opens: false },
+		{ pathname: '/admin/diagnostics', opens: false }
+	];
+	for (const { pathname, opens } of keyAdminCases) {
+		it(`should ${opens ? 'render' : 'refuse'} ${pathname} when the viewer is a fleet key admin with no admin area role`, () => {
+			resetFakePage(`http://localhost${pathname}`);
+			session.user = signedInUser(false, { isKeyAdmin: true });
+			session.resolved = true;
+
+			render(Layout, { children });
+
+			expect(
+				screen.queryByTestId(opens ? 'admin-child' : 'admin-access-denied')
+			).toBeInTheDocument();
+		});
+	}
+
+	it('should refuse every NSS key when the viewer holds no role', () => {
+		resetFakePage('http://localhost/admin/nss/keys');
+		session.user = signedInUser(false);
+		session.resolved = true;
+
+		render(Layout, { children });
+
+		expect(screen.getByTestId('admin-access-denied')).toBeInTheDocument();
 	});
 
 	// The denial used to be one muted sentence with no way out.

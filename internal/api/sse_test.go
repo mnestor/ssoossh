@@ -25,7 +25,7 @@ func TestWaitForOutcome_ShouldDecodeApprovedEvent(t *testing.T) {
 	}))
 	t.Cleanup(ts.Close)
 
-	result, err := waitForOutcome(context.Background(), nil, ts.URL)
+	result, err := waitForOutcome(context.Background(), newTransport(nil, false), ts.URL)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -45,7 +45,7 @@ func TestWaitForOutcome_ShouldDecodeDeniedEventWithNoCertificate(t *testing.T) {
 	}))
 	t.Cleanup(ts.Close)
 
-	result, err := waitForOutcome(context.Background(), nil, ts.URL)
+	result, err := waitForOutcome(context.Background(), newTransport(nil, false), ts.URL)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestWaitForOutcome_ShouldTreatEnrolledAsTerminal(t *testing.T) {
 	}))
 	t.Cleanup(ts.Close)
 
-	result, err := waitForOutcome(context.Background(), nil, ts.URL)
+	result, err := waitForOutcome(context.Background(), newTransport(nil, false), ts.URL)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestWaitForOutcome_ShouldCarryEveryFieldOfTheEnrolledPayload(t *testing.T) 
 	}))
 	t.Cleanup(ts.Close)
 
-	result, err := waitForOutcome(context.Background(), nil, ts.URL)
+	result, err := waitForOutcome(context.Background(), newTransport(nil, false), ts.URL)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestWaitForOutcome_ShouldLeaveEnrollmentFieldsUnsetWhenAbsent(t *testing.T)
 	}))
 	t.Cleanup(ts.Close)
 
-	result, err := waitForOutcome(context.Background(), nil, ts.URL)
+	result, err := waitForOutcome(context.Background(), newTransport(nil, false), ts.URL)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestWaitForOutcome_ShouldTreatFailedAsTerminal(t *testing.T) {
 	}))
 	t.Cleanup(ts.Close)
 
-	result, err := waitForOutcome(context.Background(), nil, ts.URL)
+	result, err := waitForOutcome(context.Background(), newTransport(nil, false), ts.URL)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -174,7 +174,7 @@ func TestWaitForOutcome_ShouldSurfaceGoneWithoutRetrying(t *testing.T) {
 	}))
 	t.Cleanup(ts.Close)
 
-	_, err := waitForOutcome(context.Background(), nil, ts.URL)
+	_, err := waitForOutcome(context.Background(), newTransport(nil, false), ts.URL)
 
 	respErr := &ResponseError{}
 	ok := errors.As(err, &respErr)
@@ -199,7 +199,7 @@ func TestWaitForOutcome_ShouldErrorOnNon2xxConnect(t *testing.T) {
 	}))
 	t.Cleanup(ts.Close)
 
-	_, err := waitForOutcome(context.Background(), nil, ts.URL)
+	_, err := waitForOutcome(context.Background(), newTransport(nil, false), ts.URL)
 	respErr := &ResponseError{}
 	ok := errors.As(err, &respErr)
 	if !ok {
@@ -235,7 +235,7 @@ func TestWaitForOutcome_ShouldRespectContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := waitForOutcome(ctx, nil, ts.URL)
+	_, err := waitForOutcome(ctx, newTransport(nil, false), ts.URL)
 	if err == nil {
 		t.Fatal("expected an error from an already-canceled context, got nil")
 	}
@@ -254,7 +254,7 @@ func TestWaitForOutcome_ShouldNotRetryAConnectThatNeverReachedAServer(t *testing
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	_, err := waitForOutcome(ctx, nil, url)
+	_, err := waitForOutcome(ctx, newTransport(nil, false), url)
 	if err == nil {
 		t.Fatal("expected an error connecting to a closed port, got nil")
 	}
@@ -420,7 +420,7 @@ func TestWaitForOutcome_ShouldKeepReadingPastANonTerminalEvent(t *testing.T) {
 	}))
 	t.Cleanup(ts.Close)
 
-	result, err := waitForOutcome(context.Background(), nil, ts.URL)
+	result, err := waitForOutcome(context.Background(), newTransport(nil, false), ts.URL)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -437,7 +437,7 @@ func TestWaitForOutcome_ShouldAcceptATerminalEventWithNoData(t *testing.T) {
 	}))
 	t.Cleanup(ts.Close)
 
-	result, err := waitForOutcome(context.Background(), nil, ts.URL)
+	result, err := waitForOutcome(context.Background(), newTransport(nil, false), ts.URL)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -454,7 +454,7 @@ func TestWaitForOutcome_ShouldErrorOnATerminalEventThatIsNotJSON(t *testing.T) {
 	}))
 	t.Cleanup(ts.Close)
 
-	_, err := waitForOutcome(context.Background(), nil, ts.URL)
+	_, err := waitForOutcome(context.Background(), newTransport(nil, false), ts.URL)
 	if err == nil {
 		t.Fatal("expected an error for an undecodable event payload, got nil")
 	}
@@ -474,7 +474,7 @@ func TestWaitForOutcome_ShouldSurfaceAnErrorCarriedInTheEventEnvelope(t *testing
 	}))
 	t.Cleanup(ts.Close)
 
-	_, err := waitForOutcome(context.Background(), nil, ts.URL)
+	_, err := waitForOutcome(context.Background(), newTransport(nil, false), ts.URL)
 	if err == nil {
 		t.Fatal("expected an error for an event carrying one, got nil")
 	}
@@ -501,7 +501,7 @@ func TestWaitForOutcome_ShouldReconnectAfterABrokenStreamUntilTheContextEnds(t *
 	ctx, cancel := context.WithTimeout(context.Background(), 750*time.Millisecond)
 	defer cancel()
 
-	_, err := waitForOutcome(ctx, nil, ts.URL)
+	_, err := waitForOutcome(ctx, newTransport(nil, false), ts.URL)
 	if !errors.Is(err, errStreamEnded) {
 		t.Fatalf("got %v, want an error reporting the stream ended without an outcome", err)
 	}
@@ -532,7 +532,7 @@ func TestWaitForOutcome_ShouldReportTheDropWhenTheContextEndsMidReconnect(t *tes
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	_, err := waitForOutcome(ctx, nil, ts.URL)
+	_, err := waitForOutcome(ctx, newTransport(nil, false), ts.URL)
 	if !errors.Is(err, errStreamEnded) {
 		t.Fatalf("got %v, want the drop that ended the last established stream", err)
 	}
@@ -551,7 +551,7 @@ func TestWaitForOutcome_ShouldReportAnEmptyStreamWhenTheContextEnds(t *testing.T
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 
-	_, err := waitForOutcome(ctx, nil, ts.URL)
+	_, err := waitForOutcome(ctx, newTransport(nil, false), ts.URL)
 	if !errors.Is(err, errStreamEnded) {
 		t.Fatalf("got %v, want an error reporting the stream ended without an outcome", err)
 	}
@@ -566,7 +566,7 @@ func TestWaitForOutcome_ShouldErrorOnAnEventsURLThatCannotBeARequest(t *testing.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	_, err := waitForOutcome(ctx, nil, "http://exa\x7fmple.com/api/certs/requests/x/events")
+	_, err := waitForOutcome(ctx, newTransport(nil, false), "http://exa\x7fmple.com/api/certs/requests/x/events")
 	if err == nil {
 		t.Fatal("expected an error for an events URL that cannot be parsed, got nil")
 	}
@@ -608,7 +608,7 @@ func TestWaitForOutcome_ShouldReconnectAfterARetryableStatus(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 
-			result, err := waitForOutcome(ctx, nil, ts.URL)
+			result, err := waitForOutcome(ctx, newTransport(nil, false), ts.URL)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -638,7 +638,7 @@ func TestWaitForOutcome_ShouldStillReportARetryableStatusWhenTheContextEnds(t *t
 	ctx, cancel := context.WithTimeout(context.Background(), 600*time.Millisecond)
 	defer cancel()
 
-	_, err := waitForOutcome(ctx, nil, ts.URL)
+	_, err := waitForOutcome(ctx, newTransport(nil, false), ts.URL)
 	respErr := &ResponseError{}
 	if !errors.As(err, &respErr) {
 		t.Fatalf("expected a *ResponseError, got %T: %v", err, err)

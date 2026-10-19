@@ -7,6 +7,7 @@ import (
 	"bytes"
 	_ "embed"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -24,7 +25,8 @@ var defaultconfig string
 // NewConfig loads the ssoosshd configuration using Viper.
 //
 // Configuration is built by layering: defaults.yaml is loaded first, then
-// a config file is located and merged on top.
+// the preset ldap.schema names (if any), then a config file is located and
+// merged on top, so any key the file sets beats the preset.
 //
 // If the command's --config/-c flag is set, that file is used. Otherwise,
 // the following locations are searched in order, and the first one found is used:
@@ -71,7 +73,13 @@ func NewConfig(cmd *cobra.Command) (*Config, error) {
 		return nil, fmt.Errorf("failed to read config: %w", err)
 	}
 
+	v, err = withLDAPSchemaPreset(v)
+	if err != nil {
+		return nil, err
+	}
+
 	var c Config
+	var decoded mapstructure.Metadata
 	if err := v.Unmarshal(&c, viper.DecodeHook(mapstructure.ComposeDecodeHookFunc(
 		// viper's defaults, which Unmarshal replaces wholesale when a hook
 		// is supplied. Dropping either silently breaks every duration and
@@ -79,9 +87,19 @@ func NewConfig(cmd *cobra.Command) (*Config, error) {
 		mapstructure.StringToTimeDurationHookFunc(),
 		mapstructure.StringToSliceHookFunc(","),
 		ldapFieldShorthandHook,
-	))); err != nil {
+		autoPrivateGroupsHook,
+	)), func(dc *mapstructure.DecoderConfig) { dc.Metadata = &decoded }); err != nil {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
+
+	// A key nothing declares does nothing, which is exactly how a typo, or
+	// a key from a newer version, goes unnoticed. Warn rather than fail: a
+	// file written for a newer ssoosshd must still load. defaults.yaml and
+	// the presets declare only real keys (their tests decode them
+	// exactly), so whatever is left came from the config file; the server
+	// reads no keys from the environment.
+	c.unknownKeys = findUnknownKeys(decoded.Unused)
+	warnUnknownKeys(slog.Default(), v.ConfigFileUsed(), c.unknownKeys)
 
 	// Fail at startup rather than at first login: a bad public_url does not
 	// stop anything booting, it just produces a redirect URI the identity
@@ -120,6 +138,13 @@ func NewConfig(cmd *cobra.Command) (*Config, error) {
 		return nil, err
 	}
 
+	// And the NSS directory, which reads every account from LDAP: a gecos
+	// template typo or an unparseable source allow list would otherwise
+	// surface only at the first host lookup, far from the config.
+	if err := c.NSS.Validate(&c.LDAP); err != nil {
+		return nil, err
+	}
+
 	// And the support contact: it is rendered as a link on the login page,
 	// so a bad address surfaces to a locked-out user rather than to anyone
 	// who could fix it.
@@ -135,4 +160,45 @@ func NewConfig(cmd *cobra.Command) (*Config, error) {
 	}
 
 	return &c, nil
+}
+
+// withLDAPSchemaPreset slides the preset ldap.schema names in between
+// defaults.yaml and the config file, returning v unchanged when the file
+// names none.
+//
+// The schema is read from the file itself, so the file has to be read
+// before the layer beneath it can be built: v already holds defaults plus
+// the file, and the rebuild reads that same file (ConfigFileUsed) again on
+// top of defaults plus the preset. Which file is used and how it is parsed
+// are therefore exactly what the first read decided. A file edited between
+// the two reads to name another schema fails rather than loading a mix.
+func withLDAPSchemaPreset(v *viper.Viper) (*viper.Viper, error) {
+	schema := v.GetString("ldap.schema")
+	if schema == "" {
+		return v, nil
+	}
+	preset, err := ldapSchemaPreset(schema)
+	if err != nil {
+		return nil, err
+	}
+
+	layered := viper.New()
+	layered.SetConfigType("yaml")
+	if err := layered.ReadConfig(bytes.NewBufferString(defaultconfig)); err != nil {
+		// not covered: unreachable, for the reason NewConfig gives.
+		return nil, fmt.Errorf("failed to load embedded default config: %w", err)
+	}
+	if err := layered.MergeConfig(bytes.NewReader(preset)); err != nil {
+		// not covered: unreachable. The presets are embedded, and
+		// TestLDAPSchemaPresets_ShouldLoad parses every one.
+		return nil, fmt.Errorf("failed to load the %s schema preset: %w", schema, err)
+	}
+	layered.SetConfigFile(v.ConfigFileUsed())
+	if err := layered.MergeInConfig(); err != nil {
+		return nil, fmt.Errorf("failed to read config: %w", err)
+	}
+	if again := layered.GetString("ldap.schema"); again != schema {
+		return nil, fmt.Errorf("the config file %s changed while it was loading (ldap.schema %q, then %q): start again", v.ConfigFileUsed(), schema, again)
+	}
+	return layered, nil
 }

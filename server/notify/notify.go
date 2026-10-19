@@ -71,6 +71,43 @@ const (
 	// the one message a preference must not be able to silence. Never sent
 	// for a disable an operator made by hand.
 	KindAdminAutoDisabled Kind = "admin_auto_disabled"
+
+	// KindNSSKeyExpiring fires mail.expiry_reminder_lead before a fleet key
+	// stops being accepted: weekly inside that window, then daily over the
+	// final week. It goes to the key's notification address, not to a user.
+	KindNSSKeyExpiring Kind = "nss_key_expiring"
+
+	// KindNSSKeyRotationCleanup fires after mail.rotation_quiet_period
+	// following a rotation, then daily while any address still presents the
+	// previous secret, until the grace period ends. It lists the addresses
+	// that have not switched yet.
+	KindNSSKeyRotationCleanup Kind = "nss_key_rotation_cleanup"
+
+	// KindNSSKeyExpiredAttempt fires when a host presents an expired fleet
+	// key. At most once per key per mail.expired_attempt_window.
+	KindNSSKeyExpiredAttempt Kind = "nss_key_expired_attempt"
+
+	// KindNSSKeyRevokedAttempt fires when a host presents a revoked fleet
+	// key. At most once per key per mail.expired_attempt_window.
+	KindNSSKeyRevokedAttempt Kind = "nss_key_revoked_attempt"
+
+	// KindNSSKeyRotated fires at once when a fleet key is rotated.
+	KindNSSKeyRotated Kind = "nss_key_rotated"
+
+	// KindNSSKeyRevoked fires at once when a fleet key is revoked.
+	KindNSSKeyRevoked Kind = "nss_key_revoked"
+
+	// KindNSSIDChangePending fires when the directory gives stored NSS
+	// accounts or groups a different uid or gid, which the server holds
+	// until an admin accepts it. One message per admin per batch: what one
+	// sync run made pending, or what on-demand and login reads made pending
+	// since the last send. It lists only what is new.
+	KindNSSIDChangePending Kind = "nss_id_change_pending"
+
+	// KindNSSIDChangeReminder fires once a week while any uid or gid change
+	// is still waiting for an admin, and lists all of them with how long
+	// each has waited.
+	KindNSSIDChangeReminder Kind = "nss_id_change_reminder"
 )
 
 // Field documents one variable a template for this kind may reference.
@@ -93,6 +130,9 @@ const (
 	// GroupCertificates is the "was this you?" mail: one message per
 	// certificate issued in the reader's name.
 	GroupCertificates Group = "certificates"
+	// GroupNSSDirectory is the NSS directory mail admins act on. Every kind
+	// in it is AdminOnly, so the group is shown to admins alone.
+	GroupNSSDirectory Group = "nss_directory"
 )
 
 // GroupDefinition is how the preferences page heads and explains a group.
@@ -114,6 +154,11 @@ var groups = []GroupDefinition{
 		Group:       GroupCertificates,
 		Title:       "Certificates issued to you",
 		Description: "One email for every login, sudo or console login, so these are off by default. Turn one on to hear about every certificate issued in your name.",
+	},
+	{
+		Group:       GroupNSSDirectory,
+		Title:       "NSS directory",
+		Description: "Shown to admins only. Directory changes to a stored uid or gid, which hosts do not see until an admin accepts them under Admin > Directory.",
 	},
 }
 
@@ -151,6 +196,13 @@ type Definition struct {
 	// refused. Such a kind has no Group, since no page lists it, and its
 	// DefaultEnabled is true, since that is what it does.
 	AlwaysSent bool
+
+	// AdminOnly marks a kind that only admins are sent. The preferences
+	// page lists it only to a session holding the admin role, so nobody
+	// else is offered a switch for mail they never get. It changes nothing
+	// at delivery: the code that publishes such a kind addresses admins
+	// alone.
+	AdminOnly bool
 
 	// Fields documents the template variables. Kept honest by
 	// TestDefinitions_shouldDocumentOnlyRealPayloadFields, which fails when
@@ -314,6 +366,149 @@ var definitions = []Definition{
 			readerField,
 		},
 	},
+
+	{
+		Kind:           KindNSSKeyExpiring,
+		Title:          "NSS fleet key expiring",
+		Description:    "Sent to the key's notification address (nss_keys.notification_email, which defaults to the creator's address) while a fleet key nears expiry: weekly inside mail.expiry_reminder_lead, then daily over the final week. Always sent, and not a preference: it cannot be turned off.",
+		DefaultEnabled: true,
+		AlwaysSent:     true,
+		NewPayload:     func() any { return &NSSKeyExpiring{} },
+		Fields: []Field{
+			{"KeyID", "string", "The fleet key's id, \"nss_\" followed by 8 characters."},
+			{"KeyName", "string", "The fleet key's name."},
+			{"Description", "string", "The key's description, or empty if none was set."},
+			{"GroupName", "string", "The group whose members manage the key, or empty for none."},
+			{"ExpiresAt", "time.Time", "When the key stops being accepted. Extend it, or create a replacement, before this."},
+			{"Daily", "bool", "True once the key is inside its final week and reminders come daily; false while they are still weekly."},
+			{"ServerURL", "string", "The server's public origin, naming the deployment the key belongs to."},
+			readerField,
+		},
+	},
+	{
+		Kind:           KindNSSKeyRotationCleanup,
+		Title:          "NSS fleet key rotation cleanup",
+		Description:    "Sent to the key's notification address (nss_keys.notification_email, which defaults to the creator's address) after a rotation, once mail.rotation_quiet_period has passed, and daily while any host still presents the previous secret, until the grace period ends. It lists the addresses that have not switched. Always sent, and not a preference: it cannot be turned off.",
+		DefaultEnabled: true,
+		AlwaysSent:     true,
+		NewPayload:     func() any { return &NSSKeyRotationCleanup{} },
+		Fields: []Field{
+			{"KeyID", "string", "The fleet key's id, \"nss_\" followed by 8 characters."},
+			{"KeyName", "string", "The fleet key's name."},
+			{"Generation", "int", "The key's current generation, the one hosts should present."},
+			{"RotatedAt", "time.Time", "When the key was last rotated."},
+			{"PreviousExpiresAt", "time.Time", "When the previous secret stops working. Equal to RotatedAt when no grace period is set."},
+			{"Switched", "int", "Addresses whose last lookup presented the current secret."},
+			{"NotSwitched", "int", "Addresses whose last lookup presented the previous secret."},
+			{"Gone", "int", "Addresses seen before the rotation and not since."},
+			{"NotSwitchedAddresses", "[]string", "Up to 50 addresses that have not switched, most recently seen first."},
+			{"MoreNotSwitched", "int", "How many more not-switched addresses there are beyond the listed ones, or zero."},
+			{"ServerURL", "string", "The server's public origin, naming the deployment the key belongs to."},
+			readerField,
+		},
+	},
+	{
+		Kind:           KindNSSKeyExpiredAttempt,
+		Title:          "Expired NSS fleet key used",
+		Description:    "Sent to the key's notification address (nss_keys.notification_email, which defaults to the creator's address) when a host presents an expired fleet key, at most once per mail.expired_attempt_window. The attempt is refused. Always sent, and not a preference: it cannot be turned off.",
+		DefaultEnabled: true,
+		AlwaysSent:     true,
+		NewPayload:     func() any { return &NSSKeyExpiredAttempt{} },
+		Fields: []Field{
+			{"KeyID", "string", "The fleet key's id, \"nss_\" followed by 8 characters."},
+			{"KeyName", "string", "The fleet key's name."},
+			{"SourceIP", "string", "The address the attempt came from, as the server observed it."},
+			{"AttemptedAt", "time.Time", "When the expired key was presented."},
+			{"ExpiredAt", "time.Time", "When the key stopped being accepted."},
+			{"ServerURL", "string", "The server's public origin, naming the deployment the key belongs to."},
+			readerField,
+		},
+	},
+	{
+		Kind:           KindNSSKeyRevokedAttempt,
+		Title:          "Revoked NSS fleet key used",
+		Description:    "Sent to the key's notification address (nss_keys.notification_email, which defaults to the creator's address) when a host presents a revoked fleet key, at most once per mail.expired_attempt_window. The attempt is refused. Always sent, and not a preference: it cannot be turned off.",
+		DefaultEnabled: true,
+		AlwaysSent:     true,
+		NewPayload:     func() any { return &NSSKeyRevokedAttempt{} },
+		Fields: []Field{
+			{"KeyID", "string", "The fleet key's id, \"nss_\" followed by 8 characters."},
+			{"KeyName", "string", "The fleet key's name."},
+			{"SourceIP", "string", "The address the attempt came from, as the server observed it."},
+			{"AttemptedAt", "time.Time", "When the revoked key was presented."},
+			{"RevokedAt", "time.Time", "When the key was revoked."},
+			{"ServerURL", "string", "The server's public origin, naming the deployment the key belongs to."},
+			readerField,
+		},
+	},
+	{
+		Kind:           KindNSSKeyRotated,
+		Title:          "NSS fleet key rotated",
+		Description:    "Sent to the key's notification address (nss_keys.notification_email, which defaults to the creator's address) at once when a fleet key is rotated. Always sent, and not a preference: it cannot be turned off.",
+		DefaultEnabled: true,
+		AlwaysSent:     true,
+		NewPayload:     func() any { return &NSSKeyRotated{} },
+		Fields: []Field{
+			{"KeyID", "string", "The fleet key's id, \"nss_\" followed by 8 characters."},
+			{"KeyName", "string", "The fleet key's name."},
+			{"Generation", "int", "The new current generation."},
+			{"RotatedAt", "time.Time", "When the key was rotated."},
+			{"RotatedByUsername", "string", "The account that rotated the key."},
+			{"RotatedByName", "string", "That account's human-readable name, or empty if none was captured."},
+			{"PreviousExpiresAt", "time.Time", "When the previous secret stops working. Equal to RotatedAt when no grace period is set or the key had expired."},
+			{"ExpiresAt", "time.Time", "The key's expiry as the rotation renewed it: its own lifetime again from the rotation, at most nss.key_max_lifetime. Zero for a key that never expires."},
+			{"ServerURL", "string", "The server's public origin, naming the deployment the key belongs to."},
+			readerField,
+		},
+	},
+	{
+		Kind:           KindNSSKeyRevoked,
+		Title:          "NSS fleet key revoked",
+		Description:    "Sent to the key's notification address (nss_keys.notification_email, which defaults to the creator's address) at once when a fleet key is revoked. Always sent, and not a preference: it cannot be turned off.",
+		DefaultEnabled: true,
+		AlwaysSent:     true,
+		NewPayload:     func() any { return &NSSKeyRevoked{} },
+		Fields: []Field{
+			{"KeyID", "string", "The fleet key's id, \"nss_\" followed by 8 characters."},
+			{"KeyName", "string", "The fleet key's name."},
+			{"RevokedAt", "time.Time", "When the key was revoked."},
+			{"RevokedByUsername", "string", "The account that revoked the key."},
+			{"RevokedByName", "string", "That account's human-readable name, or empty if none was captured."},
+			{"ServerURL", "string", "The server's public origin, naming the deployment the key belongs to."},
+			readerField,
+		},
+	},
+	{
+		Kind:           KindNSSIDChangePending,
+		Group:          GroupNSSDirectory,
+		Title:          "Directory id change waiting for approval",
+		Description:    "Sent to every admin when the directory gives a stored NSS account or group a different uid or gid. Hosts keep the stored number until an admin accepts the change. One message per sync run, or per batch of on-demand and login reads, listing only the changes that are new.",
+		DefaultEnabled: true,
+		AdminOnly:      true,
+		NewPayload:     func() any { return &NSSIDChanges{} },
+		Fields:         nssIDChangeFields,
+	},
+	{
+		Kind:           KindNSSIDChangeReminder,
+		Group:          GroupNSSDirectory,
+		Title:          "Weekly reminder of waiting directory id changes",
+		Description:    "Sent to every admin on Monday at 09:00 server time while any uid or gid change is still waiting, listing all of them with how long each has waited.",
+		DefaultEnabled: true,
+		AdminOnly:      true,
+		NewPayload:     func() any { return &NSSIDChanges{} },
+		Fields:         nssIDChangeFields,
+	},
+}
+
+// nssIDChangeFields documents NSSIDChanges, shared by the two kinds that
+// render it, for the reason certificateIssuedFields is shared.
+var nssIDChangeFields = []Field{
+	{"Changes", "[]notify.NSSIDChange", "The listed changes, oldest first, at most 50. Each has Entry (\"account\" or \"group\"), Attribute (\"uid\" or \"gid\"), Name, DN, DirectoryID (the ldap.id_attribute value, or empty), Stored (the number hosts are served), Pending (the directory's new number), PendingSince (when the server first saw it) and Waiting (how long it has waited, as a time.Duration). An account whose uid and gid both changed is two changes."},
+	{"Total", "int", "How many changes the message is about, the listed ones included."},
+	{"More", "int", "How many changes there are beyond the listed ones, or zero."},
+	{"DirectoryURL", "string", "The pending changes on the admin directory page, where an admin accepts them: ServerURL followed by /admin/directory#pending-id-changes."},
+	{"ServerURL", "string", "The server's public origin, naming the deployment the directory belongs to."},
+	readerField,
 }
 
 // certificateIssuedFields documents CertificateIssued, shared by the three
@@ -389,6 +584,13 @@ func Lookup(k Kind) (Definition, bool) {
 func DefaultEnabled(k Kind) bool {
 	def, ok := Lookup(k)
 	return ok && def.DefaultEnabled
+}
+
+// AdminOnly reports whether k is sent to admins alone, so only they are
+// offered it. An unregistered kind answers false.
+func AdminOnly(k Kind) bool {
+	def, ok := Lookup(k)
+	return ok && def.AdminOnly
 }
 
 // AlwaysSent reports whether k is sent whatever its recipient has chosen.

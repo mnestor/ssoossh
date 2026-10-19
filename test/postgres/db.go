@@ -127,6 +127,10 @@ type ForeignKeyInfo struct {
 	ColumnName       string
 	ReferencedTable  string
 	ReferencedColumn string
+	// OnDelete and OnUpdate are the referential actions, as
+	// information_schema spells them (CASCADE, SET NULL, NO ACTION, ...).
+	OnDelete string
+	OnUpdate string
 }
 
 // ForeignKeys queries foreign key constraints.
@@ -137,10 +141,14 @@ func ForeignKeys(t *testing.T, db *gorm.DB, tableName string) []ForeignKeyInfo {
 			tc.constraint_name,
 			kcu.column_name,
 			ccu.table_name AS referenced_table,
-			ccu.column_name AS referenced_column
+			ccu.column_name AS referenced_column,
+			rc.delete_rule,
+			rc.update_rule
 		FROM information_schema.table_constraints AS tc
 		JOIN information_schema.key_column_usage AS kcu ON tc.constraint_name = kcu.constraint_name
 		JOIN information_schema.constraint_column_usage AS ccu ON ccu.constraint_name = tc.constraint_name
+		JOIN information_schema.referential_constraints AS rc
+			ON rc.constraint_name = tc.constraint_name AND rc.constraint_schema = tc.constraint_schema
 		WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_name = ?
 	`, tableName).Rows()
 	if err != nil {
@@ -151,7 +159,7 @@ func ForeignKeys(t *testing.T, db *gorm.DB, tableName string) []ForeignKeyInfo {
 	var result []ForeignKeyInfo
 	for rows.Next() {
 		var fk ForeignKeyInfo
-		if err := rows.Scan(&fk.ConstraintName, &fk.ColumnName, &fk.ReferencedTable, &fk.ReferencedColumn); err != nil {
+		if err := rows.Scan(&fk.ConstraintName, &fk.ColumnName, &fk.ReferencedTable, &fk.ReferencedColumn, &fk.OnDelete, &fk.OnUpdate); err != nil {
 			t.Fatalf("failed to scan foreign key row: %v", err)
 		}
 		result = append(result, fk)

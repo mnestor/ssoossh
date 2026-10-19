@@ -14,7 +14,7 @@ and decisions are in [README.md](README.md).
   `/api/users/me` for Part 2 (README R25).
 - Fleet API key model, admin endpoints, role `admin.nss_key_group`.
 - `nss_key_usage` aggregate, rotation report data, mail events.
-- Shell self-service on `/api/users/me`.
+- Shell self-service on `/api/users/me` (removed 2026-10-18 after the threat review: the shell comes from the directory and host policy only).
 - `nss.*` configuration, `make confdocs`, `make wire-contract`, swag.
 
 Out of scope: any HTML or Svelte (Part 2), anything on the host (Part 3).
@@ -54,7 +54,6 @@ unresolvable account is visible in the log rather than silently absent.
   "groups": [{"gid": 1234, "name": "mike"}, {"gid": 27, "name": "sudo"}],
   "home": "/home/mike",
   "shell": "/bin/bash",
-  "shell_pref": "zsh",
   "gecos": "Mike Nestor",
   "status": "active",
   "key_id": "nss_k7m4qp2x"
@@ -66,8 +65,8 @@ unresolvable account is visible in the log rather than silently absent.
   gid from one call. Group members (`GetMemberships` by group) still need
   the group endpoint.
 - `home`: `homeDirectory`, else `nss.default_home` expanded, else null.
-- `shell`: `loginShell` path, else `nss.default_shell`, else null.
-- `shell_pref`: user's chosen shell **name** or null.
+- `shell`: `loginShell` path, else `nss.default_shell`, else null. There is
+  no user-chosen shell beside it (removed 2026-10-18 after the threat review: the shell comes from the directory and host policy only).
 - `gecos`: the rendered and sanitised `nss.gecos_template` output (see
   [POSIX attribute mapping](#posix-attribute-mapping)).
 - `status`: `active` | `disabled` | `deleted`, derived as described under
@@ -103,11 +102,10 @@ unchanged)
 | `directory_id` | text, indexed | the `ldap.id_attribute` value when configured, as `user_ldap.directory_id` |
 | `dn` | text, unique | entry DN from the last successful read |
 | `user_id` | FK `users.id`, nullable, unique | set at login (below); NULL for shared and service accounts |
-| `gid` | uint32 | the mapped primary gid attribute, **frozen** after the first write (R38); `auto_private_groups` is applied on read so a config change is deliberate and a directory change is caught |
+| `gid` | uint32, nullable | the mapped primary gid attribute, **frozen** after the first write (R38); `auto_private_groups` is applied on read so a config change is deliberate and a directory change is caught. NULL when the entry has no gid attribute, which only `auto_private_groups: "true"` accepts; under `true` it is a supplementary group and follows the directory, with no pending gid (decided 2026-10-18 by the owner: match sssd) |
 | `pending_uid`, `pending_gid` | uint32, nullable | a differing directory value the sync refused to apply |
 | `pending_since` | timestamp, nullable | first sync that saw the pending value |
 | `home`, `shell` | text, nullable | mapped attributes; follow the directory |
-| `shell_pref` | text, nullable | user-set name; only meaningful with a `user_id` |
 | `gecos` | text | rendered, sanitised template output (R35) |
 | `dir_disabled` | bool | the directory's own disabled flag (`nss.disabled_filter`) |
 | `missing_since` | timestamp, nullable | first sync that could not find the entry by id, DN or filter |
@@ -123,6 +121,15 @@ groups), timestamps. **`posix_group_members`**: `(gid, uid)` PK, keyed by
 uid rather than `users.id` because members include accounts that never log
 in. Membership comes from the mapped member attribute: `memberUid` values
 are names, `member` values are DNs resolved against `posix_users.dn`.
+`added_at` (nullable, added 2026-10-18 at the owner's request) is when
+ssoosshd first stored the membership, since the directory does not
+timestamp member values; NULL for one the first full import stored (the
+run that records `nss.initial_import`). The writers store only the
+difference from the stored set, so the value survives later syncs, an
+accepted uid or gid change (a re-key updates the number in place), a
+group rename and an account revive; a removal (a sync, a group
+tombstone, a purge) deletes the row, and a membership added again gets
+the new time.
 
 **Linking a person.** When a login's LDAP enrichment resolves the person's
 entry (by ID, then DN, then filter, `server/service/ldap.go:326`), the
@@ -144,12 +151,13 @@ person's own-name certificate principal can never pass `getpwnam` (R23).
 | `previous_secret_hash`, `previous_expires_at` | generation `current-1`, accepted until expiry (default `nss.key_rotation_grace` 720h) |
 | `name`, `description`, `created_by` | |
 | `group` | optional OIDC/LDAP group whose members manage this key |
-| `expires_at` | required, default now + `nss.key_default_lifetime` (8760h) |
+| `expires_at` | at most now + `nss.key_max_lifetime` (8760h), which is also the default; a later date is trimmed. NULL (never expires) only when the setting is 0 and no date is given. Not editable; each rotation renews it to the key's own lifetime from the rotation, capped by the setting, and an expired key's previous secret gets no grace (decided 2026-10-18) |
 | `notification_email` | defaults to creator's address |
 | `revoked_at`, `revoked_by` | |
 
 **`nss_key_usage`**: PK `(key_id, source_ip, generation, day)`; `lookups`,
-`misses`, `first_seen`, `last_seen`. Written by a flusher, not per request
+`misses`, `first_seen`, `last_seen`, and `source_ip_key` (added 2026-10-19,
+see "Every key" under Fleet key admin endpoints). Written by a flusher, not per request
 (R14): the lookup path increments an in-memory map; a goroutine flushes it
 every 60 s and on graceful shutdown with upserts. Pruned at
 `nss.usage_retention` (2160h) by a scheduler job. A crash loses at most one
@@ -210,12 +218,19 @@ attribute.
   existing admin `ldap/sync` endpoint triggers it too (verify the route
   name before wiring). Registered in `serve` and `serve api`; `sign` has
   no scheduler (README R28).
+- **From a shell** (added 2026-10-18 at the owner's request).
+  `ssoosshd ldap sync [--dry-run] [--json]` runs the endpoint's pass in
+  its own process: the LDAP sync, then the NSS full sync unless it is a dry
+  run. Neither job runs at startup, so a restart refreshes nothing. It is
+  one more unelected instance against the shared database, never migrates
+  it, and is audited as `ldap.sync_triggered` with the actor `local-cli`.
 - **No gate.** Every entry with a uid attribute and a valid name is
   resolvable. Entries without the uid attribute, or whose name fails the
   validator, are skipped with a warning and are 404.
 - **Duplicate uid** (README R29). Two entries carrying the same uid
-  attribute: neither is served while the collision lasts (tracked in the
-  sync run, not stored as a row state), and the audit alert
+  attribute: neither is served while the collision lasts (stored on the
+  holding row as `withheld_at` and `withheld_reason`, so every instance
+  agrees), and the audit alert
   `nss_uid_collision` fires at most daily per uid. Fail closed, because
   serving either one makes `ls -l` lie. A tombstoned row (`deleted_at`
   set) still holds its uid, so a new entry presenting that uid is a
@@ -225,14 +240,36 @@ attribute.
   matched row's `uid` and `gid` never change on sync. When the entry's uid
   or gid attribute differs, the sync writes `pending_uid` or `pending_gid`
   with `pending_since`, keeps serving the stored values, and raises the
-  audit alert `nss_id_change_pending` at most daily per row. The directory
+  audit alert `nss_id_change_pending` at most daily per row. Every admin is
+  also mailed once per change and weekly while it waits (added 2026-10-19;
+  see Mail). The directory
   reverting the value clears the pending columns. Name, home, shell and
   gecos follow the directory on every sync. Without an id attribute, a
   moved entry (new DN) is seen as missing plus new; the new entry then
   collides on uid and name with the old row, which still exists (as
   missing, then as a tombstone), so neither is served until the old row is
   purged or ages out. Fail closed, and the reason to configure
-  `ldap.id_attribute`.
+  `ldap.id_attribute`. This holds for accounts only; groups are below.
+- **Renamed or moved groups** (decided 2026-10-18 by the owner). A group
+  renamed or moved with its gid kept is the same group, not a collision.
+  When an entry matches no row by `directory_id` or `dn`, and the row
+  holding its gid sits at another DN, the sync re-anchors that row on the
+  entry if and only if the row's entry has gone: a full sync did not
+  enumerate the row's DN, or (incremental and on-demand reads, the
+  membership search of an account read included) a base-scope read of the
+  row's DN with `nss.group_filter` returns nothing and a search for the gid
+  finds no other entry. A directory error is never "gone"; the entry is
+  then stored as today, and the next read tries again. Two entries carrying
+  the gid, or a row and an entry with different non-empty `directory_id`
+  values, are a collision as before. The re-anchored row keeps its id and
+  gid (so its membership rows), takes the entry's DN, `directory_id`, name
+  and members, loses `missing_since`, the tombstone and the collisions the
+  rename resolves, and the move is audited as `nss.group_renamed` (old and
+  new name and DN, gid, and `detected_by`: `full_sync_absence` or
+  `base_read`). A new name another row holds is still a name collision:
+  the row moves but keeps its old name and is withheld. Accounts keep the
+  strict rule above, because a uid handed to a different person is what
+  the tombstone exists to catch.
 - **Duplicate name** (README R39). POSIX resolves one record per name, so
   two live entries whose mapped name attribute is equal are both withheld
   while it lasts, with `nss_name_collision` at most daily per name. A
@@ -241,6 +278,65 @@ attribute.
   until the directory is fixed or an admin purges the tombstone. User and
   group names are separate namespaces (a private group shares its user's
   name), so uniqueness is per table.
+
+## Directory change audit
+
+(decided 2026-10-18 by the owner) Every change the server makes to the
+stored accounts, groups and memberships is an audit event, recorded in the
+transaction of the write that makes it, so nothing about who joined or
+left a group is lost when a group's membership rows are replaced. Events
+the sync or a read records are the server's (`system`, no actor); those
+an accepted id change or an early purge records carry the admin. An
+account linked to a person has that person as the target. Every detail
+has `table`, the row's `name`, `uid` or `gid`, `dn`, and `via`: one of
+`full_sync`, `incremental_sync`, `on_demand` (a host's lookup), `login`
+(the account read when a login links it), `tombstoned`,
+`id_change_accepted` or `tombstone_purged`.
+
+| Action | When | Detail beyond the common fields |
+| --- | --- | --- |
+| `nss.account_created`, `nss.group_created` | a row stored for the first time | account: `gid`; group: `member_count` (no members event goes with it) |
+| `nss.account_renamed` | a matched account takes the name its entry now carries (matching stays strict) | `old_name`, `new_name`, `old_dn` |
+| `nss.group_renamed` | a group re-anchored on a renamed or moved entry (above), or a matched group whose name changed in place | `old_name`, `new_name`, `old_dn`, `new_dn`, `detected_by` (`full_sync_absence`, `base_read`, `matched`), `name_blocked`, `revived` |
+| `nss.account_missing`, `nss.group_missing` | the first full sync that did not see the row (`missing_since` set) | |
+| `nss.account_tombstoned`, `nss.group_tombstoned` | a missing row tombstoned (`deleted_at` set) | `missing_since` |
+| `nss.account_revived`, `nss.group_revived` | a missing or tombstoned row seen again | `missing_since`, `was_tombstoned` |
+| `nss.group_members_changed` | one write changed one group's member set: a group read, an account read's membership search, a group tombstoned, an accepted uid change re-keying an account, a purged account | `added` and `removed` as `{uid, name}` sorted by uid, each at most 100 long, `added_count`, `removed_count` |
+| `nss.initial_import` | a sync run into an empty table, once per table, in place of an event per created row | `created`; groups also `memberships` |
+
+An event is written only when something changed, so a sync over an
+unchanged directory writes none. `nss.tombstone_purged` is unchanged.
+
+**History per row** (decided 2026-10-18 by the owner). Each stored
+account's and group's page in the [viewer](#directory-viewer-auditor-and-above)
+shows the audit events about it, so a group's page shows that a member
+was added after the group was stored, and the member's page shows the same
+event. `audit_events` is never filtered by its JSON payload, so every
+event about stored rows also writes one `nss_audit_refs` row per row it
+concerns, in the same transaction:
+
+| Column | Notes |
+| --- | --- |
+| `event_id` | FK `audit_events.id`, `ON DELETE CASCADE`, so the retention and row-cap sweeps take a ref with its event (SQLite enforces foreign keys on every connection) |
+| `kind` | `account` or `group` |
+| `row_id` | `posix_users.id` or `posix_groups.id`: the random id, which survives a rename and an accepted uid or gid change where the name and the number do not. No foreign key: a purged row's refs stay until their events age out |
+| `created_at` | the event's, so a page orders and seeks on this table alone |
+
+PK `(event_id, kind, row_id)`; index `(kind, row_id, created_at, event_id)`
+for the newest-first cursor read. What each event refers to:
+
+| Action | Refs |
+| --- | --- |
+| the lifecycle events above (`created`, `renamed`, `missing`, `tombstoned`, `revived`, for accounts and groups) | the row |
+| `nss.group_members_changed` | the group, and every added and removed account that is stored, including those past the 100 the detail lists |
+| `nss.uid_collision`, `nss.gid_collision`, `nss.name_collision` | the holder, and the other entry when it is stored too |
+| `nss.id_change_pending`, `nss.id_change_accepted`, `nss.tombstone_purged` | the row |
+| `nss.name_mismatch` | the account |
+| `nss.initial_import` | none: it is a summary |
+
+The fleet key and lookup events (`nss.key_*`, `nss.lookup_forbidden`,
+`nss.miss_rate_alert`, `nss.privileged_name_lookup`) are about keys and
+hosts, not stored rows, and write none.
 
 ## Status
 
@@ -272,8 +368,35 @@ Group memberships are kept through `disabled`.
 
 **Primary gid.** `nss.auto_private_groups` (`hybrid` default; `true`,
 `false`) is resolved here against the full group table so every host gets
-the same gid (R12). In `true` mode a collision rejects the user (logged,
-404) rather than shadowing a real group.
+the same gid (R12). Each mode does what sssd does (decided 2026-10-18 by
+the owner: match sssd; read from sssd 2.14.0-beta1-37-g493e37fe,
+`sdap_save_user` in `src/providers/ldap/sdap_async_users.c`,
+`sysdb_add_user` and `sysdb_add_group` in `src/db/sysdb_ops.c`,
+`nss_get_object.c` and `nss_protocol_grent.c` in `src/responder/nss/`):
+
+| Mode | gid attribute | Served gid | Groups list | Conflict |
+| --- | --- | --- | --- | --- |
+| `false` | required; an entry without one is skipped with a warning naming `auto_private_groups: "true"` | the entry's gid, served even when no group holds it | that group when one holds it | none |
+| `hybrid` | required, as `false` | the entry's gid | the private group (the account's name and uid) when gid equals uid and no directory group holds it; otherwise the group holding the gid, if any | a directory group holding the gid is the primary group; one with the account's name leaves the gid unnamed (below) |
+| `true` | optional; absent, zero or unparseable is stored as NULL | the uid | the private group first, then the entry's gid's directory group, if it is not the uid and a servable group holds it (sssd's `origPrimaryGroupGidNumber`), in gid order with the memberships | a directory group holding the uid as its gid, or the account's name: the account is not served (logged, 404) rather than shadowing a real group |
+
+Where this differs from sssd, and why:
+
+- `true` conflicts: sssd refuses whichever of the user and the group it
+  caches second (`EEXIST`), so the winner depends on lookup order; here the
+  directory group always wins.
+- `true` with a gid no group holds: sssd's initgroups adds the bare number;
+  `NSSMembership` carries a name with every gid (the wire contract), so it
+  is left out.
+- `hybrid` with gid equal to uid and a directory group of the account's
+  name (another gid): sssd answers `getgrgid` with the private group and
+  `getgrnam` with the directory group. `ssoosshd-nss` caches a group stub
+  by name from the groups list, so a host would then answer `getgrnam`
+  with the private gid; the private group is left out and the gid stays
+  unnamed.
+- A row stored without a gid under `true` and read under `hybrid` or
+  `false` is not served (`not_served: no_gid`); sssd would never have
+  stored it, and the next sync skips the entry.
 
 ## POSIX attribute mapping
 
@@ -285,7 +408,7 @@ keep POSIX data in custom attributes (README R35). `nss.attributes`:
 | --- | --- | --- |
 | `name` | `uid` | `posix_users.name`; must equal the `username` claim for a person to log in by their own name (R23) |
 | `uid` | `uidNumber` | `posix_users.uid`; must parse as `uint32` |
-| `gid` | `gidNumber` | primary gid before `auto_private_groups` |
+| `gid` | `gidNumber` | primary gid before `auto_private_groups`; required unless it is `true` |
 | `home` | `homeDirectory` | nullable; must be absolute when present |
 | `shell` | `loginShell` | nullable |
 | `group_name` | `cn` | `posix_groups.name` |
@@ -296,6 +419,21 @@ keep POSIX data in custom attributes (README R35). `nss.attributes`:
 A value that does not parse (a non-numeric uid, a relative home) skips the
 entry with a warning naming the DN; there are no partial rows. Every key
 must be non-empty; config validation rejects an empty one.
+
+**LDAP schema presets (decided 2026-10-18 by the owner).** One key,
+`ldap.schema`, picks a preset (`rfc2307`, `rfc2307bis`, `active-directory`,
+`lldap`, `freeipa`) that supplies `ldap.id_attribute`, `nss.user_filter`,
+`nss.group_filter`, `nss.disabled_filter` and the `nss.attributes` names for
+that directory. The presets are embedded YAML (`server/config/presets/`),
+each citing its sources (sssd's attribute maps, lldap's source and PAM
+guide, FreeIPA's source, Microsoft's filter docs). They merge as a layer
+between `defaults.yaml` and the operator's file, so any key the file sets
+wins. Unset applies nothing and leaves today's behaviour unchanged,
+`ldap.id_attribute` included; an unknown value fails startup naming the
+allowed ones. There is no migration or re-anchor tool yet: on a database
+holding ids from another attribute, keep that `ldap.id_attribute` set
+explicitly or start fresh. The user-docs page "LDAP schema presets" lists
+every value, generated from the preset files.
 
 **Gecos template.** `nss.gecos_template` (default `{{.DisplayName}}`) is
 parsed and executed by the key ID template engine
@@ -335,14 +473,11 @@ and an attribute outside the allow list (renders empty, never the value).
 
 ## Shell self-service
 
-`GET/PATCH /api/users/me` gains `posix` (`{uid, name, shell_pref}` or null
-when no `posix_users` row is linked to the user or NSS is disabled); PATCH
-accepts
-`shell_pref` (string or null). The server
-validates against `nss.allowed_shells` (names, default `[sh, bash, zsh,
-fish]`), audit-logs changes, and returns 400 `shell_not_allowed` otherwise.
-`GET /api/nss/shells` (session auth) returns the allowed list for the UI.
-Home directory is not user-settable.
+None (removed 2026-10-18 after the threat review: the shell comes from the directory and host policy only). The design that stood here let a person pick a shell name
+from a server list in the web UI, served beside the directory's shell for
+the host to resolve. A person must not be able to pick the shell a host
+serves them, so neither the shell nor the home directory is user-settable,
+and `/api/users/me` carries no POSIX account.
 
 ## Session flags for the web UI
 
@@ -359,10 +494,10 @@ Session-authenticated; swag-annotated; all mutations audit-logged.
 
 | Path | Method | Who |
 | --- | --- | --- |
-| `/api/nss/keys` | GET | all keys: `nss_key_group`, admin, SOC, auditor; others: keys whose `group` they are in |
+| `/api/nss/keys` | GET | the keys whose `group` is one of the caller's groups, for everyone (changed 2026-10-19 by the owner: the roles that read every key use `/api/admin/nss/keys`) |
 | `/api/nss/keys` | POST | `nss_key_group`, admin. Returns the secret once |
 | `/api/nss/keys/:id` | GET | as list |
-| `/api/nss/keys/:id` | PATCH | `description`, `expires_at`, `notification_email`: key group members too. `group`: `nss_key_group`, admin only |
+| `/api/nss/keys/:id` | PATCH | `description`, `notification_email`: key group members too. `group`: `nss_key_group`, admin only. The expiry cannot be edited; rotation renews it (decided 2026-10-18) |
 | `/api/nss/keys/:id/rotate` | POST | `nss_key_group`, admin, key group members. Returns new secret once |
 | `/api/nss/keys/:id/previous` | DELETE | same as rotate: clears previous secret early |
 | `/api/nss/keys/:id/revoke` | POST | above plus SOC |
@@ -372,6 +507,42 @@ Session-authenticated; swag-annotated; all mutations audit-logged.
 List and detail responses carry a per-key `permissions` array for the
 caller (`view`, `rotate`, `revoke`, `edit`, `assign_group`) so the UI does
 not reimplement the role matrix.
+
+**Every key** (added 2026-10-19 at the owner's request).
+`GET /api/admin/nss/keys`, auditor and above, and the fleet key admin role
+(`admin.nss_key_group`, the one `/api/admin` route it reads; changed
+2026-10-19 by the owner), beside the directory viewer
+and like it a 404 (`nss_disabled`) with NSS off. One page of every key by
+name then id, cursor paged (`after`, `limit`) with a total. Each row: id,
+name, group, status, generation, expiry, previous secret expiry, revocation,
+creation, the creator (`user_id`, `username`, `email`, `exists`, from a LEFT
+JOIN on `users`, so a creator whose account is gone still names the id),
+`hosts_7d` (distinct source addresses in 7 days), `last_seen_at` and the
+recent usage alerts. Never a secret hash. Parameters:
+
+- `q`: a case-insensitive substring of the name, the group or the creator's
+  username or email, or the start of the key's id in any case (added
+  2026-10-19); or, when it reads as an IP address or a CIDR range, an
+  address search: the keys with `nss_key_usage` rows from that address or
+  range within `nss.usage_retention`, each with `matched` (up to 5
+  addresses, newest first, with `last_seen`, `generation` and `secret`
+  `current`, `previous` or `older`, and the total). `address_search` echoes
+  the normalised address or range and `usage_retention_seconds` the window.
+  A term shaped like an address or a range that is not one is a 400 naming
+  the problem.
+- `status` (`all`, `active`, `expired`, `revoked`), `expiring_within` (7, 30
+  or 90 days, active keys only), `unused` (no lookup in 30 days, never used
+  included), `alerts` (a `miss_rate` or `key_source` claim in `nss_alerts`
+  in 7 days, read by its primary key). Unknown values are dropped.
+
+The address search reads `nss_key_usage.source_ip_key`, the address as its
+16-byte IPv6 form (IPv4 as IPv4-mapped), BLOB on SQLite and BYTEA on
+Postgres, written by the flusher beside `source_ip` and indexed with the day
+(`idx_nss_key_usage_source_day`). One address is an equality and a range a
+`BETWEEN` on the first and last address, both of which the two dialects
+compare bytewise, so the search never scans the table. The host counts,
+last use and matches are read for the page's keys only, a fixed number of
+queries per page.
 
 ## Pending id changes (admin)
 
@@ -399,6 +570,51 @@ members are not admins (README R16).
 doc-comment + `mapstructure` + `default` convention, fail-closed like the
 others. Admins inherit it.
 
+## Directory viewer (auditor and above)
+
+(added 2026-10-18 at the owner's request)
+
+A read-only view of the stored directory, under `/api/admin/nss` beside
+the routes above but behind the auditor middleware (auditor implies SOC
+implies admin, as the user directory), and not audit-logged, as the
+pending and collisions reads are not, except the two history reads. Each answers the `nss.enabled` 404
+when NSS is off. Types: the "read-only directory viewer" block of
+`server/webtypes/nss_admin.go`.
+
+| Path | Method | Behaviour |
+| --- | --- | --- |
+| `/api/admin/nss/users` | GET | one page of `posix_users`, by name then id: id, name, uid, stored gid, gecos, dn, state, `last_synced_at`; `total`, `next_cursor` |
+| `/api/admin/nss/users/:uid` | GET | the stored row in full, the linked person (users id, username, display name, `disabled_at`), every `posix_group_members` row for the uid by gid with the stored group's name and state and the row's `added_at` (added 2026-10-18), and `served` or `not_served`; 404 when no row has the uid |
+| `/api/admin/nss/groups` | GET | one page of `posix_groups`, by name then id: id, name, gid, dn, state, membership row count, `last_synced_at`; `total`, `next_cursor` |
+| `/api/admin/nss/groups/:gid` | GET | the stored row in full, its membership row count, and `served` (name, gid, member names served after `nss.max_group_members`, truncated) or `not_served`; 404 when no row has the gid |
+| `/api/admin/nss/groups/:gid/members` | GET | one page of the group's `posix_group_members` rows by uid, each with the stored account's name and state when there is one and the row's `added_at` (added 2026-10-18); the cursor is the last uid; 404 when no group has the gid |
+| `/api/admin/nss/users/:uid/audit`, `/api/admin/nss/groups/:gid/audit` | GET | the row's history (decided 2026-10-18 by the owner): one page of the events whose `nss_audit_refs` name the row, newest first, cursor-paged and shaped as `/api/admin/users/:id/audit` (`AuditEventsResponse`, an `after` off the history is a 400); 404 when no row has the number. Each read records `admin.audit_viewed` (scope `nss_account_timeline` or `nss_group_timeline`) to the shipped log only, as the user timeline does |
+
+The lists take `after`, `limit` and `q` as the user directory does
+(`server/utils/paging`), and `state`. `q` is a case-insensitive substring
+of the name or the DN, and also an exact uid or gid when it parses as one.
+An `after` that names no row, a members `after` that is not a uid, and a
+`state` the list does not have are 400s.
+
+**State.** One value per row, derived on read, never stored; the first
+that holds wins: `withheld` (`withheld_at`), `tombstone` (`deleted_at`),
+`disabled` (accounts only: `dir_disabled` or the linked
+`users.disabled_at`), `missing` (`missing_since`), `pending`
+(`pending_uid` or `pending_gid`), else `active`. The `state` filter is the
+same rule as SQL, tested to agree with the Go function over every
+combination of marks on both backends.
+
+**Served.** What a host's lookup by the uid or gid gets now, built by the
+lookup code (`servable`, `buildUser`, `primaryGroup`, `buildGroup`) on
+`NSSLookupService`. It never calls the directory refresher, never writes
+and never reads LDAP, so a row a host's miss would refresh is shown as the
+database has it. `not_served` is `withheld`, `past_retention` (a tombstone
+past `nss.tombstone_retention` the purge has not reached) or
+`private_group_clash` (`nss.auto_private_groups: "true"` and a directory
+group holds the private group's gid or name) or `no_gid` (an account
+stored without a gid attribute under `true`, read under `hybrid` or
+`false`); `served` is absent exactly when it is set.
+
 ## Mail
 
 Reuses `mail.*` and the `mail.template_dir` override scheme. Templates:
@@ -409,9 +625,33 @@ Reuses `mail.*` and the `mail.template_dir` override scheme. Templates:
 | `nss_key_rotation_cleanup` | silent for `mail.rotation_quiet_period` (**new key**, default 168h) after rotation; then daily while any IP still presents the previous generation; stops when drained or grace ends |
 | `nss_key_expired_attempt`, `nss_key_revoked_attempt` | rate-limited by `mail.expired_attempt_window` (existing key) |
 | `nss_key_rotated`, `nss_key_revoked` | immediately |
+| `nss_id_change_pending` (added 2026-10-19) | a uid or gid change turns pending: one message per admin per sync run, sent when the run ends, or per batch of on-demand and login reads, sent by a sweep every 5 minutes; lists only changes not mailed before |
+| `nss_id_change_reminder` (added 2026-10-19) | Monday 09:00 server time while any mailed change is still pending; lists all of them with how long each has waited |
 
 All off when `mail.enabled` is false. The rotation report endpoint and the
 cleanup digest read the same aggregate query.
+
+**Pending id change mail** (added 2026-10-19 at the owner's request). Both
+kinds go to every admin: users whose OIDC groups as of their last login
+(`user_groups`, source `oidc`) grant the admin role by
+`AdminConfig.GrantsAdmin`, through the single seam
+`NotificationService.StoredUserIsAdmin`, with an email and not disabled. No
+configured address list; someone removed from the admin group at the IdP
+keeps getting them until their next login. They are preferences, default
+on, offered on the preferences page only to an admin session
+(`Definition.AdminOnly`). Each lists at most 50 changes, oldest first, with
+"and N more" and a link to `/admin/directory#pending-id-changes`. A change is
+claimed per row on `posix_users.pending_notified_at` or
+`posix_groups.pending_notified_at` with a guarded `UPDATE` that repeats the
+pending numbers read; the column is cleared with `pending_since`, by an
+accept, and whenever a different number turns pending, so a new change mails
+again and an accepted or reverted one never does. Nothing is claimed while no
+admin can be mailed. The weekly reminder is claimed on `nss_alerts`
+(`id_change_reminder`, subject `directory`, six-day window) and lists only
+changes already mailed once. Pending rows are read through the partial
+indexes `idx_posix_users_pending` and `idx_posix_groups_pending` on
+`pending_since`. No audit event is written for the sends, as for every other
+mail: delivery logs "notification sent" per recipient.
 
 ## Configuration
 
@@ -433,18 +673,19 @@ nss:
     gecos_attributes: [displayName, cn]
   gecos_template: "{{.DisplayName}}"
   auto_private_groups: hybrid
+  sync_interval: 15m           # incremental (modifyTimestamp) sync; zero disables
+  full_sync_interval: 24h      # full sync, the only run that finds deletions
   tombstone_after: 168h        # missing from the directory this long: deleted
   tombstone_retention: 2160h
   default_home: /home/%u
   default_shell: ""            # empty: null in responses
   disabled_shell: /usr/sbin/nologin
-  allowed_shells: [sh, bash, zsh, fish]
   max_group_members: 2000
   rate_limit: 20
   rate_burst: 200
   miss_alert_rate: 5           # misses/s per key
   usage_retention: 2160h
-  key_default_lifetime: 8760h
+  key_max_lifetime: 8760h
   key_rotation_grace: 720h
   source_allow_list: []        # CIDRs; empty allows all
   privileged_name_alert: [root, admin, daemon, bin, sys]
@@ -504,6 +745,10 @@ status. No per-key or per-name attributes, so cardinality stays bounded.
 - Usage flusher: counts aggregate, flush on shutdown, pruning.
 - Rotation report bucketing.
 - Migrations up/down on both DBs.
+- History: refs written for every event kind above, including members past
+  the 100 cap; the two history routes page newest first, 404 an unknown
+  number, admit auditors and above, and 404 with NSS off; the sweep takes
+  refs with their events; a rename or accepted id change keeps one history.
 
 ## Done when
 

@@ -9,12 +9,15 @@ package service
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/notify"
 	"github.com/mnestor/ssoossh/test/testdb"
@@ -346,6 +349,7 @@ func TestDiscardNotifications_ShouldBeSafeToCall(t *testing.T) {
 	var n Notifier = discardNotifications{}
 	n.Notify(t.Context(), notify.KindServiceEnrollmentCreated, "user-1", nil)
 	n.NotifyServiceAccount(t.Context(), notify.KindServiceEnrollmentRedeemed, "deploy-bot", nil)
+	n.NotifyNSSKey(t.Context(), notify.KindNSSKeyRotated, "nss_ABCD2345", nil)
 }
 
 // A notification that cannot be queued is logged and dropped: the work it
@@ -378,4 +382,247 @@ func TestEnabledFor_ShouldReportADatabaseFailure(t *testing.T) {
 	if _, err := svc.enabledFor(context.Background(), "user-1", notify.KindServiceEnrollmentCreated); err == nil {
 		t.Error("enabledFor on a closed database returned no error")
 	}
+}
+
+// nssKeyEvent is a fleet key event naming keyID, with nothing else addressing
+// it, which is the shape recipients must resolve through the key's address.
+func nssKeyEvent(keyID string) notify.Event {
+	return notify.Event{Kind: notify.KindNSSKeyRotated, NSSKeyID: keyID}
+}
+
+// A fleet key event goes to the key's own notification address as one bare
+// delivery: no owning user, so ungated and simplified.
+func TestNotificationNSSKeyRecipients_shouldResolveTheKeysAddress(t *testing.T) {
+	t.Parallel()
+
+	db := recipientsDB(t)
+	seedNSSKey(t, db, "nss_ABCD2345", "fleet@example.com")
+	h := NewNotificationHandler(db, mustRenderer(t), &recordingSender{})
+
+	got, err := h.recipients(t.Context(), nssKeyEvent("nss_ABCD2345"))
+	if err != nil {
+		t.Fatalf("recipients: %v", err)
+	}
+	if len(got) != 1 || got[0].Address != "fleet@example.com" || got[0].UserID != "" || got[0].Advanced {
+		t.Errorf("recipients = %+v, want one bare simplified delivery to the key's address", got)
+	}
+}
+
+// A key that no longer exists has nobody to tell, which is a quiet outcome
+// rather than a failed delivery.
+func TestNotificationNSSKeyRecipients_shouldReturnNobodyWhenTheKeyIsMissing(t *testing.T) {
+	t.Parallel()
+
+	h := NewNotificationHandler(recipientsDB(t), mustRenderer(t), &recordingSender{})
+
+	got, err := h.recipients(t.Context(), nssKeyEvent("nss_GONE0000"))
+	if err != nil {
+		t.Fatalf("recipients: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("recipients = %+v, want nobody for a missing key", got)
+	}
+}
+
+// A key with no notification address has nowhere to send, so it resolves to
+// nobody rather than to an empty address.
+func TestNotificationNSSKeyRecipients_shouldReturnNobodyWhenTheAddressIsEmpty(t *testing.T) {
+	t.Parallel()
+
+	db := recipientsDB(t)
+	seedNSSKey(t, db, "nss_ABCD2345", "")
+	h := NewNotificationHandler(db, mustRenderer(t), &recordingSender{})
+
+	got, err := h.recipients(t.Context(), nssKeyEvent("nss_ABCD2345"))
+	if err != nil {
+		t.Fatalf("recipients: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("recipients = %+v, want nobody for a key with no address", got)
+	}
+}
+
+// A database failure is returned rather than swallowed, so the message is
+// redelivered instead of being dropped as if the key had no address.
+func TestNotificationNSSKeyRecipients_shouldReturnAnErrorOnADatabaseFailure(t *testing.T) {
+	t.Parallel()
+
+	db := recipientsDB(t)
+	h := NewNotificationHandler(db, mustRenderer(t), &recordingSender{})
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("unwrapping the sql.DB: %v", err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatalf("closing the database: %v", err)
+	}
+
+	if _, err := h.recipients(t.Context(), nssKeyEvent("nss_ABCD2345")); err == nil {
+		t.Error("recipients on a closed database returned no error")
+	}
+}
+
+// The log names a missing key by id, so an operator can find the event that
+// was dropped. It is not parallel: captureDefaultLogger replaces the process
+// default logger.
+func TestNotificationNSSKeyRecipients_shouldLogTheKeyIDWhenTheKeyIsMissing(t *testing.T) {
+	db := recipientsDB(t)
+	buf := captureDefaultLogger(t)
+	h := NewNotificationHandler(db, mustRenderer(t), &recordingSender{})
+
+	if _, err := h.recipients(t.Context(), nssKeyEvent("nss_GONE0000")); err != nil {
+		t.Fatalf("recipients: %v", err)
+	}
+	if !strings.Contains(buf.String(), `"key_id":"nss_GONE0000"`) {
+		t.Errorf("the log does not name the missing key by id: %s", buf.String())
+	}
+}
+
+// StoredUserIsAdmin is the one place a stored user is judged an admin for
+// the admin mail, so its answer has to follow config.AdminConfig.GrantsAdmin
+// and fail closed with no role configuration attached.
+func TestStoredUserIsAdmin_ShouldFollowTheConfiguredAdminGroup(t *testing.T) {
+	t.Parallel()
+
+	admin := &config.AdminConfig{RequireGroup: "ssh-admins", SOCGroup: "soc"}
+	tests := []struct {
+		name   string
+		admin  *config.AdminConfig
+		groups []string
+		want   bool
+	}{
+		{name: "should answer true when the stored groups hold the admin group", admin: admin, groups: []string{"soc", "ssh-admins"}, want: true},
+		{name: "should answer false when the stored groups hold only SOC", admin: admin, groups: []string{"soc"}},
+		{name: "should answer false when there are no stored groups", admin: admin},
+		{name: "should answer false when no admin group is configured", admin: &config.AdminConfig{}, groups: []string{"ssh-admins"}},
+		{name: "should answer false when no role configuration is attached", groups: []string{"ssh-admins"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			svc := NewNotificationService(nil, nil, true, true, false)
+			svc.SetAdminConfig(tc.admin)
+			got, err := svc.StoredUserIsAdmin(context.Background(), &model.User{}, tc.groups)
+			if err != nil || got != tc.want {
+				t.Errorf("StoredUserIsAdmin(%v) = %v, %v, want %v and no error", tc.groups, got, err, tc.want)
+			}
+		})
+	}
+}
+
+// AdminRecipients reads each user's stored OIDC groups and asks
+// StoredUserIsAdmin, leaving out the users fan-out never reaches.
+func TestAdminRecipients_ShouldApplyTheExclusionRules(t *testing.T) {
+	t.Parallel()
+
+	db := recipientsDB(t)
+	svc := NewNotificationService(db, nil, true, true, false)
+	svc.SetAdminConfig(&config.AdminConfig{RequireGroup: "ssh-admins", SOCGroup: "soc"})
+
+	for _, u := range []struct {
+		name, email string
+		disabled    bool
+		group       string
+		source      model.GroupSource
+	}{
+		{name: "alice", email: "alice@example.com", group: "ssh-admins", source: model.GroupSourceOIDC},
+		{name: "bob", email: "bob@example.com", group: "ssh-admins", source: model.GroupSourceOIDC},
+		{name: "mallory", email: "mallory@example.com", disabled: true, group: "ssh-admins", source: model.GroupSourceOIDC},
+		{name: "nomail", group: "ssh-admins", source: model.GroupSourceOIDC},
+		{name: "socuser", email: "soc@example.com", group: "soc", source: model.GroupSourceOIDC},
+		{name: "dironly", email: "dir@example.com", group: "ssh-admins", source: model.GroupSourceLDAP},
+		{name: "nogroups", email: "none@example.com"},
+	} {
+		user := addUser(t, db, u.name, u.email, "", u.disabled)
+		if u.group != "" {
+			addGroupRow(t, db, user.ID, u.group, u.source)
+		}
+	}
+
+	got, err := svc.AdminRecipients(context.Background())
+	if err != nil {
+		t.Fatalf("AdminRecipients: %v", err)
+	}
+	if names := strings.Join(usernames(got), ","); names != "alice,bob" {
+		t.Errorf("recipients = %s, want alice,bob", names)
+	}
+}
+
+// With no admin group configured nobody is an admin, so the query is not
+// even run.
+func TestAdminRecipients_ShouldFindNobodyWhenNoAdminGroupIsConfigured(t *testing.T) {
+	t.Parallel()
+
+	svc := NewNotificationService(nil, nil, true, true, false)
+	svc.SetAdminConfig(&config.AdminConfig{})
+	got, err := svc.AdminRecipients(context.Background())
+	if err != nil || len(got) != 0 {
+		t.Errorf("AdminRecipients() = %v, %v, want nobody and no error", got, err)
+	}
+}
+
+// The admin mail follows the same narrowing as a session: with
+// ldap.authoritative_role_groups on, a linked admin the directory no
+// longer lists drops out of the recipients, and with it off is still
+// mailed.
+func TestAdminRecipients_ShouldDropAnAdminTheDirectoryNoLongerLists(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		authoritative bool
+		want          string
+	}{
+		{name: "should leave out the narrowed admin when the setting is on", authoritative: true, want: "alice"},
+		{name: "should still mail the admin when the setting is off", want: "alice,bob"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg := roleTestConfig(tt.authoritative)
+			directory, db := newLDAPTestService(t, cfg, &fakeDirectory{})
+			svc := NewNotificationService(db, nil, true, true, false)
+			svc.SetAdminConfig(&cfg.Admin)
+			svc.SetRoleNarrower(directory)
+
+			// alice: the directory still lists admin. bob: linked, and
+			// the directory no longer does.
+			alice := addUser(t, db, "alice", "alice@example.com", "", false)
+			addGroupRow(t, db, alice.ID, "ssh-admins", model.GroupSourceOIDC)
+			seedUserLDAP(t, db, alice.ID, nil)
+			addGroupRow(t, db, alice.ID, "ssh-admins", model.GroupSourceLDAP)
+			bob := addUser(t, db, "bob", "bob@example.com", "", false)
+			addGroupRow(t, db, bob.ID, "ssh-admins", model.GroupSourceOIDC)
+			seedUserLDAP(t, db, bob.ID, nil)
+
+			got, err := svc.AdminRecipients(context.Background())
+			if names := strings.Join(usernames(got), ","); err != nil || names != tt.want {
+				t.Errorf("AdminRecipients() = %s, %v, want %s and no error", names, err, tt.want)
+			}
+		})
+	}
+}
+
+// A narrower that cannot read the directory rows answers with an error,
+// and the recipient query reports it rather than mailing a guess.
+func TestStoredUserIsAdmin_ShouldReportAFailedDirectoryCheck(t *testing.T) {
+	t.Parallel()
+
+	svc := NewNotificationService(nil, nil, true, true, false)
+	svc.SetAdminConfig(&config.AdminConfig{RequireGroup: "ssh-admins"})
+	svc.SetRoleNarrower(failingNarrower{})
+
+	got, err := svc.StoredUserIsAdmin(context.Background(), &model.User{ID: "u-1"}, []string{"ssh-admins"})
+	if err == nil || got {
+		t.Errorf("StoredUserIsAdmin() = %v, %v, want false and an error", got, err)
+	}
+}
+
+// failingNarrower is a RoleNarrower whose directory read always fails.
+type failingNarrower struct{}
+
+func (failingNarrower) NarrowRoleGroups(context.Context, string, []string) ([]string, error) {
+	return nil, errors.New("database unavailable")
 }

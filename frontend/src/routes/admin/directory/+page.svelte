@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { tick } from 'svelte';
+	import { resolve } from '$app/paths';
+
 	import { getLDAPStatus, runLDAPSync, probeLDAP } from '#lib/api/endpoints.js';
 	import type {
 		LDAPProbeRequestBody,
@@ -18,8 +21,16 @@
 	import PageSection from '#lib/components/PageSection.svelte';
 	import PageShell from '#lib/components/PageShell.svelte';
 	import SectionLabel from '#lib/components/SectionLabel.svelte';
+	import NSSDirectoryPanels from '#lib/components/NSSDirectoryPanels.svelte';
+	import NSSStoredEntries from '#lib/components/NSSStoredEntries.svelte';
+	import { session } from '#lib/session.svelte.js';
 
 	let status = $state<LDAPStatusResponse | null>(null);
+	// The NSS panels hang off the directory, and only exist where the server
+	// serves NSS; nss.enabled requires ldap.enabled, so they live inside the
+	// enabled branch below.
+	const nssEnabled = $derived(session.user?.nss_enabled ?? false);
+	let nssMessage = $state('');
 	let statusError = $state<string | null>(null);
 	let statusLoaded = $state(false);
 	// Bumped by Try again; the status load reads it, so a bump re-runs it.
@@ -83,6 +94,20 @@
 				statusLoaded = true;
 			});
 		return () => controller.abort();
+	});
+
+	// The NSS directory viewer links here to a section by its fragment
+	// (#probe, #collisions). Every section waits on the status read, so the
+	// router's own scroll on arrival finds nothing; once the sections are
+	// drawn, bring the named one into view. Once only: a later re-read must
+	// not pull the reader back.
+	let scrolledToFragment = false;
+	$effect(() => {
+		if (!statusLoaded || scrolledToFragment) return;
+		scrolledToFragment = true;
+		const fragment = window.location.hash.slice(1);
+		if (!fragment) return;
+		void tick().then(() => document.getElementById(fragment)?.scrollIntoView());
 	});
 
 	// Set when the status could not be read back after a pass: the page then
@@ -231,8 +256,20 @@
 	<PageHeading title="Directory">
 		{#snippet sub()}
 			What the LDAP sync last did, and what the directory actually returns for a person.
+			{#if nssEnabled}
+				The fleet keys hosts use for NSS lookups are on the
+				<a
+					href={resolve('/nss-keys')}
+					class="text-accent hover:underline"
+					data-testid="directory-nss-keys-link">NSS keys</a
+				> page.
+			{/if}
 		{/snippet}
 	</PageHeading>
+
+	<div aria-live="polite" aria-atomic="true" class="sr-only" data-testid="directory-nss-status">
+		{nssMessage}
+	</div>
 
 	{#if statusError}
 		<Alert
@@ -263,6 +300,7 @@
 			title="Sync"
 			description="The scheduled pass, and the last one that ran on any instance."
 			testid="ldap-sync-card"
+			id="sync"
 		>
 			<div class="flex flex-col gap-5">
 				<dl class="grid gap-4 sm:grid-cols-3">
@@ -423,6 +461,7 @@
 			title="Probe"
 			description="One read-only lookup against the configured directory. Nothing is written."
 			testid="ldap-probe-card"
+			id="probe"
 		>
 			<div class="flex flex-col gap-5">
 				<dl class="grid gap-4 sm:grid-cols-2">
@@ -772,5 +811,10 @@
 				{/if}
 			</div>
 		</PageSection>
+
+		{#if nssEnabled}
+			<NSSStoredEntries />
+			<NSSDirectoryPanels onannounce={(message) => (nssMessage = message)} />
+		{/if}
 	{/if}
 </PageShell>

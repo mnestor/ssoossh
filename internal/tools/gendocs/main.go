@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/pflag"
 
 	clientcmd "github.com/mnestor/ssoossh/client/cmd"
+	nsscmd "github.com/mnestor/ssoossh/nssd/cmd"
 	servercmd "github.com/mnestor/ssoossh/server/cmd"
 )
 
@@ -120,6 +121,11 @@ func run(outDir string) error {
 	}
 	fmt.Printf("Generated %s\n", filepath.Join(outDir, "ssoossh.1"))
 
+	if err := generateNSSManpage(outDir, date); err != nil {
+		return fmt.Errorf("generate NSS daemon man page: %w", err)
+	}
+	fmt.Printf("Generated %s\n", filepath.Join(outDir, "ssoosshd-nss.8"))
+
 	return nil
 }
 
@@ -164,6 +170,32 @@ func generateClientManpage(outDir string, date time.Time) error {
 		Title:   "SSOOSSH",
 		Section: "1",
 		Source:  "ssoossh",
+		Date:    &date,
+	}, outDir)
+}
+
+// generateNSSManpage generates the ssoosshd-nss(8) pages, one per
+// subcommand, from the daemon's real command tree, as the client's are.
+// Section 8 like ssoosshd's: it is a system daemon an administrator runs.
+//
+// The pages land beside ssoosshd's and share its "ssoosshd" prefix, so the
+// server packages name their own pages in a way that leaves these out
+// (.goreleaser.yml), and test/packaging assigns them to the ssoosshd-nss
+// package.
+func generateNSSManpage(outDir string, date time.Time) error {
+	c, err := nsscmd.NewCommand(nsscmd.DefaultEnvironment())
+	if err != nil {
+		// not covered: the tree is fixed and its construction fails only on
+		// a command whose Init errors, which none of the daemon's do.
+		return fmt.Errorf("build NSS daemon command tree: %w", err)
+	}
+	root := c.Command()
+
+	escapeTree(root)
+	return doc.GenManTree(root, &doc.GenManHeader{
+		Title:   "SSOOSSHD-NSS",
+		Section: "8",
+		Source:  "ssoosshd-nss",
 		Date:    &date,
 	}, outDir)
 }

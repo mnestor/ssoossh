@@ -29,9 +29,18 @@ type HTTPSettings struct {
 	Port int `mapstructure:"port" default:"8080"`
 
 	// UnixSocket, when set, is a filesystem path to listen on a Unix domain
-	// socket instead of TCP — Address and Port are ignored. Mutually
+	// socket instead of TCP: Address and Port are ignored. Mutually
 	// exclusive with ProxyProtocol (PROXY protocol is a TCP-connection
 	// concept; it has nothing to prefix on a Unix socket).
+	//
+	// Every peer on the socket is trusted to name the client, whatever
+	// TrustedProxies says, and the client IP is the rightmost
+	// X-Forwarded-For entry (or X-Real-IP). The proxy in front must append
+	// the address it saw (nginx $proxy_add_x_forwarded_for): one that passes
+	// the client's own header on untouched lets the client choose the
+	// address that source_policy, allowed_networks, rate limits and the
+	// audit log use, and one that sends neither header leaves every request
+	// with no client address. Keep the socket writable only by the proxy.
 	UnixSocket string `mapstructure:"unix_socket" default:""`
 
 	// ProxyProtocol lists the CIDR ranges of reverse proxies trusted to
@@ -52,6 +61,13 @@ type HTTPSettings struct {
 	// That only holds because the router passes this to SetTrustedProxies
 	// unconditionally — gin's own default is to trust every proxy, so
 	// skipping the call for an empty list would mean the opposite.
+	//
+	// Keep it empty or limited to the real proxies: a peer inside it picks
+	// its own client IP with X-Forwarded-For, so it passes
+	// nss.source_allow_list, forges the audited source_ip and gets a fresh
+	// nss.rate_limit bucket per address. On http.unix_socket gin trusts
+	// every peer whatever this says, so the proxy in front must set
+	// X-Forwarded-For itself.
 	TrustedProxies []string `mapstructure:"trusted_proxies" default:"[]"`
 
 	// PublicURL is the scheme and host browsers actually reach this

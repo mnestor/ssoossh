@@ -1,0 +1,9 @@
+{
+  "name": "sudo",
+  "gid": 27,
+  "members": [
+    "mike",
+    "alice"
+  ],
+  "members_truncated": true
+}

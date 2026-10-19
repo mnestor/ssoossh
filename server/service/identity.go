@@ -38,11 +38,14 @@ type IdentityRefresher interface {
 // approval linkage reads identity.ServiceAccounts and identity.OtherAccounts,
 // so a stale session was a stale authorization.
 //
-// Groups are deliberately not refreshed. Authorization roles are evaluated
-// from the session's group claim and read at login by design, so that the
-// session lifetime is the revocation window and nothing in the database can
-// grant a role (see
-// https://mnestor.github.io/ssoossh/internals/invariants/).
+// Groups are never re-read from the database and nothing stored can grant
+// a role: authorization reads the session's group claim. The one change a
+// refresh makes to them is narrowing. With ldap.authoritative_role_groups
+// on, a role group the latest directory read for a linked user no longer
+// lists is removed, so the sync can take a role away between logins,
+// effective on the next request (see LDAPService.NarrowRoleGroups and
+// https://mnestor.github.io/ssoossh/internals/invariants/). With it off the
+// session lifetime stays the revocation window for a role.
 type IdentityService struct {
 	db *gorm.DB
 	// ldap supplies the directory overlay. Nil when LDAP is disabled, which
@@ -56,8 +59,10 @@ func NewIdentityService(db *gorm.DB, ldap *LDAPService) *IdentityService {
 }
 
 // RefreshIdentity replaces identity's account lists, extra fields and
-// display name with what is stored for it, mutating identity in place.
-// Subject is the key, and the only field read.
+// display name with what is stored for it, and narrows its role groups by
+// the directory when ldap.authoritative_role_groups is on, mutating
+// identity in place. Subject is the key; Groups is read only to be
+// narrowed, never widened.
 //
 // It rebuilds the identity the same way a login does — the users row first,
 // then the directory values over the top — so a refreshed session and a
@@ -66,8 +71,11 @@ func NewIdentityService(db *gorm.DB, ldap *LDAPService) *IdentityService {
 // Fails open, and returns an error only for the caller to log: a database
 // error leaves the session identity exactly as it was rather than emptying
 // the account lists, because a blip that stripped everyone's principals
-// mid-request would be a worse outage than briefly stale data. A missing
-// users row is not an error at all — it is a session whose row was deleted,
+// mid-request would be a worse outage than briefly stale data. Role groups
+// are the exception, and only with ldap.authoritative_role_groups on: a
+// role the server could not check against the directory is dropped for
+// the request rather than granted on trust. A missing users row is not an
+// error at all — it is a session whose row was deleted,
 // and there is nothing to refresh from.
 //
 // The one error that is not for logging is *errorresponses.UserDisabledError:
@@ -88,8 +96,11 @@ func (s *IdentityService) RefreshIdentity(ctx context.Context, identity *Identit
 		First(&user).Error
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
+		// No users row means no directory link either, and an unlinked
+		// user is never narrowed.
 		return nil
 	case err != nil:
+		identity.Groups = s.ldap.dropRoleGroups(identity.Groups)
 		return err
 	}
 
@@ -104,7 +115,10 @@ func (s *IdentityService) RefreshIdentity(ctx context.Context, identity *Identit
 	identity.ServiceAccounts = decodeStoredStringList(user.ServiceAccounts)
 	identity.Extra = decodeExtraFields(user.ExtraFields)
 
-	return s.ldap.applyStored(ctx, identity, user.ID)
+	groups, narrowErr := s.ldap.NarrowRoleGroups(ctx, user.ID, identity.Groups)
+	identity.Groups = groups
+
+	return errors.Join(narrowErr, s.ldap.applyStored(ctx, identity, user.ID))
 }
 
 // decodeStoredStringList decodes one of the JSON string-list columns on the

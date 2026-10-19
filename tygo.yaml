@@ -65,8 +65,28 @@ packages:
     output_path: "frontend/src/lib/api/generated/webtypes.ts"
     indent: "\t"
     frontmatter: |
-      import type { CertificateType, CertificateRequestStatus, DetailLevel } from './enums';
+      import type {
+        CertificateType,
+        CertificateRequestStatus,
+        DetailLevel,
+        NSSCollisionKind,
+        NSSEntryState,
+        NSSKeyPermission,
+        NSSKeyStatus,
+        NSSNotServedReason,
+        NSSRotationBucket,
+        NSSSecretGeneration,
+        PosixStatus
+      } from './enums';
     type_mappings:
       model.CertificateType: "CertificateType"
       model.CertificateRequestStatus: "CertificateRequestStatus"
       model.DetailLevel: "DetailLevel"
+      model.NSSKeyStatus: "NSSKeyStatus"
+      model.NSSKeyPermission: "NSSKeyPermission"
+      model.NSSRotationBucket: "NSSRotationBucket"
+      model.NSSSecretGeneration: "NSSSecretGeneration"
+      model.NSSEntryState: "NSSEntryState"
+      model.NSSNotServedReason: "NSSNotServedReason"
+      model.PosixStatus: "PosixStatus"
+      model.NSSCollisionKind: "NSSCollisionKind"

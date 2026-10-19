@@ -53,11 +53,15 @@ the matching `lint-*`) and the internal check halves
 | `make server-linux-build-local` | Build ssoosshd for a local `docker build` (see Dockerfile) |
 | `make server-linux-pkcs11-build-local` | Build ssoosshd with PKCS#11 for a local `docker build` (see Dockerfile.pkcs11) |
 | `make frontend-clean` | Remove the built web UI |
+| `make selinux-nss` | Build the ssoosshd-nss SELinux module (docker when no selinux-policy-devel) |
+| `make selinux-nss-check` | Build the SELinux module and link it into the EL9 and EL10 policies |
 
 ### Test
 
 | Target | What it does |
 | --- | --- |
+| `make nss-integration` | Run the ssoosshd-nss integration jobs in docker |
+| `make nss-e2e` | Run the NSS end-to-end job (OpenLDAP, ssoosshd, ssoosshd-nss) in docker |
 | `make test` | Unit tests per component, with coverage |
 | `make test-race` | Unit tests under -race |
 | `make cover` | Coverage HTML report at .coverage/coverage.html |
@@ -242,7 +246,7 @@ plain command report success over code it never looked at:
 
 | What hides | Hidden from | How it bit | Covered by |
 | --- | --- | --- | --- |
-| **Build tags** | `lint` passes none; `test` builds none | A suite behind `e2e`, `resilience`, `load`, `softhsm`, or `natsintegration` can fail to compile outright while both report success | `lint-tagged` |
+| **Build tags** | `lint` passes none; `test` builds none | A suite behind `e2e`, `resilience`, `load`, `softhsm`, `natsintegration`, or `ldaplive` can fail to compile outright while both report success | `lint-tagged` |
 | **GOOS** | `lint` runs with the host's | A G115 overflow bug sat in `client/config/policy_windows.go`, on a value an admin sets through Group Policy | `lint-cross` |
 | **cgo** | golangci-lint can't see into a cgo file | Every symbol referenced only from one reports as unused. The devcontainer defaults `CGO_ENABLED=0` | Explicit `CGO_ENABLED=1` per recipe |
 

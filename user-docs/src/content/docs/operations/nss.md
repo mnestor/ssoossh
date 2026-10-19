@@ -1,0 +1,626 @@
+---
+title: NSS directory
+description: Serve POSIX users and groups from the directory to hosts running ssoosshd-nss, with fleet keys, frozen ids and fail-closed collisions.
+sidebar:
+  order: 11
+---
+
+The server half of host user lookups. With `nss.enabled`, `ssoosshd` keeps
+the directory's POSIX accounts and groups in its database and answers
+`ssoosshd-nss` on each host over `/api/nss/*`: a name or uid in, the account's
+uid, primary gid, groups, home, shell and display name out. The host side --
+installing the daemon, `nsswitch.conf`, SELinux, caching -- is on
+[Directory users on a host](/ssoossh/hosts/nss/).
+
+It is identity, never authorization. Nothing here issues, validates or
+widens a certificate, no POSIX attribute ever appears in one, and the lookup
+answer decides nothing on the server. What it changes on a host is which
+accounts exist there; who may log in to them is still the certificate's
+business.
+
+## Enabling it
+
+```yaml
+ldap:
+  enabled: true          # required
+  url: "ldaps://ldap.example.net"
+  base_dn: "dc=example,dc=net"
+  id_attribute: entryUUID  # strongly recommended; see "Frozen uid and gid"
+  # ... bind_dn, bind_password, as for enrichment
+
+nss:
+  enabled: true
+  user_filter: "(&(objectClass=posixAccount)(memberOf=cn=linux-users,ou=groups,dc=example,dc=net))"
+  group_filter: "(&(objectClass=posixGroup)(cn=linux-*))"
+  disabled_filter: "(nsAccountLock=TRUE)"
+
+admin:
+  nss_key_group: "nss-key-admins"
+```
+
+**NSS requires LDAP.** `nss.enabled: true` with `ldap.enabled: false` fails
+at startup. Every POSIX identity, people and shared or service accounts
+alike, is a directory entry with a uid attribute; a shared account has no
+OIDC token, so an identity-provider-only directory could never be complete,
+and there is no claim source for POSIX data. The connection, `base_dn`,
+`id_attribute`, `timeout` and TLS settings are the
+[`ldap`](/ssoossh/operations/ldap/) block's.
+
+The three filters are plain RFC 4515 filters, not templates. Their syntax is
+checked when the server starts, and a typo stops the start. Attribute names
+are configurable under
+[`nss.attributes`](/ssoossh/reference/config/nss/attributes/), so RFC 2307,
+RFC 2307bis, Active Directory and FreeIPA layouts all map: the defaults are
+`uid`, `uidNumber`, `gidNumber`, `homeDirectory`, `loginShell` for accounts
+and `cn`, `gidNumber`, `memberUid` for groups. Set `group_member: member` (or
+`uniqueMember`) for groups that list members by DN.
+
+[`ldap.schema`](/ssoossh/reference/config/ldap/#schema) fills in the
+filters, the attribute names and `ldap.id_attribute` for a known directory
+in one line (`rfc2307`, `rfc2307bis`, `active-directory`, `lldap` or
+`freeipa`), and anything you set yourself still wins. Each preset's values
+are on [LDAP schema presets](/ssoossh/operations/ldap-schema-presets/).
+
+Every key with its default is in the
+[`nss` reference](/ssoossh/reference/config/nss/).
+
+## What the sync stores
+
+**Everything the filters match.** The full sync enumerates `nss.user_filter`
+and then `nss.group_filter` under `ldap.base_dn`, with paged searches of 500,
+and stores every entry it can parse. Unlike [LDAP enrichment](/ssoossh/operations/ldap/),
+which reads only people who have logged in, this is a copy of a slice of the
+directory, and the filter is the only control over how big that slice is.
+Scope `nss.user_filter` to the people and accounts hosts should resolve, not
+to `(objectClass=posixAccount)` across a whole enterprise tree: every
+account it matches is resolvable by every host holding a fleet key.
+
+Full sync was chosen over on-demand reads on purpose; see
+[Decisions](/ssoossh/project/decisions/#declined-on-demand-only-directory-reads).
+
+Two jobs keep it current, registered in `serve` and `serve api` (a `sign`
+process has no scheduler), and every instance runs its own:
+
+| Job | Every | Reads | Only it does |
+| --- | --- | --- | --- |
+| `nss-directory-incremental-sync` | [`nss.sync_interval`](/ssoossh/reference/config/nss/#sync_interval) (`15m`) | entries whose `modifyTimestamp` is no older than five minutes before the last successful run on this instance began | |
+| `nss-directory-full-sync` | [`nss.full_sync_interval`](/ssoossh/reference/config/nss/#full_sync_interval) (`24h`) | every entry the filters select | notices entries that have gone, and clears collisions whose other entry has gone |
+
+The first incremental run after a start is a full one, and so is any run the
+directory refuses the `modifyTimestamp` filter for. Zero disables either job.
+Neither job runs at startup, so a restart does not refresh anything; the
+first runs one interval after start. Admin → Directory's **Sync now**
+(`POST /api/admin/ldap/sync`) runs a full NSS sync after the LDAP pass,
+except on a dry run, and reports its counts, and so does `ssoosshd ldap
+sync` on the server host, for a shell or a script (see
+[Forcing a sync from the command line](/ssoossh/operations/ldap/#forcing-a-sync-from-the-command-line)).
+A lookup for a name or uid the database does not have reads that one entry
+from the directory on the spot, so an account created a minute ago resolves
+before the next sync; misses are remembered for 60 seconds per instance.
+
+An entry is **skipped**, with a warning naming its DN and the attribute,
+when its name is missing or not a valid POSIX name (systemd's relaxed rules:
+no `:` or `/`, no control characters, not all digits, at most 32 bytes,
+matched byte for byte and never lower-cased), when its uid or gid is missing
+or not a decimal number, or when its home or shell is not an absolute path.
+There are no partial rows. Each run ends with an info line, "nss directory
+sync completed", carrying every count.
+
+The display name is rendered from
+[`nss.gecos_template`](/ssoossh/reference/config/nss/#gecos_template) over the
+attributes listed in `gecos_attributes` only, and cleaned before any host
+sees it (no `:`, no control characters, 256 bytes at most), since every local
+user can read it with `getent`.
+
+### Status
+
+An account's status is derived each time it is read, never stored:
+
+1. **deleted** when it is a tombstone (below);
+2. else **disabled** when the person linked to it is disabled in ssoossh --
+   by an admin, by SOC, or by the [LDAP sync](/ssoossh/operations/ldap/#the-sync)
+   -- or when the entry matches
+   [`nss.disabled_filter`](/ssoossh/reference/config/nss/#disabled_filter);
+3. else **active**.
+
+A disabled or deleted account is served with its name, uid, gid and home,
+the shell replaced by
+[`nss.disabled_shell`](/ssoossh/reference/config/nss/#disabled_shell), and
+hosts lock it. A [SOC disable](/ssoossh/operations/roles/#disabling-a-user)
+in the web UI therefore locks the person's account on every host at its next
+refresh, with nothing else to do. A shared or service account with no linked
+person answers only to the directory.
+
+### Linking a person
+
+When someone logs in and [LDAP enrichment](/ssoossh/operations/ldap/) finds
+their entry (still a live directory read at every login), the server links
+the POSIX row for that same entry to their ssoossh account, matching by
+`directory_id` and then DN, never by uid alone. That link is what makes an
+ssoossh disable reach hosts.
+When the linked row's POSIX name differs from the person's `username` claim,
+the `nss.name_mismatch` alert fires, at most daily: that person's own-name
+certificate principal can never match their host account.
+
+## Frozen uid and gid
+
+Files on every host belong to the number, not the name, so a uid that moves
+orphans everything its owner had, and a reused one hands it to whoever gets
+the number next. The server therefore never follows a directory change of a
+stored account's uid or primary gid, or of a group's gid:
+
+- The sync keeps serving the stored number and records the directory's value
+  as **pending**, with the time it was first seen. The
+  `nss.id_change_pending` alert fires at most daily per row.
+- Every admin is mailed about it once (`nss_id_change_pending`, one message
+  per sync run or per batch of on-demand and login reads), and every Monday
+  while anything is still waiting (`nss_id_change_reminder`). Recipients are
+  the admins as of each one's last login; see
+  [Directory id changes, for admins](/ssoossh/operations/email-notifications/#directory-id-changes-for-admins).
+- The directory reverting the value clears the pending change.
+- An admin accepts it explicitly. Only then do hosts see the new number,
+  so re-own the files on hosts first (`chown -R`).
+
+Name, home, shell and display name follow the directory on every sync. So
+does an account's gid attribute under `nss.auto_private_groups: true`, where
+it is only an extra group and the primary gid is the uid, as in sssd
+(decided 2026-10-18 by the owner: match sssd).
+
+The sync recognises an entry as the same row by `ldap.id_attribute` first,
+then by DN. **Set `ldap.id_attribute` to a stable attribute your accounts
+carry** (`entryUUID`, `objectGUID`, `nsUniqueId`). Without it, renaming or
+moving an account gives it a new DN, so it looks like a missing entry plus
+a new one, and the new one collides with the old row's uid and name:
+neither is served. There is no admin action that accepts such a move. The
+old row becomes a tombstone after `nss.tombstone_after`, and then an admin
+can purge it early (below) so the next read stores the new entry as a new
+row; until then, rename the entry back to restore it.
+
+Renaming or moving a **group** is safe. When an entry carries the gid of a
+stored group whose DN no longer holds a group (a full sync did not see it,
+or a read of that DN finds nothing and no other entry carries the gid), the
+sync moves that group's row to the new entry: same gid and members, new
+name and DN, served without interruption, audited as `nss.group_renamed`.
+If another group already holds the new name, the row moves but keeps its
+old name, and both are withheld as a name collision. A group whose old
+entry still exists, or two entries with one gid, are a collision as before.
+
+Admin only, audit-logged as `nss.id_change_accepted`:
+
+| Endpoint | Does |
+| --- | --- |
+| `GET /api/admin/nss/pending-id-changes` | accounts and groups with a pending change: name, DN, stored and pending numbers, since when |
+| `POST /api/admin/nss/users/:uid/accept-id-change` | applies the account's pending uid and gid in one transaction and re-keys its memberships |
+| `POST /api/admin/nss/groups/:gid/accept-id-change` | the same for a group, moving every account whose primary gid it was |
+
+An accept is refused with 409 when another row, a tombstone included, holds
+the new number. There is no reject: revert the directory, or the alert keeps
+firing daily until someone decides. The web UI shows these as a Pending id
+changes panel on Admin → Directory.
+
+## Collisions and withheld accounts
+
+`getpwnam` returns one record and `ls -l` one name, so two entries claiming
+one uid, gid or name are a directory mistake or an attempt to receive
+someone's logins. Either way the server serves **neither** while it lasts:
+
+- Both rows are withheld, so every instance agrees, and lookups answer not
+  found. A new entry presenting a held number or name is not stored at all.
+- A rename onto a name another row holds keeps the old name and withholds
+  both.
+- The alert (`nss.uid_collision`, `nss.gid_collision` or
+  `nss.name_collision`) fires at most daily per value, naming both entries.
+- Account and group names are separate namespaces: a private group may
+  share its account's name.
+
+A collision clears when a read sees the pair no longer conflicts (the full
+sync clears the ones whose other entry has gone), when an involved tombstone
+is purged, or when an id change is accepted. `GET /api/admin/nss/collisions`
+(admin) lists the current ones, both sides with name, DN, number and whether
+it is a tombstone.
+
+## Tombstones
+
+An entry the full sync can no longer find by id, DN or filter becomes
+**missing**; a directory that cannot be reached never counts as a miss.
+After [`nss.tombstone_after`](/ssoossh/reference/config/nss/#tombstone_after)
+(`168h`) missing, it is **deleted**: the account is served as disabled, the
+group with no members. A tombstone keeps holding its number and name for
+[`nss.tombstone_retention`](/ssoossh/reference/config/nss/#tombstone_retention)
+(`2160h`), so neither can pass to a new entry while files on hosts still
+belong to it; then the hourly `nss-tombstone-purge` job removes it, audited
+as `nss.tombstone_purged`. An entry that reappears before then is restored.
+
+To hand a name or number on deliberately, an admin purges the tombstone
+early, also audited as `nss.tombstone_purged`:
+
+```text
+DELETE /api/admin/nss/users/:uid/tombstone
+DELETE /api/admin/nss/groups/:gid/tombstone
+```
+
+Only a tombstone can be purged; a live row is 404. The Collisions panel on
+Admin → Directory offers the same.
+
+## Primary groups and shells
+
+[`nss.auto_private_groups`](/ssoossh/reference/config/nss/#auto_private_groups)
+decides each account's primary group on the server, so every host gets the
+same gid. It works as sssd's option of the same name (decided 2026-10-18 by
+the owner: match sssd):
+
+- `hybrid` (the default): the entry's gid. An account whose uid equals its
+  gid, where no directory group holds that gid, gets a private group named
+  after it. An entry with no gid attribute is skipped, with a warning that
+  names `auto_private_groups: true`.
+- `true`: every account gets a private group with gid equal to its uid, and
+  the gid attribute is optional, so an entry with only a uid (a service
+  account in lldap, say) is served. A gid attribute other than the uid is
+  served as an extra group, when a directory group holds it, and follows
+  the directory without an admin accepting it. An account whose uid is a
+  directory group's gid, or whose name is a directory group's name, is not
+  served, so it never shadows that group.
+- `false`: the entry's gid, no private groups. A gid no directory group
+  holds is still served; `ls -l` just shows the number. An entry with no gid
+  attribute is skipped.
+
+Changing the mode does not rewrite stored accounts: one stored without a gid
+under `true` is not served under the other two.
+Group answers list at most
+[`nss.max_group_members`](/ssoossh/reference/config/nss/#max_group_members)
+members (2000), flagged as truncated beyond that.
+
+The server sends the directory's home (else
+[`nss.default_home`](/ssoossh/reference/config/nss/#default_home), where `%u`
+is the name) and shell (else
+[`nss.default_shell`](/ssoossh/reference/config/nss/#default_shell)). Nobody
+picks their own shell: it comes from the directory, and each host's
+`ssoosshd-nss` shell policy (see
+[Shells and overrides](/ssoossh/hosts/nss/#shells-and-overrides)) decides
+what it serves. The web UI's shell preference was
+removed on 2026-10-18 after the threat review: the shell comes from the
+directory and host policy only.
+
+## Looking up stored entries
+
+When a host cannot resolve someone, start at **Admin → NSS directory**. It
+is read-only and open to auditors, SOC and admins, and it appears only when
+`nss.enabled` is true.
+
+- **Stored accounts** and **Stored groups** (switch between them in the
+  heading) list every row the sync has stored, by name. Search by a part of
+  the name or DN, or by an exact uid or gid, and narrow by state: active,
+  disabled (accounts only), missing, pending, withheld or tombstone. The
+  search and the state stay in the address, so a filtered view can be
+  pasted into an incident channel.
+- **One account or group** opens with the verdict: **Served**, with the
+  record a host receives (uid, the gid after
+  [`nss.auto_private_groups`](/ssoossh/reference/config/nss/#auto_private_groups),
+  the groups primary first, home, shell and status), or **Not served** with
+  the reason: withheld by a collision, a tombstone past
+  [`nss.tombstone_retention`](/ssoossh/reference/config/nss/#tombstone_retention)
+  waiting for the purge, a private group that clashes with a directory
+  group, or an account with no gid under a mode that needs one. The verdict comes from the server's own lookup code, not from the
+  state shown beside it.
+- Below that are the row as stored (DN, directory id, home and shell as the
+  directory gave them, the linked person), its marks when it is not active
+  (missing since, tombstoned since, withheld and why, a pending uid or gid),
+  and its memberships: an account's stored group rows, or a group's members,
+  each linking to its own page. Their Added column is when ssoosshd first
+  stored the membership, not when it was added in the directory, which does
+  not date member values. A membership the first full import stored shows
+  "Before first import". The date stays through later syncs, an accepted
+  uid or gid change and a group rename; a membership removed and added
+  again shows the new date, and so do the members of a tombstoned group
+  that comes back, since a tombstone drops its members. A group's page says when
+  [`nss.max_group_members`](/ssoossh/reference/config/nss/#max_group_members)
+  cut the member list hosts receive.
+- **History**, at the bottom, is every recorded change to that account or
+  group, newest first, one line each with its time, with Load more: when
+  it was stored, renamed, went missing or came back, collisions, pending
+  and accepted id changes, and membership removals. Additions are not
+  listed: the Added column above dates each current membership. An
+  account's page says only what happened to that account ("Removed from
+  ops"); a group's page has a line per member removed ("sonia removed"),
+  and "and 412 more removed" when one change removed more members than the
+  audit event lists. When an account is in neither of a large change's
+  capped lists, its page says "Added to or removed from ops", since it may
+  have been a removal. The count under the list is of events, and an event
+  that only added draws no line. One event shows on every page it
+  concerns, so a group's history shows a member removed after the group
+  was stored and that member's history shows the same change, however
+  many members it touched. Additions are still in the
+  [audit log](/ssoossh/operations/audit-log/). Who made a change and its full detail are in the
+  [audit log](/ssoossh/operations/audit-log/). The history
+  belongs to the stored row, so it carries on across a rename or an
+  accepted uid or gid change. It holds only what the
+  [audit log](/ssoossh/operations/audit-log/)'s table still holds: events
+  past its retention or row cap leave the history with them.
+
+"No stored account has uid N" does not mean a host cannot resolve it: a
+lookup that misses the database still asks the directory on demand and
+stores what it finds, which this page never does. Use the Probe on
+Admin → Directory (admins) to see what the directory itself says. Private
+groups are never stored, so a group page that finds nothing links the
+account with the same number.
+
+Nothing on these pages changes anything. Accepting an id change and purging
+a tombstone stay in the Pending id changes and Collisions panels on
+Admin → Directory, for admins, which also counts the stored entries in its
+Stored entries section.
+
+## Fleet keys
+
+Every lookup carries a fleet API key, in the headers `X-Ssoossh-Key-Id` and
+`X-Ssoossh-Key-Secret`. A key is not per host: one key serves a fleet, or
+one environment of it, and is baked into the image. The
+[security model](/ssoossh/concepts/security-model/#the-nss-fleet-key) covers
+what that exposes.
+
+- The id is `nss_` and eight base32 characters, fixed for the key's life and
+  safe to log. The secret is `ssoossh_nss_` and 32 random bytes, base64url.
+- The server stores only the SHA-256 of the secret. It is shown once, at
+  creation and at each rotation.
+- Every refusal -- unknown id, wrong secret, revoked, expired -- is the same
+  401 `nss_unauthorized` with the same body and the same comparisons, so a
+  caller learns nothing about which.
+- A key lives at most
+  [`nss.key_max_lifetime`](/ssoossh/reference/config/nss/#key_max_lifetime)
+  (`8760h`), and exactly that unless its creator sets an earlier date. A
+  later date sent to the API is trimmed to it, and the audit event records
+  the date asked for as `requested_expires_at`.
+- The expiry cannot be edited. Rotation renews it (see
+  [Rotation](#rotation)), so a fleet keeps its key id by rotating before
+  the expiry.
+- Setting `nss.key_max_lifetime` to `0` removes the limit: a key created
+  without a date then never expires. Changing the setting does not touch
+  existing keys until their next rotation.
+
+| Action | Endpoint | Who | Audit |
+| --- | --- | --- | --- |
+| List the keys your groups manage | `GET /api/nss/keys` | anyone: the keys whose group is one of the caller's groups, whatever their roles | |
+| List every key | `GET /api/admin/nss/keys` | auditors, SOC and admin | |
+| View | `GET /api/nss/keys/:id` | key admins, admin, SOC and auditors see every key; members of a key's group see that key | |
+| Create | `POST /api/nss/keys` | key admins | `nss.key_created` |
+| Edit description, notification address | `PATCH /api/nss/keys/:id` | key admins, members of the key's group | `nss.key_updated` |
+| Assign the managing group | `PATCH /api/nss/keys/:id` (`group_name`) | key admins | `nss.key_updated` |
+| Rotate | `POST /api/nss/keys/:id/rotate` | key admins, members of the key's group | `nss.key_rotated` |
+| End the previous secret now | `DELETE /api/nss/keys/:id/previous` | the same | `nss.key_previous_cleared` |
+| Revoke | `POST /api/nss/keys/:id/revoke` | key admins, members of the key's group, SOC, admin | `nss.key_revoked` |
+| Usage, rotation report | `GET /api/nss/keys/:id/usage`, `GET /api/nss/keys/:id/rotation-report` | anyone who can view the key | |
+
+These routes live under `/api/nss/keys`, not `/api/admin`, because the
+members of a key's group are not admins. Each key in a response carries a
+`permissions` list (`view`, `rotate`, `revoke`, `edit`, `assign_group`) for
+the caller. A revoked key is terminal: every change to it is 409. The web UI
+gives fleet keys pages of their own, outside the admin area, built on these
+endpoints.
+
+### Finding a key
+
+Two lists, for two questions.
+
+- **NSS keys** (`/nss-keys`, a top-level rail entry) is the keys you manage:
+  those whose group is one of your groups. It is the same for every role, an
+  admin's included, and the rail shows it only when the list is not empty.
+  A key with no group is on neither person's list.
+- **All NSS keys** (`/admin/nss/keys`, "NSS keys (all)" in the rail's admin
+  group) is every key, whoever manages it, for auditors, SOC and admins and
+  for fleet key admins (`admin.nss_key_group`). A fleet key admin with no
+  other admin role sees only this entry in the admin group and can open no
+  other admin page. A row opens the key's own page, which keeps every action
+  your role allows; its back chip, and the rotation report's back to the
+  key, return to the list with the filters you had.
+
+All NSS keys has one search field:
+
+- Text matches the key's name or group, or its creator's username or
+  email, ignoring case, or the start of the key's id: paste a whole id
+  (`nss_5vqsreyx`) from an alert or `ssoosshd-nss status`, or its first
+  few characters, in either case.
+- An IP address (IPv4 or IPv6; an IPv4-mapped one is read as IPv4) or a CIDR
+  range searches the usage instead: the keys a host used from that address
+  or range within
+  [`nss.usage_retention`](/ssoossh/reference/config/nss/#usage_retention).
+  Each key shows up to five of the matching addresses, newest first, with
+  when it was last used from each and whether that lookup presented the
+  current or the previous secret. The line under the field names the
+  address or range searched and the window.
+- A term shaped like an address that is not one (`10.0.4`, `10.0.4.0/33`)
+  is refused with the reason and searches nothing, rather than being
+  searched as text and quietly matching no key.
+- The address searched is the one the server observed for each lookup:
+  for a host behind a reverse proxy listed in
+  [`http.trusted_proxies`](/ssoossh/reference/config/http/#trusted_proxies),
+  the forwarded address, otherwise the connection's. An address that used
+  a key before the retention window, or that reaches the server through a
+  proxy it does not trust, does not match.
+
+Beside it: a status filter (active, expired, revoked), and three triage
+toggles: **Expiring** (active keys expiring within 7, 30 or 90 days),
+**Unused 30 days** (no lookup in 30 days, never-used keys included) and
+**Alerts 7 days** (a miss rate or key source alert in the last week). Each
+row shows the creator, the status and expiry, the distinct source
+addresses of the last 7 days and the last lookup. Every filter is in the
+page's address, so a link opens the same view.
+
+### Roles
+
+[`admin.nss_key_group`](/ssoossh/reference/config/admin/#nss_key_group) is a
+fourth group beside the three in [Roles and containment](/ssoossh/operations/roles/),
+outside their chain: its members administer every key. Admins hold it
+regardless, so empty narrows key administration to admins rather than
+disabling it. SOC may revoke any key and read them all, but not create or
+rotate; auditors read. A key's own group (`group_name`, any group the
+session carries) lets a team manage its key without any of those roles.
+
+### Rotation
+
+Rotation keeps the id and replaces the secret. The previous secret stays
+accepted for
+[`nss.key_rotation_grace`](/ssoossh/reference/config/nss/#key_rotation_grace)
+(`720h`), so hosts can be redeployed with the new key file at their own pace.
+
+Rotation also renews the expiry: the key gets its own lifetime again from
+the rotation, measured from its last rotation or its creation, and never
+more than `nss.key_max_lifetime`. A key created for 30 days is renewed for
+30 days; a key that never expired is given the limit if one is now set; with
+the limit at `0`, a key that never expires stays that way.
+
+An expired key can be rotated too, which brings it back with a new secret.
+Its old secret gets no grace period: it had already stopped working, so
+every host fails until it has the new key file.
+
+1. Rotate, and write the new secret into the image or configuration
+   management.
+2. Watch the **rotation report**: per source address, the generation it last
+   presented, bucketed `switched`, `not_switched` or `gone` (not seen since
+   the rotation), with the days of grace left. `?format=csv` downloads it.
+3. When `not_switched` is empty, end the previous secret (`DELETE
+   .../previous`) rather than waiting out the grace.
+
+The report reads the usage table: lookups and misses per key, source
+address, generation and UTC day, counted in memory and flushed every minute
+and at shutdown (a crash loses at most a minute of counts). Rows are kept
+for [`nss.usage_retention`](/ssoossh/reference/config/nss/#usage_retention)
+(`2160h`) by the hourly `nss-usage-prune` job.
+
+## Source allow list and rate limits
+
+Each lookup passes, in order:
+
+1. **`nss.enabled`.** Off, every lookup is 404 `nss_disabled`.
+2. **[`nss.source_allow_list`](/ssoossh/reference/config/nss/#source_allow_list)**,
+   CIDRs, checked before the key is looked at. A request from anywhere else
+   is 403 `nss_forbidden`, audited as `nss.lookup_forbidden` with its address
+   and the key id it presented (at most hourly per pair). Empty allows all.
+3. **The key.** A refused key spends a token from a per-address bucket at
+   [`http.rate_limit`](/ssoossh/reference/config/http/#rate_limit) per
+   `http.rate_duration`, and gets 429 once that is empty; otherwise 401.
+4. **The key's own bucket**, per key and source address:
+   [`nss.rate_limit`](/ssoossh/reference/config/nss/#rate_limit) lookups a
+   second (20) with a burst of
+   [`nss.rate_burst`](/ssoossh/reference/config/nss/#rate_burst) (200), for a
+   host that resolves many names as it boots. Over it is 429
+   `nss_rate_limited` with `Retry-After`; the daemon waits it out and serves
+   its cache meanwhile.
+
+The source address is the one the server observes, honouring forwarded
+headers only from [`http.trusted_proxies`](/ssoossh/reference/config/http/#trusted_proxies)
+-- the same address the audit log records. Behind a load balancer listed
+there, each host keeps its own bucket; behind one that is not, every host
+shares the balancer's, and the allow list sees only the balancer. See
+[TLS and reverse proxies](/ssoossh/operations/tls-and-proxy/). The global
+per-address limiter of the other routes does not apply to lookups. The
+buckets are per instance, so N instances allow N times the rate.
+
+Keep `http.trusted_proxies` empty or limited to the real proxies. When the
+TCP peer is inside it, gin takes the client address from `X-Forwarded-For`
+(or `X-Real-IP` when that is absent), reading from the right and skipping
+entries that are themselves trusted. A key holder that reaches the server
+from an address an overbroad entry covers, or through a trusted proxy that
+passes the client's header on without adding the peer it saw, therefore
+picks its own address, and with it:
+
+1. passes a restrictive `nss.source_allow_list`;
+2. forges the `source_ip` the audit log and the usage report record;
+3. gets a fresh `nss.rate_limit` bucket for each address it names, which
+   defeats the per-key throttle.
+
+`nss.key_source_alert` still fires once one key shows more addresses in a
+day than it allows, but it never blocks. On `http.unix_socket` gin trusts
+every peer whatever `trusted_proxies` says, so the proxy in front must set
+`X-Forwarded-For` from the peer it sees (nginx
+`$proxy_add_x_forwarded_for`). The admin diagnostics flag a
+`trusted_proxies` that trusts every address.
+
+A lookup for a name the database does not hold, while the directory cannot
+be read, is 503 rather than a not-found the host would remember.
+
+## Alerts
+
+Every alert is a warning in the log and an audit event, deduplicated across
+instances, and none of them blocks anything:
+
+| Audit action | When | At most |
+| --- | --- | --- |
+| `nss.miss_rate_alert` | one key's not-found lookups exceed [`nss.miss_alert_rate`](/ssoossh/reference/config/nss/#miss_alert_rate) a second (5) over a minute, on one instance: a host enumerating names | daily per key |
+| `nss.privileged_name_lookup` | a lookup by a name in [`nss.privileged_name_alert`](/ssoossh/reference/config/nss/#privileged_name_alert) (`root`, `admin`, `daemon`, `bin`, `sys`) | daily per key and name |
+| `nss.key_source_alert` | one key seen from more than [`nss.key_source_alert`](/ssoossh/reference/config/nss/#key_source_alert) distinct addresses (1000) in a UTC day: far more than a fleet suggests a leak | daily per key |
+| `nss.key_revoked_attempt`, `nss.key_expired_attempt` | a revoked or expired key's id is presented, whatever the secret | hourly per key |
+| `nss.lookup_forbidden` | a lookup from outside the allow list | hourly per address and key id |
+| `nss.uid_collision`, `nss.gid_collision`, `nss.name_collision` | two entries claim one number or name | daily per value |
+| `nss.id_change_pending` | the directory changed a stored uid or gid | daily per row |
+| `nss.name_mismatch` | a linked person's username differs from their POSIX name | daily per person |
+
+Feed them to your SIEM with the rest of the [audit log](/ssoossh/operations/audit-log/).
+Changes are audited too: `nss.key_*` for key administration,
+`nss.id_change_accepted`, `nss.tombstone_purged`, and
+the [directory change events](#directory-change-events) below.
+
+## Directory change events
+
+Every change the server makes to what it serves is an audit event too,
+written with the change itself, so the log answers who joined or left a
+group and when an account or group appeared, went missing or came back.
+The sync's and the lookups' are the server's own; an accepted id change or
+an early purge carries the admin who did it. An account linked to a person
+has that person as the target. Each detail has `table`, `name`, `uid` or
+`gid`, `dn`, and `via`, the path that made the change: `full_sync`,
+`incremental_sync`, `on_demand` (a host's lookup), `login`, `tombstoned`,
+`id_change_accepted` or `tombstone_purged`.
+
+| Audit action | When | Also in the detail |
+| --- | --- | --- |
+| `nss.account_created`, `nss.group_created` | a new entry is stored | `gid` for an account, `member_count` for a group |
+| `nss.account_renamed` | an account takes its entry's new name | `old_name`, `new_name`, `old_dn` |
+| `nss.group_renamed` | a group is renamed or moved (above) | `old_name`, `new_name`, `old_dn`, `new_dn`, `detected_by` (`full_sync_absence`, `base_read`, or `matched` for a rename in place), `name_blocked`, `revived` |
+| `nss.account_missing`, `nss.group_missing` | the first full sync that does not see it | |
+| `nss.account_tombstoned`, `nss.group_tombstoned` | it stayed missing for `nss.tombstone_after` | `missing_since` |
+| `nss.account_revived`, `nss.group_revived` | a missing or deleted entry is seen again | `missing_since`, `was_tombstoned` |
+| `nss.group_members_changed` | one change to one group's members | `added`, `removed` (`{uid, name}` by uid, at most 100 each), `added_count`, `removed_count` |
+| `nss.initial_import` | the first sync into an empty table, once per table instead of one event per entry | `created`, and `memberships` for groups |
+
+Nothing is written when nothing changed: a sync over an unchanged directory
+adds no rows. A new group's members are in its `member_count`, not in a
+separate members event. On the Admin → Audit page they are under NSS
+directory in the action filter, and each also shows in the History of every
+stored account and group it concerns (above).
+`GET /api/admin/nss/users/:uid/audit` and `GET /api/admin/nss/groups/:gid/audit`
+(auditors and above) return the same pages.
+
+## Mail
+
+With [`mail.enabled`](/ssoossh/reference/config/mail/#enabled), each key's
+notification address (the creator's by default; empty sends nothing) gets
+`nss_key_expiring` (weekly inside `mail.expiry_reminder_lead`, then daily over
+the final week), `nss_key_rotated` and `nss_key_revoked` at once,
+`nss_key_expired_attempt` and `nss_key_revoked_attempt` at most once per
+`mail.expired_attempt_window` between them, and `nss_key_rotation_cleanup`: a
+daily digest of the addresses still presenting the previous secret, silent
+for [`mail.rotation_quiet_period`](/ssoossh/reference/config/mail/#rotation_quiet_period)
+(`168h`) after a rotation, stopping when every host has switched, the grace
+ends or the key is revoked. None is a preference; see
+[Email notifications](/ssoossh/operations/email-notifications/).
+
+## Metrics
+
+On the OpenTelemetry meter, when metrics are on:
+
+| Metric | Kind | Attributes |
+| --- | --- | --- |
+| `ssoossh_nss_lookups` | counter | `kind` (user, group), `by` (name, id), `result` (hit, miss, unauthorized, rate_limited, forbidden, bad_request, error) |
+| `ssoossh_nss_lookup_duration` | histogram, seconds | the same |
+| `ssoossh_nss_keys` | gauge | `status` (active, expired, revoked) |
+
+No key or name is an attribute, so cardinality stays bounded; per-key detail
+is in the usage table.
+
+## The secret is never logged
+
+The access log records request headers by default, so the server takes
+`X-Ssoossh-Key-Secret` off every request before the logger writes it, and the
+lookup gate reads it from there. The key id is logged and audited; the
+secret never appears in a log line, an audit payload or an error message,
+and tests assert it through the real router. On the host, the HTTP client
+the daemon shares with `ssoossh` redacts the header from its request trace.

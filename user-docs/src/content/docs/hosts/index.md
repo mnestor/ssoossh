@@ -47,6 +47,7 @@ CA's public half and decides for itself what a certificate signed by it may do.
 | To rotate the CA without an outage | List both keys in both files -- [sshd trust](/ssoossh/hosts/sshd-trust/), [the trusted CA file](/ssoossh/hosts/pam/trusted-ca/) |
 | To offboard someone | Disable them in the identity provider. Nothing on the host changes -- [FAQ](/ssoossh/hosts/faq/) |
 | To lock client settings across a fleet | The `enforce` file or platform policy -- [client settings enforcement](/ssoossh/hosts/client-enforcement/) |
+| Directory users and groups to exist on a host with nothing provisioned per host | `ssoosshd-nss` and `systemd` in `nsswitch.conf` -- [directory users on a host](/ssoossh/hosts/nss/) |
 
 ## A host's trust relationships
 
@@ -106,4 +107,6 @@ The two `ca.pub` paths can be the same file. It is the same
   every return code, authoritative.
 - [PAM troubleshooting](/ssoossh/hosts/pam/troubleshooting/) -- what a failure
   in syslog means.
+- [Directory users on a host](/ssoossh/hosts/nss/) -- uid and gid lookups
+  through systemd userdb, optional.
 - [Host admin FAQ](/ssoossh/hosts/faq/).

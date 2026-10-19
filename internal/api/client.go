@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
 	"strings"
 	"time"
@@ -82,15 +85,68 @@ type Config struct {
 
 	// SkipVerifySSL disables TLS certificate verification entirely.
 	// Intended for development / self-signed setups. TLS verification is
-	// otherwise limited to standard trust-chain and hostname checks — no
-	// additional pinning.
+	// otherwise the standard trust-chain and hostname checks against the
+	// system trust store, unless TLSCAFile, TLSSystemRoots or TLSSPKIPins
+	// pins it. It cannot be combined with any of them.
 	SkipVerifySSL bool
+
+	// TLSCAFile is a PEM bundle holding the only CAs a server certificate
+	// may chain to. Setting it, TLSSystemRoots or TLSSPKIPins switches the
+	// client to pinned mode: TLS 1.3 is the minimum and no proxy is used
+	// whatever the environment says, so nothing outside the configuration
+	// decides which server is reached. With TLSCAFile the system trust
+	// store is never consulted, and SSL_CERT_FILE and SSL_CERT_DIR are
+	// ignored. Empty, with neither of the others, keeps the system trust
+	// store outside pinned mode. ssoosshd-nss sets it from its
+	// tls_ca_file.
+	TLSCAFile string
+
+	// TLSSystemRoots is pinned mode with the host's system trust store as
+	// the trust root: the chain and host name are verified against every
+	// CA the host trusts, TLS 1.3 is the minimum and no proxy is used. On
+	// Linux Go builds that store from the distribution's bundle, or from
+	// SSL_CERT_FILE and SSL_CERT_DIR when the process environment sets
+	// them. It cannot be combined with TLSCAFile or SkipVerifySSL; with
+	// TLSSPKIPins both must hold. ssoosshd-nss sets it for
+	// "tls_ca_file: system".
+	TLSSystemRoots bool
+
+	// TLSSPKIPins are base64 (standard encoding) SHA-256 digests of a
+	// server leaf certificate's DER SubjectPublicKeyInfo, the leaf must
+	// match one, and more than one lets a key rotate. With TLSCAFile or
+	// TLSSystemRoots the chain and host name are verified as well; without
+	// either the pin alone decides, as an SSH host key does. Setting any
+	// switches the client to pinned mode (see TLSCAFile).
+	TLSSPKIPins []string
+
+	// systemRoots loads the pool TLSSystemRoots trusts. Nil means
+	// x509.SystemCertPool; a test sets it so it never depends on the
+	// store of the host it runs on.
+	systemRoots func() (*x509.CertPool, error)
+
+	// KeyID and KeySecret are a fleet key, sent as the X-Ssoossh-Key-Id and
+	// X-Ssoossh-Key-Secret headers on the NSS lookups and on no other call.
+	// The secret is redacted from tracing like an Authorization header.
+	KeyID     string
+	KeySecret string
 
 	// RequestTimeout bounds each ordinary (non-streaming) call, from
 	// connect to the last byte of the response. Zero means
 	// DefaultRequestTimeout. The events stream is not affected: ssoosshd
 	// sends no headers there until the request is decided.
 	RequestTimeout time.Duration
+
+	// DialTimeout bounds the TCP connect of each ordinary call, so an
+	// unreachable server fails fast while a slow answer still gets all of
+	// RequestTimeout. Zero keeps the standard library's 30 seconds. Like
+	// RequestTimeout it does not apply to the events stream. ssoosshd-nss
+	// sets it to 2 seconds.
+	DialTimeout time.Duration
+
+	// UserAgent replaces the User-Agent header this client sends, for a
+	// program other than the ssoossh client (ssoosshd-nss sends
+	// "ssoosshd-nss/<version>"). Empty keeps "ssoossh/<version> (<repo>)".
+	UserAgent string
 
 	// Logger receives per-request tracing. Nil means none, and the caller
 	// that wants tracing has to say so: defaulting to slog.Default() would
@@ -137,6 +193,15 @@ type HTTPClient struct {
 
 	// log is Config.Logger, nil when the caller asked for no tracing.
 	log *slog.Logger
+
+	// direct is set in pinned mode: every transport this client builds
+	// ignores the proxy environment.
+	direct bool
+
+	// keyID and keySecret are Config.KeyID and Config.KeySecret, sent only
+	// by the NSS lookups.
+	keyID     string
+	keySecret string
 }
 
 var _ Client = (*HTTPClient)(nil)
@@ -157,9 +222,6 @@ func NewClient(cfg Config) (*HTTPClient, error) {
 
 	tlsConfig, err := buildTLSConfig(cfg)
 	if err != nil {
-		// not covered: buildTLSConfig cannot fail today — it assembles a
-		// tls.Config from two fields and reads nothing from disk. The error
-		// is in its signature for the trust-store options that would.
 		return nil, err
 	}
 
@@ -168,18 +230,34 @@ func NewClient(cfg Config) (*HTTPClient, error) {
 		timeout = DefaultRequestTimeout
 	}
 
+	userAgent := cfg.UserAgent
+	if userAgent == "" {
+		userAgent = fmt.Sprintf("%s/%s (%s)", version.Name, version.Version, version.Github)
+	}
+
+	transport := newTransport(tlsConfig, cfg.pinned())
+	if cfg.DialTimeout > 0 {
+		// Same keep-alive as http.DefaultTransport's dialer; only the
+		// connect bound changes.
+		transport.DialContext = (&net.Dialer{Timeout: cfg.DialTimeout, KeepAlive: 30 * time.Second}).DialContext
+	}
+	transport.HTTP2 = healthChecks()
+
 	return &HTTPClient{
 		// A whole-request timeout is safe here because this client serves
 		// only doJSON's ordinary calls. The events stream, which stays open
 		// until a human decides, builds a client of its own (see sse.go).
 		// Without it a server that accepts the connection and never answers
 		// hangs the caller, which under ssh's Match exec means ssh itself.
-		http:      &http.Client{Transport: newTransport(tlsConfig), Timeout: timeout},
+		http:      &http.Client{Transport: transport, Timeout: timeout},
 		timeout:   timeout,
 		serverURL: normalizeServerURL(cfg.ServerURL),
 		tlsConfig: tlsConfig,
-		userAgent: fmt.Sprintf("%s/%s (%s)", version.Name, version.Version, version.Github),
+		userAgent: userAgent,
 		log:       cfg.Logger,
+		direct:    cfg.pinned(),
+		keyID:     cfg.KeyID,
+		keySecret: cfg.KeySecret,
 	}, nil
 }
 
@@ -188,18 +266,26 @@ func NewClient(cfg Config) (*HTTPClient, error) {
 // matter in the field come along: ProxyFromEnvironment (an ssoosshd reached
 // through a corporate proxy), the dial and idle-connection timeouts, and
 // HTTP/2.
-func newTransport(tlsConfig *tls.Config) *http.Transport {
+//
+// direct drops the proxy: in pinned mode the configuration alone decides
+// where a request goes, and HTTPS_PROXY is the environment deciding
+// instead.
+func newTransport(tlsConfig *tls.Config, direct bool) *http.Transport {
 	base, ok := http.DefaultTransport.(*http.Transport)
 	if !ok {
 		// not covered: http.DefaultTransport is a *http.Transport in every
 		// Go release. This branch exists so that if one ever changes it,
 		// the TLS configuration is still applied rather than silently
-		// dropped — which for SkipVerifySSL would mean failing, but for a
-		// pinned MinVersion would mean quietly negotiating a weaker one.
+		// dropped, which for SkipVerifySSL would mean failing, but for a
+		// pinned MinVersion would mean quietly negotiating a weaker one. A
+		// bare transport has no Proxy, so direct holds here too.
 		return &http.Transport{TLSClientConfig: tlsConfig}
 	}
 	transport := base.Clone()
 	transport.TLSClientConfig = tlsConfig
+	if direct {
+		transport.Proxy = nil
+	}
 	return transport
 }
 
@@ -225,36 +311,71 @@ func (c *HTTPClient) doJSON(ctx context.Context, method, path string, body, out 
 		}
 	}
 
-	req, err := c.newRequest(ctx, method, c.apiURL(path), payload)
+	resp, err := c.send(ctx, method, path, payload, nil)
 	if err != nil {
 		return err
+	}
+	if resp.status >= 300 {
+		return decodeResponseError(resp.status, resp.body)
+	}
+	if err := json.Unmarshal(resp.body, out); err != nil {
+		return &undecodableError{contentType: resp.header.Get("Content-Type"), err: err}
+	}
+	return nil
+}
+
+// response is one ordinary call's answer with its body read in full. The
+// body is already closed, which is why this is not an *http.Response.
+type response struct {
+	status int
+	header http.Header
+	body   []byte
+}
+
+// send makes one ordinary call and reads the whole response, whatever its
+// status. header carries request headers beyond the standard ones (the NSS
+// lookups' fleet key); nil means none. They are traced like the rest,
+// through tracelog's redaction.
+func (c *HTTPClient) send(ctx context.Context, method, path string, payload []byte, header http.Header) (*response, error) {
+	req, err := c.newRequest(ctx, method, c.apiURL(path), payload)
+	if err != nil {
+		return nil, err
+	}
+	for name, values := range header {
+		for _, v := range values {
+			req.Header.Add(name, v)
+		}
 	}
 
 	c.traceRequest(ctx, req, payload)
 
+	// The bound a timeout here is reported against: the client's own, or
+	// the caller's deadline when that is sooner (ssoosshd-nss gives each
+	// attempt its own).
+	timeout := c.timeout
+	if deadline, ok := ctx.Deadline(); ok {
+		timeout = min(timeout, time.Until(deadline).Round(time.Millisecond))
+	}
+	var conn connTracker
+	req = req.WithContext(httptrace.WithClientTrace(req.Context(), conn.trace()))
+
 	start := time.Now()
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return c.describeTransportError(err)
+		return nil, describeTransport(c.serverURL, timeout, conn.use(), err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	// Read in full before deciding anything: the same bytes are both what
 	// gets traced and what gets decoded, as either a result or an error
 	// body.
-	respBody, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("read response body: %w", c.describeTransportError(err))
+		return nil, fmt.Errorf("read response body: %w", describeTransport(c.serverURL, timeout, conn.use(), err))
 	}
-	c.traceResponse(ctx, resp, respBody, time.Since(start))
+	c.traceResponse(ctx, resp, body, time.Since(start))
 
-	if resp.StatusCode >= 300 {
-		return decodeResponseError(resp.StatusCode, respBody)
-	}
-	if err := json.Unmarshal(respBody, out); err != nil {
-		return &undecodableError{contentType: resp.Header.Get("Content-Type"), err: err}
-	}
-	return nil
+	return &response{status: resp.StatusCode, header: resp.Header, body: body}, nil
 }
 
 // newRequest builds a request carrying this client's standard headers.
@@ -364,13 +485,4 @@ func normalizeServerURL(raw string) string {
 		return trimmed
 	}
 	return "https://" + trimmed
-}
-
-func buildTLSConfig(cfg Config) (*tls.Config, error) {
-	tlsConfig := &tls.Config{
-		InsecureSkipVerify: cfg.SkipVerifySSL,
-		MinVersion:         tls.VersionTLS13,
-	}
-
-	return tlsConfig, nil
 }

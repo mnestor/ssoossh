@@ -28,12 +28,23 @@ internal/crypto/ssh/keypair     92.0
 internal/errs                  100.0
 internal/fileperm              100.0
 internal/fipsmode              100.0
+internal/varlink               98.0
+internal/posixname             100.0
 internal/principalsmap         100.0
 internal/serial                 79.0
 internal/tools/confdocs         83.0
 internal/tools/gendocs          71.0
 internal/tools/genwirecontract  76.0
 internal/tracelog               93.0
+
+# ssoosshd-nss, the NSS daemon. Measured 2026-10-18 less the usual margin.
+nssd/cache                      94.0
+nssd/cmd                        94.0
+nssd/config                     92.0
+nssd/policy                     97.0
+nssd/server                     91.0
+nssd/upstream                   97.0
+nssd/userdb                     94.0
 
 # server/bootstrap lowered 86.0 -> 85.0 and server/cmd 76.0 -> 74.0 on
 # 2026-10-11. Not a regression in what is tested: no code or test changed.
@@ -83,6 +94,7 @@ server/utils/tracing           100.0
 # test dirs — produce no profile entries and so cannot be listed.)
 cmd/ssoossh                      0.0
 cmd/ssoosshd                     0.0
+cmd/ssoosshd-nss                 0.0
 internal/tools/genconfdocs       0.0
 server/testutil                  0.0
 test/configgolden                0.0

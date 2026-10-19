@@ -1,0 +1,166 @@
+policy_module(ssoossh_nss, 1.0.0)
+
+# SELinux policy for ssoosshd-nss, the ssoossh NSS daemon.
+#
+# The daemon is a systemd userdb service: systemd holds the socket
+# /run/systemd/userdb/com.github.mnestor.ssoossh (ssoosshd-nss.socket) and
+# nss-systemd, inside every process that resolves a user, connects to it.
+# Two things go wrong on a targeted-policy host without this module, both
+# measured on AlmaLinux 9.8 and 10.2:
+#
+#   - The daemon runs as unconfined_service_t, which init_t gives any
+#     service started from a bin_t binary.
+#   - No confined caller can reach the socket. systemd labels the listening
+#     socket with the domain the service's binary will run in, so the
+#     socket object is unconfined_service_t, and nsswitch_domain, the
+#     attribute every confined user-resolving domain carries, may not
+#     connectto that type. sshd sees directory users as unknown, and on EL10
+#     initgroups silently drops their directory supplementary groups,
+#     because those per-group lookups come from systemd-userwork.
+#
+# This module gives the daemon a domain of its own, labels its files, and
+# lets nsswitch_domain connect to that domain's sockets. The socket file
+# itself keeps the systemd_userdbd_runtime_t label of its directory, which
+# nsswitch_domain may already write.
+#
+# Built with selinux-policy-devel's refpolicy Makefile rather than with
+# checkmodule on a plain .te as pam_ssoossh's is: a daemon with its own
+# domain and file contexts needs the refpolicy interfaces and an .fc file.
+# One module serves EL9 and EL10. It is compiled once, against EL9's
+# headers (`make selinux-nss`), and every rule naming a type that exists
+# on only one of them sits in an optional_policy block, which is enabled
+# where its types exist and skipped where they do not.
+#
+# SCOPE. The local policy grants what the daemon's design needs (its own
+# files, the host files it reads, HTTPS and DNS to ssoosshd, the callers'
+# cgroup files) and otherwise only what it was denied in the AlmaLinux 9.8
+# and 10.2 test, each such rule naming that denial. With all of it, both
+# hosts logged no denial involving ssoosshd_nss_t through lookups,
+# userdbctl, restarts and certificate logins to a confined sshd.
+
+########################################
+#
+# Declarations
+#
+
+## The daemon's domain. Socket activation makes it the label of the userdb
+## socket as well.
+type ssoosshd_nss_t;
+type ssoosshd_nss_exec_t;
+init_daemon_domain(ssoosshd_nss_t, ssoosshd_nss_exec_t)
+# The unit sets NoNewPrivileges=true, and under no_new_privs the kernel
+# refuses init_t's transition into a domain unless the policy allows
+# nnp_transition. Without this (measured on AlmaLinux 9.8) the exec fails
+# the bounded transition, the daemon runs as init_t and dies at its first
+# write, and systemd restarts it for ever.
+init_nnp_daemon_domain(ssoosshd_nss_t)
+
+## nss.yaml, the fleet key nss.key and nss-overrides.yaml. A type of its
+## own so no other confined domain can read the fleet key.
+type ssoosshd_nss_conf_t;
+files_config_file(ssoosshd_nss_conf_t)
+
+## /var/lib/ssoossh-nss, the persistent cache (StateDirectory=).
+type ssoosshd_nss_var_lib_t;
+files_type(ssoosshd_nss_var_lib_t)
+
+## /run/ssoossh-nss, the admin socket (RuntimeDirectory=).
+type ssoosshd_nss_var_run_t;
+files_pid_file(ssoosshd_nss_var_run_t)
+
+########################################
+#
+# Callers
+#
+
+gen_require(`
+	attribute nsswitch_domain;
+')
+
+# The rule this module exists for. Every caller seen was denied exactly
+# this and nothing else: sshd_t (EL9 sshd-session), sshd_session_t (EL10
+# sshd-session), systemd_logind_t, systemd_userdbd_t (EL10
+# systemd-userwork) and auditd_t. All of them, and the login, su and sudo
+# domains, chkpwd_t, init_t and unconfined_t, are nsswitch_domain, so one
+# rule on the attribute covers every domain that resolves users through
+# NSS rather than a list that would miss the next one.
+allow nsswitch_domain ssoosshd_nss_t:unix_stream_socket connectto;
+
+########################################
+#
+# Local policy
+#
+
+# The Go runtime at start: it reads
+# /sys/kernel/mm/transparent_hugepage/hpage_pmd_size (sysfs_t) to size its
+# heap, and the process's cgroup cpu.max under /sys/fs/cgroup (cgroup_t)
+# to set GOMAXPROCS. Both denied on AlmaLinux 9.8 without these.
+dev_read_sysfs(ssoosshd_nss_t)
+fs_search_cgroup_dirs(ssoosshd_nss_t)
+fs_read_cgroup_files(ssoosshd_nss_t)
+# Go's net package reads /proc/sys/net/core/somaxconn (sysctl_net_t) for
+# the listen backlog of the admin socket. It falls back to 128 when
+# denied, but the denial was logged at every start on AlmaLinux 9.8.
+kernel_read_net_sysctls(ssoosshd_nss_t)
+
+# The userdb socket systemd passes, the connections it accepts, and the
+# admin socket the daemon binds itself.
+allow ssoosshd_nss_t self:unix_stream_socket create_stream_socket_perms;
+
+# Configuration: nss.yaml, the fleet key and the override file. The
+# override file is replaced by rename from an administrator's shell
+# (`ssoosshd-nss override`), so it may carry etc_t until the next
+# restorecon; files_read_etc_files below covers that.
+files_search_etc(ssoosshd_nss_t)
+read_files_pattern(ssoosshd_nss_t, ssoosshd_nss_conf_t, ssoosshd_nss_conf_t)
+
+# The host files: /etc/shells and /etc/nsswitch.conf (etc_t), whose
+# passwd, group and shadow lines the daemon checks at start.
+files_read_etc_files(ssoosshd_nss_t)
+
+# /etc/passwd and /etc/group (passwd_file_t). The daemon never serves a name
+# or id these already have. Not auth_read_passwd(), which would also let it
+# talk to sssd and to init over D-Bus.
+gen_require(`
+	type passwd_file_t;
+')
+allow ssoosshd_nss_t passwd_file_t:file read_file_perms;
+
+# The persistent cache, a SQLite file with its WAL beside it. systemd
+# creates the directory (StateDirectory=); the daemon creates the files.
+files_search_var_lib(ssoosshd_nss_t)
+manage_dirs_pattern(ssoosshd_nss_t, ssoosshd_nss_var_lib_t, ssoosshd_nss_var_lib_t)
+manage_files_pattern(ssoosshd_nss_t, ssoosshd_nss_var_lib_t, ssoosshd_nss_var_lib_t)
+# SQLite in WAL mode maps cache.db-shm, the WAL index, into memory. Denied
+# on AlmaLinux 9.8 without this, and the cache does not open.
+allow ssoosshd_nss_t ssoosshd_nss_var_lib_t:file map;
+
+# The admin socket in /run/ssoossh-nss. systemd creates the directory
+# (RuntimeDirectory=); the daemon replaces a stale socket and binds a new
+# one at mode 0600.
+files_search_pids(ssoosshd_nss_t)
+manage_dirs_pattern(ssoosshd_nss_t, ssoosshd_nss_var_run_t, ssoosshd_nss_var_run_t)
+manage_sock_files_pattern(ssoosshd_nss_t, ssoosshd_nss_var_run_t, ssoosshd_nss_var_run_t)
+
+# Upstream: HTTPS to ssoosshd and the DNS lookup of its name. http_port_t
+# is 80, 443, 8008, 8009, 8443 and the other ports the base policy calls
+# HTTP; an ssoosshd elsewhere needs its port labelled (semanage port -a -t
+# http_port_t -p tcp PORT), not a wider module.
+allow ssoosshd_nss_t self:tcp_socket create_stream_socket_perms;
+corenet_tcp_connect_http_port(ssoosshd_nss_t)
+sysnet_dns_name_resolve(ssoosshd_nss_t)
+
+# tls_ca_file, when it names a bundle under /etc/pki or /etc/ssl, and
+# tls_ca_file: system, which reads the distribution's bundle and the
+# certificate directories there.
+miscfiles_read_generic_certs(ssoosshd_nss_t)
+
+# Recognising sshd. For a uid 0 caller the daemon reads
+# /proc/<pid>/cgroup and checks it names sshd's unit; reading another
+# process's proc files is a file read on that process's domain. The callers
+# are exactly the domains the connectto rule above admits, so this is
+# granted on the same attribute: sshd_t (EL9 sshd-session), sshd_session_t
+# (EL10 sshd-session) and every other caller, whose cgroup the daemon reads
+# too before deciding it is not sshd.
+allow ssoosshd_nss_t nsswitch_domain:dir search_dir_perms;
+allow ssoosshd_nss_t nsswitch_domain:file read_file_perms;

@@ -65,11 +65,23 @@ import (
 // @tag.description            Called by the web UI, session-authenticated
 // @tag.name                   auth
 // @tag.description            Browser-facing OIDC redirects
+// @tag.name                   nss
+// @tag.description            Called by the ssoosshd-nss host daemon, authenticated by a fleet API key
 //
 // @securityDefinitions.apikey sessionCookie
 // @in                         cookie
 // @name                       ssoossh_session
 // @description                The session established by /auth/callback. Sent by the browser automatically; the ssoossh client never has one, and the endpoints it calls do not require one.
+//
+// @securityDefinitions.apikey nssKeyID
+// @in                         header
+// @name                       X-Ssoossh-Key-Id
+// @description                The fleet API key's id, "nss_" and 8 base32 characters. Fixed for the key's life; may be logged.
+//
+// @securityDefinitions.apikey nssKeySecret
+// @in                         header
+// @name                       X-Ssoossh-Key-Secret
+// @description                The fleet API key's secret, shown once when the key is created or rotated. Sent with the id on every NSS lookup; the server removes it from the request before anything is logged.
 
 // ErrorEnvelope is the body of any failed request: no payload, and the error
 // half populated. Referenced by every @Failure annotation so an error
@@ -238,4 +250,54 @@ type BrandingEnvelope struct {
 type VersionEnvelope struct {
 	Data  webtypes.VersionResponse `json:"data" validate:"required"`
 	Error *string                  `json:"error"`
+}
+
+// NSSUserEnvelope is the body of the two NSS user lookups.
+type NSSUserEnvelope struct {
+	Data  apitypes.NSSUserResponse `json:"data" validate:"required"`
+	Error *string                  `json:"error"`
+}
+
+// NSSGroupEnvelope is the body of the two NSS group lookups.
+type NSSGroupEnvelope struct {
+	Data  apitypes.NSSGroupResponse `json:"data" validate:"required"`
+	Error *string                   `json:"error"`
+}
+
+// NSSKeyListEnvelope is GET /api/nss/keys's body.
+type NSSKeyListEnvelope struct {
+	Data  webtypes.NSSKeyListResponse `json:"data" validate:"required"`
+	Error *string                     `json:"error"`
+}
+
+// NSSKeyEnvelope is the body of the routes that answer with one fleet key.
+type NSSKeyEnvelope struct {
+	Data  webtypes.NSSKeyResponse `json:"data" validate:"required"`
+	Error *string                 `json:"error"`
+}
+
+// NSSKeySecretEnvelope is the body of creating and rotating a fleet key:
+// the key and its secret, shown once.
+type NSSKeySecretEnvelope struct {
+	Data  webtypes.NSSKeySecretResponse `json:"data" validate:"required"`
+	Error *string                       `json:"error"`
+}
+
+// NSSKeySettingsEnvelope is GET /api/nss/key-settings's body.
+type NSSKeySettingsEnvelope struct {
+	Data  webtypes.NSSKeySettingsResponse `json:"data" validate:"required"`
+	Error *string                         `json:"error"`
+}
+
+// NSSKeyUsageEnvelope is GET /api/nss/keys/{id}/usage's body.
+type NSSKeyUsageEnvelope struct {
+	Data  webtypes.NSSKeyUsageResponse `json:"data" validate:"required"`
+	Error *string                      `json:"error"`
+}
+
+// NSSRotationReportEnvelope is GET /api/nss/keys/{id}/rotation-report's
+// body.
+type NSSRotationReportEnvelope struct {
+	Data  webtypes.NSSRotationReportResponse `json:"data" validate:"required"`
+	Error *string                            `json:"error"`
 }

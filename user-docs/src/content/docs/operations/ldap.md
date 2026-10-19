@@ -30,9 +30,12 @@ which is why the configuration is validated at startup rather than left to be
 discovered.
 
 **Only known users sync.** A user must have logged in at least once to
-participate in enrichment refresh, sync, or group capture. The server never
+participate in enrichment refresh, sync, or group capture. Enrichment never
 enumerates the directory, which keeps the user set self-selecting and leaves
-fan-out building on a bounded, consented population.
+fan-out building on a bounded, consented population. The
+[NSS directory](/ssoossh/operations/nss/) is the one exception, and a
+separate sync: with `nss.enabled` it stores every POSIX entry its filters
+select, whether or not anyone has logged in.
 
 ### Switching the directory off
 
@@ -116,6 +119,7 @@ ldap:
 | [`ldap.url`](/ssoossh/reference/config/ldap/#url) | empty | e.g. `ldaps://ldap.example.net` |
 | [`ldap.bind_dn`](/ssoossh/reference/config/ldap/#bind_dn) / [`bind_password`](/ssoossh/reference/config/ldap/#bind_password) | empty | the implicit "simple" bind mechanism |
 | [`ldap.base_dn`](/ssoossh/reference/config/ldap/#base_dn) | empty | the user lookup base, and the default base for field searches that name none |
+| [`ldap.schema`](/ssoossh/reference/config/ldap/#schema) | empty | a preset for `id_attribute` and the NSS keys: `rfc2307`, `rfc2307bis`, `active-directory`, `lldap` or `freeipa`; see [LDAP schema presets](/ssoossh/operations/ldap-schema-presets/) |
 | [`ldap.id_attribute`](/ssoossh/reference/config/ldap/#id_attribute) | empty | the entry's unique, immutable identifier; see [Surviving a rename](#surviving-a-rename) |
 | [`ldap.user_filter`](/ssoossh/reference/config/ldap/#user_filter) | empty | the template above |
 | [`ldap.fields`](/ssoossh/reference/config/ldap/#fields) | none | destinations mapped to directory sources; reserved names are `other_accounts`, `service_accounts`, `groups` and `name` |
@@ -202,17 +206,19 @@ containing `*` or `)` is escaped, not honored.
 or `ldap`. Rows rather than JSON, so "everyone in soc" is one indexed query.
 
 :::danger
-`user_groups` is never an authorization input. Authorization -- admin, SOC,
-auditor, and the certificate policy gates -- is evaluated from the session
-identity only. This table answers "who should this reach", never "may this
-caller do this".
+`user_groups` never grants anything. Authorization -- admin, SOC, auditor,
+fleet key admin, and the certificate policy gates -- is evaluated from the
+session identity only. This table answers "who should this reach", never "may
+this caller do this". The one exception narrows and is opt-in: see
+[Authoritative role groups](#authoritative-role-groups).
 :::
 
 **Only group names the configuration references are persisted.** The allowlist
 is the union of
 [`admin.require_group`](/ssoossh/reference/config/admin/#require_group),
 [`admin.soc_group`](/ssoossh/reference/config/admin/#soc_group),
-[`admin.auditor_group`](/ssoossh/reference/config/admin/#auditor_group), every
+[`admin.auditor_group`](/ssoossh/reference/config/admin/#auditor_group),
+[`admin.nss_key_group`](/ssoossh/reference/config/admin/#nss_key_group), every
 group name appearing in certificate policy (both `require` gates and tier
 conditions), plus
 [`ldap.sync.extra_groups`](/ssoossh/reference/config/ldap/sync/#extra_groups).
@@ -231,6 +237,85 @@ is already a name is kept as-is.
 This table is useful with LDAP disabled: OIDC group capture alone gives
 notifications a fan-out target, just a staler one -- per login rather than per
 sync.
+
+## Authoritative role groups
+
+Off by default. With
+[`ldap.authoritative_role_groups`](/ssoossh/reference/config/ldap/#authoritative_role_groups)
+on, the directory can take a role away between logins, and never grant one.
+
+**What it narrows.** The role groups are exactly
+[`admin.require_group`](/ssoossh/reference/config/admin/#require_group),
+[`admin.soc_group`](/ssoossh/reference/config/admin/#soc_group),
+[`admin.auditor_group`](/ssoossh/reference/config/admin/#auditor_group) and
+[`admin.nss_key_group`](/ssoossh/reference/config/admin/#nss_key_group)
+(fleet key admin). For a directory-linked user, a role group in the OIDC
+claim counts only while the user's latest directory read still lists it. A
+group the directory lists but the claim does not carry is never added: a
+person needs the group in both places to hold the role.
+
+**When it applies.** On every authenticated request, so a sync that stops
+listing someone's admin group takes admin away from their live sessions on
+their next request, not at their next login. A fresh login is narrowed the
+same way, and so is who counts as an admin for the admin email and for the
+[auto-disable email](#when-the-sync-disables-an-admin). The session keeps the
+login's claim and narrows it afresh each time, so a role the directory lists
+again counts again on the next request, without another login.
+
+**Who it applies to.** Only a *linked* user: one the server has resolved a
+directory entry for, meaning a `user_ldap` row with a DN or a directory id.
+Someone never matched in the directory, or anyone while LDAP is off, is never
+narrowed.
+
+**What "the latest directory read" means.** The LDAP rows in `user_groups`, as
+the last *successful* login lookup or sync pass wrote them. A read that fails
+(the directory unreachable, a bind or search error, a field search that
+fails) rewrites nothing, so an outage never takes a role away. A user the sync
+finds **missing** from the directory keeps the rows of their last successful
+read: a missing entry is
+[`sync.disable_after`](/ssoossh/reference/config/ldap/sync/#disable_after)'s
+business, and it disables the whole account rather than trimming its roles.
+
+**Names have to match exactly.** The comparison is the exact string match the
+role checks use. Directory groups are stored reduced to their CN (a `memberOf`
+DN becomes its first RDN value), so each role group name must be the same
+string in the identity provider's groups claim and as the directory group's
+CN. An identity provider that emits full DNs as group values cannot be used
+with this setting: no stored CN would ever equal the configured DN, and every
+role would be removed.
+
+**Only roles.** Lifetime policy group conditions, `cert_options` `require`
+gates and the groups that manage individual NSS keys are not narrowed -- unless
+they name a role group itself. Narrowing removes the group name from the
+session's group list, so every check that reads that list loses it, which can
+only narrow further.
+
+:::caution[Before turning it on]
+- Startup refuses the setting unless `ldap.enabled` is true and
+  `ldap.fields.groups` is mapped.
+- A read the caps truncated still counts as successful. Keep
+  [`ldap.limits.max_values_per_attribute`](/ssoossh/reference/config/ldap/#limitsmax_values_per_attribute)
+  and
+  [`ldap.limits.max_entries_per_search`](/ssoossh/reference/config/ldap/#limitsmax_entries_per_search)
+  above the largest number of groups a role holder has.
+- The rows are only as current as the last read. After turning the setting on,
+  or renaming a role group, run a sync so the directory's rows hold the names
+  the configuration now uses: until a read stores them, a linked user's role
+  does not count.
+- With [`ldap.sync.interval`](/ssoossh/reference/config/ldap/sync/#interval)
+  at zero nothing rereads the directory between logins, so only a login can
+  take a role away.
+- A database error while checking drops the role groups for that one request
+  rather than granting them unchecked; the next request checks again.
+:::
+
+**What it leaves behind.** A read that takes away a role group the user holds
+through OIDC writes one `user.role_narrowed_by_directory` audit event, naming
+the groups and whether a login or the sync made the read. That is one event
+per change, not one per request. A login that narrows records the removed
+groups on its `auth.login` event as `role_groups_removed_by_directory`, and
+each live session logs the change once at INFO when a role stops counting and
+again when it counts again.
 
 ## The sync
 
@@ -326,6 +411,11 @@ calls it something else:
 | FreeIPA | `ipaUniqueID` | UUID string |
 | 389 DS / Netscape (legacy) | `nsuniqueid` | UUID-like string |
 
+[`ldap.schema`](/ssoossh/reference/config/ldap/#schema) sets the right one
+for your directory, along with the NSS attribute names; see
+[LDAP schema presets](/ssoossh/operations/ldap-schema-presets/), including
+what to do on a database that already stores ids from another attribute.
+
 If you do not know which one your directory has, run a probe from
 **Admin → Directory** and read the suggestion: the probe requests all of them
 by name (they are operational attributes, so `*` does not return them) and
@@ -387,7 +477,10 @@ group that has since stopped granting admin no longer counts, and someone who
 has not logged in for 60 days is not emailed. The login rows are read once per
 pass, for every user at once, and only when the pass disables someone. The
 snapshot only decides who is told: it grants nothing, and authority still
-comes from the session.
+comes from the session. With
+[authoritative role groups](#authoritative-role-groups) on, the login's groups
+are narrowed by the user's stored directory rows first, so an admin the
+directory had stopped listing before the entry went missing is not emailed.
 
 An admin who qualifies gets the `admin_auto_disabled` email at their stored
 address, at their own email detail level. It says the account was disabled
@@ -422,8 +515,10 @@ Removing a user from the directory now disables the account within
 `disable_after` of the first pass that notices, where previously removal took
 effect only at their next login. Losing one linked account rather than the whole entry takes effect
 on the person's next request, since account lists are re-read per request.
-Group downgrades -- still in the directory, out of a role group -- still ride
-out the session, unchanged. See
+Group downgrades -- still in the directory, out of a role group -- ride out
+the session unless
+[authoritative role groups](#authoritative-role-groups) are on, in which case
+they take effect on the person's next request after the sync sees them. See
 [Roles and containment](/ssoossh/operations/roles/).
 
 ## Running a sync by hand
@@ -462,6 +557,64 @@ visible as a pass that ran and failed.
 
 A manual sync is audited as `ldap.sync_triggered`, with the counts and
 `dry_run`.
+
+### Forcing a sync from the command line
+
+A restart does not run a sync: the scheduled pass first runs one
+`ldap.sync.interval` after the process starts, on purpose, since a sync that
+disables accounts during boot is the hardest kind to interrupt. To force a
+refresh from a shell or a script, without a browser session, run the same
+pass on the server host:
+
+```sh
+ssoosshd -c /etc/ssoossh/ssoosshd.yaml ldap sync --dry-run
+ssoosshd -c /etc/ssoossh/ssoosshd.yaml ldap sync
+ssoosshd ldap sync --json
+```
+
+It is the pass **Sync now** runs, in the command's own process, against the
+database and directory the config file names: the LDAP pass, then the NSS
+full sync when `nss.enabled` is on and the pass is not a dry run. Unlike the
+button, a live pass is the default here; pass `--dry-run` to change nothing.
+
+- **Safe beside a running server.** The scheduled syncs are not
+  leader-elected, so every instance already runs its own, and the command is
+  one more. On SQLite it is a second writer to the same file, which works:
+  the server opens SQLite in WAL mode with a busy timeout, so the command's
+  writes wait for the server's rather than failing.
+- **The schema must match.** The database is never migrated by the command;
+  if its schema is not the one this `ssoosshd` expects, it refuses to run.
+  Use the binary the server runs.
+- **Mail goes out before it exits.** An admin the pass disables is emailed
+  by the command itself, through the same templates and relay, when
+  `mail.enabled` is on.
+- **Audited as the local CLI.** The `ldap.sync_triggered` event's actor is
+  `local-cli`, with no user behind it; its detail carries `via: cli`, the
+  host, and the operating-system account that ran it (`os_user`, and
+  `sudo_user` under sudo). The run row records the pass as manual with no
+  admin.
+
+The report is one fact per line, with a fixed label, so it can be grepped:
+
+```text
+ldap sync      completed (run 6c0d1e2f-... on ssh-1)
+dry run        no
+users          12
+found          10
+missing        1
+failed         1
+disabled       1
+re-enabled     0
+nss sync       completed
+nss accounts   seen=40 created=2 updated=3 skipped=0 refused=0 failed=0 missing=1 tombstoned=0
+nss groups     seen=8 created=0 updated=1 skipped=0 refused=0 failed=0 missing=0 tombstoned=0
+```
+
+`--json` prints what `POST /api/admin/ldap/sync` returns instead. The
+command exits non-zero, with the reason on stderr, when the directory could
+not be reached or either pass failed; a pass that completed exits zero
+whatever it concluded about individual users. The process log goes to stderr
+(and to any log files the config names), so stdout is only the report.
 
 ## Probing the directory
 
@@ -713,7 +866,11 @@ actually mint with.
 
 Group membership is the deliberate exception: roles are read at login and
 never re-read, so the session lifetime stays the revocation window for a role
-(see [Roles and containment](/ssoossh/operations/roles/)).
+(see [Roles and containment](/ssoossh/operations/roles/)). The opt-in
+exception to the exception is
+[authoritative role groups](#authoritative-role-groups), which lets each
+request drop a role group the directory no longer lists, at the cost of two
+small reads per request for someone holding a role.
 
 ## Notifications fan-out
 
@@ -731,7 +888,10 @@ With `ldap.enabled: false`, only the OIDC rows resolve -- see
 
 ## Out of scope
 
-- **Authorization from persisted groups.** See the invariant above.
+- **Authorization from persisted groups.** See the invariant above. The
+  directory can take a role away with
+  [authoritative role groups](#authoritative-role-groups), and nothing it
+  stores can grant one.
 - **Directory enumeration** and shadow users.
 - **LDAP as an authentication source.** OIDC authenticates; LDAP only ever
   enriches.

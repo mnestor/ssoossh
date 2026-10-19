@@ -13,8 +13,10 @@ is the glibc side (README U1). Shared context in [README.md](README.md).
   socket-activated by systemd. No NSS module of our own.
 - New shared package `internal/varlink`: minimal varlink codec (client and
   server halves), used by the daemon and by `ssoossh host principals`.
-- `internal/api` additions: TLS pinning, SRV discovery, fleet key headers,
-  NSS lookup methods (none exist today; README R3).
+- `internal/api` additions: TLS pinning, fleet key headers, NSS lookup
+  methods (none exist today; README R3). SRV discovery was dropped on
+  2026-10-19: `server` is required; failover is the load balancer's behind
+  one URL; `%d` went with it.
 - Packaging: one `ssoosshd-nss` `.deb`/`.rpm` via this repo's nfpm holding
   the daemon and its `.socket` and `.service` units. No `.apk`: musl
   cannot load NSS modules and has no systemd (README U2).
@@ -24,12 +26,17 @@ is the glibc side (README U1). Shared context in [README.md](README.md).
 
 ## Platform floor
 
-systemd 245 or later, glibc, and `systemd` on the `passwd:` and `group:`
-lines of `/etc/nsswitch.conf` (default on authselect profiles, Debian 12+
-with `libnss-systemd`, Arch, Ubuntu, openSUSE; README). The daemon reads
-`nsswitch.conf` at start and logs an error, and reports in `status`, when
-either line lacks `systemd`, so a missing entry is not mistaken for missing
-users.
+systemd 245 or later, glibc, and `systemd` on the `passwd:`, `group:`
+**and `shadow:`** lines of `/etc/nsswitch.conf`. Measured on 2026-10-17
+(README "Open check results"): `passwd:` and `group:` carry it by default
+on EL9, EL10, Fedora and Arch, and on Debian and Ubuntu once
+`libnss-systemd` is installed; `shadow:` carries it only on EL10, Fedora
+and Arch; openSUSE Leap 15.6 ships `compat` on all three and needs an
+edit. Without `systemd` on `shadow:`, sshd with `UsePAM yes` refuses
+every directory user and `UsePAM no` admits a locked one (Alma 9). The
+daemon reads `nsswitch.conf` at start and logs an error, and reports in
+`status`, when any of the three lines lacks the `systemd` token, so a
+missing entry is not mistaken for missing users.
 
 ## Layout
 
@@ -108,6 +115,47 @@ use it.
 - start-up opens the cache and starts accepting before any upstream call,
   because socket activation queues lookups until then.
 
+**Connection limits** *(added 2026-10-18 after the threat review)*. The
+socket is world-connectable and the accept loop spawned a goroutine per
+connection with no bound, so a local user could hold connections open
+(sending a call inside each 1 s read timeout) until descriptors, threads or
+memory ran out, and a dead daemon stalls every lookup on the host. Now:
+
+- at most `socket_max_connections` (1024) connections are served at once,
+  a quarter of them kept for uid 0 peers. sshd, logind, setuid `sudo` and
+  `su`, and `systemd-userwork` all connect as uid 0, so a flood from one
+  unprivileged uid cannot stop logins or `sudo`. Peer credentials are read
+  in the accept loop (`SO_PEERCRED` does not block) to decide;
+- a connection over the cap has its call read (within 250 ms, so closing
+  does not reset the connection before the caller reads the answer),
+  answered `ServiceNotAvailable` like a lookup over the upstream cap, and
+  closed. At most 64 refusals run at once; past that a connection is
+  closed unanswered, which the caller sees as the same not-found. Refusals
+  are logged once a minute with a count;
+- `socket_idle_timeout` (10 s) is the total a connection may spend waiting
+  for calls over its life. Calls never reset it and a call in progress (an
+  upstream wait, a `GetMemberships` stream, a blocked write) never counts
+  against it, so no call is cut;
+- `EMFILE`, `ENFILE`, `ENOBUFS` and `ENOMEM` from accept are waited out
+  (5 ms doubling to 1 s), not returned, since returning stopped the daemon;
+- the service unit sets `LimitNOFILE=8192`, `MemoryMax=512M` with
+  `GOMEMLIMIT=400MiB`, and `TasksMax=4096`, above what 1024 connections
+  can use (measured: 10 KiB an idle connection, 78 KiB one holding a
+  64 KiB call that never ends).
+
+The cap's size comes from systemd's client behaviour (v257 sources).
+nss-systemd passes `USERDB_EXCLUDE_NSS` (`userdb-glue.c`), so it skips the
+multiplexer and opens one connection per service for each lookup, closing
+it after the answer. `initgroups` holds the `GetMemberships` stream open
+while it resolves each group with `groupdb_by_name` and NSS allowed, which
+goes through `io.systemd.Multiplexer` when systemd-userdbd runs, whose
+`systemd-userwork` workers (at most `USERDB_WORKERS_MAX`, 4096) each serve
+one client at a time: so two connections per thread in a lookup at most.
+Steady load is therefore a few connections; the large case is the
+listen backlog after a restart (`Backlog=` is capped by
+`net.core.somaxconn`, typically 4096), and a lookup refused then is a
+not-found once, as an upstream timeout is.
+
 ## Record mapping
 
 **User record**, built from the Part 1 user JSON after policy:
@@ -149,9 +197,10 @@ No `members`; `nss-systemd` fetches them through `GetMemberships`.
   `GetGroupRecord(groupName)` per group, skipping the primary gid. One
   login is 1 + N calls, all served from cache. Those group lookups may
   arrive through `systemd-userdbd` rather than from the caller, and they
-  run with the NSS exclusion cleared (`nss-systemd.c:1025`), so a
-  membership in a local group such as `sudo` resolves through `files` even
-  though this daemon answers `NoRecordFound` for it (README U12).
+  run with the NSS exclusion cleared (`nss-systemd.c:1025`), so each name
+  resolves through `files` first (README U12). The daemon therefore lists
+  a membership only under a name that resolves to its own gid: the gid
+  rule under "Policy and sanity rules".
 - `nss-systemd` never resolves `root` or `nobody` through userdb.
 
 ## `internal/api` additions
@@ -161,11 +210,27 @@ No `members`; `nss-systemd` fetches them through `GetMemberships`.
   `VerifyConnection` checks the leaf SPKI against pins. `Proxy: nil` on the
   transport (do not use `http.ProxyFromEnvironment`). Existing callers keep
   current behaviour when unset.
+- `Config.TLSSystemRoots` *(added 2026-10-19)*: the same pinned mode (TLS
+  1.3 minimum, no proxy, pins checked when set) with the host's system
+  trust store as the trust root, loaded with `x509.SystemCertPool` when the
+  client is built (the daemon's first lookup), so an empty or unreadable
+  store fails with an error naming the store, not as a handshake that
+  looks like the server's fault. Mutually
+  exclusive with `TLSCAFile` and `SkipVerifySSL`. `nss.yaml` spells it
+  `tls_ca_file: system`; `nssd/upstream` translates the word, so
+  `internal/api` has no magic file name. The trust choice stays
+  mandatory: empty `tls_ca_file` with no pin is still a config error, so
+  an empty file never silently means the weakest mode. Unlike a CA file,
+  the system pool honours `SSL_CERT_FILE` and `SSL_CERT_DIR` from the
+  daemon's environment (the unit's, under systemd). Every CA the host
+  trusts can answer for the server, so the daemon logs a warning at start
+  when no pin is set as well, and `status` names the trust on its `trust:`
+  line.
 - `Config.Headers` or a dedicated `KeyID/KeySecret` pair sent on NSS calls
   only; secret redacted in `traceRequest`/`logHeaders`.
-- `DiscoverServer(ctx, domain)`: `net.Resolver.LookupSRV("ssoossh", "tcp",
-  domain)`, RFC 2782 priority/weight order. Pin unchanged: a spoofed SRV
-  points at a server that fails the pin.
+- No server discovery. SRV discovery was dropped on 2026-10-19: `server`
+  is required; failover is the load balancer's behind one URL; `%d` went
+  with it.
 - `GetNSSUser(ctx, byName|byUID)`, `GetNSSGroup(ctx, byName|byGID)`
   returning typed structs in `internal/apitypes`; distinguish 404, 401, 429
   (honour `Retry-After`), other.
@@ -175,9 +240,8 @@ No `members`; `nss-systemd` fetches them through `GetMemberships`.
 Root 0600; environment not consulted. Option names follow `sssd.conf(5)`.
 
 ```yaml
-server: ""                        # https URL; empty -> SRV via dns_discovery_domain
-dns_discovery_domain: ""          # empty -> host's domain
-tls_ca_file: ""                   # one of these two is required
+server: ""                        # https URL, required (SRV discovery dropped 2026-10-19)
+tls_ca_file: ""                   # one of these two is required; a path or "system"
 tls_spki_pin: []
 api_key_file: /etc/ssoossh/nss.key  # 0600, line 1 key_id, line 2 key_secret
 timeout: 5s
@@ -197,18 +261,17 @@ cache_expire_offline: 0           # 0 = never
 
 login_soft_ttl: 60s
 login_refresh_timeout: 1s
-sshd_paths: [/usr/sbin/sshd, /usr/sbin/sshd-session]  # README check 4
+sshd_units: [sshd.service, ssh.service, sshd@.service, ssh@.service]  # "@.service" matches any instance
 
 min_id: 1000
 max_id: 0                         # 0 = no max
 override_gid: 0
 override_homedir: ""
-fallback_homedir: /home/%u        # %u user, %U uid, %d domain, %h original
+fallback_homedir: /home/%u        # %u user, %U uid, %h original
 override_shell: ""
 shell_fallback: /bin/sh
 allowed_shells: []                # empty -> /etc/shells
 vetoed_shells: []
-shell_map: {}                     # zsh: /opt/homebrew/bin/zsh
 disabled_shell: /usr/sbin/nologin
 ignore_group_members: false
 filter_users: [root]
@@ -246,13 +309,18 @@ require_groups: []
    host overrides apply on read so editing overrides needs no cache flush.
 8. Map to a record (above), reply, and wait for the next call or close.
 
-**Peer is sshd** (README R5): peer uid is 0 **and**
-`readlink(/proc/<pid>/exe)` is in `sshd_paths`. `comm` alone is not
-trusted. This works because `nss-systemd` connects directly from the
-calling process for user and membership lookups (README U1). A caller
-started with `SYSTEMD_NSS_SERVER_SIDE_NSS=1` reaches the daemon through
-`systemd-userwork` instead and simply does not get the refresh (README
-U13).
+**Peer is sshd** (README R5): peer uid is 0 **and** the last component of
+its systemd cgroup (`/proc/<pid>/cgroup`, the v2 line or, on hybrid hosts,
+`name=systemd`) is in `sshd_units`. `comm` alone is not trusted. Not the
+executable path: with an empty capability bounding set,
+`readlink(/proc/<pid>/exe)` of sshd fails with `EACCES` on every call,
+because the kernel allows it only to a reader holding every capability
+the target holds, or `CAP_SYS_PTRACE` (measured on EL9 and EL10). The
+cgroup file needs no capability, and only root can move a process into
+`sshd.service`. A failed read is "not sshd", quietly. This works because
+`nss-systemd` connects directly from the calling process for user and
+membership lookups (README U1). `SYSTEMD_NSS_SERVER_SIDE_NSS=1` has no
+effect on systemd 252 or 257 (U13).
 
 **`RefreshUser`**: replies at once (or not at all when `oneway`) and
 refreshes in the background. Debounce per name: at most one refresh per
@@ -267,21 +335,61 @@ cache as if offline until `cache_expire_offline`; latch clears on SIGHUP or
 key file change. Offline: exponential backoff from `offline_timeout`, serve
 cache.
 
+*(added 2026-10-18 after a field failure)* A middlebox on the path silently
+dropped the host-to-server half of an idle kept-alive HTTP/2 connection;
+the next lookup was written into it and spent the whole `timeout` there,
+and the retries reused the same pooled connection, so the host went
+offline for minutes. Now the ordinary-call transport pings a connection
+that has read nothing for 15 s and closes it when no answer comes within
+5 s (`http.HTTP2Config.SendPingTimeout`, `PingTimeout`; not on the events
+stream). Each attempt but the last is bounded by
+`min(left/2, max(socket_answer_deadline - 1s, socket_answer_deadline/2))`,
+1.5 s by default, so a retry still answers inside the answer deadline, and
+an attempt that got no HTTP answer retires its client so the retry dials a
+fresh connection (closing idle connections alone does not drop an HTTP/2
+connection whose cancelled stream is still being torn down). A timeout now
+says whether it was on a reused connection or before one was made.
+
 ## Policy and sanity rules
 
 Applied to every upstream answer before caching; a failing entry is logged
 with the reason and treated as `NoRecordFound` (and negative-cached).
 
 - uid and gid within `min_id..max_id`.
+  Operators bracket their directory's real allocation with both, since
+  the default `max_id: 0` leaves systemd's reserved ranges (homed,
+  `DynamicUser=`, container uids) servable: see `hosts/nss.md`, "Choosing
+  min_id and max_id" (added 2026-10-18 after the threat review).
 - Name absent from `/etc/passwd` / `/etc/group`.
-- `require_groups`: user must be a member of one, else `NoRecordFound`.
+- `require_groups`: user must be a member of one, else `NoRecordFound`,
+  checked against the memberships the gid rule keeps, by directory name.
+- **Gid rule for memberships** (decided 2026-10-18 by the owner; README
+  U12): match on gid, never on name. For each membership in a user
+  answer, first match wins:
+  1. gid outside `min_id..max_id`: dropped, as the group answer is;
+     logged once per name and gid per daemon run.
+  2. gid of a local group: the local group's name is listed (it resolves
+     to the same gid through `files`), unless `filter_groups` lists it; a
+     debug line when the names differ.
+  3. name of a local group with another gid: a name collision. Dropped,
+     since userdb cannot carry a gid without a name that resolves to it,
+     so the member does not get the directory gid on this host. Warned
+     about once per name, directory gid and local gid per daemon run.
+  4. invalid name or in `filter_groups`: dropped.
+  5. otherwise the directory name.
+- Group answers (and membership stubs): a name collision is still not
+  served by name or gid, and is recorded and warned about under the same
+  once-per-run key, as is a gid outside the range. Only server answers and
+  memberships are checked, never the local-name short-circuit, so the log
+  cannot flood.
 - Home: `override_homedir` -> server `home` -> `fallback_homedir`;
   must be absolute after expansion.
 - Shell, first acceptable wins:
-  `override_shell` -> `shell_pref` resolved by `shell_map` then basename
-  match in `/etc/shells` -> server `shell` -> `shell_fallback`.
-  Acceptable = in `allowed_shells` (or `/etc/shells` when empty) and not in
-  `vetoed_shells`.
+  `override_shell` -> server `shell` (or a host override's) ->
+  `shell_fallback`. Acceptable = in `allowed_shells` (or `/etc/shells` when
+  empty) and not in `vetoed_shells`. The user's own shell choice and the
+  `shell_map` that resolved it are gone (removed 2026-10-18 after the threat review: the shell comes from the directory and host policy only); a host config that still
+  sets `shell_map` fails to load, because unknown keys are refused.
 - `status` `disabled`/`deleted`: shell = `disabled_shell`, **exempt from the
   shells check** (README R4); `locked: true` (README U6); log warning when
   served to sshd.
@@ -309,6 +417,58 @@ the server only does that after an admin accepted it (README R38), but is
 logged at warning with the name and both numbers so the change is visible
 in the journal of every host it reached.
 
+*(added 2026-10-18 after a field report)* A user record and a group record
+both say who is in a group, and each is cached on its own TTL, so a host
+showed `id sonia` with `all-users` (fresh user fetch) while
+`getent group all-users` still listed only the members it had when the group
+was cached. The daemon now keeps the two coherent from what it already
+fetches, with no extra server call on the lookup path, by marking the
+contradicted entry stale (refetched on its next lookup, still served while
+the server is unreachable). It never edits a member list into a record the
+server did not send.
+
+- A user stored from the server (lookup, background refresh, the sshd login
+  refresh) is checked against the groups it is in. Every served membership
+  whose cached group member list lacks the user is marked stale, whether or
+  not the membership changed since the cached user entry it replaces: a
+  group cached from a server state that did not yet list the user (a server
+  repopulating its memberships after a reset, while the host kept its
+  persistent cache) is repaired by the user's next fetch. A group the user
+  left (in the replaced entry, not in the fresh one) whose cached list still
+  names the user is marked stale too, and so is every group still naming a
+  user the server no longer serves. The primary group, memberships the
+  policy drops, stub entries, a truncated list lacking the user, and every
+  group under `ignore_group_members` are left alone.
+- A disagreement the server itself keeps (the directory primary group it
+  adds to a user's list under `nss.auto_private_groups: true`, with no
+  membership row behind it, so the group's member list never names the
+  user) is confirmed rather than refetched on every user fetch. Each
+  (group, user) pair that marked a group stale is remembered in memory;
+  when the group is next stored from the server and its fresh list still
+  lacks the user, the pair is confirmed, and later user fetches whose
+  membership in that group has not changed do not mark it again. A
+  confirmed pair is cleared when a fresh copy of the group names the user
+  or is truncated, when a fresh copy's member list differs from the cached
+  one it replaces (the group is in flux, so the next disagreement is
+  weighed again), when the user's record leaves the group, or when it is
+  evicted from the map (4096 pairs, oldest marked first; an eviction costs
+  at most one extra refetch). A membership the user joined is always
+  weighed. So a transient disagreement heals on the next user fetch, and a
+  lasting one costs one extra group fetch, plus one per change of that
+  group's member list and one per daemon restart.
+- A group stored from the server is compared with the cached group entry it
+  replaces. Each user added to or removed from the member list whose cached
+  memberships do not already say the same is marked stale, so the next
+  `initgroups` (`id`) refetches the user.
+- Not covered by a user fetch: a group the user is in neither before nor
+  after, whose cached list still names the user. Finding it would mean
+  decoding every cached group, so the group-side check above and the group
+  TTL bound it instead.
+
+Each check reads only entries it can name by primary key (the user's served
+groups, or the group's changed members), and logs at debug when it marks
+one.
+
 Background sweep at `refresh_expired_interval`, jittered, bounded by
 `refresh_rate`. Singleflight per `(method, key)`; use `golang.org/x/sync`
 only if already a dependency, else a small local implementation.
@@ -324,7 +484,7 @@ concurrently and works in memory mode.
 | `ssoosshd-nss run` | default; the daemon |
 | `ssoosshd-nss cache -E \| -u NAME \| -g NAME \| -U \| -G` | `sss_cache` equivalent: mark stale, never delete |
 | `ssoosshd-nss override list \| set USER --uid --gid --home --shell \| unset USER` | edits `nss-overrides.yaml` atomically, signals reload |
-| `ssoosshd-nss status` | online/offline/unauthorized, server, key id, cache counts, last error, `nsswitch.conf` check, and a warning when nscd or unscd is running (README R26) |
+| `ssoosshd-nss status` | online/offline/unauthorized, server, key id, cache counts, last error, group name collisions and groups refused by the id range since the start or the last SIGHUP (twenty of each, then a count), `nsswitch.conf` check, and a warning when nscd or unscd is running (README R26) |
 | `ssoosshd-nss lookup user NAME \| group NAME \| memberships NAME` | calls the userdb socket exactly as `nss-systemd` does; for debugging |
 
 `userdbctl user NAME` and `getent passwd NAME` exercise the full path
@@ -384,10 +544,9 @@ instead of failing (README check 2), and the daemon needs no write access
 under `/run/systemd`. `RuntimeDirectory` now holds only the admin socket.
 `StateDirectory` is required for the persistent cache (README R7).
 `SYSTEMD_BYPASS_USERDB` keeps the daemon from ever querying itself (README
-U9); with `CGO_ENABLED=0` it never calls NSS anyway. Reading
-`/proc/<pid>/exe` of root-owned sshd as root needs no capability with an
-empty bounding set only if `ptrace` access checks pass; verify on a host
-and add `CAP_SYS_PTRACE` to the bounding set only if `readlink` fails.
+U9); with `CGO_ENABLED=0` it never calls NSS anyway. The bounding set stays
+empty: the sshd check reads `/proc/<pid>/cgroup`, which needs no
+capability (see "Peer is sshd").
 
 ## Packaging
 
@@ -448,8 +607,7 @@ systemd as PID 1 covers socket activation across a restart.
   `continues` streams; `FuzzDecode` (missing NUL, oversize, invalid JSON,
   truncated stream).
 - `internal/api`: httptest TLS server with correct and wrong SPKI pin, CA
-  file, proxy env set and ignored, key headers redacted in trace output,
-  SRV ordering with a fake resolver.
+  file, proxy env set and ignored, key headers redacted in trace output.
 - `nssd/userdb`: every method with each primary-key combination,
   `BadService`, `ConflictingRecordFound`, `NonMatchingRecordFound`,
   `InvalidParameter` for `fuzzyNames`/`uuid`, `EnumerationNotSupported`,

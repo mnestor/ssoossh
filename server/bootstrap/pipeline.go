@@ -89,6 +89,25 @@ func (a *app) initNotifications() error {
 		return nil
 	}
 
+	handler, err := a.newNotificationHandler()
+	if err != nil {
+		return err
+	}
+	handler.Register(a.pubSub.Router, a.pubSub.Subscriber)
+
+	slog.Info("mail notifications enabled",
+		"relay", fmt.Sprintf("%s:%d", a.config.Mail.SMTP.Host, a.config.Mail.SMTP.Port),
+		"tls", a.config.Mail.SMTP.TLS,
+		"auth", a.config.Mail.SMTP.Auth)
+
+	return nil
+}
+
+// newNotificationHandler builds the delivery handler from the mail config:
+// the templates, with any local overrides, and the relay. Shared with
+// `ssoosshd ldap sync`, which delivers through it directly (see
+// service.NotificationHandler.InlinePublisher).
+func (a *app) newNotificationHandler() (*service.NotificationHandler, error) {
 	// Advice about a configuration that is valid but weaker than it should
 	// be — a plaintext or unauthenticated relay reached over a network.
 	// Warned rather than refused: the local-relay deployment legitimately
@@ -99,7 +118,7 @@ func (a *app) initNotifications() error {
 
 	renderer, err := mail.NewRenderer(a.config.Mail.TemplateDir, a.config.Mail.SubjectPrefix)
 	if err != nil {
-		return fmt.Errorf("failed to load the notification templates: %w", err)
+		return nil, fmt.Errorf("failed to load the notification templates: %w", err)
 	}
 	if overrides := renderer.Overrides(); len(overrides) > 0 {
 		slog.Info("using local notification template overrides",
@@ -108,17 +127,10 @@ func (a *app) initNotifications() error {
 
 	sender, err := mail.NewSMTPSender(&a.config.Mail)
 	if err != nil {
-		return fmt.Errorf("failed to configure the mail relay: %w", err)
+		return nil, fmt.Errorf("failed to configure the mail relay: %w", err)
 	}
 
-	service.NewNotificationHandler(a.db, renderer, sender).Register(a.pubSub.Router, a.pubSub.Subscriber)
-
-	slog.Info("mail notifications enabled",
-		"relay", fmt.Sprintf("%s:%d", a.config.Mail.SMTP.Host, a.config.Mail.SMTP.Port),
-		"tls", a.config.Mail.SMTP.TLS,
-		"auth", a.config.Mail.SMTP.Auth)
-
-	return nil
+	return service.NewNotificationHandler(a.db, renderer, sender), nil
 }
 
 // initSignerHandler registers the signer handler on the pub/sub Router.

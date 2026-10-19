@@ -27,8 +27,39 @@ import {
 	AuditEnrollmentRedeemed,
 	AuditLDAPProbed,
 	AuditLDAPSyncTriggered,
+	AuditNSSAccountCreated,
+	AuditNSSAccountMissing,
+	AuditNSSAccountRenamed,
+	AuditNSSAccountRevived,
+	AuditNSSAccountTombstoned,
+	AuditNSSGIDCollision,
+	AuditNSSGroupCreated,
+	AuditNSSGroupMembersChanged,
+	AuditNSSGroupMissing,
+	AuditNSSGroupRenamed,
+	AuditNSSGroupRevived,
+	AuditNSSGroupTombstoned,
+	AuditNSSIDChangeAccepted,
+	AuditNSSIDChangePending,
+	AuditNSSInitialImport,
+	AuditNSSKeyCreated,
+	AuditNSSKeyExpiredAttempt,
+	AuditNSSKeyPreviousCleared,
+	AuditNSSKeyRevoked,
+	AuditNSSKeyRevokedAttempt,
+	AuditNSSKeyRotated,
+	AuditNSSKeySourceAlert,
+	AuditNSSKeyUpdated,
+	AuditNSSLookupForbidden,
+	AuditNSSMissRateAlert,
+	AuditNSSNameCollision,
+	AuditNSSNameMismatch,
+	AuditNSSPrivilegedNameLookup,
+	AuditNSSTombstonePurged,
+	AuditNSSUIDCollision,
 	AuditUserAutoDisabled,
 	AuditUserDisableRefused,
+	AuditUserRoleNarrowedByDirectory,
 	AuditUserDisabled,
 	AuditUserEnabled
 } from '#lib/api/generated/auditactions.js';
@@ -107,6 +138,9 @@ export const auditPhrasing: Record<string, string> = {
 	// the phrase has to carry "self" on its own. Worded to match
 	// auth.login_denied, the other refusal on a timeline.
 	[AuditUserDisableRefused]: 'was refused a self-disable',
+	// A system event, so it reads "The server removed a role the directory
+	// no longer lists from alice"; the detail names the groups.
+	[AuditUserRoleNarrowedByDirectory]: 'removed a role the directory no longer lists from',
 	[AuditLDAPSyncTriggered]: 'ran the directory sync',
 	[AuditLDAPProbed]: 'probed the directory',
 	// Worded like ldap.sync_triggered, its neighbour on the admin pages.
@@ -119,7 +153,51 @@ export const auditPhrasing: Record<string, string> = {
 	// phrased: the filter is a display rule and this is what the row
 	// would read as if it were ever lifted.
 	[AuditAdminUserViewed]: 'viewed a user record',
-	[AuditAdminAuditViewed]: 'viewed the audit log'
+	[AuditAdminAuditViewed]: 'viewed the audit log',
+	// The NSS directory's alerts are system events, read as "The server
+	// ...", and repeat daily while the condition lasts.
+	[AuditNSSUIDCollision]: 'withheld two directory accounts that share a uid',
+	[AuditNSSGIDCollision]: 'withheld two directory groups that share a gid',
+	[AuditNSSNameCollision]: 'withheld two directory entries that share a name',
+	[AuditNSSIDChangePending]: 'held back a changed uid or gid from the directory',
+	// The target is the person, so the row reads "The server found that
+	// the POSIX name differs from the username of bob".
+	[AuditNSSNameMismatch]: 'found that the POSIX name differs from the username of',
+	[AuditNSSIDChangeAccepted]: 'accepted a uid or gid change from the directory',
+	// System once nss.tombstone_retention has passed, an admin when purged
+	// early.
+	[AuditNSSTombstonePurged]: 'purged a deleted directory account or group',
+	// The group kept its gid and members; the detail has the old and new
+	// name and DN.
+	[AuditNSSGroupRenamed]: 'followed a directory group that was renamed or moved',
+	// The directory's own changes as the sync or a read stored them,
+	// system events read as "The server ...", or an admin's when an
+	// accepted id change or an early purge moved the memberships.
+	[AuditNSSAccountCreated]: 'stored a new directory account',
+	[AuditNSSGroupCreated]: 'stored a new directory group',
+	[AuditNSSAccountRenamed]: 'followed a directory account that was renamed',
+	[AuditNSSAccountMissing]: 'found a directory account missing',
+	[AuditNSSGroupMissing]: 'found a directory group missing',
+	[AuditNSSAccountTombstoned]: 'deleted a directory account that stayed missing',
+	[AuditNSSGroupTombstoned]: 'deleted a directory group that stayed missing',
+	[AuditNSSAccountRevived]: 'restored a directory account that reappeared',
+	[AuditNSSGroupRevived]: 'restored a directory group that reappeared',
+	[AuditNSSGroupMembersChanged]: "changed a directory group's members",
+	[AuditNSSInitialImport]: 'imported the directory for the first time',
+	// System events from the NSS lookup endpoints: no session, so each row
+	// reads "The server ...". The host's address is in source_ip and the
+	// fleet key it presented in key_id.
+	[AuditNSSLookupForbidden]: 'refused a directory lookup from outside the allowed networks',
+	[AuditNSSKeyRevokedAttempt]: 'refused a directory lookup with a revoked fleet key',
+	[AuditNSSKeyExpiredAttempt]: 'refused a directory lookup with an expired fleet key',
+	[AuditNSSKeySourceAlert]: 'saw a fleet key used from more addresses than expected',
+	[AuditNSSMissRateAlert]: 'saw a fleet key looking up many unknown names',
+	[AuditNSSPrivilegedNameLookup]: 'saw a directory lookup for a privileged name',
+	[AuditNSSKeyCreated]: 'created a fleet key',
+	[AuditNSSKeyUpdated]: 'changed a fleet key',
+	[AuditNSSKeyRotated]: 'rotated a fleet key',
+	[AuditNSSKeyPreviousCleared]: "ended a fleet key's previous secret early",
+	[AuditNSSKeyRevoked]: 'revoked a fleet key'
 };
 
 /**
@@ -157,7 +235,8 @@ export const auditNamespaceLabels: [string, string][] = [
 	[auditNamespace.User, 'Accounts'],
 	[auditNamespace.Enrollment, 'Service codes'],
 	[auditNamespace.LDAP, 'Directory'],
-	[auditNamespace.Admin, 'Admin views']
+	[auditNamespace.Admin, 'Admin views'],
+	[auditNamespace.NSS, 'NSS directory']
 ];
 
 /**
@@ -226,4 +305,56 @@ export function auditFilterSearch(action: string, sourceIP: string): string {
 	if (sourceIP) query.set('source_ip', sourceIP);
 	const search = query.toString();
 	return search ? `?${search}` : '';
+}
+
+/** detailValue renders one detail value on a single line: a list joined with
+ * commas, an object as its fields ("uid 1037, name mnestor"), anything else
+ * as its string. Empty parts are left out. */
+function detailValue(value: unknown): string {
+	if (Array.isArray(value)) {
+		const items = value.map(detailValue).filter((item) => item !== '');
+		// Items that are themselves field lists need a stronger separator
+		// than the commas inside them.
+		const objects = value.some((item) => item !== null && typeof item === 'object');
+		return items.join(objects ? '; ' : ', ');
+	}
+	if (value !== null && typeof value === 'object') {
+		return Object.entries(value)
+			.filter(([, v]) => v !== null && v !== undefined && v !== '')
+			.map(([k, v]) => `${k} ${detailValue(v)}`)
+			.join(', ');
+	}
+	return value === null || value === undefined ? '' : String(value);
+}
+
+/** The deepest nested object detailRows still spreads into dotted names;
+ * anything deeper is shown on one line by detailValue. */
+const detailDepth = 3;
+
+/**
+ * detailRows turns an audit event's detail into name and value rows for the
+ * timeline's field list. A nested object becomes dotted names, one row per
+ * field ("nss.accounts.created"), so a directory sync's counts read as
+ * fields instead of "[object Object]". A list of plain values is joined with
+ * commas, a list of objects shows each one's fields separated by semicolons,
+ * and empty values and empty lists are left out.
+ */
+export function detailRows(detail: Record<string, unknown> | null | undefined): [string, string][] {
+	const rows: [string, string][] = [];
+	const walk = (name: string, value: unknown, depth: number): void => {
+		if (value === null || value === undefined || value === '') return;
+		if (Array.isArray(value)) {
+			const joined = detailValue(value);
+			if (joined !== '') rows.push([name, joined]);
+			return;
+		}
+		if (typeof value === 'object' && depth < detailDepth) {
+			for (const [key, inner] of Object.entries(value)) walk(`${name}.${key}`, inner, depth + 1);
+			return;
+		}
+		const text = detailValue(value);
+		if (text !== '') rows.push([name, text]);
+	};
+	for (const [key, value] of Object.entries(detail ?? {})) walk(key, value, 0);
+	return rows;
 }

@@ -19,9 +19,15 @@
 	// The reason is not decoration. The server validates one on every
 	// audited action that reaches here (see server/service), so a confirm
 	// button that could be pressed without one would be a button whose only
-	// outcome is a 400. `reasonless` is for the one action the server takes
-	// no reason for, the live LDAP sync: the dialog then carries only the
+	// outcome is a 400. `reasonless` is for an action the server takes no
+	// reason for, the live LDAP sync: the dialog then carries only the
 	// consequence and the two buttons.
+	//
+	// `confirmText` is the typed confirmation, for an action that cannot be
+	// taken back and whose target is easy to mistake for its neighbour:
+	// revoking a fleet key, accepting a changed uid, purging a tombstone. The
+	// reader types the exact name or id before the button wakes, so a
+	// confirmation meant for one row cannot land on the next one.
 	interface Props {
 		/** The dialog's own heading. */
 		title: string;
@@ -37,9 +43,23 @@
 		busyLabel: string;
 		/** No reason field, for an action the server records no reason for. */
 		reasonless?: boolean;
+		/**
+		 * The exact text the reader must type before the button is enabled:
+		 * a name or an id. Shown in the label, in the mono.
+		 */
+		confirmText?: string;
+		/** What the typed text is, for the label: "the key id", "the name". */
+		confirmTextNoun?: string;
+		confirmTextTestid?: string;
 		/** `danger` for anything that takes access away. */
 		variant?: 'primary' | 'danger';
 		busy?: boolean;
+		/**
+		 * Holds the confirming button while the dialog is still finding out
+		 * what the reader must know before confirming, such as how many hosts
+		 * an action breaks. The body says what it is waiting for.
+		 */
+		confirmDisabled?: boolean;
 		/** Shown above the buttons when the last attempt failed. */
 		error?: string | null;
 		errorTitle?: string;
@@ -50,6 +70,14 @@
 		onconfirm: (reason: string) => void;
 		/** Called by Cancel and by Escape, which a native dialog gives free. */
 		oncancel: () => void;
+		/**
+		 * Puts the caret somewhere other than the control that opened the
+		 * dialog, for a confirm whose result appears elsewhere on the page.
+		 * Called once the dialog has left the page, because until then it is
+		 * modal and nothing outside it can take focus. Returns whether it
+		 * placed the caret; false falls back to the opener.
+		 */
+		returnFocus?: () => boolean;
 	}
 
 	let {
@@ -62,22 +90,33 @@
 		busyLabel,
 		variant = 'danger',
 		reasonless = false,
+		confirmText,
+		confirmTextNoun = 'the name',
+		confirmTextTestid,
 		busy = false,
+		confirmDisabled = false,
 		error = null,
 		errorTitle = 'That did not go through',
 		reasonTestid,
 		confirmTestid,
 		onconfirm,
-		oncancel
+		oncancel,
+		returnFocus
 	}: Props = $props();
 
 	// The reason lives here, so a caller opening the dialog with `{#if}`
 	// gets an empty field every time: an abandoned draft must not come back
 	// attached to the next thing somebody retires.
 	let reason = $state('');
+	let typed = $state('');
 	let dialogEl = $state<HTMLDialogElement | undefined>(undefined);
 
-	const ready = $derived((reasonless || reason.trim().length > 0) && !busy);
+	// Surrounding blanks are forgiven, since a pasted name often carries one;
+	// anything else has to match exactly, case included.
+	const typedMatches = $derived(confirmText === undefined || typed.trim() === confirmText);
+	const ready = $derived(
+		(reasonless || reason.trim().length > 0) && typedMatches && !busy && !confirmDisabled
+	);
 
 	// <dialog> only gets top-layer stacking, a ::backdrop and a focus trap
 	// from showModal(); the open attribute alone gives none of it. Same
@@ -98,6 +137,7 @@
 		const opener = document.activeElement;
 		dialogEl?.showModal();
 		return () => {
+			if (returnFocus?.()) return;
 			if (opener instanceof HTMLElement && opener.isConnected) {
 				opener.focus();
 			}
@@ -145,6 +185,26 @@
 				{#if reasonHelp}
 					<span class="mt-1 block text-xs text-ink-muted">{reasonHelp}</span>
 				{/if}
+			</label>
+		{/if}
+
+		{#if confirmText !== undefined}
+			<label class="block">
+				<span class="mb-1 block text-xs font-semibold text-ink-muted">
+					Type {confirmTextNoun}
+					<span class="font-mono text-ink select-all">{confirmText}</span>
+					to confirm
+				</span>
+				<input
+					bind:value={typed}
+					type="text"
+					autocomplete="off"
+					autocapitalize="off"
+					spellcheck="false"
+					disabled={busy}
+					data-testid={confirmTextTestid}
+					class="min-h-target w-full rounded-md border border-border-control bg-surface px-3 font-mono text-sm disabled:opacity-50"
+				/>
 			</label>
 		{/if}
 

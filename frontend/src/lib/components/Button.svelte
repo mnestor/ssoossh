@@ -17,6 +17,8 @@
 		onclick?: () => void;
 		/** Stable selector for the e2e browser tier — see test/e2e/README.md. */
 		testid?: string;
+		/** The rendered element, bound by a caller that has to move the caret onto it. */
+		element?: HTMLButtonElement;
 		children: Snippet;
 	}
 
@@ -29,6 +31,7 @@
 		expanded,
 		onclick,
 		testid,
+		element = $bindable(),
 		children
 	}: Props = $props();
 
@@ -45,6 +48,7 @@
 </script>
 
 <button
+	bind:this={element}
 	{type}
 	disabled={disabled || busy}
 	{onclick}

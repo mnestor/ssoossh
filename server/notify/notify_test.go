@@ -3,6 +3,7 @@ package notify
 import (
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -334,5 +335,154 @@ func TestDefaultEnabled_shouldAnswerFromTheRegistry(t *testing.T) {
 
 	if DefaultEnabled("nope") {
 		t.Error("DefaultEnabled reported an unregistered kind as enabled")
+	}
+}
+
+// nssKeyKinds lists the six fleet key kinds, which every registry check below
+// runs over.
+var nssKeyKinds = []Kind{
+	KindNSSKeyExpiring,
+	KindNSSKeyRotationCleanup,
+	KindNSSKeyExpiredAttempt,
+	KindNSSKeyRevokedAttempt,
+	KindNSSKeyRotated,
+	KindNSSKeyRevoked,
+}
+
+// The fleet key mail goes to the key's own address, so each kind must be
+// registered as always sent, with no preference group to hide it behind.
+func TestLookup_shouldRegisterEveryNSSKeyKindAsAlwaysSent(t *testing.T) {
+	for _, kind := range nssKeyKinds {
+		t.Run(string(kind), func(t *testing.T) {
+			def, ok := Lookup(kind)
+			if !ok {
+				t.Fatalf("Lookup(%q) reported the kind as unregistered", kind)
+			}
+			if !def.AlwaysSent || !def.DefaultEnabled {
+				t.Errorf("AlwaysSent = %v, DefaultEnabled = %v, want both true", def.AlwaysSent, def.DefaultEnabled)
+			}
+			if def.Group != "" {
+				t.Errorf("Group = %q, want none", def.Group)
+			}
+		})
+	}
+}
+
+// AlwaysSent is what delivery reads to skip the preference for a fleet key
+// kind, so it must answer true for each of them.
+func TestAlwaysSent_shouldReportEveryNSSKeyKindAsAlwaysSent(t *testing.T) {
+	for _, kind := range nssKeyKinds {
+		t.Run(string(kind), func(t *testing.T) {
+			if !AlwaysSent(kind) {
+				t.Errorf("AlwaysSent(%q) = false, want true", kind)
+			}
+		})
+	}
+}
+
+// A fleet key event names the key and nothing else: no user to gate it, no
+// account to fan out over, no enrollment to read an address from.
+func TestNewNSSKeyEvent_shouldAddressTheKeyAndNoOneElse(t *testing.T) {
+	event, err := NewNSSKeyEvent(KindNSSKeyRotated, "nss_ABCD2345", &NSSKeyRotated{KeyID: "nss_ABCD2345"})
+	if err != nil {
+		t.Fatalf("NewNSSKeyEvent: %v", err)
+	}
+	if event.NSSKeyID != "nss_ABCD2345" {
+		t.Errorf("NSSKeyID = %q, want %q", event.NSSKeyID, "nss_ABCD2345")
+	}
+	if event.UserID != "" || event.ServiceAccount != "" || event.EnrollmentID != "" {
+		t.Errorf("event carries another addressing form: user %q, account %q, enrollment %q",
+			event.UserID, event.ServiceAccount, event.EnrollmentID)
+	}
+	if event.Kind != KindNSSKeyRotated {
+		t.Errorf("Kind = %q, want %q", event.Kind, KindNSSKeyRotated)
+	}
+	if event.OccurredAt.IsZero() {
+		t.Error("OccurredAt was not stamped")
+	}
+}
+
+// The queue carries the key's id under nss_key_id, so delivery can find the
+// key's address at send time.
+func TestNewNSSKeyEvent_shouldCarryTheKeyIDUnderItsJSONName(t *testing.T) {
+	event, err := NewNSSKeyEvent(KindNSSKeyRevoked, "nss_ABCD2345", &NSSKeyRevoked{KeyID: "nss_ABCD2345"})
+	if err != nil {
+		t.Fatalf("NewNSSKeyEvent: %v", err)
+	}
+	raw, err := json.Marshal(event)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(raw), `"nss_key_id":"nss_ABCD2345"`) {
+		t.Errorf("encoded event %s does not carry nss_key_id", raw)
+	}
+}
+
+func TestNewNSSKeyEvent_shouldRejectAnUnregisteredKind(t *testing.T) {
+	if _, err := NewNSSKeyEvent("nope", "nss_ABCD2345", struct{}{}); err == nil {
+		t.Error("NewNSSKeyEvent accepted an unregistered kind")
+	}
+}
+
+// A group mixing admin-only kinds with kinds everyone gets would show a
+// non-admin a heading over a partial set. Admin-only kinds therefore keep a
+// group of their own, and are never always sent: an admin may switch them
+// off, so they have to be a preference.
+func TestDefinitions_shouldKeepAdminOnlyKindsInAGroupOfTheirOwn(t *testing.T) {
+	adminGroup := map[Group]bool{}
+	sharedGroup := map[Group]bool{}
+	for _, def := range Definitions() {
+		if def.AdminOnly {
+			adminGroup[def.Group] = true
+			if def.AlwaysSent {
+				t.Errorf("%s is admin-only and always sent, want it a preference", def.Kind)
+			}
+			continue
+		}
+		sharedGroup[def.Group] = true
+	}
+	for g := range adminGroup {
+		if sharedGroup[g] {
+			t.Errorf("group %q holds admin-only kinds and kinds everyone gets", g)
+		}
+	}
+}
+
+// The directory id change mail is for admins, defaults on and can be
+// switched off, which is what the preferences page and delivery read.
+func TestLookup_shouldRegisterTheNSSIDChangeKindsAsAdminPreferences(t *testing.T) {
+	for _, kind := range []Kind{KindNSSIDChangePending, KindNSSIDChangeReminder} {
+		t.Run(string(kind), func(t *testing.T) {
+			def, ok := Lookup(kind)
+			switch {
+			case !ok:
+				t.Fatalf("Lookup(%q) reported the kind as unregistered", kind)
+			case !def.AdminOnly || !AdminOnly(kind):
+				t.Error("the kind is not admin-only")
+			case def.AlwaysSent || !def.DefaultEnabled:
+				t.Errorf("AlwaysSent = %v, DefaultEnabled = %v, want a preference that defaults on", def.AlwaysSent, def.DefaultEnabled)
+			case def.Group != GroupNSSDirectory:
+				t.Errorf("Group = %q, want %q", def.Group, GroupNSSDirectory)
+			}
+		})
+	}
+}
+
+// AdminOnly answers false for an unregistered kind and for one everyone
+// can receive.
+func TestAdminOnly_shouldAnswerFalseWhenTheKindIsNotAdminOnly(t *testing.T) {
+	tests := []struct {
+		name string
+		kind Kind
+	}{
+		{name: "should answer false when the kind is unregistered", kind: "nope"},
+		{name: "should answer false when everyone can receive the kind", kind: KindServiceEnrollmentCreated},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if AdminOnly(tc.kind) {
+				t.Errorf("AdminOnly(%q) = true, want false", tc.kind)
+			}
+		})
 	}
 }

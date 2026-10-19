@@ -1,0 +1,5 @@
+{
+  "description": "every host in the web tier",
+  "notification_email": "web-admins@example.org",
+  "group_name": "web-admins"
+}

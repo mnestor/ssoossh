@@ -48,10 +48,12 @@ func (s *LDAPService) Sync(ctx context.Context) error {
 // as an ldap_sync_runs row.
 //
 // Scope is deliberately narrow: only users with a user_ldap row, meaning
-// they have logged in at least once with LDAP enabled. The server never
+// they have logged in at least once with LDAP enabled. This sync never
 // enumerates the directory, which keeps the user set self-selecting and
 // leaves fan-out and directory views building on a bounded, consented
-// population.
+// population. The NSS directory sync is the one that does enumerate, and
+// only nss.user_filter and nss.group_filter, because a host has to resolve
+// accounts nobody has logged in with (NSSDirectoryService.FullSync).
 //
 // The one rule that matters: a directory outage must never disable anyone.
 // Only a search that *succeeds* and finds no entry counts as a miss.
@@ -289,7 +291,7 @@ func (s *LDAPService) readByDN(conn ldapConn, dn string) (*ldap.Entry, error) {
 // DN if the entry moved, a cleared miss counter, and replaced LDAP group
 // rows.
 func (s *LDAPService) persistSync(ctx context.Context, userID string, entry *ldapEntry) error {
-	return s.persist(ctx, userID, entry)
+	return s.persist(ctx, userID, entry, roleNarrowedBySync)
 }
 
 // recordMiss opens or continues the missing window and disables the user

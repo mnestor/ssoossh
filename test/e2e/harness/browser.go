@@ -238,6 +238,24 @@ func (b *Browser) WaitValue(t *testing.T, selector, want string) {
 	}
 }
 
+// WaitCount blocks until exactly n nodes match selector. A list that
+// reloads after a filter change keeps its old rows until the new page
+// lands, so an immediate count would race the reload; this waits it out.
+func (b *Browser) WaitCount(t *testing.T, selector string, n int) {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(b.ctx, browserWaitFor)
+	defer cancel()
+	if err := chromedp.Do(ctx, chromedp.Poll[chromedp.Void](
+		fmt.Sprintf("document.querySelectorAll(%q).length === %d", selector, n),
+		chromedp.WithPollingInterval(urlPollInterval),
+		chromedp.WithPollingTimeout(browserWaitFor),
+	)); err != nil {
+		b.screenshotOnFailure(t)
+		t.Fatalf("harness: waiting for %d elements matching %s failed: %v", n, selector, err)
+	}
+}
+
 // SelectValue picks value in the native <select> matching selector and
 // fires the change event a framework binding listens for. Setting .value
 // alone changes what the control shows but tells no listener.

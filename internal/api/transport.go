@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http/httptrace"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -33,19 +35,56 @@ func (e *TransportError) Error() string {
 // Unwrap returns the transport's own error.
 func (e *TransportError) Unwrap() error { return e.Err }
 
-// describeTransportError is describeTransport for this client's server and
-// timeout.
-func (c *HTTPClient) describeTransportError(err error) error {
-	return describeTransport(c.serverURL, c.timeout, err)
+// connUse is how far a failed call got with a connection, which tells a
+// path that refuses or cannot be reached from one that accepted the request
+// and then went silent.
+type connUse int32
+
+const (
+	// connUnknown is a call that did not record it.
+	connUnknown connUse = iota
+	// connNone is a call that never got a connection: the dial or the TLS
+	// handshake did not finish.
+	connNone
+	// connFresh is a call sent on a connection dialled for it.
+	connFresh
+	// connReused is a call sent on a kept-alive connection from the pool.
+	connReused
+)
+
+// connTracker records, through httptrace, which connection a call got.
+// Atomic because the transport may call GotConn on a goroutine of its own.
+type connTracker struct {
+	got atomic.Int32
+}
+
+// trace returns the hooks to install on the request.
+func (t *connTracker) trace() *httptrace.ClientTrace {
+	return &httptrace.ClientTrace{GotConn: func(info httptrace.GotConnInfo) {
+		if info.Reused {
+			t.got.Store(int32(connReused))
+		} else {
+			t.got.Store(int32(connFresh))
+		}
+	}}
+}
+
+// use reports what the call got, connNone when GotConn never fired.
+func (t *connTracker) use() connUse {
+	if got := connUse(t.got.Load()); got != connUnknown {
+		return got
+	}
+	return connNone
 }
 
 // describeTransport turns a transport failure into a TransportError when it
 // recognises the cause, and returns it unchanged otherwise. Go's own wording
 // ("dial tcp 127.0.0.1:9: connect: connection refused", "tls: first record
 // does not look like a TLS handshake") says what failed but not what to do;
-// the raw error stays reachable through Unwrap and in -vv tracing.
-func describeTransport(server string, timeout time.Duration, err error) error {
-	reason, hint := classifyTransportError(err, timeout)
+// the raw error stays reachable through Unwrap and in -vv tracing. timeout
+// is the bound that applied, conn how far the call got.
+func describeTransport(server string, timeout time.Duration, conn connUse, err error) error {
+	reason, hint := classifyTransportError(err, timeout, conn)
 	if reason == "" {
 		return err
 	}
@@ -54,7 +93,7 @@ func describeTransport(server string, timeout time.Duration, err error) error {
 
 // classifyTransportError names the cause of a transport failure and the
 // next step, or returns two empty strings for a cause it does not know.
-func classifyTransportError(err error, timeout time.Duration) (reason, hint string) {
+func classifyTransportError(err error, timeout time.Duration, conn connUse) (reason, hint string) {
 	var (
 		dnsErr      *net.DNSError
 		recordErr   tls.RecordHeaderError
@@ -83,17 +122,34 @@ func classifyTransportError(err error, timeout time.Duration) (reason, hint stri
 	case errors.As(err, &invalidCert):
 		return "its TLS certificate is not valid (" + strings.TrimPrefix(invalidCert.Error(), "x509: ") + ")",
 			"the server's certificate needs fixing"
-	case errors.As(err, &netErr) && netErr.Timeout():
-		if timeout <= 0 {
-			return "the connection timed out", "check the server address and your network"
-		}
-		return fmt.Sprintf("no response within %s", timeout),
-			"check that the server address is right and ssoosshd is running, or raise request_timeout"
 	case errors.As(err, &opErr) && opErr.Op == "dial":
+		// Ahead of the timeout case: a dial that timed out is a connect
+		// failure, not a server that took the request and never answered.
 		return fmt.Sprintf("could not connect (%v)", opErr.Err),
 			"check the server address and your network"
+	case errors.As(err, &netErr) && netErr.Timeout():
+		return timeoutReason(timeout, conn)
 	}
 	return "", ""
+}
+
+// timeoutReason words a timeout by how far the call got, so a silent
+// reused connection (something on the path dropped it) does not read like
+// an unreachable server.
+func timeoutReason(timeout time.Duration, conn connUse) (reason, hint string) {
+	switch {
+	case timeout <= 0:
+		return "the connection timed out", "check the server address and your network"
+	case conn == connNone:
+		return fmt.Sprintf("could not connect within %s", timeout),
+			"check the server address and your network"
+	case conn == connReused:
+		return fmt.Sprintf("no response within %s on a reused connection", timeout),
+			"something between this host and the server may be dropping idle connections; check firewall and NAT state timeouts"
+	default:
+		return fmt.Sprintf("no response within %s", timeout),
+			"check that the server address is right and ssoosshd is running, or raise request_timeout"
+	}
 }
 
 // undecodableError is a 2xx response whose body is not the JSON the call

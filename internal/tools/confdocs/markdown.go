@@ -144,7 +144,9 @@ func markdownIndex(sections []*Section) string {
 	b.WriteString("Every `ssoosshd.yaml` key, one page per top-level section. " +
 		"The pages are generated from the Go structs in `server/config` -- the same " +
 		"source that produces the `ssoosshd.yaml(5)` man page and the annotated " +
-		"defaults file shipped to `/etc/ssoossh/ssoosshd.yaml`.\n\n")
+		"defaults file shipped to `/etc/ssoossh/ssoosshd.yaml`. A key in your file that " +
+		"none of these pages lists has no effect, and `ssoosshd` logs a warning naming it, " +
+		"with the closest real key when one is a slip away.\n\n")
 
 	b.WriteString("| Section | Configures |\n| --- | --- |\n")
 	for _, s := range sections {

@@ -3,8 +3,10 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import AppRail from './AppRail.svelte';
+import { nssAccess } from '#lib/nssAccess.svelte.js';
 import { rail } from '#lib/rail.svelte.js';
 import { session } from '#lib/session.svelte.js';
+import { envelope, keyFixture, routeFetch, settle, userFixture } from '#lib/testing/nss.js';
 import { resetFakePage } from '#lib/testing/page.svelte.js';
 
 // Test methodology: render the rail directly with the session singleton put
@@ -35,6 +37,8 @@ function signedInUser(isAuditor: boolean, { isSOC = false, isAdmin = false } = {
 		is_admin: isAdmin,
 		is_soc: isSOC,
 		is_auditor: isAuditor,
+		is_nss_key_admin: false,
+		nss_enabled: false,
 		detail_level: 'advanced' as const
 	};
 }
@@ -47,6 +51,14 @@ function railLinkLabels(): string[] {
 		.map((item) => item.textContent?.trim() ?? '');
 }
 
+/** railHrefs lists the rail's link targets, in order. */
+function railHrefs(): string[] {
+	const nav = screen.getByRole('navigation', { name: 'Main' });
+	return within(nav)
+		.getAllByRole('link')
+		.map((link) => link.getAttribute('href') ?? '');
+}
+
 beforeEach(() => {
 	vi.unstubAllGlobals();
 	vi.stubGlobal('localStorage', {
@@ -55,6 +67,7 @@ beforeEach(() => {
 	});
 	resetFakePage('http://localhost/dashboard');
 	session.clear();
+	nssAccess.clear();
 	rail.collapsed = false;
 	rail.drawerOpen = false;
 	rail.adminOpen = true;
@@ -337,5 +350,194 @@ describe('app rail', () => {
 		await userEvent.click(screen.getByRole('link', { name: 'History' }));
 
 		expect(rail.drawerOpen).toBe(false);
+	});
+
+	describe('NSS keys entry', () => {
+		const cases: {
+			name: string;
+			user: Parameters<typeof userFixture>[0];
+			keys: number;
+			shown: boolean;
+		}[] = [
+			// The entry is the keys the viewer's groups manage, so no role
+			// shows it on its own: every key is the admin group's entry.
+			{
+				name: 'a fleet key admin no key names',
+				user: { is_nss_key_admin: true },
+				keys: 0,
+				shown: false
+			},
+			{ name: 'an auditor no key names', user: { is_auditor: true }, keys: 0, shown: false },
+			{
+				name: 'an admin no key names',
+				user: { is_admin: true, is_soc: true, is_auditor: true, is_nss_key_admin: true },
+				keys: 0,
+				shown: false
+			},
+			{
+				name: 'an admin whose group manages a key',
+				user: { is_admin: true, is_soc: true, is_auditor: true, is_nss_key_admin: true },
+				keys: 1,
+				shown: true
+			},
+			{ name: 'a member of a key group', user: {}, keys: 1, shown: true },
+			{ name: 'someone no key names', user: {}, keys: 0, shown: false },
+			{
+				name: 'a fleet key admin while NSS is off',
+				user: { is_nss_key_admin: true, nss_enabled: false },
+				keys: 1,
+				shown: false
+			}
+		];
+
+		for (const { name, user, keys, shown } of cases) {
+			it(`should ${shown ? 'offer' : 'not offer'} NSS keys when the viewer is ${name}`, async () => {
+				routeFetch({
+					'GET /api/nss/keys': envelope({
+						keys: Array.from({ length: keys }, () => keyFixture()),
+						can_create: false
+					})
+				});
+				session.user = userFixture(user);
+				session.resolved = true;
+
+				render(AppRail, { onsignout: () => {} });
+				await settle();
+
+				expect(railHrefs().includes('/nss-keys')).toBe(shown);
+			});
+		}
+
+		it('should not ask for the key list when NSS is off', async () => {
+			const calls = routeFetch({});
+			session.user = userFixture({ is_nss_key_admin: true, nss_enabled: false });
+			session.resolved = true;
+
+			render(AppRail, { onsignout: () => {} });
+			await settle();
+
+			expect(calls).toHaveLength(0);
+		});
+
+		it('should hide the entry when the key list cannot be read', async () => {
+			routeFetch({ 'GET /api/nss/keys': envelope(null, 500, 'boom') });
+			session.user = userFixture();
+			session.resolved = true;
+
+			render(AppRail, { onsignout: () => {} });
+			await settle();
+
+			expect(railHrefs().includes('/nss-keys')).toBe(false);
+		});
+
+		it('should mark NSS keys current on a key page', async () => {
+			resetFakePage('http://localhost/nss-keys/nss_k7m4qp2x');
+			routeFetch({ 'GET /api/nss/keys': envelope({ keys: [keyFixture()], can_create: false }) });
+			session.user = userFixture();
+			session.resolved = true;
+
+			render(AppRail, { onsignout: () => {} });
+			await settle();
+
+			expect(screen.getByRole('link', { name: 'NSS keys' })).toHaveAttribute(
+				'aria-current',
+				'page'
+			);
+		});
+	});
+
+	// The fleet key admin role manages every key without an admin area
+	// role, so its Admin group holds All NSS keys and nothing else.
+	describe('admin group for a fleet key admin', () => {
+		it('should offer only NSS keys (all) in the admin group when the viewer holds no other role', async () => {
+			routeFetch({ 'GET /api/nss/keys': envelope({ keys: [], can_create: true }) });
+			session.user = userFixture({ is_nss_key_admin: true });
+			session.resolved = true;
+
+			render(AppRail, { onsignout: () => {} });
+			await settle();
+
+			const group = screen.getByTestId('rail-admin-group').parentElement as HTMLElement;
+			expect(
+				within(group)
+					.getAllByRole('link')
+					.map((link) => [link.textContent?.trim(), link.getAttribute('href')])
+			).toEqual([['NSS keys (all)', '/admin/nss/keys']]);
+		});
+
+		it('should not offer the admin group to a fleet key admin while NSS is off', () => {
+			session.user = userFixture({ is_nss_key_admin: true, nss_enabled: false });
+			session.resolved = true;
+
+			render(AppRail, { onsignout: () => {} });
+
+			expect(screen.queryByTestId('rail-admin-group')).not.toBeInTheDocument();
+		});
+
+		it('should not offer the admin group to a viewer with no role while NSS is on', async () => {
+			routeFetch({ 'GET /api/nss/keys': envelope({ keys: [], can_create: false }) });
+			session.user = userFixture();
+			session.resolved = true;
+
+			render(AppRail, { onsignout: () => {} });
+			await settle();
+
+			expect(screen.queryByTestId('rail-admin-group')).not.toBeInTheDocument();
+		});
+	});
+
+	describe('NSS directory entry', () => {
+		const cases: { name: string; user: Parameters<typeof userFixture>[0]; shown: boolean }[] = [
+			{ name: 'an auditor', user: { is_auditor: true }, shown: true },
+			{ name: 'SOC', user: { is_soc: true, is_auditor: true }, shown: true },
+			{ name: 'an admin', user: { is_admin: true, is_soc: true, is_auditor: true }, shown: true },
+			{
+				name: 'an admin while NSS is off',
+				user: { is_admin: true, is_soc: true, is_auditor: true, nss_enabled: false },
+				shown: false
+			}
+		];
+
+		for (const { name, user, shown } of cases) {
+			it(`should ${shown ? 'offer' : 'not offer'} the NSS directory when the viewer is ${name}`, async () => {
+				routeFetch({});
+				session.user = userFixture(user);
+				session.resolved = true;
+
+				render(AppRail, { onsignout: () => {} });
+				await settle();
+
+				expect(railLinkLabels().includes('NSS directory')).toBe(shown);
+			});
+		}
+
+		it('should mark only NSS keys (all) current in the admin group on the every-key list', async () => {
+			resetFakePage('http://localhost/admin/nss/keys');
+			routeFetch({ 'GET /api/nss/keys': envelope({ keys: [], can_create: false }) });
+			session.user = userFixture({ is_auditor: true });
+			session.resolved = true;
+
+			render(AppRail, { onsignout: () => {} });
+			await settle();
+
+			const current = screen
+				.getAllByRole('link')
+				.filter((link) => link.getAttribute('aria-current') === 'page')
+				.map((link) => link.getAttribute('href'));
+			expect(current).toEqual(['/admin/nss/keys']);
+		});
+
+		it('should mark the NSS directory current on a stored account page', () => {
+			resetFakePage('http://localhost/admin/nss/accounts/10001');
+			session.user = userFixture({ is_auditor: true });
+			session.resolved = true;
+
+			render(AppRail, { onsignout: () => {} });
+
+			expect(screen.getByRole('link', { name: 'NSS directory' })).toHaveAttribute(
+				'aria-current',
+				'page'
+			);
+		});
 	});
 });

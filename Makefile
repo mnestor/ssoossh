@@ -41,7 +41,7 @@ define BUILDALL
 	RELEASE=false goreleaser build --clean --snapshot=${DIRTY}
 endef
 
-# $(1) -- component directory (server, client, internal)
+# $(1) -- component directory (server, client, internal, nssd)
 # $(2) -- CGO_ENABLED for the test run. Inside the recipe rather than in
 # front of $(call ...) at the call site: each line of a define is its own
 # shell, so a prefix there would only reach the mkdir.
@@ -76,7 +76,7 @@ pre-pr: fmt lint-fix check-generated ci-required ## Format, autofix, then run ev
 # `lint-tagged` and `lint-cross` are the reason this target exists rather
 # than people running `lint` and `test` by hand. `lint` passes no build tags
 # and `test` does not build the tagged suites, so a suite behind `e2e`,
-# `resilience`, `load`, `softhsm` or `natsintegration` can fail
+# `resilience`, `load`, `softhsm`, `natsintegration` or `ldaplive` can fail
 # to compile outright while both report success. `lint` also runs with the
 # host GOOS, so nothing here sees the Windows or macOS build at all. Any
 # hand-assembled subset that omits either will believe it has coverage it
@@ -175,12 +175,45 @@ server-linux-pkcs11-build-local: $(FRONTEND_DIST) ## Build ssoosshd with PKCS#11
 frontend-clean: ## Remove the built web UI
 	rm -rf server/frontend/dist
 
+# The ssoossh-nss-selinux policy module (packaging/selinux/), built into
+# build/selinux/ssoossh_nss.pp for the nfpm "nss-selinux" package. Needs
+# selinux-policy-devel, so on a host without it the script builds in an
+# almalinux:9 container (docker). goreleaser's release run fails on that
+# package until this has run; `make linux` and `make binaries` build no
+# packages and do not need it.
+.PHONY: selinux-nss selinux-nss-check
+selinux-nss: ## Build the ssoosshd-nss SELinux module (docker when no selinux-policy-devel)
+	scripts/build-nss-selinux.sh
+
+# What the policy CI job asks: the module builds against EL9's headers and
+# links into both EL9's and EL10's targeted policy, in containers, without
+# loading anything. Loading it and watching the AVCs needs a real host.
+selinux-nss-check: ## Build the SELinux module and link it into the EL9 and EL10 policies
+	scripts/build-nss-selinux.sh --check
+	SELINUX_IMAGE=almalinux:10 scripts/build-nss-selinux.sh --link
+
 ##@ Test
 
-.PHONY: test test-server test-client test-internal test-race cover cover-ci frontend-test csp-check
+.PHONY: test test-server test-client test-internal test-nssd test-race cover cover-ci frontend-test csp-check
+
+# The ssoosshd-nss integration jobs, as the nss-integration workflow runs
+# them: the daemon against nss-systemd in Debian 12 containers, once
+# self-bound and once under systemd as PID 1. Needs docker; see
+# scripts/nss-integration.sh.
+.PHONY: nss-integration
+nss-integration: ## Run the ssoosshd-nss integration jobs in docker
+	scripts/nss-integration.sh
+
+# The NSS end-to-end job, as the nss-integration workflow runs it: a
+# throwaway OpenLDAP, the real ssoosshd over HTTPS and ssoosshd-nss behind
+# nss-systemd, each in a Debian 12 container. Needs docker; see
+# scripts/nss-e2e.sh.
+.PHONY: nss-e2e
+nss-e2e: ## Run the NSS end-to-end job (OpenLDAP, ssoosshd, ssoosshd-nss) in docker
+	scripts/nss-e2e.sh
 # server/frontend embeds server/frontend/dist. The unit suite includes tests
 # that assert on real UI assets, so the UI has to exist first.
-test: $(FRONTEND_DIST) test-server test-client test-internal ## Unit tests per component, with coverage
+test: $(FRONTEND_DIST) test-server test-client test-internal test-nssd ## Unit tests per component, with coverage
 
 # server and internal need cgo for the same reason `build` does: the HSM
 # key source binds libpkcs11. client has no such dependency.
@@ -192,6 +225,11 @@ test-client:
 
 test-internal:
 	$(call TESTCOMPONENT,internal,1)
+
+# The NSS daemon ships built with CGO_ENABLED=0 (pure-Go SQLite), so its
+# tests run that way too.
+test-nssd:
+	$(call TESTCOMPONENT,nssd,0)
 
 # CGO_ENABLED is explicit because -race requires cgo and the devcontainer
 # sets CGO_ENABLED=0 by default.
@@ -385,7 +423,7 @@ lint: ## golangci-lint over the whole module (merge gate)
 # One invocation per tag set rather than a single combined one: the tags
 # select mutually exclusive views of the tree in places, so a combined run
 # does not typecheck.
-LINT_TAGGED := e2e resilience load hsm softhsm natsintegration
+LINT_TAGGED := e2e resilience load hsm softhsm natsintegration ldaplive
 
 .PHONY: lint-tagged
 lint-tagged: ## golangci-lint over the build-tagged suites lint(1) cannot see
@@ -407,7 +445,7 @@ lint-tagged: ## golangci-lint over the build-tagged suites lint(1) cannot see
 #
 # One GOARCH per GOOS is enough. The shipped amd64 and arm64 targets are
 # both 64-bit, so they differ in nothing golangci-lint can see.
-LINT_CROSS_PACKAGES ?= ./client/... ./internal/crypto/ssh/agent/... ./internal/fileperm/...
+LINT_CROSS_PACKAGES ?= ./client/... ./internal/crypto/ssh/agent/... ./internal/fileperm/... ./internal/posixname/... ./internal/varlink/...
 LINT_CROSS_GOOS ?= windows darwin
 
 .PHONY: lint-cross
@@ -554,14 +592,14 @@ REDOCLY ?= $(shell command -v redocly 2>/dev/null || echo "npx @redocly/cli@2.57
 openapi-lint:
 	$(REDOCLY) lint docs/openapi.yaml --config .redoclyrc.yaml
 
-# Generate man pages (ssoossh.1 and ssoosshd.8) from cobra commands.
+# Generate man pages (ssoossh.1, ssoosshd.8 and ssoosshd-nss.8) from cobra commands.
 # Config format pages (ssoossh.yaml.5, ssoosshd.yaml.5) are hand-written and
 # not regenerated.
 # CGO_ENABLED=1 for the same reason `build` needs it: gendocs imports the
 # server command tree, which reaches the HSM key source's libpkcs11 binding.
 gendocs: ## Regenerate man pages from the cobra commands
 	CGO_ENABLED=1 go run ./internal/tools/gendocs docs/man
-	@echo "Man pages regenerated (ssoossh.1, ssoosshd.8)"
+	@echo "Man pages regenerated (ssoossh.1, ssoosshd.8, ssoosshd-nss.8)"
 
 # The pages gendocs produces: the two roots plus one per cobra subcommand.
 # The glob matters. Hashing only ssoossh.1 and ssoosshd.8 (as this did
@@ -598,7 +636,8 @@ man-check:
 # No cgo: the generator parses server/config rather than importing it, so it
 # never reaches the HSM key source's libpkcs11 binding.
 CONFDOCS_OUT := docs/man/ssoosshd.yaml.5 server/config/defaults.yaml \
-	user-docs/src/content/docs/reference/config user-docs/config-sidebar.json
+	user-docs/src/content/docs/reference/config user-docs/config-sidebar.json \
+	user-docs/src/content/docs/operations/ldap-schema-presets.md
 
 confdocs: ## Regenerate the config reference and defaults.yaml comments
 	go run ./internal/tools/genconfdocs
@@ -608,7 +647,8 @@ confdocs: ## Regenerate the config reference and defaults.yaml comments
 # server/config's golden test is what guards those.
 STALE_CONFDOCS := The config reference is stale: a config struct's fields or \
 doc comments changed without docs/man/ssoosshd.yaml.5, \
-server/config/defaults.yaml, and the user-docs config pages being regenerated.
+server/config/defaults.yaml, the user-docs config pages and the ldap.schema \
+presets table being regenerated.
 
 confdocs-check:
 	$(call STALENESS_CHECK,$(CONFDOCS_OUT),confdocs,$(STALE_CONFDOCS))

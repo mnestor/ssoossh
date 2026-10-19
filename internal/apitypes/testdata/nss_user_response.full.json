@@ -1,0 +1,20 @@
+{
+  "name": "mike",
+  "uid": 1234,
+  "gid": 1234,
+  "groups": [
+    {
+      "gid": 1234,
+      "name": "mike"
+    },
+    {
+      "gid": 27,
+      "name": "sudo"
+    }
+  ],
+  "home": "/home/mike",
+  "shell": "/bin/bash",
+  "gecos": "Mike Nestor",
+  "status": "active",
+  "key_id": "nss_k7m4qp2x"
+}

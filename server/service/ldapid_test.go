@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/go-ldap/ldap/v3"
@@ -130,6 +131,45 @@ func TestDirectoryIDFilter_ShouldBeEmptyWhenEitherHalfIsMissing(t *testing.T) {
 			t.Parallel()
 			if got := directoryIDFilter(tt.attr, tt.stored); got != "" {
 				t.Errorf("got %q, want empty", got)
+			}
+		})
+	}
+}
+
+// should search for exactly the bytes it read, whatever shape an id has:
+// the value read off an entry, turned back into a filter, must assert the
+// entry's own raw bytes. objectGUID is the case that matters (the
+// active-directory preset's id), including a GUID whose sixteen bytes all
+// happen to be printable and so are stored as text.
+func TestDirectoryID_ShouldRoundTripTheRawBytes(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		attr string
+		raw  []byte
+	}{
+		{"should round-trip a GUID with invalid UTF-8", "objectGUID", []byte{0xa1, 0xb2, 0xc3, 0xd4, 0x00, 0xff, 0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80, 0x90, 0xf0}},
+		{"should round-trip a GUID holding a NUL and filter metacharacters", "objectGUID", []byte{0x28, 0x29, 0x2a, 0x5c, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b}},
+		{"should round-trip a GUID whose bytes are all printable", "objectGUID", []byte("ABCDEFGH(*)\\ijkl")},
+		{"should round-trip a GUID that decodes as multi-byte UTF-8", "objectGUID", []byte("\xc3\xa9\xc3\xa9\xc3\xa9\xc3\xa9\xc3\xa9\xc3\xa9\xc3\xa9\xc3\xa9")},
+		{"should round-trip a text UUID", "entryUUID", []byte("8f14e45f-ea8f-4f2d-9c1b-3a7b5d2e6c40")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			stored := directoryIDValue(entryWithAttr(tt.attr, tt.raw), tt.attr)
+			filter := directoryIDFilter(tt.attr, stored)
+			packet, err := ldap.CompileFilter(filter)
+			if err != nil {
+				t.Fatalf("CompileFilter(%q) error = %v", filter, err)
+			}
+			if len(packet.Children) != 2 {
+				t.Fatalf("filter %q is not one equality assertion", filter)
+			}
+			if got := packet.Children[1].Data.Bytes(); !bytes.Equal(got, tt.raw) {
+				t.Errorf("filter %q asserts % x, want the entry's own bytes % x", filter, got, tt.raw)
 			}
 		})
 	}

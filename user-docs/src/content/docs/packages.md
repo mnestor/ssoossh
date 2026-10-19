@@ -1,12 +1,12 @@
 ---
 title: Installing from the package repository
-description: Signed apt and yum repositories for the client, the server and the PAM module, and how to verify them.
+description: Signed apt and yum repositories for the client, the server, the PAM module and the NSS daemon, and how to verify them.
 ---
 
 Every Linux package ssoossh ships is served from a signed repository at
 `packages.mikenestor.org`. Adding it once gets you the client, the server,
-the PAM module and its SELinux policy, and gets upgrades through the package
-manager you already run.
+the PAM module, the NSS daemon and their SELinux policies, and gets upgrades
+through the package manager you already run.
 
 This is the recommended way to install on Linux. Direct downloads from the
 [releases page](https://github.com/mnestor/ssoossh/releases) still work and
@@ -23,6 +23,8 @@ before choosing them on Debian or Ubuntu.
 | `ssoosshd-pkcs11` | the server built to load a PKCS#11 module |
 | `pam-ssoossh` | the PAM module, for `sudo`, console login and `sshd` (EL 8, 9 and 10, Debian, Ubuntu) |
 | `pam-ssoossh-selinux` | SELinux policy for the PAM module (EL 8 and 9) |
+| `ssoosshd-nss` | the NSS daemon, directory users and groups for a host through systemd userdb (deb and rpm) |
+| `ssoossh-nss-selinux` | SELinux policy for the NSS daemon (EL 9 and 10) |
 | `ssoossh-release` | the repository definition and signing key |
 
 `ssoosshd-pkcs11` conflicts with `ssoosshd` on purpose -- both install the
@@ -41,6 +43,32 @@ needs SELinux policy to reach `ssoosshd` for `sshd` and console login --
 `setsebool -P authlogin_yubikey on` grants the same access from policy the
 distribution already ships. See
 [SELinux on EL hosts](/ssoossh/hosts/pam/install/#selinux-on-el-hosts).
+
+## The NSS daemon
+
+`ssoosshd-nss` is for hosts that should resolve directory users without
+provisioning them; see [Directory users on a host](/ssoossh/hosts/nss/). It
+installs `/usr/sbin/ssoosshd-nss`, the units `ssoosshd-nss.socket` and
+`ssoosshd-nss.service` (neither enabled), the man pages, and
+`/etc/ssoossh/nss.yaml`, root-only and kept on upgrade, with every option
+commented out. It never ships the fleet key file, never enables a unit and
+never edits `nsswitch.conf`. Uninstalling stops and disables both units, and
+leaves the cache in `/var/lib/ssoossh-nss`.
+
+| Format | Depends on |
+| --- | --- |
+| `.deb` | `libnss-systemd`, `systemd (>= 245)` |
+| `.rpm` | `libnss_systemd.so.2()(64bit)`, `systemd >= 245`; recommends `ssoossh-nss-selinux` |
+
+The rpm names the library by its soname rather than a package, because it
+resolves to `systemd-libs` on EL and Fedora and to `systemd` on openSUSE. No
+`.apk` is built: musl cannot load NSS modules and Alpine has no systemd.
+
+`ssoossh-nss-selinux` is a noarch rpm carrying the compiled policy module and
+its source. It depends on `policycoreutils` and
+`selinux-policy-targeted >= 38.1.75`, loads the module at priority 200 on
+install and unloads it on removal. Without it, on an enforcing host, no
+confined caller can reach the daemon's socket.
 
 ## RHEL, Alma, Rocky, Oracle
 

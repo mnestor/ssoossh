@@ -11,6 +11,7 @@ import Alert from './Alert.svelte';
 import AppRail from './AppRail.svelte';
 import AuditTimeline from './AuditTimeline.svelte';
 import BrandMark from './BrandMark.svelte';
+import ConfigProse from './ConfigProse.svelte';
 import Button from './Button.svelte';
 import CertRow from './CertRow.svelte';
 import ConfirmModal from './ConfirmModal.svelte';
@@ -24,9 +25,16 @@ import FilterChip from './FilterChip.svelte';
 import FilterGroup from './FilterGroup.svelte';
 import Footer from './Footer.svelte';
 import Icon from './Icon.svelte';
+import KeyStatusBadge from './KeyStatusBadge.svelte';
 import ListStatus from './ListStatus.svelte';
 import LoadingBlock from './LoadingBlock.svelte';
 import LoadMoreFooter from './LoadMoreFooter.svelte';
+import NSSDirectoryRef from './NSSDirectoryRef.svelte';
+import NSSEntryMarks from './NSSEntryMarks.svelte';
+import NSSMembershipAdded from './NSSMembershipAdded.svelte';
+import NSSServedVerdict from './NSSServedVerdict.svelte';
+import NSSStateBadge from './NSSStateBadge.svelte';
+import NSSViewSwitch from './NSSViewSwitch.svelte';
 import MonoChip from './MonoChip.svelte';
 import OptionDiffList from './OptionDiffList.svelte';
 import PageHeading from './PageHeading.svelte';
@@ -37,6 +45,7 @@ import RailItem from './RailItem.svelte';
 import RailUserMenu from './RailUserMenu.svelte';
 import RedemptionHistory from './RedemptionHistory.svelte';
 import SearchInput from './SearchInput.svelte';
+import SecretPanel from './SecretPanel.svelte';
 import SectionLabel from './SectionLabel.svelte';
 import Switch from './Switch.svelte';
 import ServiceAccountRow from './ServiceAccountRow.svelte';
@@ -180,6 +189,7 @@ const cases: [string, any, Record<string, unknown>][] = [
 			}
 		}
 	],
+	['ConfigProse', ConfigProse, { text: 'Served until nss.tombstone_retention ends.' }],
 	['BrandMark', BrandMark, { size: 22 }],
 	['Button (primary)', Button, { children: text('Approve') }],
 	['Button (ghost)', Button, { variant: 'ghost', children: text('Cancel') }],
@@ -208,6 +218,21 @@ const cases: [string, any, Record<string, unknown>][] = [
 			onconfirm: vi.fn(),
 			oncancel: vi.fn(),
 			children: text('A live pass can disable an account.')
+		}
+	],
+	[
+		'ConfirmModal (typed)',
+		ConfirmModal,
+		{
+			title: 'Revoke this key?',
+			reasonless: true,
+			confirmText: 'nss_k7m4qp2x',
+			confirmTextNoun: 'the key id',
+			confirmLabel: 'Revoke',
+			busyLabel: 'Revoking…',
+			onconfirm: vi.fn(),
+			oncancel: vi.fn(),
+			children: text('Neither secret is accepted again.')
 		}
 	],
 	['CopyableId', CopyableId, { value: 'cert-1', label: 'Request' }],
@@ -260,6 +285,8 @@ const cases: [string, any, Record<string, unknown>][] = [
 	['Footer', Footer, {}],
 	['Icon (decorative)', Icon, { name: 'certificate' }],
 	['Icon (labelled)', Icon, { name: 'certificate', ariaLabel: 'Certificate' }],
+	['KeyStatusBadge (rotating)', KeyStatusBadge, { status: 'rotating' }],
+	['KeyStatusBadge (revoked)', KeyStatusBadge, { status: 'revoked' }],
 	['ListStatus', ListStatus, { message: '12 certificates found.' }],
 	[
 		'LoadMoreFooter',
@@ -307,6 +334,35 @@ const cases: [string, any, Record<string, unknown>][] = [
 	// the gate and the aria-hidden.
 	['LoadingBlock', LoadingBlock, { shape: 'lines', label: 'Loading your account…' }],
 	['MonoChip', MonoChip, { children: text('10.1.2.9') }],
+	['NSSDirectoryRef', NSSDirectoryRef, { section: 'probe' }],
+	[
+		'NSSEntryMarks',
+		NSSEntryMarks,
+		{
+			kind: 'account',
+			state: 'withheld',
+			withheldAt: '2026-08-20T12:00:00Z',
+			withheldReason: 'uid 10001 is also carried by uid=bob2',
+			uid: 10001,
+			gid: 5000,
+			pendingUid: 20001,
+			pendingSince: '2026-08-21T12:00:00Z'
+		}
+	],
+	[
+		'NSSServedVerdict (served)',
+		NSSServedVerdict,
+		{ kind: 'account', served: true, status: 'disabled' }
+	],
+	[
+		'NSSServedVerdict (not served)',
+		NSSServedVerdict,
+		{ kind: 'group', served: false, reason: 'past_retention' }
+	],
+	['NSSMembershipAdded', NSSMembershipAdded, { at: '2026-08-22T12:00:00Z' }],
+	['NSSMembershipAdded (before first import)', NSSMembershipAdded, {}],
+	['NSSStateBadge', NSSStateBadge, { state: 'pending' }],
+	['NSSViewSwitch', NSSViewSwitch, { current: 'groups' }],
 	['OptionDiffList', OptionDiffList, { entries: [], emptyLabel: 'Nothing was trimmed' }],
 	['PageHeading', PageHeading, { title: 'Certificate history' }],
 	[
@@ -336,6 +392,16 @@ const cases: [string, any, Record<string, unknown>][] = [
 	['RailUserMenu', RailUserMenu, { identity: 'alice@example.com', onsignout: vi.fn() }],
 	['RedemptionHistory', RedemptionHistory, { retrievals: [], total: 0 }],
 	['SearchInput', SearchInput, { label: 'Search certificates', onsearch: vi.fn() }],
+	[
+		'SecretPanel',
+		SecretPanel,
+		{
+			keyId: 'nss_k7m4qp2x',
+			secret: 'c2VjcmV0',
+			previousExpiresAt: '2026-09-21T12:00:00Z',
+			ondismiss: vi.fn()
+		}
+	],
 	['SectionLabel', SectionLabel, { children: text('Filter') }],
 	['SectionLabel (labelling a field)', SectionLabel, { for: 'x', children: text('Filter') }],
 	[
@@ -426,7 +492,26 @@ describe('component accessibility roster', () => {
 		// a detail object big enough that a fixture here would be a second,
 		// drifting copy of the one in their own test files. Their own suites
 		// render them; see ApprovalView.test.ts and AdminServiceCodeDetail.test.ts.
+		//
+		// NSSDirectoryPanels: fetches both of its lists on mount, so a render
+		// here would sweep a loading state; the Directory page's own suite
+		// renders it with fixtures (routes/admin/directory/page.test.ts).
+		//
+		// NSSEntryList and NSSStoredEntries: the same, each fetches on mount;
+		// the viewer's list pages and the Directory page render them with
+		// fixtures (routes/admin/nss/*, routes/admin/directory/page.nss.test.ts).
+		//
+		// NSSEntryHistory: the same; historySuite (#lib/testing/history) runs
+		// axe over it with events loaded on both NSS detail pages.
+		//
+		// NSSKeyAdminList: the same, it fetches on mount; its own suite runs
+		// axe over it with rows loaded and with the search field's error.
 		covered.add('ConsentModal');
+		covered.add('NSSDirectoryPanels');
+		covered.add('NSSEntryList');
+		covered.add('NSSStoredEntries');
+		covered.add('NSSEntryHistory');
+		covered.add('NSSKeyAdminList');
 		covered.add('ApprovalView');
 		covered.add('AdminServiceCodeDetail');
 

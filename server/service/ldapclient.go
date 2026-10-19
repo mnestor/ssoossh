@@ -22,6 +22,11 @@ import (
 // behind an interface so both can be tested without a live server.
 type ldapConn interface {
 	Search(*ldap.SearchRequest) (*ldap.SearchResult, error)
+	// SearchWithPaging runs one search as a series of pages of pagingSize
+	// entries (the RFC 2696 paged results control) and returns every page
+	// together. The NSS sync enumerates its filters with it, so a large
+	// directory is not cut at one response's size limit.
+	SearchWithPaging(req *ldap.SearchRequest, pagingSize uint32) (*ldap.SearchResult, error)
 	Close() error
 }
 
@@ -33,10 +38,17 @@ type ldapDialer func(cfg *config.LDAPConfig) (ldapConn, error)
 // error the caller can log rather than the library's bare signature.
 type ldapConnAdapter struct{ conn *ldap.Conn }
 
+// Search runs one search on the wrapped connection.
 func (a *ldapConnAdapter) Search(req *ldap.SearchRequest) (*ldap.SearchResult, error) {
 	return a.conn.Search(req)
 }
 
+// SearchWithPaging runs one paged search on the wrapped connection.
+func (a *ldapConnAdapter) SearchWithPaging(req *ldap.SearchRequest, pagingSize uint32) (*ldap.SearchResult, error) {
+	return a.conn.SearchWithPaging(req, pagingSize)
+}
+
+// Close closes the wrapped connection.
 func (a *ldapConnAdapter) Close() error { return a.conn.Close() }
 
 // dialLDAP connects, optionally upgrades to TLS, and binds. Every step is
@@ -248,7 +260,9 @@ func (f *filterTemplate) execute(data filterData) (string, error) {
 // config.AdminConfig's group names against the identity's own group list
 // with exact string equality (config.containsGroup), and that list comes
 // from the OIDC claim rather than from here — so nothing reduces a DN on
-// the path that grants access, by design. See containsGroup for why.
+// the path that grants access, by design. See containsGroup for why. The
+// reduced names do feed one decision, ldap.authoritative_role_groups, which
+// can only remove a role group the claim carries.
 func reduceGroupName(value string) string {
 	dn, err := ldap.ParseDN(value)
 	if err != nil || len(dn.RDNs) == 0 || len(dn.RDNs[0].Attributes) == 0 {

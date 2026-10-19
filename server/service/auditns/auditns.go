@@ -22,4 +22,5 @@ const (
 	User       Namespace = "user"
 	LDAP       Namespace = "ldap"
 	Admin      Namespace = "admin"
+	NSS        Namespace = "nss"
 )

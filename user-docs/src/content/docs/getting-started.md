@@ -191,6 +191,8 @@ Making a target host accept these certificates:
   editing a real PAM stack.
 - [Client settings enforcement](/ssoossh/hosts/client-enforcement/) -- locking
   client settings across a fleet.
+- [Directory users on a host](/ssoossh/hosts/nss/) -- directory accounts that
+  resolve on a host with nothing provisioned per host.
 
 ## Where to go next
 

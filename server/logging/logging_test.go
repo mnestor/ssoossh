@@ -969,3 +969,58 @@ func TestNew_ShouldPreferAConfiguredAuditFileOverTheFloor(t *testing.T) {
 		t.Errorf("expected %s to contain the audit record, got: %s", auditFile, string(data))
 	}
 }
+
+// TestNewWithConsole_ShouldKeepStdoutForTheCommand covers the variant a
+// command that prints its own report uses: the general log goes to the
+// console it names, stdout stays clean, and an error logged with stderr as
+// the console appears there once rather than twice.
+//
+// Mutates the default logger and process stdio; must not run in parallel.
+func TestNewWithConsole_ShouldKeepStdoutForTheCommand(t *testing.T) {
+	prev := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	tests := []struct {
+		name          string
+		toStderr      bool
+		log           func()
+		wantConsole   string
+		wantStderrHit int
+	}{
+		{name: "should log to the console when it is a buffer", log: func() { slog.Info("console-info-marker") }, wantConsole: "console-info-marker"},
+		{name: "should copy an error to stderr once when the console is a buffer", log: func() { slog.Error("console-error-marker") }, wantConsole: "console-error-marker", wantStderrHit: 1},
+		{name: "should log an error to stderr once when stderr is the console", toStderr: true, log: func() { slog.Error("stderr-error-marker") }, wantStderrHit: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &config.Config{}
+			c.Logging.Level = "info"
+			var console bytes.Buffer
+
+			stdout, stderr := captureStdouterr(t, func() {
+				var w io.Writer = &console
+				if tt.toStderr {
+					w = os.Stderr
+				}
+				if _, err := NewWithConsole(c, w); err != nil {
+					t.Fatalf("NewWithConsole() error = %v", err)
+				}
+				tt.log()
+			})
+
+			if stdout != "" {
+				t.Errorf("stdout = %q, want nothing", stdout)
+			}
+			if tt.wantConsole != "" && !strings.Contains(console.String(), tt.wantConsole) {
+				t.Errorf("console = %q, want %q", console.String(), tt.wantConsole)
+			}
+			marker := tt.wantConsole
+			if tt.toStderr {
+				marker = "stderr-error-marker"
+			}
+			if got := strings.Count(stderr, marker); tt.wantStderrHit > 0 && got != tt.wantStderrHit {
+				t.Errorf("stderr has %q %d times, want %d:\n%s", marker, got, tt.wantStderrHit, stderr)
+			}
+		})
+	}
+}

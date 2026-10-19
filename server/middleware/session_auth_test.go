@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -236,8 +237,11 @@ func TestSetIdentitySessionAndSessionAuthMiddleware(t *testing.T) {
 // here rather than silently riding along unasserted: populate the new
 // field in that test, put it on the carried or the deliberately-excluded
 // side, and bump this. It has already earned its keep once, catching
-// Identity.Extra arriving from another branch.
-const identityFieldCount = 8
+// Identity.Extra arriving from another branch. ClaimGroups is carried
+// in place of Groups when a login set it (see
+// TestSetIdentitySession_ShouldStoreTheClaimWhenTheLoginNarrowed), and the
+// rebuilt identity reads it back as Groups.
+const identityFieldCount = 9
 
 func TestIdentity_ShouldAccountForEveryFieldInTheRoundTripTest(t *testing.T) {
 	t.Parallel()
@@ -679,8 +683,9 @@ func TestSessionAuthMiddleware_ShouldRefreshTheIdentityFromTheStore(t *testing.T
 }
 
 // TestSessionAuthMiddleware_ShouldNotRefreshGroups pins the deliberate
-// exclusion: roles are read at login so that the session lifetime is the
-// revocation window, and nothing in the database may grant one.
+// exclusion: nothing in the database may grant a role, so a refresh that
+// does not narrow leaves the session's groups exactly as the cookie
+// carries them.
 func TestSessionAuthMiddleware_ShouldNotRefreshGroups(t *testing.T) {
 	t.Parallel()
 
@@ -936,5 +941,81 @@ func TestSessionAuthMiddleware_ShouldClearTheSessionOfADisabledAccount(t *testin
 
 	if reached != 0 || w2.Code != http.StatusUnauthorized {
 		t.Errorf("the ended session still authenticated: handler ran %d times, second status %d", reached, w2.Code)
+	}
+}
+
+// A login that narrowed its groups stores the claim, so every later
+// request narrows afresh and a role the directory lists again comes back.
+func TestSetIdentitySession_ShouldStoreTheClaimWhenTheLoginNarrowed(t *testing.T) {
+	t.Parallel()
+
+	got := roundTripIdentity(t, &service.Identity{
+		Subject:     "sub-alice",
+		Groups:      []string{"devs"},
+		ClaimGroups: []string{"ssh-admins", "devs"},
+	})
+	if !reflect.DeepEqual(got.Groups, []string{"ssh-admins", "devs"}) {
+		t.Errorf("got groups %v, want the claim [ssh-admins devs]", got.Groups)
+	}
+}
+
+// narrowingRefresher stands in for service.IdentityService with
+// ldap.authoritative_role_groups on: it removes every group not in keep.
+type narrowingRefresher struct {
+	keep []string
+}
+
+func (n *narrowingRefresher) RefreshIdentity(_ context.Context, identity *service.Identity) error {
+	kept := make([]string, 0, len(identity.Groups))
+	for _, g := range identity.Groups {
+		if slices.Contains(n.keep, g) {
+			kept = append(kept, g)
+		}
+	}
+	identity.Groups = kept
+	return nil
+}
+
+// The loss of a role is logged once per change, which the session records:
+// it is saved when a role is first taken away and when it comes back, and
+// left alone on the requests in between.
+func TestSessionAuthMiddleware_ShouldNoteARoleTakenAwayOncePerChange(t *testing.T) {
+	t.Parallel()
+
+	prior := doSessionRequest(t, func(c *gin.Context) {
+		if err := SetIdentitySession(c, &service.Identity{Subject: "sub-alice", Groups: []string{"ssh-admins", "devs"}}); err != nil {
+			t.Fatalf("SetIdentitySession() error = %v", err)
+		}
+	}, nil)
+
+	steps := []struct {
+		name      string
+		keep      []string
+		wantSaved bool
+	}{
+		{name: "should save the session when the directory first takes a role away", keep: []string{"devs"}, wantSaved: true},
+		{name: "should not save the session while the same role stays away", keep: []string{"devs"}},
+		{name: "should save the session when the role counts again", keep: []string{"ssh-admins", "devs"}, wantSaved: true},
+		{name: "should not save the session while nothing is taken away", keep: []string{"ssh-admins", "devs"}},
+	}
+	for _, step := range steps {
+		r := newSessionTestRouter()
+		r.GET("/whoami", NewSessionAuthMiddleware(time.Hour, 2*time.Hour, &narrowingRefresher{keep: step.keep}).Add(), func(c *gin.Context) {
+			c.String(http.StatusOK, "ok")
+		})
+		req := httptest.NewRequest(http.MethodGet, "/whoami", nil)
+		for _, c := range prior.Result().Cookies() {
+			req.AddCookie(c)
+		}
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		saved := len(w.Result().Cookies()) > 0
+		if saved != step.wantSaved {
+			t.Fatalf("%s: session saved = %v, want %v", step.name, saved, step.wantSaved)
+		}
+		if saved {
+			prior = w
+		}
 	}
 }

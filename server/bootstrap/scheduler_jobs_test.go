@@ -8,17 +8,24 @@ package bootstrap
 // rather than silently sending nothing.
 
 import (
+	"bytes"
+	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	metricnoop "go.opentelemetry.io/otel/metric/noop"
 
 	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/job"
 	"github.com/mnestor/ssoossh/server/pubsub"
 	"github.com/mnestor/ssoossh/server/service"
+	"github.com/mnestor/ssoossh/test/testdb"
 )
 
 // newTestScheduler builds a real scheduler that is never started; job
@@ -314,5 +321,272 @@ func TestRegisterLDAPSyncJob_ShouldRegisterTheSync(t *testing.T) {
 
 	if err := a.registerLDAPSyncJob(t.Context()); err != nil {
 		t.Errorf("registerLDAPSyncJob() = %v, want the sync registered", err)
+	}
+}
+
+func TestRegisterNSSDirectoryJobs_ShouldNotRegisterWhenNSSIsDisabled(t *testing.T) {
+	t.Parallel()
+
+	// No scheduler: the disabled gate must return before using it.
+	a := &app{config: &config.Config{}, svc: &services{}}
+	if err := a.registerNSSDirectoryJobs(t.Context()); err != nil {
+		t.Errorf("registerNSSDirectoryJobs() with nss disabled = %v, want nil", err)
+	}
+}
+
+// setNSSDirectory turns NSS on in c with the smallest valid directory
+// settings: the filters, the attribute map and the gecos template. In
+// place, leaving the rest of c.NSS as the caller set it; c.LDAP must
+// already describe a directory.
+func setNSSDirectory(c *config.Config) {
+	c.NSS.Enabled = true
+	c.NSS.UserFilter = "(objectClass=posixAccount)"
+	c.NSS.GroupFilter = "(objectClass=posixGroup)"
+	c.NSS.Attributes = config.NSSAttributes{
+		Name: "uid", UID: "uidNumber", GID: "gidNumber", Home: "homeDirectory", Shell: "loginShell",
+		GroupName: "cn", GroupGID: "gidNumber", GroupMember: "memberUid", GecosAttributes: []string{"cn"},
+	}
+	c.NSS.GecosTemplate = "{{.DisplayName}}"
+}
+
+// newTestNSSService builds the smallest enabled NSS directory service;
+// registration never dials, so no directory is needed.
+func newTestNSSService(t *testing.T, c *config.Config) *service.NSSDirectoryService {
+	t.Helper()
+
+	newTestLDAPService(t, c)
+	setNSSDirectory(c)
+	c.NSS.SyncInterval = 15 * time.Minute
+	c.NSS.FullSyncInterval = 24 * time.Hour
+	svc, err := service.NewNSSDirectoryService(c, nil)
+	if err != nil {
+		t.Fatalf("NewNSSDirectoryService: %v", err)
+	}
+	return svc
+}
+
+func TestRegisterNSSDirectoryJobs_ShouldRegisterTheJobsWhoseIntervalIsSet(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		incremental time.Duration
+		full        time.Duration
+	}{
+		{name: "should register every job when both intervals are set", incremental: 15 * time.Minute, full: 24 * time.Hour},
+		{name: "should skip the incremental sync when its interval is zero", full: 24 * time.Hour},
+		{name: "should skip the full sync when its interval is zero", incremental: 15 * time.Minute},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			c := &config.Config{}
+			svc := newTestNSSService(t, c)
+			c.NSS.SyncInterval, c.NSS.FullSyncInterval = tt.incremental, tt.full
+			a := &app{config: c, svc: &services{nss: svc}, scheduler: newTestScheduler(t)}
+
+			if err := a.registerNSSDirectoryJobs(t.Context()); err != nil {
+				t.Errorf("registerNSSDirectoryJobs() = %v, want the jobs registered", err)
+			}
+		})
+	}
+}
+
+func TestNSSSyncJobError_ShouldTreatAnOverlapAsRoutineWhenAnotherRunIsGoing(t *testing.T) {
+	t.Parallel()
+
+	boom := errors.New("directory unreachable")
+	tests := []struct {
+		name string
+		err  error
+		want error
+	}{
+		{name: "should report nothing when another run is still going", err: service.ErrNSSSyncInProgress, want: nil},
+		{name: "should pass a real failure through when the run failed", err: boom, want: boom},
+		{name: "should report nothing when the run succeeded", err: nil, want: nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := nssSyncJobError(t.Context(), tt.err); !errors.Is(got, tt.want) || (tt.want == nil && got != nil) {
+				t.Errorf("nssSyncJobError() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRegisterNSSIDChangeMailJobs_ShouldRegisterOnlyWhenMailIsOn(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		mail bool
+	}{
+		{name: "should register the sweep and the weekly reminder when mail is on", mail: true},
+		{name: "should register nothing and need no scheduler when mail is off", mail: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			c := &config.Config{}
+			svc := newTestNSSService(t, c)
+			a := &app{config: c, svc: &services{nss: svc}}
+			if tt.mail {
+				setEnabledMail(c)
+				a.scheduler = newTestScheduler(t)
+			}
+
+			if err := a.registerNSSIDChangeMailJobs(t.Context()); err != nil {
+				t.Errorf("registerNSSIDChangeMailJobs() = %v, want nil", err)
+			}
+		})
+	}
+}
+
+// newTestNSSKeyServices builds the fleet key and usage services the key
+// jobs register against. Registration only takes their method values, so
+// neither needs a database.
+func newTestNSSKeyServices(t *testing.T, c *config.Config) (*service.NSSKeyService, *service.NSSUsageService) {
+	t.Helper()
+
+	keys, err := service.NewNSSKeyService(c, nil, nil)
+	if err != nil {
+		t.Fatalf("NewNSSKeyService: %v", err)
+	}
+	usage, err := service.NewNSSUsageService(c, nil, keys, metricnoop.NewMeterProvider().Meter("test"))
+	if err != nil {
+		t.Fatalf("NewNSSUsageService: %v", err)
+	}
+	return keys, usage
+}
+
+// The key jobs are gated one by one: the prune by nss.usage_retention, the
+// two mail sweeps by mail.enabled and then their own settings. A case that
+// expects nothing registered runs with no scheduler, so registering
+// anything would panic rather than pass.
+func TestRegisterNSSKeyJobs_ShouldRegisterOnlyTheJobsTheirSettingsTurnOn(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		nssOff    bool
+		retention time.Duration
+		mail      bool
+		lead      time.Duration
+		quiet     time.Duration
+		registers bool
+	}{
+		{name: "should register nothing when NSS is off", nssOff: true, retention: time.Hour, mail: true, lead: time.Hour, quiet: time.Hour},
+		{name: "should register nothing when retention is zero and mail is off", lead: time.Hour, quiet: time.Hour},
+		{name: "should register nothing when mail is on but every setting is zero", mail: true},
+		{name: "should register the prune alone when mail is off", retention: time.Hour, lead: time.Hour, quiet: time.Hour, registers: true},
+		{name: "should register the expiry reminder when its lead is set", mail: true, lead: 7 * 24 * time.Hour, registers: true},
+		{name: "should register the rotation digest when its quiet period is set", mail: true, quiet: 7 * 24 * time.Hour, registers: true},
+		{name: "should register every job when every setting is on", retention: time.Hour, mail: true, lead: time.Hour, quiet: time.Hour, registers: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			c := &config.Config{}
+			c.NSS.UsageRetention = tt.retention
+			c.Mail.Enabled = tt.mail
+			c.Mail.ExpiryReminderLead = tt.lead
+			c.Mail.RotationQuietPeriod = tt.quiet
+			a := &app{config: c, svc: &services{}}
+			if !tt.nssOff {
+				a.svc.nssKeys, a.svc.nssUsage = newTestNSSKeyServices(t, c)
+			}
+			if tt.registers {
+				a.scheduler = newTestScheduler(t)
+			}
+
+			if err := a.registerNSSKeyJobs(t.Context()); err != nil {
+				t.Errorf("registerNSSKeyJobs() = %v, want nil", err)
+			}
+		})
+	}
+}
+
+// lockedBuffer is a bytes.Buffer safe for the scheduler's goroutines to log
+// into while the test reads it.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+// Write appends p under the lock.
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+// String returns everything written so far.
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// The registered sync jobs call the directory service and hand its failure
+// to the scheduler: with a directory that refuses connections, each job's
+// run is logged as failed. The intervals are shortened so the scheduler
+// fires both within the test; the hourly tombstone purge does not run.
+//
+// Installs the process logger; must not run in parallel.
+func TestRegisterNSSDirectoryJobs_ShouldRunTheSyncsAndReportTheirFailure(t *testing.T) {
+	logs := &lockedBuffer{}
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	c := &config.Config{}
+	newTestLDAPService(t, c)
+	c.LDAP.URL = "ldaps://127.0.0.1:1"
+	setNSSDirectory(c)
+	c.NSS.SyncInterval, c.NSS.FullSyncInterval = 20*time.Millisecond, 30*time.Millisecond
+	nss, err := service.NewNSSDirectoryService(c, testdb.New(t))
+	if err != nil {
+		t.Fatalf("NewNSSDirectoryService: %v", err)
+	}
+	a := &app{config: c, svc: &services{nss: nss}, scheduler: newTestScheduler(t)}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	if err := a.registerNSSDirectoryJobs(ctx); err != nil {
+		t.Fatalf("registerNSSDirectoryJobs() = %v", err)
+	}
+	done := make(chan struct{})
+	go func() {
+		_ = a.scheduler.Run(ctx)
+		close(done)
+	}()
+	defer func() {
+		cancel()
+		<-done
+	}()
+
+	// failed reports whether job has logged a failed run. Two syncs that
+	// overlap skip as routine, so each is waited on until one of its runs
+	// reaches the directory.
+	failed := func(job string) bool {
+		for line := range strings.SplitSeq(logs.String(), "\n") {
+			if strings.Contains(line, `msg="Job failed"`) && strings.Contains(line, "name="+job+" ") {
+				return true
+			}
+		}
+		return false
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for _, job := range []string{nssIncrementalSyncJobName, nssFullSyncJobName} {
+		for !failed(job) {
+			if time.Now().After(deadline) {
+				t.Fatalf("no failed run of %s logged:\n%s", job, logs.String())
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
 	}
 }

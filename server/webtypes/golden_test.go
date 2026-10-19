@@ -69,10 +69,91 @@ func fullFixtures() map[string]any {
 		Disabled:      1,
 		Reenabled:     1,
 		Error:         "the directory refused the bind",
+		NSS: &webtypes.NSSSyncRunResponse{
+			Full:       true,
+			StartedAt:  issuedAt.Add(2 * time.Minute),
+			FinishedAt: &syncFinishedAt,
+			Accounts:   webtypes.NSSSyncCountsResponse{Seen: 120, Skipped: 1, Created: 3, Updated: 115, Refused: 1, Failed: 1, Missing: 2, Tombstoned: 1},
+			Groups:     webtypes.NSSSyncCountsResponse{Seen: 40, Skipped: 2, Created: 1, Updated: 36, Refused: 1, Failed: 1, Missing: 1, Tombstoned: 1},
+			Error:      "another NSS sync was still running",
+		},
 	}
+	pendingUID, pendingGID := uint32(20001), uint32(20002)
+	missingSince, deletedAt := issuedAt.Add(-48*time.Hour), issuedAt.Add(-24*time.Hour)
+	viewerCursor, viewerMemberCursor := "8d0f3c2a-1b4e-4c6d-9a7f-0e1d2c3b4a59", "10001"
+	viewerHome, viewerShell := "/home/ada.lovelace", "/bin/bash"
 	callerUID, callerGID, callerPID, callerPPID := int64(1000), int64(1000), int64(4242), int64(4200)
 
+	// The NSS fixtures: one rotated and revoked key, and the key's usage
+	// and rotation report, sharing timestamps so the shapes cannot describe
+	// different moments.
+	keyRotatedAt := issuedAt.Add(24 * time.Hour)
+	keyExpiresAt := issuedAt.Add(8760 * time.Hour)
+	keyPreviousExpires := keyRotatedAt.Add(720 * time.Hour)
+	keyRevokedAt := keyRotatedAt.Add(48 * time.Hour)
+	keyRevokedBy := "4b7d0c55-1e2f-4a3b-8c9d-0e1f2a3b4c5d"
+	keyLastUsed := keyRotatedAt.Add(time.Hour)
+	keyMissRateAlert := keyRotatedAt.Add(30 * time.Minute)
+	keySourceAlert := keyRotatedAt.Add(45 * time.Minute)
+	nssKey := webtypes.NSSKeyResponse{
+		ID:                "nss_k7m4qp2x",
+		Name:              "web fleet",
+		Description:       "every host in the web tier",
+		GroupName:         "web-admins",
+		Status:            "revoked",
+		CurrentGeneration: 2,
+		CreatedBy:         "9c1f0f8e-1d0a-4a37-9d1e-2f6a1b4c5d6e",
+		CreatedByUsername: "alice",
+		CreatedAt:         issuedAt,
+		UpdatedAt:         keyRevokedAt,
+		ExpiresAt:         &keyExpiresAt,
+		NotificationEmail: "web-admins@example.org",
+		RotatedAt:         &keyRotatedAt,
+		PreviousExpiresAt: &keyPreviousExpires,
+		RevokedAt:         &keyRevokedAt,
+		RevokedBy:         &keyRevokedBy,
+		RevokedByUsername: "bob",
+		Permissions:       []model.NSSKeyPermission{"view", "rotate", "revoke", "edit", "assign_group"},
+		LastUsedAt:        &keyLastUsed,
+		MissRateAlertAt:   &keyMissRateAlert,
+		KeySourceAlertAt:  &keySourceAlert,
+	}
+	usageCursor := "1792022400.2.192.0.2.10"
+	nssKeyExpires := issuedAt.Add(8760 * time.Hour)
+	nssNotificationEmail := "web-admins@example.org"
+	nssDescription := "every host in the web tier"
+	nssGroup := "web-admins"
+
 	return map[string]any{
+		"nss_key_settings": webtypes.NSSKeySettingsResponse{MaxLifetimeSeconds: 31536000, RotationGraceSeconds: 604800},
+		"nss_key":          nssKey,
+		"nss_key_list":     webtypes.NSSKeyListResponse{Keys: []webtypes.NSSKeyResponse{nssKey}, CanCreate: true},
+		"nss_key_secret":   webtypes.NSSKeySecretResponse{Key: nssKey, Secret: "ssoossh_nss_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"},
+		"create_nss_key":   webtypes.CreateNSSKeyBody{Name: "web fleet", Description: nssDescription, GroupName: nssGroup, ExpiresAt: &nssKeyExpires, NotificationEmail: &nssNotificationEmail},
+		"update_nss_key":   webtypes.UpdateNSSKeyBody{Description: &nssDescription, NotificationEmail: &nssNotificationEmail, GroupName: &nssGroup},
+		"nss_key_usage":    webtypes.NSSKeyUsageResponse{Rows: []webtypes.NSSKeyUsageRowResponse{{SourceIP: "192.0.2.10", Generation: 2, Day: time.Date(2026, 10, 17, 0, 0, 0, 0, time.UTC), Lookups: 1200, Misses: 7, FirstSeen: keyRotatedAt, LastSeen: keyRotatedAt.Add(time.Hour)}}, Total: 41, NextCursor: &usageCursor},
+		"nss_admin_keys": webtypes.NSSAdminKeysResponse{
+			Keys: []webtypes.NSSAdminKeyResponse{{
+				ID: "nss_k7m4qp2x", Name: "web fleet", GroupName: nssGroup, Status: model.NSSKeyStatusRevoked,
+				CurrentGeneration: 2, ExpiresAt: &nssKeyExpires, PreviousExpiresAt: &keyPreviousExpires,
+				RevokedAt: &keyRotatedAt, CreatedAt: issuedAt,
+				Creator: webtypes.NSSKeyCreatorResponse{
+					UserID: "3c2b1a09-8f7e-4d6c-b5a4-938271605f4e", Username: "kim", Email: "kim@example.org", Exists: true,
+				},
+				Hosts7d: 14, LastSeenAt: &keyRotatedAt, MissRateAlertAt: &keyRotatedAt, KeySourceAlertAt: &keyRotatedAt,
+				Matched: &webtypes.NSSKeyMatchedUseResponse{
+					Addresses: []webtypes.NSSKeyAddressUseResponse{{SourceIP: "10.0.4.7", LastSeen: keyRotatedAt, Generation: 1, Secret: model.NSSSecretGenerationPrevious}},
+					Total:     9,
+				},
+			}},
+			Total: 42, NextCursor: &usageCursor, AddressSearch: "10.0.4.0/24", UsageRetentionSeconds: 7776000,
+		},
+		"nss_rotation_report": webtypes.NSSRotationReportResponse{
+			KeyID: "nss_k7m4qp2x", CurrentGeneration: 2, RotatedAt: &keyRotatedAt, PreviousExpiresAt: &keyPreviousExpires,
+			GraceDaysLeft: 29, Switched: 40, NotSwitched: 2, Gone: 1,
+			Rows: []webtypes.NSSRotationReportRowResponse{{SourceIP: "192.0.2.10", FirstSeen: issuedAt, LastSeen: keyRotatedAt.Add(time.Hour), Lookups: 1200, LastGeneration: 1, Bucket: "not_switched"}},
+		},
+
 		"current_user": webtypes.CurrentUserResponse{
 			Subject:         "9c1f0f8e-1d0a-4a37-9d1e-2f6a1b4c5d6e",
 			Username:        "alice",
@@ -91,9 +172,11 @@ func fullFixtures() map[string]any {
 				"employee_id": "E-12345",
 				"department":  "Engineering",
 			},
-			IsAdmin:   true,
-			IsSOC:     true,
-			IsAuditor: true,
+			IsAdmin:       true,
+			IsSOC:         true,
+			IsAuditor:     true,
+			IsNSSKeyAdmin: true,
+			NSSEnabled:    true,
 
 			DetailLevel: model.DetailLevelAdvanced,
 		},
@@ -275,6 +358,95 @@ func fullFixtures() map[string]any {
 			LastRun:               &syncRun,
 		},
 		"ldap_sync_run": syncRun,
+		"nss_pending_id_changes": webtypes.NSSPendingIDChangesResponse{
+			Users: []webtypes.NSSPendingUserIDChange{{
+				Name: "ada.lovelace", DN: "uid=ada.lovelace,ou=people,dc=example,dc=net", UID: 10001, GID: new(uint32(10001)),
+				PendingUID: &pendingUID, PendingGID: &pendingGID, PendingSince: issuedAt,
+			}},
+			Groups: []webtypes.NSSPendingGroupIDChange{{
+				Name: "engineering", DN: "cn=engineering,ou=groups,dc=example,dc=net", GID: 5000, PendingGID: 5001, PendingSince: issuedAt,
+			}},
+		},
+		"nss_accepted_user_id_change": webtypes.NSSAcceptedUserIDChangeResponse{
+			Name: "ada.lovelace", DN: "uid=ada.lovelace,ou=people,dc=example,dc=net", UID: 20001, GID: new(uint32(20002)),
+		},
+		"nss_accepted_group_id_change": webtypes.NSSAcceptedGroupIDChangeResponse{
+			Name: "engineering", DN: "cn=engineering,ou=groups,dc=example,dc=net", GID: 5001,
+		},
+		"nss_collisions": webtypes.NSSCollisionsResponse{
+			Collisions: []webtypes.NSSCollisionResponse{{
+				Kind:  "uid",
+				Value: "10001",
+				Holder: webtypes.NSSCollisionEntryResponse{
+					Name: "ada.lovelace", DN: "uid=ada.lovelace,ou=people,dc=example,dc=net", Number: 10001,
+					Stored: true, Tombstone: true, MissingSince: &missingSince, DeletedAt: &deletedAt,
+				},
+				Other: webtypes.NSSCollisionEntryResponse{
+					Name: "ada", DN: "uid=ada,ou=contractors,dc=example,dc=net", Number: 10001,
+					Stored: true, Tombstone: true, MissingSince: &missingSince, DeletedAt: &deletedAt,
+				},
+				FirstSeenAt: issuedAt.Add(-time.Hour),
+				LastSeenAt:  issuedAt,
+			}},
+		},
+		"nss_purged_tombstone": webtypes.NSSPurgedTombstoneResponse{
+			Name: "ada.lovelace", DN: "uid=ada.lovelace,ou=people,dc=example,dc=net", Number: 10001,
+		},
+		"nss_accounts": webtypes.NSSAccountsResponse{
+			Accounts: []webtypes.NSSAccountSummaryResponse{{
+				ID: "8d0f3c2a-1b4e-4c6d-9a7f-0e1d2c3b4a59", Name: "ada.lovelace", UID: 10001, GID: new(uint32(10001)),
+				Gecos: "Ada Lovelace", DN: "uid=ada.lovelace,ou=people,dc=example,dc=net",
+				State: model.NSSEntryStatePending, LastSyncedAt: issuedAt,
+			}},
+			Total:      42,
+			NextCursor: &viewerCursor,
+		},
+		"nss_account_detail": webtypes.NSSAccountDetailResponse{
+			ID: "8d0f3c2a-1b4e-4c6d-9a7f-0e1d2c3b4a59", Name: "ada.lovelace", UID: 10001, GID: new(uint32(10001)),
+			DirectoryID: "5b7c9d1e-2f3a-4b5c-8d6e-7f8091a2b3c4", DN: "uid=ada.lovelace,ou=people,dc=example,dc=net",
+			Home: &viewerHome, Shell: &viewerShell, Gecos: "Ada Lovelace", DirDisabled: true,
+			Person: &webtypes.NSSLinkedPersonResponse{
+				UserID: "3c2b1a09-8f7e-4d6c-b5a4-938271605f4e", Username: "ada", DisplayName: "Ada Lovelace", DisabledAt: &deletedAt,
+			},
+			PendingUID: &pendingUID, PendingGID: &pendingGID, PendingSince: &missingSince,
+			MissingSince: &missingSince, DeletedAt: &deletedAt, WithheldAt: &deletedAt,
+			WithheldReason: "uid 10001 is also carried by uid=ada,ou=contractors,dc=example,dc=net",
+			State:          model.NSSEntryStateWithheld,
+			CreatedAt:      issuedAt.Add(-720 * time.Hour), UpdatedAt: issuedAt, LastSyncedAt: issuedAt,
+			Groups: []webtypes.NSSStoredMembershipResponse{{GID: 5000, Name: "engineering", State: model.NSSEntryStateActive, AddedAt: &missingSince}},
+			Served: &webtypes.NSSServedAccountResponse{
+				Name: "ada.lovelace", UID: 10001, GID: 10001,
+				Groups: []webtypes.NSSServedMembershipResponse{{GID: 10001, Name: "ada.lovelace"}, {GID: 5000, Name: "engineering"}},
+				Home:   &viewerHome, Shell: &viewerShell, Gecos: "Ada Lovelace",
+				Status: model.PosixStatusDisabled,
+			},
+			NotServed: model.NSSNotServedWithheld,
+		},
+		"nss_groups": webtypes.NSSGroupsResponse{
+			Groups: []webtypes.NSSGroupSummaryResponse{{
+				ID: "1e2d3c4b-5a69-4788-9a0b-1c2d3e4f5a6b", Name: "engineering", GID: 5000,
+				DN: "cn=engineering,ou=groups,dc=example,dc=net", State: model.NSSEntryStateMissing,
+				MemberCount: 12, LastSyncedAt: issuedAt,
+			}},
+			Total:      7,
+			NextCursor: &viewerCursor,
+		},
+		"nss_group_detail": webtypes.NSSGroupDetailResponse{
+			ID: "1e2d3c4b-5a69-4788-9a0b-1c2d3e4f5a6b", Name: "engineering", GID: 5000,
+			DirectoryID: "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d", DN: "cn=engineering,ou=groups,dc=example,dc=net",
+			PendingGID: &pendingGID, PendingSince: &missingSince, MissingSince: &missingSince,
+			DeletedAt: &deletedAt, WithheldAt: &deletedAt,
+			WithheldReason: "gid 5000 is also carried by cn=eng,ou=legacy,dc=example,dc=net",
+			State:          model.NSSEntryStateWithheld, MemberCount: 2400,
+			CreatedAt: issuedAt.Add(-720 * time.Hour), UpdatedAt: issuedAt, LastSyncedAt: issuedAt,
+			Served:    &webtypes.NSSServedGroupResponse{Name: "engineering", GID: 5000, MemberCount: 2000, MembersTruncated: true},
+			NotServed: model.NSSNotServedPastRetention,
+		},
+		"nss_group_members": webtypes.NSSGroupMembersResponse{
+			Members:    []webtypes.NSSGroupMemberResponse{{UID: 10001, Name: "ada.lovelace", State: model.NSSEntryStateDisabled, AddedAt: &missingSince}},
+			Total:      12,
+			NextCursor: &viewerMemberCursor,
+		},
 		"ldap_probe": webtypes.LDAPProbeResponse{
 			BaseDN:      "dc=example,dc=net",
 			FilterSent:  "(&(objectClass=person)(uid=alice))",
@@ -335,17 +507,36 @@ func fullFixtures() map[string]any {
 // reaches production.
 func zeroFixtures() map[string]any {
 	return map[string]any{
-		"current_user":             webtypes.CurrentUserResponse{},
-		"certificate_options":      webtypes.CertificateOptionsResponse{},
-		"request_detail":           webtypes.RequestDetailResponse{},
-		"certificate":              webtypes.CertificateResponse{},
-		"service_enrollment":       webtypes.ServiceEnrollmentResponse{},
-		"enrollment_retrievals":    webtypes.EnrollmentRetrievalsResponse{},
-		"notification_preferences": webtypes.NotificationPreferencesResponse{},
-		"display_preferences":      webtypes.DisplayPreferencesResponse{},
-		"ldap_status":              webtypes.LDAPStatusResponse{},
-		"ldap_sync_run":            webtypes.LDAPSyncRunResponse{},
-		"ldap_probe":               webtypes.LDAPProbeResponse{},
+		"current_user":                 webtypes.CurrentUserResponse{},
+		"certificate_options":          webtypes.CertificateOptionsResponse{},
+		"request_detail":               webtypes.RequestDetailResponse{},
+		"certificate":                  webtypes.CertificateResponse{},
+		"service_enrollment":           webtypes.ServiceEnrollmentResponse{},
+		"enrollment_retrievals":        webtypes.EnrollmentRetrievalsResponse{},
+		"notification_preferences":     webtypes.NotificationPreferencesResponse{},
+		"display_preferences":          webtypes.DisplayPreferencesResponse{},
+		"ldap_status":                  webtypes.LDAPStatusResponse{},
+		"ldap_sync_run":                webtypes.LDAPSyncRunResponse{},
+		"ldap_probe":                   webtypes.LDAPProbeResponse{},
+		"nss_pending_id_changes":       webtypes.NSSPendingIDChangesResponse{},
+		"nss_accepted_user_id_change":  webtypes.NSSAcceptedUserIDChangeResponse{},
+		"nss_accepted_group_id_change": webtypes.NSSAcceptedGroupIDChangeResponse{},
+		"nss_collisions":               webtypes.NSSCollisionsResponse{},
+		"nss_purged_tombstone":         webtypes.NSSPurgedTombstoneResponse{},
+		"nss_accounts":                 webtypes.NSSAccountsResponse{},
+		"nss_account_detail":           webtypes.NSSAccountDetailResponse{},
+		"nss_groups":                   webtypes.NSSGroupsResponse{},
+		"nss_group_detail":             webtypes.NSSGroupDetailResponse{},
+		"nss_group_members":            webtypes.NSSGroupMembersResponse{},
+		"nss_key":                      webtypes.NSSKeyResponse{},
+		"nss_key_settings":             webtypes.NSSKeySettingsResponse{},
+		"nss_key_list":                 webtypes.NSSKeyListResponse{},
+		"nss_key_secret":               webtypes.NSSKeySecretResponse{},
+		"create_nss_key":               webtypes.CreateNSSKeyBody{},
+		"update_nss_key":               webtypes.UpdateNSSKeyBody{},
+		"nss_key_usage":                webtypes.NSSKeyUsageResponse{},
+		"nss_rotation_report":          webtypes.NSSRotationReportResponse{},
+		"nss_admin_keys":               webtypes.NSSAdminKeysResponse{},
 	}
 }
 

@@ -10,11 +10,12 @@
   issuance or anyone's authority.
   - A human approves every issuance in the browser. Service certificates are approved once, at enrollment. Every issuance goes through the sign queue.
   - Issued certificates are never stored on the server. Delivery is the only copy.
-  - Group membership never appears in a certificate. Roles and policy come from the session identity, never from database rows.
+  - Group membership never appears in a certificate. Roles and policy come from the session identity, never from database rows, with one narrowing exception: with `ldap.authoritative_role_groups` on, a role group (admin, SOC, auditor, fleet key admin) counts for a directory-linked user only while the latest directory read still lists it, so the sync can take a role away between logins, effective on the next request. The directory never grants a role.
   - There are no host certificates. `ssoossh host` is local principal mapping for `AuthorizedPrincipalsCommand`, plus `host check`, a read-only report on whether this host's sshd will accept ssoossh certificates.
   - `verify-required` is never used. `no-touch-required` is only for enrolled `sk-` keys on the service path.
-  - Policy uses the source address the server observed, never one the client supplied. Audit records never capture `Cookie` or `Authorization`.
+  - Policy uses the source address the server observed, never one the client supplied. Audit records never capture `Cookie` or `Authorization`. No log line, audit record or API response carries a fleet key secret, except the one-time display at create and rotate.
   - `client/` and `server/` never import each other. `internal/apitypes` and `internal/principalsmap` are a cross-repo wire contract with pam_ssoossh, gated by `docs/wire-contract.json`.
+  - NSS answers which POSIX identity a name has, never whether anyone may log in: login authorization stays with certificates. The host side is a systemd userdb service; there is no NSS module of our own. The login shell comes from the directory and host policy only; nobody picks their own.
 
   ### Certificate types (each has its own `cert_options.<type>` block: `valid_duration` and `extensions` ceilings, `key_id_template`, `require`/`require_group`, `lifetime_policy`)
   - User: interactive SSH, started from `ssh_config` (`Match exec "ssoossh ssh login"` or ProxyCommand). A valid certificate is reused until it expires.
@@ -24,7 +25,8 @@
 
   ### Server (ssoosshd)
   - OIDC login with PKCE on by default and claim mapping: subject, username, name, groups, other_accounts, service_accounts, email, extra.
-  - Optional LDAP enrichment and scheduled directory sync (`disable_after`, `reenable`), plus `ssoosshd ldap probe` and admin sync, probe and status.
+  - Optional LDAP enrichment and scheduled directory sync (`disable_after`, `reenable`), `ldap.schema` presets (rfc2307, rfc2307bis, active-directory, lldap, freeipa) that config overrides key by key, plus `ssoosshd ldap probe`, `ssoosshd ldap sync` and admin sync, probe and status.
+  - NSS directory (requires LDAP): a full sync of the `nss.user_filter` and `nss.group_filter` scope; uid and gid frozen once stored, with directory changes held until an admin accepts them; the primary gid handled as sssd handles it in each `nss.auto_private_groups` mode; a group renamed under the same gid keeps its identity; collisions withheld from every host; entries missing from the directory tombstoned, then purged; membership and lifecycle changes audited per entry. `/api/nss/*` lookups are authenticated by fleet keys (rotation with a grace period for the previous secret, each rotation renewing the expiry within `nss.key_max_lifetime`, revoke, usage and a rotation report), limited per key and source address, and narrowed by `nss.source_allow_list`.
   - Principals are the user's own name plus other_accounts and service_accounts, chosen at approval. These lists are re-read from the database on every request.
   - Lifetime policy only narrows.
     - Conditions: group, claim, at_least, at_most, exactly, equals, one_of, contains, all_of, any_of.
@@ -34,9 +36,9 @@
   - The CA key comes through the `CAKeySource` interface, from one of four sources: `ssh_key`, `ssh_key_file`, `ssh_key_agent` or `hsm` (PKCS#11).
   - Signing is asynchronous and the signer has no database access. Run modes are `serve`, `serve api` and `sign`. Multi-instance needs NATS (mTLS) and a shared database.
   - Database: SQLite or Postgres, with migrations for both.
-  - Roles come from OIDC groups named in config: admin implies SOC implies auditor. There is no admin role stored in the database.
+  - Roles come from OIDC groups named in config: admin implies SOC implies auditor. `admin.nss_key_group` (fleet key admin) is a fourth group outside that chain, which admin also implies. There is no admin role stored in the database.
   - The audit log is append-only and is swept by retention or row cap. Approval decisions record who, from where, when and what was granted.
-  - Email notifications cover certificates issued (user, PAM, console), service enrollments (created, redeemed, expiring, expired-code attempt), and an admin the directory sync disabled (always sent, no opt-out). Users set their own notification preferences.
+  - Email notifications cover certificates issued (user, PAM, console), service enrollments (created, redeemed, expiring, expired-code attempt), and an admin the directory sync disabled (always sent, no opt-out). Admins are also mailed when a directory sync holds a uid or gid change for their approval, with a weekly reminder while it waits; recipients come from each admin's last login. Users set their own notification preferences.
   - Each user has two detail levels, both stored on the server per user: one for the web UI and a separate one for email.
     - The defaults are set once, at the user's first login: advanced for SOC and admin, simplified for everyone else. A later change of groups never moves them.
     - The email level decides only whether a message adds its "Details" section (key IDs, serials, options). Users without a stored level, and a service code's notification address, get simplified.
@@ -45,7 +47,7 @@
 
   ### Client (ssoossh)
   - Runs on macOS, Linux and Windows.
-  - Commands: `ssh login|logout|proxycommand|inspect|config`, `host principals|mapping list|add|remove|check`, `service enroll|retrieve`, `ca`, `version`.
+  - Commands: `ssh login|logout|proxycommand|inspect|config`, `host principals|mapping list|add|remove|check`, `service enroll|retrieve`, `ca`, `version`. `host principals` also asks the local ssoosshd-nss to refresh the user: one-way, over its local socket, never the network.
   - A new keypair is generated for every new certificate. Keys go to ssh-agent, or to files when `fallback_file_agent` allows. A preflight store-and-remove round trip runs before the request is made.
   - Key type and size are steered, FIPS-aware. CA public keys are cached and can be a list. `service retrieve` has an offline grace period.
   - Certificate extensions can be opted out in config or with the `--no-*` flags.
@@ -62,20 +64,26 @@
   - `forbidden_certificate_extensions` is subtracted after flags and cannot be re-added.
   - This is a guardrail, not a security boundary, but the shipped client must honour it.
 
+  ### ssoosshd-nss (host daemon, Linux)
+  - A systemd userdb service on /run/systemd/userdb/com.github.mnestor.ssoossh, socket-activated; nss-systemd is the glibc side. Floor: systemd 245+, glibc, `systemd` on the passwd, group and shadow lines.
+  - Local accounts and groups always win: a directory membership is matched to a local group by gid, never by name, and out-of-range ids and name collisions are refused and listed in `ssoosshd-nss status`.
+  - TLS trust named explicitly: a CA file, an SPKI digest, or the host's system store as `tls_ca_file: system`, never by default; fleet key in a root-only file, a persistent cache whose user and group entries correct each other, a fresh read for an sshd login once an entry is older than `login_soft_ttl` (sshd recognised by uid 0 and its cgroup), a connection cap with a share kept for uid 0, an empty capability bounding set.
+  - Packages `ssoosshd-nss` (deb, rpm) and `ssoossh-nss-selinux` (rpm).
+
   ### Web UI (SvelteKit, embedded in ssoosshd)
   - Approval page:
     - shows what will be issued, with trimmed options struck through
     - has a principal picker that remembers the last approved set per browser
     - offers a simplified or advanced detail level, saved to the user's account on the server (not per browser) and shared with the certificate and service code pages
-  - User pages: dashboard, certificate detail, own history, service codes (holders, redemption log), console code entry, preferences (notification kinds, email detail level, web detail level), account.
-  - Admin pages: users (audit timeline, disable and enable), audit, certificate history, service codes (expire), directory, diagnostics, config, identity echo.
+  - User pages: dashboard, certificate detail, own history, service codes (holders, redemption log), console code entry, preferences (notification kinds, email detail level, web detail level), account, NSS keys (the keys of your own groups: create with a one-time secret, rotate, revoke, usage, rotation report).
+  - Admin pages: users (audit timeline, disable and enable), audit, certificate history, service codes (expire), directory (with pending id changes and collisions), NSS directory (stored accounts and groups, what hosts are served, per-entry history and the date each membership was added), NSS keys (every fleet key, searchable by name, group, creator or source address and range), diagnostics, config, identity echo.
 
   ### pam_ssoossh (separate C repo mnestor/ssoossh-pam; its docs live here)
   - PAM `auth` module with an ephemeral keypair. It shares the principals-map file format with `ssoossh host`.
 
   ### Not built yet (designs in `docs/proposals/`; not shipped, but do not delete them)
-  - Admin elevation, NSS directory (4 parts), client policy assertions, config coordination, service retrieval anomaly policy, service source-address restrictions, GUI client approval flow sections 1-5, LDAP GSSAPI bind, the rest of cloud HSM
+  - Admin elevation, client policy assertions, config coordination, service retrieval anomaly policy, service source-address restrictions, GUI client approval flow sections 1-5, LDAP GSSAPI bind, the rest of cloud HSM
   readiness and of the lifetime policy rework.
 
   ### Declined on purpose (see the Decisions page)
-  - Host certificates, a database-stored admin role, runtime policy that can loosen, pinning user certificates to a source address (may be revisited), JetStream, sticky sessions, `client_timeout: 0`, API versioning, i18n.
+  - Host certificates, a database-stored admin role, runtime policy that can loosen, pinning user certificates to a source address (may be revisited), JetStream, sticky sessions, `client_timeout: 0`, API versioning, i18n, an NSS module of our own, HTTP inside an NSS module, the sssd proxy provider, on-demand-only directory reads, a login shell users pick themselves.

@@ -105,6 +105,14 @@ const (
 	// the attempt shows on that account's timeline: a slog line alone is
 	// invisible to the reviewer reading it.
 	AuditUserDisableRefused AuditAction = "user.disable_refused"
+	// AuditUserRoleNarrowedByDirectory records a successful directory read
+	// that stopped listing a role group the user holds through OIDC, with
+	// ldap.authoritative_role_groups on: from then on that role no longer
+	// counts for them, in a live session from its next request. One event
+	// per read that changes the rows, not one per request. A system action,
+	// so it carries no actor; the detail names the groups and whether a
+	// login or the sync made the read.
+	AuditUserRoleNarrowedByDirectory AuditAction = "user.role_narrowed_by_directory"
 
 	// Privileged detail views. List views are deliberately not audited:
 	// a row per page of the user directory says nothing. If a list query
@@ -138,4 +146,144 @@ const (
 	// outbound connection (to its own public URL), so it is recorded with
 	// the worst status each check reached.
 	AuditAdminDiagnosticsRun AuditAction = "admin.diagnostics_run"
+
+	// The NSS directory's alerts. The server raises each itself (System,
+	// no actor), at most once a day per contested value, row or person
+	// across every instance, and keeps raising it daily while the
+	// condition lasts; the detail names the entries involved.
+
+	// AuditNSSUIDCollision is two directory accounts carrying one uid.
+	// Neither is served while it lasts: the stored one is withheld and the
+	// other is not stored. A tombstone holds its uid, so a new entry
+	// presenting it collides too.
+	AuditNSSUIDCollision AuditAction = "nss.uid_collision"
+	// AuditNSSGIDCollision is the same for two directory groups and a gid.
+	AuditNSSGIDCollision AuditAction = "nss.gid_collision"
+	// AuditNSSNameCollision is two accounts, or two groups, carrying one
+	// name, including a rename onto a name another row holds. The detail's
+	// "table" says which.
+	AuditNSSNameCollision AuditAction = "nss.name_collision"
+	// AuditNSSIDChangePending is a stored uid or gid the directory now
+	// gives a different value. The stored value keeps being served until
+	// an admin accepts the change (nss.id_change_accepted) or the
+	// directory reverts.
+	AuditNSSIDChangePending AuditAction = "nss.id_change_pending"
+	// AuditNSSNameMismatch is a person whose username differs from the
+	// POSIX name of the account linked to them, so a certificate for their
+	// own name can never resolve on a host. Raised at login; the target is
+	// the person.
+	AuditNSSNameMismatch AuditAction = "nss.name_mismatch"
+
+	// AuditNSSIDChangeAccepted is an admin applying a pending uid or gid
+	// change, which re-keys the account's or group's memberships in the
+	// same transaction. Hosts see the new number only after it.
+	AuditNSSIDChangeAccepted AuditAction = "nss.id_change_accepted"
+	// AuditNSSTombstonePurged is a tombstoned account or group deleted,
+	// freeing its number and name: by the server once
+	// nss.tombstone_retention has passed (System), or early by an admin.
+	// One event per row, naming it.
+	AuditNSSTombstonePurged AuditAction = "nss.tombstone_purged"
+	// AuditNSSGroupRenamed is a stored group re-anchored on a directory
+	// entry at a new DN that carries its gid: the group was renamed or
+	// moved, and its old entry has gone (a full sync did not see it, or a
+	// base-scope read found nothing there). The row keeps its id, gid and
+	// members; the detail has the old and new name and DN and how the
+	// absence was established. Accounts are never re-anchored this way: a
+	// moved account without a stable ldap.id_attribute stays withheld.
+	AuditNSSGroupRenamed AuditAction = "nss.group_renamed"
+
+	// The NSS directory's own changes, recorded with the write that makes
+	// them (decided 2026-10-18 by the owner). The server's (System) on a
+	// sync or an on-demand read, the admin's on an accepted id change or an
+	// early purge. Each detail carries "table", the row's name, uid or gid
+	// and DN, and "via": full_sync, incremental_sync, on_demand, login,
+	// tombstoned, id_change_accepted or tombstone_purged. An account's
+	// linked person, when it has one, is the target.
+
+	// AuditNSSAccountCreated is a directory account stored for the first
+	// time. A sync into an empty table records nss.initial_import instead.
+	AuditNSSAccountCreated AuditAction = "nss.account_created"
+	// AuditNSSGroupCreated is the same for a group; member_count is the
+	// members stored with it, so no nss.group_members_changed goes with it.
+	AuditNSSGroupCreated AuditAction = "nss.group_created"
+	// AuditNSSAccountRenamed is a stored account taking the new name its
+	// directory entry carries (old_name, new_name). Only an entry matched
+	// by directory_id or DN; a rename onto a held name is a collision.
+	AuditNSSAccountRenamed AuditAction = "nss.account_renamed"
+	// AuditNSSAccountMissing is the first full sync that did not see an
+	// account: missing_since is set, and it becomes a tombstone after
+	// nss.tombstone_after.
+	AuditNSSAccountMissing AuditAction = "nss.account_missing"
+	// AuditNSSGroupMissing is the same for a group.
+	AuditNSSGroupMissing AuditAction = "nss.group_missing"
+	// AuditNSSAccountTombstoned is a missing account tombstoned: served as
+	// disabled, still holding its uid and name.
+	AuditNSSAccountTombstoned AuditAction = "nss.account_tombstoned"
+	// AuditNSSGroupTombstoned is a missing group tombstoned: served with no
+	// members (the wipe is its own nss.group_members_changed).
+	AuditNSSGroupTombstoned AuditAction = "nss.group_tombstoned"
+	// AuditNSSAccountRevived is a missing or tombstoned account seen in the
+	// directory again (missing_since, was_tombstoned).
+	AuditNSSAccountRevived AuditAction = "nss.account_revived"
+	// AuditNSSGroupRevived is the same for a group.
+	AuditNSSGroupRevived AuditAction = "nss.group_revived"
+	// AuditNSSGroupMembersChanged is one group's membership changed by one
+	// write: added and removed as {uid, name} sorted by uid, each at most
+	// 100 long, with added_count and removed_count the totals. Recorded
+	// only when the set changed.
+	AuditNSSGroupMembersChanged AuditAction = "nss.group_members_changed"
+	// AuditNSSInitialImport is a sync run into an empty table, the first
+	// import, recorded once per table in place of an event per created
+	// row: created, and for groups the memberships stored.
+	AuditNSSInitialImport AuditAction = "nss.initial_import"
+)
+
+// The NSS directory's lookup endpoints and fleet keys. The lookups
+// themselves are never audited, one row per getpwnam would bury everything
+// else; what is recorded is what an operator acts on: a refused source
+// address, a dead key still being presented, the usage alerts and every
+// change to a key. The alerts are each raised at most once per window
+// across every instance (see claimNSSAlert), so a flood records one row,
+// not thousands.
+const (
+	// AuditNSSLookupForbidden is a lookup from an address outside
+	// nss.source_allow_list, refused before its key was checked. The
+	// detail carries the address the server observed and the key id the
+	// request presented. At most hourly per address and key id.
+	AuditNSSLookupForbidden AuditAction = "nss.lookup_forbidden"
+	// AuditNSSKeyRevokedAttempt is a lookup presenting a revoked fleet
+	// key's id. At most hourly per key; every attempt is logged at debug.
+	AuditNSSKeyRevokedAttempt AuditAction = "nss.key_revoked_attempt"
+	// AuditNSSKeyExpiredAttempt is a lookup presenting an expired fleet
+	// key's id. At most hourly per key, like the revoked one.
+	AuditNSSKeyExpiredAttempt AuditAction = "nss.key_expired_attempt"
+	// AuditNSSKeySourceAlert is one key seen from more distinct source
+	// addresses in a day than nss.key_source_alert allows, which suggests
+	// the key has leaked beyond its fleet. At most daily per key.
+	AuditNSSKeySourceAlert AuditAction = "nss.key_source_alert"
+	// AuditNSSMissRateAlert is one key's not-found lookups running above
+	// nss.miss_alert_rate per second over a minute: a host enumerating
+	// names it does not know. Never a block. At most daily per key.
+	AuditNSSMissRateAlert AuditAction = "nss.miss_rate_alert"
+	// AuditNSSPrivilegedNameLookup is a lookup for a name listed in
+	// nss.privileged_name_alert, which a directory entry could use to
+	// shadow a host's own system account. At most daily per key and name.
+	AuditNSSPrivilegedNameLookup AuditAction = "nss.privileged_name_lookup"
+
+	// AuditNSSKeyCreated is a fleet key created. The secret is never in
+	// the detail; it is shown once, to the creator.
+	AuditNSSKeyCreated AuditAction = "nss.key_created"
+	// AuditNSSKeyUpdated is a change to a key's description, expiry,
+	// notification address or managing group, recorded with each changed
+	// field's value before and after.
+	AuditNSSKeyUpdated AuditAction = "nss.key_updated"
+	// AuditNSSKeyRotated is a new secret issued for a key. The previous
+	// one stays accepted until the detail's previous_expires_at.
+	AuditNSSKeyRotated AuditAction = "nss.key_rotated"
+	// AuditNSSKeyPreviousCleared is the previous secret ended before its
+	// rotation grace ran out.
+	AuditNSSKeyPreviousCleared AuditAction = "nss.key_previous_cleared"
+	// AuditNSSKeyRevoked is a key revoked. Terminal: a revoked key is
+	// never accepted again.
+	AuditNSSKeyRevoked AuditAction = "nss.key_revoked"
 )

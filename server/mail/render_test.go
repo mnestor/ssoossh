@@ -12,6 +12,18 @@ import (
 	"github.com/mnestor/ssoossh/server/notify"
 )
 
+// nssKeyKinds are the fleet key kinds. Their mail names the key by name and
+// id at both detail levels, unlike the credential kinds, because an operator
+// who receives one has no other way to tell which key it concerns.
+var nssKeyKinds = []notify.Kind{
+	notify.KindNSSKeyExpiring,
+	notify.KindNSSKeyRotationCleanup,
+	notify.KindNSSKeyExpiredAttempt,
+	notify.KindNSSKeyRevokedAttempt,
+	notify.KindNSSKeyRotated,
+	notify.KindNSSKeyRevoked,
+}
+
 // A sample payload per kind, filled in enough that a template referencing
 // any documented field produces something visible.
 func samplePayload(t *testing.T, kind notify.Kind) any {
@@ -123,6 +135,70 @@ func samplePayload(t *testing.T, kind notify.Kind) any {
 			SupportEmail: "it-help@example.com",
 			ServerURL:    "https://ssoossh.example.com",
 		}
+	case notify.KindNSSKeyExpiring:
+		return &notify.NSSKeyExpiring{
+			KeyID:       "nss_ABCD2345",
+			KeyName:     "deploy-fleet",
+			Description: "Build hosts",
+			GroupName:   "nss-keys",
+			ExpiresAt:   time.Now().Add(7 * 24 * time.Hour),
+			Daily:       true,
+			ServerURL:   "https://ssoossh.example.com",
+		}
+	case notify.KindNSSKeyRotationCleanup:
+		return &notify.NSSKeyRotationCleanup{
+			KeyID:                "nss_ABCD2345",
+			KeyName:              "deploy-fleet",
+			Generation:           2,
+			RotatedAt:            time.Now().Add(-3 * 24 * time.Hour),
+			PreviousExpiresAt:    time.Now().Add(4 * 24 * time.Hour),
+			Switched:             40,
+			NotSwitched:          3,
+			Gone:                 1,
+			NotSwitchedAddresses: []string{"10.0.0.5", "10.0.0.6"},
+			MoreNotSwitched:      1,
+			ServerURL:            "https://ssoossh.example.com",
+		}
+	case notify.KindNSSKeyExpiredAttempt:
+		return &notify.NSSKeyExpiredAttempt{
+			KeyID:       "nss_ABCD2345",
+			KeyName:     "deploy-fleet",
+			SourceIP:    "198.51.100.7",
+			AttemptedAt: time.Now(),
+			ExpiredAt:   time.Now().Add(-24 * time.Hour),
+			ServerURL:   "https://ssoossh.example.com",
+		}
+	case notify.KindNSSKeyRevokedAttempt:
+		return &notify.NSSKeyRevokedAttempt{
+			KeyID:       "nss_ABCD2345",
+			KeyName:     "deploy-fleet",
+			SourceIP:    "198.51.100.7",
+			AttemptedAt: time.Now(),
+			RevokedAt:   time.Now().Add(-48 * time.Hour),
+			ServerURL:   "https://ssoossh.example.com",
+		}
+	case notify.KindNSSKeyRotated:
+		return &notify.NSSKeyRotated{
+			KeyID:             "nss_ABCD2345",
+			KeyName:           "deploy-fleet",
+			Generation:        2,
+			RotatedAt:         time.Now(),
+			RotatedByUsername: "alice",
+			RotatedByName:     "Alice Admin",
+			PreviousExpiresAt: time.Now().Add(30 * 24 * time.Hour),
+			ExpiresAt:         expires,
+			ServerURL:         "https://ssoossh.example.com",
+		}
+	case notify.KindNSSKeyRevoked:
+		return &notify.NSSKeyRevoked{
+			KeyID:             "nss_ABCD2345",
+			KeyName:           "deploy-fleet",
+			RevokedAt:         time.Now(),
+			RevokedByUsername: "alice",
+			ServerURL:         "https://ssoossh.example.com",
+		}
+	case notify.KindNSSIDChangePending, notify.KindNSSIDChangeReminder:
+		return sampleNSSIDChanges()
 	default:
 		t.Fatalf("no sample payload for kind %q", kind)
 		return nil
@@ -670,6 +746,8 @@ func TestRender_shouldLeaveTheSetupRecipeToTheTerminal(t *testing.T) {
 // The simplified message keeps what the reader needs to recognise the event;
 // the key ID is one of the ids only the advanced one carries, in every kind
 // that has one. A kind about an account rather than a credential has none.
+// The fleet key kinds are the exception and are checked by
+// TestRender_shouldNameTheFleetKeyAtEachLevel.
 func TestRender_shouldCarryTheKeyIDOnlyAtTheAdvancedLevel(t *testing.T) {
 	r, err := NewRenderer("", "")
 	if err != nil {
@@ -678,6 +756,9 @@ func TestRender_shouldCarryTheKeyIDOnlyAtTheAdvancedLevel(t *testing.T) {
 
 	for _, def := range notify.Definitions() {
 		if !slices.ContainsFunc(def.Fields, func(f notify.Field) bool { return f.Name == "KeyID" }) {
+			continue
+		}
+		if slices.Contains(nssKeyKinds, def.Kind) {
 			continue
 		}
 		for _, tc := range []struct {
@@ -857,5 +938,258 @@ func TestRender_shouldSayWhetherTheSyncClearsAnAdminAutoDisable(t *testing.T) {
 				t.Errorf("message does not say %q", tc.want)
 			}
 		})
+	}
+}
+
+// The fleet key mail names the key by name and id in the subject and the text
+// body at both detail levels. The operator who reads it has no other way to
+// tell which key it concerns, so the id is never reserved for the advanced
+// level. The values are the ones samplePayload fills in.
+func TestRender_shouldNameTheFleetKeyAtEachLevel(t *testing.T) {
+	r, err := NewRenderer("", "")
+	if err != nil {
+		t.Fatalf("NewRenderer: %v", err)
+	}
+
+	for _, kind := range nssKeyKinds {
+		for _, advanced := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/advanced=%v", kind, advanced), func(t *testing.T) {
+				out, err := r.Render(kind, samplePayload(t, kind), advanced)
+				if err != nil {
+					t.Fatalf("Render: %v", err)
+				}
+				for _, want := range []string{"deploy-fleet", "nss_ABCD2345"} {
+					if !strings.Contains(out.Subject, want) {
+						t.Errorf("subject %q does not name the key with %q", out.Subject, want)
+					}
+					if !strings.Contains(out.Text, want) {
+						t.Errorf("text body does not name the key with %q", want)
+					}
+				}
+			})
+		}
+	}
+}
+
+// The rotated mail says whether the previous secret still works and until
+// when, because that deadline is what the operator is working toward. With no
+// grace period it must say the old secret is already refused.
+func TestRender_shouldSayWhetherThePreviousSecretSurvivesARotation(t *testing.T) {
+	r, err := NewRenderer("", "")
+	if err != nil {
+		t.Fatalf("NewRenderer: %v", err)
+	}
+
+	tests := []struct {
+		name  string
+		grace bool
+		want  string
+	}{
+		{name: "should say the previous secret keeps working until the grace ends when there is grace", grace: true, want: "keeps working until"},
+		{name: "should say the previous secret stopped at once when there is no grace", grace: false, want: "stopped working at the same moment"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			payload := samplePayload(t, notify.KindNSSKeyRotated).(*notify.NSSKeyRotated)
+			if !tc.grace {
+				payload.PreviousExpiresAt = payload.RotatedAt
+			}
+
+			out, err := r.Render(notify.KindNSSKeyRotated, payload, false)
+			if err != nil {
+				t.Fatalf("Render: %v", err)
+			}
+			if !strings.Contains(out.Text, tc.want) || !strings.Contains(out.HTML, tc.want) {
+				t.Errorf("message does not say %q", tc.want)
+			}
+		})
+	}
+}
+
+// The cleanup digest lists the hosts still on the previous secret, and says how
+// many more there are when the list is cut short, so a reader knows it is not
+// the whole set.
+func TestRender_shouldCountTheAddressesThatAreNotListed(t *testing.T) {
+	r, err := NewRenderer("", "")
+	if err != nil {
+		t.Fatalf("NewRenderer: %v", err)
+	}
+
+	tests := []struct {
+		name        string
+		more        int
+		wantPresent string
+		wantAbsent  string
+	}{
+		{name: "should say how many more addresses there are when the list is cut short", more: 4, wantPresent: "and 4 more", wantAbsent: ""},
+		{name: "should leave the more line out when the list is complete", more: 0, wantPresent: "", wantAbsent: "more. The full list"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			payload := samplePayload(t, notify.KindNSSKeyRotationCleanup).(*notify.NSSKeyRotationCleanup)
+			payload.MoreNotSwitched = tc.more
+
+			out, err := r.Render(notify.KindNSSKeyRotationCleanup, payload, false)
+			if err != nil {
+				t.Fatalf("Render: %v", err)
+			}
+			if tc.wantPresent != "" && !strings.Contains(out.Text, tc.wantPresent) {
+				t.Errorf("text body does not carry %q", tc.wantPresent)
+			}
+			if tc.wantAbsent != "" && strings.Contains(out.Text, tc.wantAbsent) {
+				t.Errorf("text body carries %q, want it left out", tc.wantAbsent)
+			}
+		})
+	}
+}
+
+// sampleNSSIDChanges is a two-change payload: an account's uid and a
+// group's gid, one with a directory id and one without.
+func sampleNSSIDChanges() *notify.NSSIDChanges {
+	return &notify.NSSIDChanges{
+		Changes: []notify.NSSIDChange{
+			{
+				Entry: "account", Attribute: "uid", Name: "alice", DN: "uid=alice,ou=people,dc=example,dc=com",
+				DirectoryID: "7f3c1a2e-0000-4000-8000-000000000001", Stored: 1001, Pending: 2001,
+				PendingSince: time.Now().Add(-9 * 24 * time.Hour), Waiting: 9 * 24 * time.Hour,
+			},
+			{
+				Entry: "group", Attribute: "gid", Name: "devs", DN: "cn=devs,ou=groups,dc=example,dc=com",
+				Stored: 5000, Pending: 5050, PendingSince: time.Now().Add(-3 * time.Hour), Waiting: 3 * time.Hour,
+			},
+		},
+		Total:        2,
+		DirectoryURL: "https://ssoossh.example.com/admin/directory#pending-id-changes",
+		ServerURL:    "https://ssoossh.example.com",
+	}
+}
+
+// The id change mail names every listed change, its stored and new number
+// and the page to accept it on at both levels; the DN and the directory id
+// are reserved for the advanced Details section.
+func TestRender_shouldListTheNSSIDChangesAtEachLevel(t *testing.T) {
+	r, err := NewRenderer("", "")
+	if err != nil {
+		t.Fatalf("NewRenderer: %v", err)
+	}
+
+	advancedOnly := []string{"uid=alice,ou=people,dc=example,dc=com", "cn=devs,ou=groups,dc=example,dc=com", "7f3c1a2e-0000-4000-8000-000000000001"}
+	tests := []struct {
+		name     string
+		kind     notify.Kind
+		advanced bool
+		present  []string
+		absent   []string
+	}{
+		{
+			name: "should list the changes without directory coordinates when the pending mail is simplified",
+			kind: notify.KindNSSIDChangePending, present: []string{"alice", "devs", "1001", "2001", "5000", "5050", "account", "group", "/admin/directory#pending-id-changes", "chown"},
+			absent: advancedOnly,
+		},
+		{
+			name: "should add the DN and directory id when the pending mail is advanced",
+			kind: notify.KindNSSIDChangePending, advanced: true, present: advancedOnly,
+		},
+		{
+			name: "should say how long each change has waited when the reminder is simplified",
+			kind: notify.KindNSSIDChangeReminder, present: []string{"alice", "devs", "2001", "5050", "9 days", "3 hours", "/admin/directory#pending-id-changes"},
+			absent: advancedOnly,
+		},
+		{
+			name: "should add the DN and directory id when the reminder is advanced",
+			kind: notify.KindNSSIDChangeReminder, advanced: true, present: advancedOnly,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := r.Render(tc.kind, sampleNSSIDChanges(), tc.advanced)
+			if err != nil {
+				t.Fatalf("Render: %v", err)
+			}
+			for _, want := range tc.present {
+				if !strings.Contains(out.Text, want) {
+					t.Errorf("text body does not carry %q", want)
+				}
+				if !strings.Contains(out.HTML, want) {
+					t.Errorf("html body does not carry %q", want)
+				}
+			}
+			for _, unwanted := range tc.absent {
+				if strings.Contains(out.Text, unwanted) || strings.Contains(out.HTML, unwanted) {
+					t.Errorf("message carries %q below the advanced level", unwanted)
+				}
+			}
+		})
+	}
+}
+
+// The subject names the count, in the singular for one change, so an admin
+// can tell from the inbox how much is waiting.
+func TestRender_shouldCountTheNSSIDChangesInTheSubject(t *testing.T) {
+	r, err := NewRenderer("", "")
+	if err != nil {
+		t.Fatalf("NewRenderer: %v", err)
+	}
+
+	tests := []struct {
+		name  string
+		kind  notify.Kind
+		total int
+		want  string
+	}{
+		{name: "should use the plural when two changes are new", kind: notify.KindNSSIDChangePending, total: 2, want: "2 NSS id changes are waiting for approval"},
+		{name: "should use the singular when one change is new", kind: notify.KindNSSIDChangePending, total: 1, want: "1 NSS id change is waiting for approval"},
+		{name: "should mark the reminder when changes are still waiting", kind: notify.KindNSSIDChangeReminder, total: 3, want: "Reminder: 3 NSS id changes are still waiting for approval"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			payload := sampleNSSIDChanges()
+			payload.Total = tc.total
+			out, err := r.Render(tc.kind, payload, false)
+			if err != nil {
+				t.Fatalf("Render: %v", err)
+			}
+			if out.Subject != tc.want {
+				t.Errorf("subject = %q, want %q", out.Subject, tc.want)
+			}
+		})
+	}
+}
+
+// A capped list says how many changes it left out, and a complete one
+// says nothing about more.
+func TestRender_shouldCountTheNSSIDChangesThatAreNotListed(t *testing.T) {
+	r, err := NewRenderer("", "")
+	if err != nil {
+		t.Fatalf("NewRenderer: %v", err)
+	}
+
+	tests := []struct {
+		name string
+		more int
+		want bool
+	}{
+		{name: "should say how many more changes there are when the list is cut short", more: 7, want: true},
+		{name: "should leave the more line out when the list is complete", more: 0, want: false},
+	}
+	for _, kind := range []notify.Kind{notify.KindNSSIDChangePending, notify.KindNSSIDChangeReminder} {
+		for _, tc := range tests {
+			t.Run(string(kind)+"/"+tc.name, func(t *testing.T) {
+				payload := sampleNSSIDChanges()
+				payload.More = tc.more
+				out, err := r.Render(kind, payload, false)
+				if err != nil {
+					t.Fatalf("Render: %v", err)
+				}
+				for part, body := range map[string]string{"text": out.Text, "html": out.HTML} {
+					if got := strings.Contains(body, "and 7 more"); got != tc.want {
+						t.Errorf("%s body carries the more line = %v, want %v", part, got, tc.want)
+					}
+					if !tc.want && strings.Contains(body, "more. The full list") {
+						t.Errorf("%s body carries a more line for a complete list", part)
+					}
+				}
+			})
+		}
 	}
 }

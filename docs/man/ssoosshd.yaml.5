@@ -291,7 +291,9 @@ Default:
 .BR 8080 .
 .TP
 .BI http.unix_socket: " string"
-when set, is a filesystem path to listen on a Unix domain socket instead of TCP \(em Address and Port are ignored. Mutually exclusive with proxy_protocol (PROXY protocol is a TCP\-connection concept; it has nothing to prefix on a Unix socket).
+when set, is a filesystem path to listen on a Unix domain socket instead of TCP: Address and Port are ignored. Mutually exclusive with proxy_protocol (PROXY protocol is a TCP\-connection concept; it has nothing to prefix on a Unix socket).
+.IP
+Every peer on the socket is trusted to name the client, whatever trusted_proxies says, and the client IP is the rightmost X\-Forwarded\-For entry (or X\-Real\-IP). The proxy in front must append the address it saw (nginx $proxy_add_x_forwarded_for): one that passes the client's own header on untouched lets the client choose the address that source_policy, allowed_networks, rate limits and the audit log use, and one that sends neither header leaves every request with no client address. Keep the socket writable only by the proxy.
 Default:
 .BR empty .
 .TP
@@ -304,6 +306,8 @@ Default:
 Lists the CIDR ranges of reverse proxies trusted to set X\-Forwarded\-For/X\-Forwarded\-Proto, passed to gin's SetTrustedProxies. Empty means no proxy is trusted, so c.ClientIP() always reports the direct connection's address and a client\-supplied X\-Forwarded\-For is ignored.
 .IP
 That only holds because the router passes this to SetTrustedProxies unconditionally \(em gin's own default is to trust every proxy, so skipping the call for an empty list would mean the opposite.
+.IP
+Keep it empty or limited to the real proxies: a peer inside it picks its own client IP with X\-Forwarded\-For, so it passes nss.source_allow_list, forges the audited source_ip and gets a fresh nss.rate_limit bucket per address. On http.unix_socket gin trusts every peer whatever this says, so the proxy in front must set X\-Forwarded\-For itself.
 Default:
 .BR empty .
 .TP
@@ -630,14 +634,25 @@ Getting it wrong is silent. The search still matches, the attribute is simply ab
 Default:
 .BR empty .
 .TP
+.BI ldap.schema: " string"
+Selects a preset for the keys whose right value depends on the directory: ldap.id_attribute, nss.user_filter, nss.group_filter, nss.disabled_filter and nss.attributes. One of rfc2307, rfc2307bis, active\-directory, lldap or freeipa; any other value fails startup. Empty (the default) applies no preset, and every key keeps its own default. Each preset's values, and the source each came from, are listed at https://mnestor.github.io/ssoossh/operations/ldap\-schema\-presets/.
+.IP
+A preset sits between the built\-in defaults and the config file: any key the file sets beats the preset, so a preset is a starting point rather than a lock. Setting nss.attributes.shell to an attribute of your own with active\-directory selected keeps every other active\-directory value.
+.IP
+Every preset sets ldap.id_attribute. On a database that already holds directory ids read from another attribute (or an earlier ldap.id_attribute), set ldap.id_attribute explicitly to the attribute in use, or start from a fresh database: there is no migration tool yet, and the NSS directory treats an entry whose id changed at the same DN as a new entry where the old one used to be.
+Default:
+.BR empty .
+.TP
 .BI ldap.id_attribute: " string"
-Names the attribute holding the entry's unique, immutable identifier, and is what makes a directory rename survivable. Empty (the default) keeps the DN\-then\-filter resolution described below.
+Names the attribute holding the entry's unique, immutable identifier, and is what makes a directory rename survivable. Empty (the default) keeps the DN\-then\-filter resolution described below. A preset from ldap.schema may set this.
 .IP
 Every directory has one under a different name: entryUUID on OpenLDAP and 389 Directory Server (RFC 4530), objectGUID on Active Directory, ipaUniqueID on FreeIPA. None of them is guessable from the others, so there is no useful default beyond off.
 .IP
 With it set, the sync resolves an entry by ID first, falling back to the stored DN and then to user_filter. That ordering is the point: a DN changes when someone moves between OUs and user_filter stops matching when they are renamed, so without an ID a rename looks exactly like a deletion and walks the account toward the sync.disable_after auto\-disable. The ID is read at login, stored on user_ldap.directory_id, and never used for authorization.
 .IP
-Binary\-valued attributes (objectGUID) are stored as their hex form, which is also how they must be written in a filter.
+Binary\-valued attributes (objectGUID) are stored as their hex form behind a 0x marker, and searched with the RFC 4515 escape of each byte.
+.IP
+Changing this on a database that already holds directory ids, by hand or by picking an ldap.schema preset, makes every stored id stop matching: there is no migration tool yet. Login enrichment recovers by DN and logs a warning, but the NSS directory treats an entry whose id changed at the same DN as a new entry. Keep the attribute the ids were read from set explicitly, or start from a fresh database.
 Default:
 .BR empty .
 .TP
@@ -645,6 +660,25 @@ Default:
 Names the attribute to read a group's name from when a group search is used. When groups arrive as DNs (memberOf, the common case), each DN is reduced to its first RDN value \(em the CN \(em and a value that does not parse as a DN is kept as\-is. The reduced name is what must match the configured group names.
 Default:
 .BR empty .
+.TP
+.BI ldap.authoritative_role_groups: " bool"
+Lets the directory take a role away between logins. Off by default: roles then come from the OIDC groups claim alone, read at login, and the session lifetime is the revocation window for a role.
+.IP
+With it on, a role group counts for a directory\-linked user only while the latest directory read for that user still lists it. The role groups are exactly admin.require_group, admin.soc_group, admin.auditor_group and admin.nss_key_group (fleet key admin). The background sync can therefore remove someone's admin, SOC, auditor or fleet key admin role between logins, effective on their next request; a fresh login is narrowed the same way, and so is who counts as an admin for the admin email.
+.IP
+It narrows only. The directory never grants a role: a group the directory lists but the OIDC claim does not is never added, so a person needs the group in both places to hold the role.
+.IP
+"Linked" means the server has resolved a directory entry for the user (a user_ldap row with a DN or a directory id). A user with no entry, one never matched, or any user while LDAP is off is never narrowed. "The latest directory read" is the LDAP group rows the last successful login lookup or sync pass wrote. A read that failed (the directory unreachable, a search error) rewrites nothing, so an outage never takes a role away. A user the sync finds missing from the directory keeps the rows of their last successful read; ldap.sync.disable_after is what acts on a missing entry.
+.IP
+Names are compared exactly, the way the role checks compare them. Directory groups are stored reduced to their CN (a memberOf DN becomes its first RDN value), so each role group name must be the same string in the identity provider's groups claim and as the directory group's CN. An identity provider that emits full DNs cannot be used with this setting: no stored CN would ever equal the configured DN, and every role would be removed.
+.IP
+Only the role groups are narrowed. Lifetime policy group conditions, cert_options require gates and the groups that manage individual NSS keys are not affected, unless they name a role group itself: removing a role group from the identity removes it for every check that reads the identity's groups, which can only narrow.
+.IP
+A truncated read counts as a successful one. Keep ldap.limits.max_values_per_attribute and ldap.limits.max_entries_per_search above the largest group count a role holder has, or a role group cut off by the cap is removed.
+.IP
+Requires ldap.enabled and a mapped ldap.fields.groups; startup fails otherwise.
+Default:
+.BR false .
 .TP
 .BI ldap.sync.interval: " duration"
 How often the sync runs. Zero disables the job entirely.
@@ -722,6 +756,180 @@ Default:
 Writes JSON instead of text. Text is meant to be read, not parsed: the message is written as bare prose so quoted values in it are not escaped, which is not a machine\-readable format. Set this wherever a log collector has to pull fields back out.
 Default:
 .BR false .
+.SS nss
+Serves POSIX accounts and groups from the directory to the ssoosshd\-nss daemon on each host, authenticated by fleet API keys. Disabled by default.
+.IP
+Every account and group comes from the directory, people and shared or service accounts alike, so NSS requires ldap.enabled; there is no OIDC claim source for POSIX attributes. The directory connection, base DN and ldap.id_attribute are the ldap block's.
+.TP
+.BI nss.enabled: " bool"
+Turns the NSS directory on: the lookup endpoints, the fleet key administration and the directory sync of POSIX entries. Requires ldap.enabled; a configuration with this on and LDAP off fails at startup.
+Default:
+.BR false .
+.TP
+.BI nss.user_filter: " string"
+The LDAP filter that selects POSIX accounts under ldap.base_dn. A plain RFC 4515 filter in parentheses, not a template: the sync enumerates it with paged searches, so ldap.limits does not cap it, and an on\-demand lookup ANDs it with an equality on the name or uid attribute. Required when nss.enabled is on; its syntax is checked when the server starts. A preset from ldap.schema may set this.
+Default:
+.BR (objectClass=posixAccount) .
+.TP
+.BI nss.group_filter: " string"
+The LDAP filter that selects POSIX groups under ldap.base_dn, used the same way as user_filter. Required when nss.enabled is on. A preset from ldap.schema may set this.
+Default:
+.BR (objectClass=posixGroup) .
+.TP
+.BI nss.disabled_filter: " string"
+An LDAP filter an account's entry is tested against on every read: a match marks the account disabled by the directory itself, which hosts then lock. For example (nsAccountLock=TRUE) on 389\-ds and FreeIPA, or (userAccountControl:1.2.840.113556.1.4.803:=2) on Active Directory. Empty means the directory never disables an account; a person's ssoossh disable still does. A preset from ldap.schema may set this.
+Default:
+.BR empty .
+.TP
+.BI nss.sync_interval: " duration"
+How often the incremental sync runs: it reads only the accounts and groups whose modifyTimestamp is no older than five minutes before the last successful run on this instance began, so changes reach hosts within one interval. The first run after a start, and any run the directory refuses the modifyTimestamp filter for, is a full sync instead. Every instance runs its own. Zero disables the incremental sync.
+Default:
+.BR 15m .
+.TP
+.BI nss.full_sync_interval: " duration"
+How often the full sync runs: it reads every account and group the filters select, which is the only run that notices an entry has gone (missing_since, then a tombstone after tombstone_after) and the only one that clears collisions whose other entry has gone. POST /api/admin/ldap/sync runs one too. Zero disables the scheduled full sync.
+Default:
+.BR 24h .
+.TP
+.BI nss.attributes.name: " string"
+The account name, stored verbatim. A person can log in by their own name only when it equals their username claim. A preset from ldap.schema may set this.
+Default:
+.BR uid .
+.TP
+.BI nss.attributes.uid: " string"
+The numeric user id; it must parse as an unsigned 32\-bit number. Frozen once stored: a later change waits for an admin. A preset from ldap.schema may set this.
+Default:
+.BR uidNumber .
+.TP
+.BI nss.attributes.gid: " string"
+The numeric primary group id, before auto_private_groups is applied. Required unless auto_private_groups is true, where it is optional and only a supplementary group. Frozen once stored, like uid, except under auto_private_groups true, where it follows the directory. A preset from ldap.schema may set this.
+Default:
+.BR gidNumber .
+.TP
+.BI nss.attributes.home: " string"
+The home directory; optional on the entry, absolute when present. An entry without one is served nss.default_home. A preset from ldap.schema may set this.
+Default:
+.BR homeDirectory .
+.TP
+.BI nss.attributes.shell: " string"
+The login shell; optional on the entry. A preset from ldap.schema may set this.
+Default:
+.BR loginShell .
+.TP
+.BI nss.attributes.group_name: " string"
+A group's name. A preset from ldap.schema may set this.
+Default:
+.BR cn .
+.TP
+.BI nss.attributes.group_gid: " string"
+A group's numeric gid. Frozen once stored, like uid. A preset from ldap.schema may set this.
+Default:
+.BR gidNumber .
+.TP
+.BI nss.attributes.group_member: " string"
+Lists a group's members. Whether its values are names or DNs is decided by the attribute's name, case\-insensitively: member and uniqueMember (RFC 2307bis, groupOfNames, groupOfUniqueNames) hold DNs, matched against the accounts' DNs as DNs, so case and the spacing around separators do not matter (a uniqueMember's optional #'...'B suffix is dropped); any other attribute, memberUid (RFC 2307) included, holds account names, matched byte for byte. A member that resolves to no account the sync has stored is left out. A preset from ldap.schema may set this.
+Default:
+.BR memberUid .
+.TP
+.BI nss.attributes.gecos_attributes: " list"
+The only attributes nss.gecos_template may read, in order of preference for .DisplayName. Anything else on the entry (userPassword, sshPublicKey, description) cannot reach a field every local user can read with getent unless it is listed here on purpose. At least one is required.
+Default:
+.BR displayName, cn .
+.TP
+.BI nss.gecos_template: " string"
+Renders the passwd gecos field, with the same text/template engine as the key ID templates. It sees .Name (the mapped name), .DisplayName (the first non\-empty attribute of attributes.gecos_attributes, else .Name) and .Attr.<name> for an attribute listed in attributes.gecos_attributes; nothing else is reachable, and an unlisted attribute renders empty. A multi\-valued attribute renders with join, as in {{join .Attr.mail ", "}}.
+.IP
+The result is cleaned before any host sees it: invalid UTF\-8 becomes .Name, control characters and ":" become spaces, whitespace is collapsed and trimmed, the value is capped at 256 bytes, and an empty result becomes .Name. A template that does not parse, or that names a field which does not exist, fails startup.
+Default:
+.BR {{.DisplayName}} .
+.TP
+.BI nss.auto_private_groups: " string"
+Chooses each account's primary group, with the names and meanings of sssd's option (decided 2026\-10\-18 by the owner: match sssd):
+.IP
+"hybrid": the directory's gid. An account whose uid equals its gid, when no directory group holds that gid, gets a private group named after it; a directory group that does hold it is the primary group. An entry without the gid attribute is skipped with a warning.
+.IP
+"true": every account gets a private group with gid equal to its uid, and the gid attribute is optional. A gid attribute other than the uid is served as a supplementary group when a directory group holds it, and follows the directory without waiting for an admin. An account whose uid is a directory group's gid, or whose name is a directory group's name, is not served (sssd refuses whichever of the two it caches second; here the directory group always wins).
+.IP
+"false": the directory's gid, no private groups. A gid no directory group holds is still served; it just does not resolve to a name. An entry without the gid attribute is skipped with a warning.
+.IP
+Applied by the server when an account is read, so every host sees the same gid; there is no host\-side setting. An account stored without a gid under "true" is not served after a switch to the other modes, which have no primary gid to give it.
+Default:
+.BR hybrid .
+.TP
+.BI nss.tombstone_after: " duration"
+How long an entry may stay missing from the directory before its account or group becomes deleted. Measured from the first successful sync that could not find it by id, DN or filter; a directory outage is never a miss. A deleted group still resolves by name and gid, so ls \-l keeps showing a name, but is served with no members, so it grants nothing. Zero tombstones an entry at the first sync that misses it.
+Default:
+.BR 168h .
+.TP
+.BI nss.tombstone_retention: " duration"
+How long a deleted account or group stays resolvable (an account served as disabled, a group with no members) before it is purged and answers not found. A tombstone holds its number and name the whole time, so neither can be handed to a new entry, and the files it owned on hosts cannot pass to someone else. Zero purges a tombstone at the next sweep and frees its number and name at once.
+Default:
+.BR 2160h .
+.TP
+.BI nss.default_home: " string"
+The home directory served for an account whose entry has no home attribute; %u is replaced by the account's name. Must be an absolute path when nss.enabled is on.
+Default:
+.BR /home/%u .
+.TP
+.BI nss.default_shell: " string"
+The shell served for an account whose entry has no shell attribute. Empty serves no shell, and the host applies its own default.
+Default:
+.BR empty .
+.TP
+.BI nss.disabled_shell: " string"
+Replaces the shell of every disabled or deleted account, so a locked account cannot run a login shell even where a host ignores the lock. Must be an absolute path when nss.enabled is on.
+Default:
+.BR /usr/sbin/nologin .
+.TP
+.BI nss.max_group_members: " int"
+Caps the members returned for one group. A larger group is truncated and flagged as truncated in the response, and the daemon logs it. The sync stores every member it can resolve to an account; this caps only what one lookup returns. Must be greater than zero.
+Default:
+.BR 2000 .
+.TP
+.BI nss.rate_limit: " number"
+The lookups per second allowed for one fleet key from one source address. The address is the one the server observes, honouring forwarded headers only from http.trusted_proxies, the same address the audit log records as source_ip; behind a load balancer listed there each host keeps its own bucket rather than all of them sharing the balancer's. An overbroad http.trusted_proxies lets a key holder spoof that address with X\-Forwarded\-For and get a fresh bucket per address; nss.key_source_alert still fires but never blocks. Each server instance keeps its own buckets, so N instances behind a load balancer allow N times this. Must be greater than zero.
+Default:
+.BR 20 .
+.TP
+.BI nss.rate_burst: " int"
+How many lookups one key and source address (as for rate_limit, with the same http.trusted_proxies caveat) may make back to back before rate_limit starts holding them back: a host starting up resolves many names at once. Must be greater than zero, since a zero burst refuses every lookup.
+Default:
+.BR 200 .
+.TP
+.BI nss.miss_alert_rate: " number"
+The not\-found lookups per second for one key above which the server raises an alert (a log line and an audit event). It never blocks anything: a host enumerating names it does not know is worth hearing about, not refusing. Zero disables the alert.
+Default:
+.BR 5 .
+.TP
+.BI nss.usage_retention: " duration"
+How long the per\-key, per\-address, per\-day usage counts are kept for the usage and rotation reports. Zero disables the prune and keeps every row.
+Default:
+.BR 2160h .
+.TP
+.BI nss.key_max_lifetime: " duration"
+The longest a new fleet key may live, and how long it lives when its creator gives no expiry. A later expiry is trimmed to it, and each rotation renews a key by its own lifetime up to it. Changing this does not touch existing keys until their next rotation. 0 sets no limit: a key created without an expiry then never expires.
+Default:
+.BR 8760h .
+.TP
+.BI nss.key_rotation_grace: " duration"
+How long the previous secret stays accepted after a key is rotated, so every host can pick up the new one before the old one stops working. Zero ends the previous secret at the rotation itself.
+Default:
+.BR 720h .
+.TP
+.BI nss.source_allow_list: " list"
+Limits the lookup endpoints to requests from these CIDR networks, checked before the key is: a request from anywhere else is refused with an audit event that carries its address and the key id it presented. The address is the one the server observes, honouring forwarded headers only from http.trusted_proxies, the same address the audit log records as source_ip; a forwarded header from any other peer is ignored. An overbroad http.trusted_proxies lets a key holder pass this list, and forge the audited address, with X\-Forwarded\-For. Empty allows every address.
+Default:
+.BR empty .
+.TP
+.BI nss.privileged_name_alert: " list"
+Lists account names whose lookup raises an audit alert, because a directory entry that answers for one of them could shadow a host's own system account. Empty disables the alert.
+Default:
+.BR root, admin, daemon, bin, sys .
+.TP
+.BI nss.key_source_alert: " int"
+The number of distinct source addresses one key may be seen from in a day before the server raises an audit alert: far more than a fleet's size suggests the key has leaked. Zero disables the alert.
+Default:
+.BR 1000 .
 .SS admin (administrative and auditor access)
 Both group names are optional; empty disables the corresponding role.
 .TP
@@ -737,6 +945,11 @@ Default:
 .TP
 .BI admin.auditor_group: " string"
 The OIDC group a caller must belong to in order to access auditor\-scoped operations (cross\-user certificate history, the user and service code directories, the audit feed). Auditor is a child role of both admin and SOC, so require_group and SOCGroup members hold auditor access regardless of this setting; empty therefore narrows auditor operations to those roles rather than disabling them. Fails closed: no identity, or membership in no granting group, denies.
+Default:
+.BR empty .
+.TP
+.BI admin.nss_key_group: " string"
+The OIDC group a caller must belong to in order to administer every NSS fleet API key: create keys, rotate, revoke and edit any of them, and assign the group that manages a key. Admins hold this access regardless of this setting, so empty narrows key administration to admins rather than disabling it. Members of a key's own group manage that key without this role, and SOC and auditors keep their own revoke and read access. Fails closed: no identity, or membership in neither group, denies.
 Default:
 .BR empty .
 .TP
@@ -1751,6 +1964,13 @@ Rate\-limits the service_enrollment_expired_attempt notification to at most one 
 A window rather than a one\-shot because the thing it reports is a retry loop: a cron job holding an expired code fails on its own schedule indefinitely, and the recipient needs to keep hearing that it is still happening without hearing it every five minutes. A day by default, so the useful message is "this is still happening today".
 Default:
 .BR 24h .
+.TP
+.BI mail.rotation_quiet_period: " duration"
+How long after an NSS fleet key is rotated the nss_key_rotation_cleanup digest stays silent, giving hosts time to pick up the new secret on their own. After it, the digest goes out daily while any address still presents the previous secret, and stops when none does or the rotation grace (nss.key_rotation_grace) ends. Zero disables the digest entirely.
+.IP
+A week by default: a fleet that redeploys its configuration weekly has switched by then, and what is left is worth a message.
+Default:
+.BR 168h .
 .TP
 .BI mail.smtp.host: " string"
 The relay hostname or address. Required when mail is enabled.

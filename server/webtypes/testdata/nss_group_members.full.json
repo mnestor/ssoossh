@@ -1,0 +1,12 @@
+{
+  "members": [
+    {
+      "uid": 10001,
+      "name": "ada.lovelace",
+      "state": "disabled",
+      "added_at": "2026-08-12T09:30:00+02:00"
+    }
+  ],
+  "total": 12,
+  "next_cursor": "10001"
+}

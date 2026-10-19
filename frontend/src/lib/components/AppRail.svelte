@@ -7,7 +7,16 @@
 	import RailGroup from './RailGroup.svelte';
 	import RailItem from './RailItem.svelte';
 	import RailUserMenu from './RailUserMenu.svelte';
-	import { adminNavFor, isAdminRoute, isCurrent, primaryNav } from '#lib/nav.js';
+	import {
+		adminNavFor,
+		currentHref,
+		isAdminRoute,
+		isCurrent,
+		nssKeysNav,
+		primaryNav
+	} from '#lib/nav.js';
+	import { showNSSKeys } from '#lib/nss.js';
+	import { nssAccess } from '#lib/nssAccess.svelte.js';
 	import { rail } from '#lib/rail.svelte.js';
 	import { session } from '#lib/session.svelte.js';
 
@@ -42,10 +51,27 @@
 	let { orgName, signingOut = false, collapsed: forceCollapsed, onsignout }: Props = $props();
 
 	const collapsed = $derived(forceCollapsed ?? rail.collapsed);
-	const isAuditor = $derived(session.user?.is_auditor ?? false);
+
+	// NSS keys shows where the server serves them, to anyone a key's group
+	// names, whatever their roles: the list is the keys their groups
+	// manage. That needs one read of the key list, which nssAccess makes
+	// once per identity. Every key is in the admin group instead.
+	$effect(() => nssAccess.check(session.user));
+	const nssItem = $derived(showNSSKeys(session.user, nssAccess.hasKeys) ? nssKeysNav() : null);
 	// The admin group as this viewer may use it: an admin-only section is
-	// left out for SOC and auditors rather than offered and then refused.
-	const adminItems = $derived(adminNavFor(session.user?.is_admin ?? false));
+	// left out for SOC and auditors rather than offered and then refused, a
+	// fleet key admin with no admin area role gets All NSS keys alone, and
+	// the NSS sections are left out wherever the server does not serve NSS.
+	// No section, no group.
+	const adminItems = $derived(adminNavFor(session.user));
+	// One admin row is current: the NSS keys page sits under the NSS
+	// directory's /admin/nss and must not light both.
+	const adminCurrent = $derived(
+		currentHref(
+			adminItems.map((item) => item.href),
+			page.url.pathname
+		)
+	);
 
 	// The identity is the label on its own row rather than a heading above
 	// one: on a tool that issues credentials, "as whom" is the question the
@@ -163,7 +189,18 @@
 			/>
 		{/each}
 
-		{#if isAuditor}
+		{#if nssItem}
+			<RailItem
+				href={nssItem.href}
+				label={nssItem.label}
+				icon={nssItem.icon}
+				current={isCurrent(nssItem.href, page.url.pathname)}
+				{collapsed}
+				onnavigate={navigated}
+			/>
+		{/if}
+
+		{#if adminItems.length > 0}
 			<div class="my-2 border-t border-border-subtle" class:mx-1.5={!collapsed}></div>
 
 			<RailGroup
@@ -179,7 +216,7 @@
 						href={item.href}
 						label={item.label}
 						icon={item.icon}
-						current={isCurrent(item.href, page.url.pathname)}
+						current={item.href === adminCurrent}
 						{collapsed}
 						onnavigate={navigated}
 					/>

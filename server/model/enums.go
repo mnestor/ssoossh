@@ -95,3 +95,160 @@ const (
 func (l DetailLevel) Valid() bool {
 	return l == DetailLevelSimplified || l == DetailLevelAdvanced
 }
+
+// PosixStatus is the state an NSS account is served in. Never stored:
+// it is derived each time the account is read (see PosixUser), so a
+// disable anywhere reaches hosts on their next refresh without a second
+// write that could fall out of step.
+type PosixStatus string
+
+const (
+	// PosixStatusActive is an account served normally.
+	PosixStatusActive PosixStatus = "active"
+	// PosixStatusDisabled is an account the linked person's disable
+	// (admin, SOC or the directory sync) or the directory's own disabled
+	// flag has locked. It is still served, with nss.disabled_shell as its
+	// shell.
+	PosixStatusDisabled PosixStatus = "disabled"
+	// PosixStatusDeleted is a tombstone: an entry missing from the
+	// directory for longer than nss.tombstone_after. Served as disabled
+	// until nss.tombstone_retention ends, then not at all.
+	PosixStatusDeleted PosixStatus = "deleted"
+)
+
+// NSSEntryState is the one condition the admin directory viewer shows for
+// a stored account or group. Several marks can hold at once (a withheld
+// row can also have a pending change); the state is the one that most
+// decides what a host is served, in the order below. Never stored: derived
+// from the row's marks each time it is read.
+type NSSEntryState string
+
+const (
+	// NSSEntryStateWithheld is a row part of a uid, gid or name collision.
+	// Lookups treat it as not found.
+	NSSEntryStateWithheld NSSEntryState = "withheld"
+	// NSSEntryStateTombstone is a row whose entry has been missing for
+	// longer than nss.tombstone_after. An account is served as deleted and
+	// a group with no members until nss.tombstone_retention ends, then
+	// neither is served.
+	NSSEntryStateTombstone NSSEntryState = "tombstone"
+	// NSSEntryStateDisabled is an account the directory's disabled flag or
+	// the linked person's disable has locked: served with
+	// nss.disabled_shell. Never set on a group.
+	NSSEntryStateDisabled NSSEntryState = "disabled"
+	// NSSEntryStateMissing is a row a full sync did not see. Still served
+	// as before until it becomes a tombstone.
+	NSSEntryStateMissing NSSEntryState = "missing"
+	// NSSEntryStatePending is a row whose directory entry now carries a
+	// different uid or gid. Served with the stored numbers until an admin
+	// accepts the change or the directory reverts.
+	NSSEntryStatePending NSSEntryState = "pending"
+	// NSSEntryStateActive is a row served as stored.
+	NSSEntryStateActive NSSEntryState = "active"
+)
+
+// NSSNotServedReason says why a host's lookup of a stored account or
+// group finds nothing, for the admin directory viewer.
+type NSSNotServedReason string
+
+const (
+	// NSSNotServedWithheld is a row withheld by a collision.
+	NSSNotServedWithheld NSSNotServedReason = "withheld"
+	// NSSNotServedPastRetention is a tombstone older than
+	// nss.tombstone_retention that the purge has not removed yet.
+	NSSNotServedPastRetention NSSNotServedReason = "past_retention"
+	// NSSNotServedPrivateGroupClash is an account nss.auto_private_groups
+	// "true" cannot serve, because a directory group already holds its
+	// private group's gid or name.
+	NSSNotServedPrivateGroupClash NSSNotServedReason = "private_group_clash"
+	// NSSNotServedNoGID is an account stored without a gid attribute,
+	// which only nss.auto_private_groups "true" accepts, read under
+	// "hybrid" or "false", which have no primary gid to give it.
+	NSSNotServedNoGID NSSNotServedReason = "no_gid"
+)
+
+// NSSKeyStatus is the state a fleet API key is in. Never stored: it is
+// derived from the key's revocation and expiry each time the key is read,
+// so a key that passes its expires_at is expired without a job having to
+// run. The web UI shows a fourth state, rotating, for an active key whose
+// previous secret is still accepted; the server never sends it.
+type NSSKeyStatus string
+
+const (
+	// NSSKeyStatusActive is a key hosts may use.
+	NSSKeyStatusActive NSSKeyStatus = "active"
+	// NSSKeyStatusExpired is a key past its expires_at.
+	NSSKeyStatusExpired NSSKeyStatus = "expired"
+	// NSSKeyStatusRevoked is a key revoked by someone. Terminal.
+	NSSKeyStatusRevoked NSSKeyStatus = "revoked"
+)
+
+// NSSKeyPermission is one thing a caller may do with one fleet API key,
+// sent with every key so the web UI shows exactly the affordances the
+// server will honour.
+type NSSKeyPermission string
+
+const (
+	// NSSKeyPermissionView reads the key, its usage and its rotation
+	// report.
+	NSSKeyPermissionView NSSKeyPermission = "view"
+	// NSSKeyPermissionRotate issues a new secret, and ends the previous
+	// one early.
+	NSSKeyPermissionRotate NSSKeyPermission = "rotate"
+	// NSSKeyPermissionRevoke revokes the key.
+	NSSKeyPermissionRevoke NSSKeyPermission = "revoke"
+	// NSSKeyPermissionEdit changes the description, expiry and
+	// notification address.
+	NSSKeyPermissionEdit NSSKeyPermission = "edit"
+	// NSSKeyPermissionAssignGroup changes the group that manages the key.
+	NSSKeyPermissionAssignGroup NSSKeyPermission = "assign_group"
+)
+
+// NSSRotationBucket is where one source address stands in a fleet key's
+// rotation report since the key was last rotated.
+type NSSRotationBucket string
+
+const (
+	// NSSRotationBucketSwitched is an address whose latest lookup
+	// presented the current secret.
+	NSSRotationBucketSwitched NSSRotationBucket = "switched"
+	// NSSRotationBucketNotSwitched is an address whose latest lookup
+	// presented an older secret: when the grace ends it resolves no new
+	// accounts and serves only what it had cached.
+	NSSRotationBucketNotSwitched NSSRotationBucket = "not_switched"
+	// NSSRotationBucketGone is an address seen before the rotation and
+	// not since, a host retired or one that has not booted since.
+	NSSRotationBucketGone NSSRotationBucket = "gone"
+)
+
+// NSSSecretGeneration names which of a fleet key's secrets a host
+// presented, relative to the key's current generation: what the admin key
+// list's address search says about each address it matched.
+type NSSSecretGeneration string
+
+const (
+	// NSSSecretGenerationCurrent is the key's current secret.
+	NSSSecretGenerationCurrent NSSSecretGeneration = "current"
+	// NSSSecretGenerationPrevious is the secret the last rotation replaced.
+	NSSSecretGenerationPrevious NSSSecretGeneration = "previous"
+	// NSSSecretGenerationOlder is a secret two or more rotations back,
+	// which no host can still be presenting successfully.
+	NSSSecretGenerationOlder NSSSecretGeneration = "older"
+)
+
+// NSSCollisionKind says which unique value an NSSCollision contests, and so
+// which table its HolderID and OtherID name.
+type NSSCollisionKind string
+
+// The four contested values. POSIX resolves one record per number and per
+// name, and account and group names are separate namespaces.
+const (
+	// NSSCollisionKindUID is two accounts with one uid (posix_users).
+	NSSCollisionKindUID NSSCollisionKind = "uid"
+	// NSSCollisionKindUserName is two accounts with one name (posix_users).
+	NSSCollisionKindUserName NSSCollisionKind = "user_name"
+	// NSSCollisionKindGID is two groups with one gid (posix_groups).
+	NSSCollisionKindGID NSSCollisionKind = "gid"
+	// NSSCollisionKindGroupName is two groups with one name (posix_groups).
+	NSSCollisionKindGroupName NSSCollisionKind = "group_name"
+)

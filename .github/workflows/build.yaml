@@ -83,6 +83,7 @@ jobs:
               - 'user-docs/config-sidebar.json'
               - 'Makefile.md'
               - 'scripts/gen-makefile-docs.sh'
+              - 'scripts/build-nss-selinux.sh'
               - 'docs/wire-contract.json'
               - 'internal/apitypes/testdata/**'
               - 'server/controller/testdata/sse_stream_*.sse'
@@ -138,10 +139,68 @@ jobs:
           GOOS: linux
           GOARCH: amd64
 
+  # The ssoossh-nss-selinux policy module. goreleaser's container has no
+  # SELinux toolchain, so the module is compiled here, in AlmaLinux 9 with
+  # selinux-policy-devel, and handed to build-most as an artifact; its nfpm
+  # entry packages build/selinux/ssoossh_nss.pp. --check also installs it
+  # into the EL9 policy store without loading it (nothing reaches a kernel),
+  # and the EL10 step links the same module into EL10's policy, so a rule
+  # naming a type either policy lacks fails here and not in a package's
+  # postinstall. Runs on PRs too, where nothing consumes the artifact, so a
+  # policy edit that will not build is caught before it merges.
+  nss-selinux:
+    name: nss selinux policy
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      image: almalinux:9
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install the policy toolchain
+        run: dnf -y -q install selinux-policy-devel make policycoreutils selinux-policy-targeted
+
+      - name: Build the module and link it into the EL9 policy
+        run: scripts/build-nss-selinux.sh --check
+
+      - name: Upload the module
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: nss-selinux
+          path: build/selinux/
+          if-no-files-found: error
+          retention-days: 7
+
+  # The EL9-built module must also link into EL10's targeted policy: one
+  # package serves both.
+  nss-selinux-el10:
+    name: nss selinux policy (EL10 link)
+    needs: nss-selinux
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      image: almalinux:10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install the policy tools
+        run: dnf -y -q install selinux-policy-devel make policycoreutils selinux-policy-targeted
+
+      - name: Download the module
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: nss-selinux
+          path: build/selinux
+
+      - name: Link it into the EL10 policy
+        run: scripts/build-nss-selinux.sh --link
+
   build-most:
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    needs: changes
+    needs: [changes, nss-selinux, nss-selinux-el10]
     if: github.event_name != 'pull_request' && needs.changes.outputs.code == 'true'
     permissions:
       # goreleaser creates the release and uploads assets on tag pushes.
@@ -199,6 +258,15 @@ jobs:
       # github.com/mnestor/ssoossh-pam pins against them.
       - name: Build the wire-contract bundle
         run: make wire-contract-bundle
+
+      # Also before goreleaser: the ssoossh-nss-selinux package (.goreleaser.yml,
+      # nfpm "nss-selinux") takes build/selinux/ssoossh_nss.pp, which the
+      # nss-selinux job compiled, and fails without it.
+      - name: Download the SELinux policy module
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: nss-selinux
+          path: build/selinux
 
       # zig cross-links the pkcs11 build against glibc 2.28 so the floor is
       # pinned from a newer builder. The default build needs no zig at all

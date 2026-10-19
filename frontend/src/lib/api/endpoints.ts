@@ -8,6 +8,7 @@ import type {
 	AdminUserDetail,
 	AdminUsersListResponse,
 	ApproveResult,
+	CreateNSSKeyBody,
 	CertificateListAdminResponse,
 	CertificateListResponse,
 	DeniedRequestListResponse,
@@ -30,12 +31,31 @@ import type {
 	LDAPSyncRequestBody,
 	LDAPSyncRunResponse,
 	NotificationPreferences,
+	NSSAcceptedGroupIDChangeResponse,
+	NSSAcceptedUserIDChangeResponse,
+	NSSAccountDetail,
+	NSSAccountsResponse,
+	NSSAdminKeysResponse,
+	NSSCollisionsResponse,
+	NSSGroupDetail,
+	NSSGroupMembersResponse,
+	NSSGroupsResponse,
+	NSSKey,
+	NSSKeyListResponse,
+	NSSKeySecret,
+	NSSKeySettings,
+	NSSKeyUsageResponse,
+	NSSPendingIDChangesResponse,
+	NSSPurgedTombstoneResponse,
+	NSSRotationReport,
 	ReEnableUserRequestBody,
 	RequestDetail,
 	ResolveCodeResult,
 	ServiceEnrollmentsResponse,
-	SetNotificationEmailRequestBody
+	SetNotificationEmailRequestBody,
+	UpdateNSSKeyBody
 } from './types';
+import type { NSSEntryState, NSSKeyStatus } from './generated/enums';
 
 /** GET /api/users/me. */
 export function getCurrentUser(signal?: AbortSignal): Promise<CurrentUser> {
@@ -640,4 +660,245 @@ export function runDiagnostics(): Promise<DiagnosticsResponse> {
  */
 export function startIdentityEcho(): Promise<IdentityEchoStartResponse> {
 	return request<IdentityEchoStartResponse>('/admin/identity/echo/start', { method: 'POST' });
+}
+
+/** GET /api/nss/key-settings: a new key's default lifetime and a rotation's grace, in seconds. */
+export function getNSSKeySettings(signal?: AbortSignal): Promise<NSSKeySettings> {
+	return request<NSSKeySettings>('/nss/key-settings', { signal });
+}
+
+/** GET /api/nss/keys: every fleet key the caller may view, each with what they may do to it. */
+export function listNSSKeys(signal?: AbortSignal): Promise<NSSKeyListResponse> {
+	return request<NSSKeyListResponse>('/nss/keys', { signal });
+}
+
+/** GET /api/nss/keys/:id: one fleet key; a key the caller may not view is a 404. */
+export function getNSSKey(id: string, signal?: AbortSignal): Promise<NSSKey> {
+	return request<NSSKey>(`/nss/keys/${encodeURIComponent(id)}`, { signal });
+}
+
+/** POST /api/nss/keys: creates a key and answers its secret, this once. */
+export function createNSSKey(body: CreateNSSKeyBody): Promise<NSSKeySecret> {
+	return request<NSSKeySecret>('/nss/keys', { method: 'POST', body });
+}
+
+/** PATCH /api/nss/keys/:id: changes the fields given; the rest stay. */
+export function updateNSSKey(id: string, body: UpdateNSSKeyBody): Promise<NSSKey> {
+	return request<NSSKey>(`/nss/keys/${encodeURIComponent(id)}`, { method: 'PATCH', body });
+}
+
+/** POST /api/nss/keys/:id/rotate: a new secret, answered this once; the old one stays for the grace. */
+export function rotateNSSKey(id: string): Promise<NSSKeySecret> {
+	return request<NSSKeySecret>(`/nss/keys/${encodeURIComponent(id)}/rotate`, { method: 'POST' });
+}
+
+/** DELETE /api/nss/keys/:id/previous: stops accepting the previous secret before its grace ends. */
+export function clearNSSKeyPrevious(id: string): Promise<NSSKey> {
+	return request<NSSKey>(`/nss/keys/${encodeURIComponent(id)}/previous`, { method: 'DELETE' });
+}
+
+/** POST /api/nss/keys/:id/revoke: ends the key and both its secrets for good. */
+export function revokeNSSKey(id: string): Promise<NSSKey> {
+	return request<NSSKey>(`/nss/keys/${encodeURIComponent(id)}/revoke`, { method: 'POST' });
+}
+
+/** GET /api/nss/keys/:id/usage: one page of lookups per address, generation and day, newest first. */
+export function getNSSKeyUsage(
+	id: string,
+	options: { after?: string; signal?: AbortSignal } = {}
+): Promise<NSSKeyUsageResponse> {
+	const params = new URLSearchParams();
+	if (options.after) params.set('after', options.after);
+	const query = params.toString();
+	return request<NSSKeyUsageResponse>(
+		`/nss/keys/${encodeURIComponent(id)}/usage${query ? `?${query}` : ''}`,
+		{ signal: options.signal }
+	);
+}
+
+/** GET /api/nss/keys/:id/rotation-report: which addresses switched to the current secret. */
+export function getNSSRotationReport(id: string, signal?: AbortSignal): Promise<NSSRotationReport> {
+	return request<NSSRotationReport>(`/nss/keys/${encodeURIComponent(id)}/rotation-report`, {
+		signal
+	});
+}
+
+/**
+ * nssRotationReportCSVURL is the rotation report as a CSV download. A plain
+ * URL for a link rather than a request(): the answer is a file, not the
+ * JSON envelope request() unwraps.
+ */
+export function nssRotationReportCSVURL(id: string): string {
+	return `/api/nss/keys/${encodeURIComponent(id)}/rotation-report?format=csv`;
+}
+
+/** GET /api/admin/nss/pending-id-changes: accounts and groups whose directory number moved. */
+export function getNSSPendingIDChanges(signal?: AbortSignal): Promise<NSSPendingIDChangesResponse> {
+	return request<NSSPendingIDChangesResponse>('/admin/nss/pending-id-changes', { signal });
+}
+
+/** POST /api/admin/nss/users/:uid/accept-id-change: keyed by the stored uid; 409 when the new one is held. */
+export function acceptNSSUserIDChange(uid: number): Promise<NSSAcceptedUserIDChangeResponse> {
+	return request<NSSAcceptedUserIDChangeResponse>(`/admin/nss/users/${uid}/accept-id-change`, {
+		method: 'POST'
+	});
+}
+
+/** POST /api/admin/nss/groups/:gid/accept-id-change: keyed by the stored gid; 409 when the new one is held. */
+export function acceptNSSGroupIDChange(gid: number): Promise<NSSAcceptedGroupIDChangeResponse> {
+	return request<NSSAcceptedGroupIDChangeResponse>(`/admin/nss/groups/${gid}/accept-id-change`, {
+		method: 'POST'
+	});
+}
+
+/** GET /api/admin/nss/collisions: every pair of entries contending for one uid, gid or name. */
+export function getNSSCollisions(signal?: AbortSignal): Promise<NSSCollisionsResponse> {
+	return request<NSSCollisionsResponse>('/admin/nss/collisions', { signal });
+}
+
+/** DELETE /api/admin/nss/users/:uid/tombstone: purges a tombstoned account early. */
+export function purgeNSSUserTombstone(uid: number): Promise<NSSPurgedTombstoneResponse> {
+	return request<NSSPurgedTombstoneResponse>(`/admin/nss/users/${uid}/tombstone`, {
+		method: 'DELETE'
+	});
+}
+
+/** DELETE /api/admin/nss/groups/:gid/tombstone: purges a tombstoned group early. */
+export function purgeNSSGroupTombstone(gid: number): Promise<NSSPurgedTombstoneResponse> {
+	return request<NSSPurgedTombstoneResponse>(`/admin/nss/groups/${gid}/tombstone`, {
+		method: 'DELETE'
+	});
+}
+
+/** The search and paging a stored entry list takes: GET /api/admin/nss/users and /groups. */
+export interface NSSEntryListOptions {
+	/** A case-insensitive substring of the name or DN, or an exact uid or gid when numeric. */
+	q?: string;
+	/** One entry state; omitted lists every state. */
+	state?: NSSEntryState;
+	/** The previous page's next_cursor. */
+	after?: string;
+	limit?: number;
+	signal?: AbortSignal;
+}
+
+/** entryListQuery renders the list options as a query string, empty values left out. */
+function entryListQuery(options: NSSEntryListOptions): string {
+	const params = new URLSearchParams();
+	if (options.q) params.set('q', options.q);
+	if (options.state) params.set('state', options.state);
+	if (options.after) params.set('after', options.after);
+	if (options.limit) params.set('limit', options.limit.toString());
+	const query = params.toString();
+	return query ? `?${query}` : '';
+}
+
+/** GET /api/admin/nss/users: one page of the stored accounts, by name. */
+export function listNSSAccounts(options: NSSEntryListOptions = {}): Promise<NSSAccountsResponse> {
+	return request<NSSAccountsResponse>(`/admin/nss/users${entryListQuery(options)}`, {
+		signal: options.signal
+	});
+}
+
+/** The admin key list's query: the search, the filters and the page. */
+export interface NSSAdminKeyListOptions {
+	/** A substring of the name, group or creator, the start of the key id, or an IP address or CIDR range to search the usage for. */
+	q?: string;
+	/** One status; omitted lists every status. */
+	status?: NSSKeyStatus;
+	/** Only live keys expiring within this many days: 7, 30 or 90. */
+	expiringWithin?: number;
+	/** Only keys with no lookup in 30 days. */
+	unused?: boolean;
+	/** Only keys a usage alert fired for in 7 days. */
+	alerts?: boolean;
+	/** The previous page's next_cursor. */
+	after?: string;
+	limit?: number;
+	signal?: AbortSignal;
+}
+
+/** GET /api/admin/nss/keys: one page of every fleet key, by name (auditor and above). */
+export function listAdminNSSKeys(
+	options: NSSAdminKeyListOptions = {}
+): Promise<NSSAdminKeysResponse> {
+	const params = new URLSearchParams();
+	if (options.q) params.set('q', options.q);
+	if (options.status) params.set('status', options.status);
+	if (options.expiringWithin) params.set('expiring_within', options.expiringWithin.toString());
+	if (options.unused) params.set('unused', '1');
+	if (options.alerts) params.set('alerts', '1');
+	if (options.after) params.set('after', options.after);
+	if (options.limit) params.set('limit', options.limit.toString());
+	const query = params.toString();
+	return request<NSSAdminKeysResponse>(`/admin/nss/keys${query ? `?${query}` : ''}`, {
+		signal: options.signal
+	});
+}
+
+/** GET /api/admin/nss/users/:uid: one stored account and what hosts are served for it; 404 when none is stored. */
+export function getNSSAccount(uid: number, signal?: AbortSignal): Promise<NSSAccountDetail> {
+	return request<NSSAccountDetail>(`/admin/nss/users/${uid}`, { signal });
+}
+
+/**
+ * The query of one history page: the previous page's `next_cursor` as
+ * `after`, and the page size.
+ */
+function historyQuery(params: { limit?: number; after?: string }): string {
+	const query = new URLSearchParams();
+	if (params.limit !== undefined) query.set('limit', String(params.limit));
+	if (params.after) query.set('after', params.after);
+	return query.toString() ? `?${query}` : '';
+}
+
+/**
+ * GET /api/admin/nss/users/:uid/audit: one page of the audit events about a
+ * stored account, newest first, in the user timeline's shape. 404 when no
+ * account has the uid.
+ */
+export function getNSSAccountAudit(
+	uid: number,
+	params: { limit?: number; after?: string; signal?: AbortSignal } = {}
+): Promise<AuditEventsResponse> {
+	return request<AuditEventsResponse>(`/admin/nss/users/${uid}/audit${historyQuery(params)}`, {
+		signal: params.signal
+	});
+}
+
+/** GET /api/admin/nss/groups/:gid/audit: getNSSAccountAudit for a stored group. */
+export function getNSSGroupAudit(
+	gid: number,
+	params: { limit?: number; after?: string; signal?: AbortSignal } = {}
+): Promise<AuditEventsResponse> {
+	return request<AuditEventsResponse>(`/admin/nss/groups/${gid}/audit${historyQuery(params)}`, {
+		signal: params.signal
+	});
+}
+
+/** GET /api/admin/nss/groups: one page of the stored groups, by name. */
+export function listNSSGroups(options: NSSEntryListOptions = {}): Promise<NSSGroupsResponse> {
+	return request<NSSGroupsResponse>(`/admin/nss/groups${entryListQuery(options)}`, {
+		signal: options.signal
+	});
+}
+
+/** GET /api/admin/nss/groups/:gid: one stored group and what hosts are served for it; 404 when none is stored. */
+export function getNSSGroup(gid: number, signal?: AbortSignal): Promise<NSSGroupDetail> {
+	return request<NSSGroupDetail>(`/admin/nss/groups/${gid}`, { signal });
+}
+
+/** GET /api/admin/nss/groups/:gid/members: one page of a stored group's membership rows, by uid. */
+export function listNSSGroupMembers(
+	gid: number,
+	options: { after?: string; limit?: number; signal?: AbortSignal } = {}
+): Promise<NSSGroupMembersResponse> {
+	const params = new URLSearchParams();
+	if (options.after) params.set('after', options.after);
+	if (options.limit) params.set('limit', options.limit.toString());
+	const query = params.toString();
+	return request<NSSGroupMembersResponse>(
+		`/admin/nss/groups/${gid}/members${query ? `?${query}` : ''}`,
+		{ signal: options.signal }
+	);
 }

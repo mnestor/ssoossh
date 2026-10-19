@@ -183,7 +183,7 @@ table ldap_sync_runs
   column started_at type=DATETIME nullable=false pk=false default=<none>
   column trigger_source type=TEXT nullable=false pk=false default=<none>
   column users_seen type=INTEGER nullable=false pk=false default=0
-  fk actor_user_id -> users.id on_delete=NO ACTION on_update=SET NULL
+  fk actor_user_id -> users.id on_delete=SET NULL on_update=NO ACTION
   index idx_ldap_sync_runs_started unique=false columns=started_at
   index sqlite_autoindex_ldap_sync_runs_1 unique=true columns=id
 table notification_preferences
@@ -196,6 +196,130 @@ table notification_preferences
   fk user_id -> users.id on_delete=NO ACTION on_update=NO ACTION
   index idx_notification_preferences_user_kind unique=true columns=user_id,kind
   index sqlite_autoindex_notification_preferences_1 unique=true columns=id
+table nss_alerts
+  column kind type=TEXT nullable=false pk=true default=<none>
+  column last_raised_at type=DATETIME nullable=false pk=false default=<none>
+  column subject type=TEXT nullable=false pk=true default=<none>
+  index sqlite_autoindex_nss_alerts_1 unique=true columns=kind,subject
+table nss_audit_refs
+  column created_at type=DATETIME nullable=false pk=false default=<none>
+  column event_id type=TEXT nullable=false pk=true default=<none>
+  column kind type=TEXT nullable=false pk=true default=<none>
+  column row_id type=TEXT nullable=false pk=true default=<none>
+  fk event_id -> audit_events.id on_delete=CASCADE on_update=NO ACTION
+  index idx_nss_audit_refs_row unique=false columns=kind,row_id,created_at,event_id
+  index sqlite_autoindex_nss_audit_refs_1 unique=true columns=event_id,kind,row_id
+table nss_collisions
+  column first_seen_at type=DATETIME nullable=false pk=false default=<none>
+  column holder_id type=TEXT nullable=false pk=true default=<none>
+  column kind type=TEXT nullable=false pk=true default=<none>
+  column last_seen_at type=DATETIME nullable=false pk=false default=<none>
+  column other_dn type=TEXT nullable=false pk=true default=<none>
+  column other_id type=TEXT nullable=true pk=false default=<none>
+  column other_name type=TEXT nullable=false pk=false default=''
+  column other_number type=INTEGER nullable=false pk=false default=<none>
+  column value type=TEXT nullable=false pk=false default=<none>
+  index idx_nss_collisions_holder_id unique=false columns=holder_id
+  index idx_nss_collisions_other_dn unique=false columns=other_dn
+  index idx_nss_collisions_other_id unique=false columns=other_id
+  index sqlite_autoindex_nss_collisions_1 unique=true columns=kind,holder_id,other_dn
+table nss_key_usage
+  column day type=DATETIME nullable=false pk=true default=<none>
+  column first_seen type=DATETIME nullable=false pk=false default=<none>
+  column generation type=INTEGER nullable=false pk=true default=<none>
+  column key_id type=TEXT nullable=false pk=true default=<none>
+  column last_seen type=DATETIME nullable=false pk=false default=<none>
+  column lookups type=INTEGER nullable=false pk=false default=0
+  column misses type=INTEGER nullable=false pk=false default=0
+  column source_ip type=TEXT nullable=false pk=true default=<none>
+  column source_ip_key type=BLOB nullable=true pk=false default=<none>
+  fk key_id -> nss_keys.id on_delete=NO ACTION on_update=NO ACTION
+  index idx_nss_key_usage_day unique=false columns=day
+  index idx_nss_key_usage_key_day unique=false columns=key_id,day
+  index idx_nss_key_usage_source_day unique=false columns=source_ip_key,day
+  index sqlite_autoindex_nss_key_usage_1 unique=true columns=key_id,source_ip,generation,day
+table nss_keys
+  column created_at type=DATETIME nullable=false pk=false default=<none>
+  column created_by type=TEXT nullable=false pk=false default=<none>
+  column current_generation type=INTEGER nullable=false pk=false default=1
+  column description type=TEXT nullable=false pk=false default=''
+  column expires_at type=DATETIME nullable=true pk=false default=<none>
+  column expiry_reminder_sent_at type=DATETIME nullable=true pk=false default=<none>
+  column group_name type=TEXT nullable=false pk=false default=''
+  column id type=TEXT nullable=false pk=true default=<none>
+  column last_expired_attempt_notified_at type=DATETIME nullable=true pk=false default=<none>
+  column name type=TEXT nullable=false pk=false default=<none>
+  column notification_email type=TEXT nullable=false pk=false default=''
+  column previous_expires_at type=DATETIME nullable=true pk=false default=<none>
+  column previous_secret_hash type=TEXT nullable=true pk=false default=<none>
+  column revoked_at type=DATETIME nullable=true pk=false default=<none>
+  column revoked_by type=TEXT nullable=true pk=false default=<none>
+  column rotated_at type=DATETIME nullable=true pk=false default=<none>
+  column rotation_cleanup_sent_at type=DATETIME nullable=true pk=false default=<none>
+  column secret_hash type=TEXT nullable=false pk=false default=<none>
+  column updated_at type=DATETIME nullable=false pk=false default=<none>
+  fk created_by -> users.id on_delete=NO ACTION on_update=NO ACTION
+  fk revoked_by -> users.id on_delete=NO ACTION on_update=NO ACTION
+  index sqlite_autoindex_nss_keys_1 unique=true columns=id
+table posix_group_members
+  column added_at type=DATETIME nullable=true pk=false default=<none>
+  column gid type=INTEGER nullable=false pk=true default=<none>
+  column uid type=INTEGER nullable=false pk=true default=<none>
+  index idx_posix_group_members_uid unique=false columns=uid
+  index sqlite_autoindex_posix_group_members_1 unique=true columns=gid,uid
+table posix_groups
+  column created_at type=DATETIME nullable=false pk=false default=<none>
+  column deleted_at type=DATETIME nullable=true pk=false default=<none>
+  column directory_id type=TEXT nullable=false pk=false default=''
+  column dn type=TEXT nullable=false pk=false default=<none>
+  column gid type=INTEGER nullable=false pk=false default=<none>
+  column id type=TEXT nullable=false pk=true default=<none>
+  column last_synced_at type=DATETIME nullable=false pk=false default=<none>
+  column missing_since type=DATETIME nullable=true pk=false default=<none>
+  column name type=TEXT nullable=false pk=false default=<none>
+  column pending_gid type=INTEGER nullable=true pk=false default=<none>
+  column pending_notified_at type=DATETIME nullable=true pk=false default=<none>
+  column pending_since type=DATETIME nullable=true pk=false default=<none>
+  column updated_at type=DATETIME nullable=false pk=false default=<none>
+  column withheld_at type=DATETIME nullable=true pk=false default=<none>
+  column withheld_reason type=TEXT nullable=false pk=false default=''
+  index idx_posix_groups_directory_id unique=false columns=directory_id
+  index idx_posix_groups_dn unique=true columns=dn
+  index idx_posix_groups_gid unique=true columns=gid
+  index idx_posix_groups_name unique=true columns=name
+  index idx_posix_groups_pending unique=false columns=pending_since
+  index sqlite_autoindex_posix_groups_1 unique=true columns=id
+table posix_users
+  column created_at type=DATETIME nullable=false pk=false default=<none>
+  column deleted_at type=DATETIME nullable=true pk=false default=<none>
+  column dir_disabled type=INTEGER nullable=false pk=false default=0
+  column directory_id type=TEXT nullable=false pk=false default=''
+  column dn type=TEXT nullable=false pk=false default=<none>
+  column gecos type=TEXT nullable=false pk=false default=''
+  column gid type=INTEGER nullable=true pk=false default=<none>
+  column home type=TEXT nullable=true pk=false default=<none>
+  column id type=TEXT nullable=false pk=true default=<none>
+  column last_synced_at type=DATETIME nullable=false pk=false default=<none>
+  column missing_since type=DATETIME nullable=true pk=false default=<none>
+  column name type=TEXT nullable=false pk=false default=<none>
+  column pending_gid type=INTEGER nullable=true pk=false default=<none>
+  column pending_notified_at type=DATETIME nullable=true pk=false default=<none>
+  column pending_since type=DATETIME nullable=true pk=false default=<none>
+  column pending_uid type=INTEGER nullable=true pk=false default=<none>
+  column shell type=TEXT nullable=true pk=false default=<none>
+  column uid type=INTEGER nullable=false pk=false default=<none>
+  column updated_at type=DATETIME nullable=false pk=false default=<none>
+  column user_id type=TEXT nullable=true pk=false default=<none>
+  column withheld_at type=DATETIME nullable=true pk=false default=<none>
+  column withheld_reason type=TEXT nullable=false pk=false default=''
+  fk user_id -> users.id on_delete=SET NULL on_update=NO ACTION
+  index idx_posix_users_directory_id unique=false columns=directory_id
+  index idx_posix_users_dn unique=true columns=dn
+  index idx_posix_users_name unique=true columns=name
+  index idx_posix_users_pending unique=false columns=pending_since
+  index idx_posix_users_uid unique=true columns=uid
+  index idx_posix_users_user_id unique=true columns=user_id
+  index sqlite_autoindex_posix_users_1 unique=true columns=id
 table server_secrets
   column created_at type=DATETIME nullable=false pk=false default=<none>
   column name type=TEXT nullable=false pk=true default=<none>
@@ -208,7 +332,7 @@ table user_groups
   column last_seen_at type=DATETIME nullable=false pk=false default=<none>
   column source type=TEXT nullable=false pk=false default=<none>
   column user_id type=TEXT nullable=false pk=false default=<none>
-  fk user_id -> users.id on_delete=NO ACTION on_update=CASCADE
+  fk user_id -> users.id on_delete=CASCADE on_update=NO ACTION
   index idx_user_groups_name unique=false columns=group_name
   index idx_user_groups_unique unique=true columns=user_id,group_name,source
   index idx_user_groups_user unique=false columns=user_id
@@ -224,7 +348,7 @@ table user_ldap
   column last_synced_at type=DATETIME nullable=true pk=false default=<none>
   column updated_at type=DATETIME nullable=false pk=false default=<none>
   column user_id type=TEXT nullable=false pk=true default=<none>
-  fk user_id -> users.id on_delete=NO ACTION on_update=CASCADE
+  fk user_id -> users.id on_delete=CASCADE on_update=NO ACTION
   index idx_user_ldap_directory_id unique=false columns=directory_id
   index sqlite_autoindex_user_ldap_1 unique=true columns=user_id
 table users

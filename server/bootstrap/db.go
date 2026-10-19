@@ -49,6 +49,52 @@ func (a *app) initDatabase() (db *gorm.DB, err error) {
 // migration version is newer than what this build supports (unless
 // ALLOW_DOWNGRADE=true is set).
 func migrateDatabase(provider config.DBProvider, db *gorm.DB) error {
+	return withMigrator(provider, db, func(m *migrate.Migrate, requiredVersion uint) error {
+		currentVersion, _, err := m.Version()
+		if err != nil && !errors.Is(err, migrate.ErrNilVersion) {
+			return fmt.Errorf("failed to get current migration version: %w", err)
+		}
+		if currentVersion > requiredVersion {
+			slog.Warn("Database version is newer than the application supports, possible downgrade detected", slog.Uint64("db_version", uint64(currentVersion)), slog.Uint64("app_version", uint64(requiredVersion)))
+			if strings.ToLower(os.Getenv("ALLOW_DOWNGRADE")) != "true" {
+				return fmt.Errorf("database version (%d) is newer than application version (%d), downgrades are not allowed (set ALLOW_DOWNGRADE=true to enable)", currentVersion, requiredVersion)
+			}
+		}
+
+		if err := m.Migrate(requiredVersion); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+			return fmt.Errorf("failed to apply embedded migrations: %w", err)
+		}
+		return nil
+	})
+}
+
+// checkSchemaCurrent refuses a database whose schema is not exactly the one
+// this build migrates to, and migrates nothing (the migrate driver still
+// creates its empty version table in a database that has none). It is for a command that
+// works against a running server's database (`ssoosshd ldap sync`): that
+// command must not migrate the schema underneath the server, and must not
+// write through models that do not match the tables.
+func checkSchemaCurrent(provider config.DBProvider, db *gorm.DB) error {
+	return withMigrator(provider, db, func(m *migrate.Migrate, requiredVersion uint) error {
+		currentVersion, dirty, err := m.Version()
+		switch {
+		case errors.Is(err, migrate.ErrNilVersion):
+			return errors.New("the database has no schema yet; start ssoosshd once to create it")
+		case err != nil:
+			return fmt.Errorf("failed to get current migration version: %w", err)
+		case dirty:
+			return fmt.Errorf("the database schema is marked dirty at version %d, after a migration that did not finish", currentVersion)
+		case currentVersion != requiredVersion:
+			return fmt.Errorf("the database schema is at version %d and this ssoosshd expects %d; run the ssoosshd that matches the server, or start the server of this version once to migrate it", currentVersion, requiredVersion)
+		}
+		return nil
+	})
+}
+
+// withMigrator runs fn with a migrate instance over db's embedded
+// migrations for provider and the highest version among them, releasing
+// what it checked out afterwards.
+func withMigrator(provider config.DBProvider, db *gorm.DB, fn func(m *migrate.Migrate, requiredVersion uint) error) error {
 	sqlDB, err := db.DB()
 	if err != nil {
 		return fmt.Errorf("failed to get sql.DB: %w", err)
@@ -110,22 +156,7 @@ func migrateDatabase(provider config.DBProvider, db *gorm.DB) error {
 	if err != nil {
 		return fmt.Errorf("failed to get last migration version: %w", err)
 	}
-
-	currentVersion, _, err := m.Version()
-	if err != nil && !errors.Is(err, migrate.ErrNilVersion) {
-		return fmt.Errorf("failed to get current migration version: %w", err)
-	}
-	if currentVersion > requiredVersion {
-		slog.Warn("Database version is newer than the application supports, possible downgrade detected", slog.Uint64("db_version", uint64(currentVersion)), slog.Uint64("app_version", uint64(requiredVersion)))
-		if strings.ToLower(os.Getenv("ALLOW_DOWNGRADE")) != "true" {
-			return fmt.Errorf("database version (%d) is newer than application version (%d), downgrades are not allowed (set ALLOW_DOWNGRADE=true to enable)", currentVersion, requiredVersion)
-		}
-	}
-
-	if err := m.Migrate(requiredVersion); err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		return fmt.Errorf("failed to apply embedded migrations: %w", err)
-	}
-	return nil
+	return fn(m, requiredVersion)
 }
 
 // poolConfig holds pool configuration values to apply to a database connection.

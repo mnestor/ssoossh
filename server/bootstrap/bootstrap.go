@@ -189,6 +189,15 @@ func BootstrapServe(cmd *cobra.Command, mode ServerMode) error {
 	// Register CA key source cleanup on shutdown (nil-safe).
 	shutdowns.Add(a.closeCAKeySource)
 
+	// The NSS usage aggregate flushes every minute while the server runs,
+	// and once more on shutdown so a graceful stop loses no counts: the
+	// loop's own context is already cancelled by then, so the last flush
+	// is a shutdown hook with a context of its own.
+	if a.svc.nssUsage != nil {
+		serviceRunners = append(serviceRunners, a.svc.nssUsage.Run)
+		shutdowns.Add(a.svc.nssUsage.Shutdown)
+	}
+
 	// Init the job scheduler
 	//
 	// Not unit-testable: job.NewScheduler calls gocron.NewScheduler with no

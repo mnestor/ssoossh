@@ -29,5 +29,7 @@
   "is_admin": true,
   "is_soc": true,
   "is_auditor": true,
+  "is_nss_key_admin": true,
+  "nss_enabled": true,
   "detail_level": "advanced"
 }

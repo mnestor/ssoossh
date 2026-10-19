@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
+<meta name="supported-color-schemes" content="light">
+</head>
+<body style="margin:0;padding:0;background:#f2f0ec">
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#f2f0ec"><tr><td align="center" style="padding:24px 12px">
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width:600px;background:#ffffff"><tr><td style="padding:28px 24px;font-family:'IBM Plex Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#1e1a16">
+
+<p style="margin:0 0 8px;font-size:16px;line-height:1.5;color:#1e1a16">{{ if .RotatedByName }}{{ .RotatedByName }} ({{ .RotatedByUsername }}){{ else }}{{ .RotatedByUsername }}{{ end }} rotated NSS key <span style="font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">{{ .KeyName }}</span> (<span style="font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">{{ .KeyID }}</span>) at {{ datetime .RotatedAt }}. The key is now on generation {{ .Generation }}.</p>
+<p style="margin:0 0 24px;font-size:14px;line-height:1.5;color:#5d5751">Hosts should present the new secret that the rotation issued. {{ if .ExpiresAt.IsZero }}The key still never expires.{{ else }}The rotation renewed the key's expiry to {{ datetime .ExpiresAt }}.{{ end }}</p>
+{{ if .PreviousExpiresAt.Equal .RotatedAt }}
+<p style="margin:0 0 24px;font-size:14px;line-height:1.5;color:#5d5751">The previous secret stopped working at the same moment, so a host that still presents it is refused.</p>
+{{ else }}
+<p style="margin:0 0 24px;font-size:14px;line-height:1.5;color:#5d5751">The previous secret keeps working until {{ datetime .PreviousExpiresAt }} ({{ until .PreviousExpiresAt }}). Hosts have until then to switch over, and are refused after it.</p>
+{{ end }}
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse">
+<tr><td style="padding:12px 16px 12px 0;border-bottom:1px solid #e0ddda;font-size:14px;line-height:1.375;color:#5d5751;white-space:nowrap;vertical-align:top;width:1%">Rotated at</td><td style="padding:12px 0;border-bottom:1px solid #e0ddda;font-size:16px;line-height:1.375;color:#1e1a16;vertical-align:top;word-break:break-word;font-variant-numeric:tabular-nums">{{ datetime .RotatedAt }}</td></tr>
+<tr><td style="padding:12px 16px 12px 0;border-bottom:1px solid #e0ddda;font-size:14px;line-height:1.375;color:#5d5751;white-space:nowrap;vertical-align:top;width:1%">Key expires</td><td style="padding:12px 0;border-bottom:1px solid #e0ddda;font-size:16px;line-height:1.375;color:#1e1a16;vertical-align:top;word-break:break-word;font-variant-numeric:tabular-nums">{{ if .ExpiresAt.IsZero }}Never{{ else }}{{ datetime .ExpiresAt }} ({{ remaining .ExpiresAt }}){{ end }}</td></tr>
+</table>
+{{ if .Advanced }}
+<p style="margin:32px 0 4px;font-size:11px;font-weight:600;line-height:1.25;letter-spacing:.06em;text-transform:uppercase;color:#5d5751">Details</p>
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse">
+<tr><td style="padding:8px 16px 8px 0;border-bottom:1px solid #e0ddda;font-size:13px;line-height:1.25;color:#5d5751;white-space:nowrap;vertical-align:top;width:1%">Key ID</td><td style="padding:8px 0;border-bottom:1px solid #e0ddda;font-size:13px;line-height:1.25;color:#1e1a16;vertical-align:top;word-break:break-word;font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">{{ .KeyID }}</td></tr>
+<tr><td style="padding:8px 16px 8px 0;border-bottom:1px solid #e0ddda;font-size:13px;line-height:1.25;color:#5d5751;white-space:nowrap;vertical-align:top;width:1%">Generation</td><td style="padding:8px 0;border-bottom:1px solid #e0ddda;font-size:13px;line-height:1.25;color:#1e1a16;vertical-align:top;word-break:break-word;font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">{{ .Generation }}</td></tr>
+<tr><td style="padding:8px 16px 8px 0;border-bottom:1px solid #e0ddda;font-size:13px;line-height:1.25;color:#5d5751;white-space:nowrap;vertical-align:top;width:1%">Previous expires</td><td style="padding:8px 0;border-bottom:1px solid #e0ddda;font-size:13px;line-height:1.25;color:#1e1a16;vertical-align:top;word-break:break-word;font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">{{ datetime .PreviousExpiresAt }}</td></tr>
+</table>
+{{ end }}
+<p style="margin:32px 0 0;padding-top:16px;border-top:1px solid #e0ddda;font-size:12px;line-height:1.5;color:#5d5751">
+Sent to the notification address of NSS key {{ .KeyName }}, which defaults to its creator. This message is always sent: it is not a notification preference and cannot be turned off.
+</p>
+</td></tr></table>
+</td></tr></table>
+</body>
+</html>

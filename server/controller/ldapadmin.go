@@ -38,18 +38,24 @@ const (
 // auditor because it makes the server open an outbound connection and read
 // an entry in full. Narrowing all three to admin keeps the role hierarchy
 // intact: admin still holds everything SOC and auditor hold.
+//
+// nss is the NSS directory's full sync, which the sync route runs after the
+// LDAP pass (nil when nss.enabled is off): the operator pressing "sync"
+// wants the directory's view everywhere, and a second route would be one
+// more thing to remember during an incident.
 func NewLDAPAdminController(
 	group *gin.RouterGroup,
 	c *config.Config,
 	db *gorm.DB,
 	ldap service.LDAPDiagnostics,
+	nss service.NSSDirectorySync,
 	sessionAuthMiddleware gin.HandlerFunc,
 	adminAuthMiddleware gin.HandlerFunc,
 	csrfMiddleware gin.HandlerFunc,
 	probeRateLimit gin.HandlerFunc,
 	auditService *service.AuditService,
 ) {
-	a := &ldapAdminController{config: c, db: db, ldap: ldap, audit: auditService}
+	a := &ldapAdminController{config: c, db: db, ldap: ldap, nss: nss, audit: auditService}
 
 	// One group: the CSRF middleware exempts safe methods, so the GET can
 	// share it with the two POSTs.
@@ -69,7 +75,10 @@ type ldapAdminController struct {
 	db     *gorm.DB
 	// ldap is nil when directory enrichment is disabled, which every
 	// handler reports as "nothing to do here" rather than 500ing.
-	ldap  service.LDAPDiagnostics
+	ldap service.LDAPDiagnostics
+	// nss is nil when the NSS directory is disabled; the sync route then
+	// runs the LDAP pass alone.
+	nss   service.NSSDirectorySync
 	audit *service.AuditService
 }
 
@@ -131,6 +140,12 @@ func (a *ldapAdminController) statusHandler(g *gin.Context) {
 // @Description directory and changes nothing, reporting the disables and
 // @Description re-enables it would have performed — which is what makes it
 // @Description safe to press during an incident.
+// @Description
+// @Description With nss.enabled on, a pass that is not a dry run also runs
+// @Description the NSS directory's full sync on this instance afterwards and
+// @Description reports it under nss: the POSIX accounts and groups the
+// @Description filters select, with each group's members limited to the
+// @Description accounts stored. The NSS sync has no dry run.
 // @Tags        admin
 // @Accept      json
 // @Produce     json
@@ -157,17 +172,13 @@ func (a *ldapAdminController) syncHandler(g *gin.Context) {
 		return
 	}
 
-	actor := a.auditActor(g)
-	opts := service.SyncOptions{
-		Trigger: model.LDAPSyncTriggerManual,
-		DryRun:  req.DryRun,
-	}
-	if actor != nil {
-		opts.ActorUserID = actor.UserID
-	}
-
-	run, err := a.ldap.SyncWithOptions(g.Request.Context(), opts)
-	if errors.Is(err, service.ErrSyncInProgress) {
+	// The pass, the NSS sync after it and the audit event are one service
+	// call, shared with `ssoosshd ldap sync`, so the two cannot drift.
+	result := service.RunManualSync(g.Request.Context(), a.ldap, a.nss, a.audit, service.ManualSyncRequest{
+		DryRun: req.DryRun,
+		Actor:  a.auditActor(g),
+	})
+	if errors.Is(result.Err, service.ErrSyncInProgress) {
 		handleError(g, &errorresponses.ConflictError{
 			Reason: "a directory sync is already running on this instance; wait for it to finish",
 		})
@@ -177,39 +188,58 @@ func (a *ldapAdminController) syncHandler(g *gin.Context) {
 	// A pass that could not reach the directory still produced a run row,
 	// and that row is the answer: it says the pass ran and why it failed,
 	// which is exactly what the operator pressed the button to find out.
-	// So the error is recorded and reported in the body rather than
-	// swallowing the record behind a bare 5xx.
-	a.recordSyncAudit(g, actor, run, err)
-
-	if run == nil {
-		handleError(g, err)
+	// So the error is reported in the body rather than swallowing the
+	// record behind a bare 5xx.
+	if result.Run == nil {
+		handleError(g, result.Err)
 		return
 	}
-	respondData(g, a.newSyncRunResponse(g, run))
+	resp := NewManualSyncResponse(result)
+	resp.ActorUsername = a.actorUsername(g, result.Run)
+	respondData(g, resp)
 }
 
-// recordSyncAudit records the triggered sync with what it concluded.
-func (a *ldapAdminController) recordSyncAudit(g *gin.Context, actor *service.AuditSubject, run *model.LDAPSyncRun, cause error) {
-	detail := map[string]any{"dry_run": run != nil && run.DryRun}
-	if run != nil {
-		detail["run_id"] = run.ID
-		detail["users"] = run.UsersSeen
-		detail["found"] = run.Found
-		detail["missing"] = run.Missing
-		detail["failed"] = run.Failed
-		detail["disabled"] = run.Disabled
-		detail["reenabled"] = run.Reenabled
+// NewManualSyncResponse is a manual pass's outcome in the shape POST
+// /api/admin/ldap/sync returns, short of the actor's username, which takes
+// a lookup only the endpoint makes. `ssoosshd ldap sync --json` prints it.
+// Nil when the pass never started.
+func NewManualSyncResponse(result *service.ManualSyncResult) *webtypes.LDAPSyncRunResponse {
+	if result == nil || result.Run == nil {
+		return nil
 	}
-	if cause != nil {
-		detail["error"] = cause.Error()
+	resp := syncRunResponse(result.Run)
+	if result.NSSRan {
+		resp.NSS = newNSSSyncRunResponse(result.NSS, result.NSSErr)
 	}
+	return resp
+}
 
-	a.auditRecord(g, service.AuditEvent{
-		Action:     service.AuditLDAPSyncTriggered,
-		Actor:      actor,
-		OccurredAt: time.Now(),
-		Detail:     detail,
-	})
+// newNSSSyncRunResponse maps an NSS sync's outcome to the wire. A run
+// refused because another is in progress has no result, only the error.
+func newNSSSyncRunResponse(result *service.NSSSyncResult, err error) *webtypes.NSSSyncRunResponse {
+	resp := &webtypes.NSSSyncRunResponse{}
+	if result != nil {
+		resp.Full = result.Full
+		resp.StartedAt = result.StartedAt
+		if !result.FinishedAt.IsZero() {
+			finished := result.FinishedAt
+			resp.FinishedAt = &finished
+		}
+		resp.Accounts = nssCountsResponse(result.Accounts)
+		resp.Groups = nssCountsResponse(result.Groups)
+	}
+	if err != nil {
+		resp.Error = err.Error()
+	}
+	return resp
+}
+
+// nssCountsResponse maps one table's counts to the wire.
+func nssCountsResponse(c service.NSSSyncCounts) webtypes.NSSSyncCountsResponse {
+	return webtypes.NSSSyncCountsResponse{
+		Seen: c.Seen, Skipped: c.Skipped, Created: c.Created, Updated: c.Updated,
+		Refused: c.Refused, Failed: c.Failed, Missing: c.Missing, Tombstoned: c.Tombstoned,
+	}
 }
 
 // probeHandler handles POST /api/admin/ldap/probe.
@@ -401,14 +431,20 @@ func configuredAttributes(cfg *config.LDAPConfig) []string {
 }
 
 // newSyncRunResponse converts a run row to its wire shape, resolving the
-// actor's username for display. A missing actor row leaves the name empty
-// rather than failing the read: the run still happened.
+// actor's username for display.
 func (a *ldapAdminController) newSyncRunResponse(g *gin.Context, run *model.LDAPSyncRun) *webtypes.LDAPSyncRunResponse {
 	if run == nil {
 		return nil
 	}
+	resp := syncRunResponse(run)
+	resp.ActorUsername = a.actorUsername(g, run)
+	return resp
+}
 
-	resp := &webtypes.LDAPSyncRunResponse{
+// syncRunResponse converts a run row to its wire shape, without the
+// actor's username.
+func syncRunResponse(run *model.LDAPSyncRun) *webtypes.LDAPSyncRunResponse {
+	return &webtypes.LDAPSyncRunResponse{
 		ID:         run.ID,
 		StartedAt:  run.StartedAt,
 		FinishedAt: run.FinishedAt,
@@ -423,16 +459,22 @@ func (a *ldapAdminController) newSyncRunResponse(g *gin.Context, run *model.LDAP
 		Reenabled:  run.Reenabled,
 		Error:      run.ErrorMessage,
 	}
+}
 
-	if run.ActorUserID != nil && a.db != nil {
-		var actor model.User
-		if err := a.db.WithContext(g.Request.Context()).
-			Select("username").Where("id = ?", *run.ActorUserID).
-			First(&actor).Error; err == nil {
-			resp.ActorUsername = actor.Username
-		}
+// actorUsername is the username of the admin who ran a pass, or empty for
+// a scheduled or command-line pass. A missing actor row leaves the name
+// empty rather than failing the read: the run still happened.
+func (a *ldapAdminController) actorUsername(g *gin.Context, run *model.LDAPSyncRun) string {
+	if run.ActorUserID == nil || a.db == nil {
+		return ""
 	}
-	return resp
+	var actor model.User
+	if err := a.db.WithContext(g.Request.Context()).
+		Select("username").Where("id = ?", *run.ActorUserID).
+		First(&actor).Error; err != nil {
+		return ""
+	}
+	return actor.Username
 }
 
 // newProbeResponse converts a probe result to its wire shape.

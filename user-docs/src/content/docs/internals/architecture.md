@@ -399,3 +399,88 @@ overwritten.
   database: every instance derives the same bound from the same configured
   budget. See
   [multi-instance-safety-plan.md](https://github.com/mnestor/ssoossh/blob/main/docs/dev/multi-instance-safety-plan.md).
+
+## The NSS directory, beside the pipeline
+
+[The NSS directory](/ssoossh/operations/nss/) shares no code path with
+signing. It is a read path: the server's directory sync fills POSIX tables,
+`/api/nss/*` answers lookups from them under a fleet key, and a daemon on
+each host turns those answers into users and groups.
+
+```mermaid
+flowchart LR
+    accTitle: The processes in an NSS lookup, and which of them is ours
+    accDescr {
+      A caller on the host, such as sshd or sudo, runs glibc, which loads
+      nss-systemd from systemd. nss-systemd connects over varlink to the
+      socket com.github.mnestor.ssoossh in /run/systemd/userdb/, which
+      systemd holds for ssoosshd-nss. ssoosshd-nss, running as root with no
+      capabilities, answers from its cache or asks ssoosshd over pinned
+      HTTPS with the fleet key. ssoosshd answers from its posix tables,
+      which the directory sync fills from LDAP. Only ssoosshd-nss and
+      ssoosshd are ssoossh code; nothing of ours runs inside the caller.
+    }
+    subgraph Caller["Every resolving process (not ours)"]
+        G["glibc"] --> M["nss-systemd"]
+    end
+    M -->|"varlink, AF_UNIX<br/>/run/systemd/userdb/com.github.mnestor.ssoossh"| D["ssoosshd-nss<br/>nssd/, cmd/ssoosshd-nss"]
+    D -->|"pinned HTTPS, fleet key"| S["ssoosshd<br/>/api/nss/*"]
+    S --> T[("posix_users, posix_groups")]
+    L["LDAP"] -->|"directory sync"| T
+```
+
+| Piece | Where | What it does |
+| --- | --- | --- |
+| `nss-systemd` | systemd | the NSS module glibc loads; queries every socket in `/run/systemd/userdb/` in parallel and turns JSON user and group records into `struct passwd` and `struct group` |
+| `ssoosshd-nss.socket` | `deploy/` | systemd holds the userdb socket, so lookups queue across a daemon restart instead of failing |
+| `ssoosshd-nss` | `nssd/`, `cmd/ssoosshd-nss` | implements systemd's `io.systemd.UserDatabase` (`GetUserRecord`, `GetGroupRecord`, `GetMemberships`), `org.varlink.service.GetInfo`, and its own `com.github.mnestor.ssoossh.NSS.RefreshUser`; the cache, the host policy, the upstream client |
+| `internal/varlink` | shared | the NUL-framed JSON codec, used by the daemon and by `ssoossh host principals` for its one-way refresh hint |
+| `internal/api` | shared | the HTTPS client, with SPKI pinning and the fleet key headers |
+| `/api/nss/*` | `server/` | the lookup endpoints, the fleet keys, and the directory sync behind them |
+
+`nssd/` imports only `internal/`, never `server/` or `client/`, and the
+daemon is Linux-only, built with `CGO_ENABLED=0` and the server's FIPS 140-3
+setting.
+
+Some properties the design rests on:
+
+- **The daemon answers fast, always.** systemd's varlink call timeout is
+  45 s, and a service that does not answer holds every lookup on the host
+  that long. Every call is answered within `socket_answer_deadline`; a fetch
+  still running then completes into the cache, and the caller gets
+  `ServiceNotAvailable`. Over eight upstream fetches in flight, a new one is
+  refused at once rather than queued.
+- **`sshd` is recognised by its cgroup.** A uid 0 peer whose systemd cgroup
+  is one of `sshd_units` gets a synchronous refresh of a stale entry, so a
+  group removed in the directory is gone at the next login. Not `comm`,
+  which any process can set, and not `/proc/<pid>/exe`, which an empty
+  capability bounding set cannot read from a full-capability `sshd`; only
+  root can move a process into `sshd.service`.
+- **Privileged data goes to root only.** The record's `privileged` section,
+  which becomes the shadow entry, is sent only to uid 0 peers; everyone else
+  gets the record marked `incomplete`.
+- **Local names never leave the host.** A name or id in `/etc/passwd` or
+  `/etc/group` is answered `NoRecordFound` without an upstream call, because
+  `nss-systemd` asks every userdb service during every `initgroups`, local
+  users included.
+
+### Why there is no NSS module of our own
+
+The obvious design is a `libnss_ssoossh.so.2` that glibc loads, and it was
+the first draft. It was dropped for systemd userdb:
+
+- **No code of ours in setuid callers.** An NSS module runs inside `sudo`,
+  `su`, `passwd` and `sshd`. With userdb that module is systemd's, and our
+  exposure there is the content of the records we serve, which
+  `nss-systemd` validates and copies.
+- **No private protocol to version.** The contract between caller and daemon
+  is systemd's documented user and group API, not one of ours.
+- **One process to audit**, holding the key, the cache and the policy, where
+  a module would have needed a daemon beside it anyway: unprivileged callers
+  cannot write a shared cache, and the key cannot be readable by every
+  process that resolves a user.
+
+The cost is the platform floor (systemd 245, glibc, `systemd` in
+`nsswitch.conf`) and that "service not available" reaches callers as "not
+found". Both are on [the host page](/ssoossh/hosts/nss/). The alternatives
+considered are in [Decisions](/ssoossh/project/decisions/#declined-an-nss-module-of-our-own).

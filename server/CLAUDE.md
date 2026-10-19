@@ -35,7 +35,7 @@
 - `certmsg/` - the signing-job message types carried between the web tier
   and the signer
 - `cmd/` - the `ssoosshd` command tree (`serve`, `serve api`, `sign`,
-  `ldap probe`, `version`) using bep/simplecobra; the binary's entrypoint is
+  `ldap probe`, `ldap sync`, `version`) using bep/simplecobra; the binary's entrypoint is
   `cmd/ssoosshd/main.go` at the repo root
 - `config/` - config structs, defaults, and spf13/viper setup
 - `controller/` - gin router methods and structs for each type of
