@@ -619,6 +619,17 @@ components:
       - NSSRotationBucketSwitched
       - NSSRotationBucketNotSwitched
       - NSSRotationBucketGone
+    model.NSSSecretGeneration:
+      description: Secret is which of the key's secrets that lookup presented.
+      enum:
+      - current
+      - previous
+      - older
+      type: string
+      x-enum-varnames:
+      - NSSSecretGenerationCurrent
+      - NSSSecretGenerationPrevious
+      - NSSSecretGenerationOlder
     model.PosixStatus:
       enum:
       - active
@@ -822,6 +833,15 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/webtypes.NSSAccountsResponse'
+        error:
+          type: string
+      required:
+      - data
+      type: object
+    openapidoc.NSSAdminKeysEnvelope:
+      properties:
+        data:
+          $ref: '#/components/schemas/webtypes.NSSAdminKeysResponse'
         error:
           type: string
       required:
@@ -2912,6 +2932,93 @@ components:
       - accounts
       - total
       type: object
+    webtypes.NSSAdminKeyResponse:
+      properties:
+        created_at:
+          type: string
+        creator:
+          $ref: '#/components/schemas/webtypes.NSSKeyCreatorResponse'
+        current_generation:
+          type: integer
+        expires_at:
+          description: ExpiresAt is absent for a key that never expires.
+          type: string
+        group_name:
+          type: string
+        hosts_7d:
+          description: |-
+            Hosts7d counts the distinct source addresses that used the key in
+            the last 7 days.
+          type: integer
+        id:
+          type: string
+        key_source_alert_at:
+          type: string
+        last_seen_at:
+          description: |-
+            LastSeenAt is the last lookup any host made with the key, from the
+            retained usage; absent for a key no host has used.
+          type: string
+        matched:
+          $ref: '#/components/schemas/webtypes.NSSKeyMatchedUseResponse'
+        miss_rate_alert_at:
+          description: |-
+            MissRateAlertAt and KeySourceAlertAt are when those alerts last
+            fired for the key, absent unless within the last 7 days.
+          type: string
+        name:
+          type: string
+        previous_expires_at:
+          description: |-
+            PreviousExpiresAt is when the previous secret stops being accepted,
+            absent when there is none.
+          type: string
+        revoked_at:
+          description: RevokedAt is absent while the key is live.
+          type: string
+        status:
+          $ref: '#/components/schemas/model.NSSKeyStatus'
+      required:
+      - created_at
+      - creator
+      - current_generation
+      - group_name
+      - hosts_7d
+      - id
+      - name
+      - status
+      type: object
+    webtypes.NSSAdminKeysResponse:
+      properties:
+        address_search:
+          description: |-
+            AddressSearch is q as the server read it when it is an address or a
+            range, normalised ("10.0.4.7/24" is "10.0.4.0/24", an IPv4-mapped
+            address is written as IPv4); absent for a text search.
+          type: string
+        keys:
+          items:
+            $ref: '#/components/schemas/webtypes.NSSAdminKeyResponse'
+          type: array
+          uniqueItems: false
+        next_cursor:
+          description: NextCursor is the after for the following page, absent on the
+            last.
+          type: string
+        total:
+          description: Total counts every key matching the filters, across all pages.
+          type: integer
+        usage_retention_seconds:
+          description: |-
+            UsageRetentionSeconds is nss.usage_retention: how far back an
+            address search reaches, since older usage is not kept. 0 keeps
+            every row.
+          type: integer
+      required:
+      - keys
+      - total
+      - usage_retention_seconds
+      type: object
     webtypes.NSSCollisionEntryResponse:
       description: |-
         Holder is the stored row holding the value; Other the entry
@@ -3122,6 +3229,39 @@ components:
       - groups
       - total
       type: object
+    webtypes.NSSKeyAddressUseResponse:
+      properties:
+        generation:
+          type: integer
+        last_seen:
+          description: LastSeen is the key's last lookup from the address in the window.
+          type: string
+        secret:
+          $ref: '#/components/schemas/model.NSSSecretGeneration'
+        source_ip:
+          type: string
+      required:
+      - generation
+      - last_seen
+      - secret
+      - source_ip
+      type: object
+    webtypes.NSSKeyCreatorResponse:
+      properties:
+        email:
+          type: string
+        exists:
+          type: boolean
+        user_id:
+          type: string
+        username:
+          type: string
+      required:
+      - email
+      - exists
+      - user_id
+      - username
+      type: object
     webtypes.NSSKeyListResponse:
       properties:
         can_create:
@@ -3135,6 +3275,22 @@ components:
       required:
       - can_create
       - keys
+      type: object
+    webtypes.NSSKeyMatchedUseResponse:
+      description: |-
+        Matched is, for an address search only, the addresses in the search
+        the key was used from.
+      properties:
+        addresses:
+          items:
+            $ref: '#/components/schemas/webtypes.NSSKeyAddressUseResponse'
+          type: array
+          uniqueItems: false
+        total:
+          type: integer
+      required:
+      - addresses
+      - total
       type: object
     webtypes.NSSKeyResponse:
       properties:
@@ -5114,6 +5270,106 @@ paths:
       security:
       - sessionCookie: []
       summary: Purge a tombstoned group early (admin only)
+      tags:
+      - admin
+  /api/admin/nss/keys:
+    get:
+      description: |-
+        One page of every fleet key, whoever manages it and whether or not it has a group, by name then id.
+        q matches a case-insensitive substring of the key's name or group or the creator's username or email.
+        A q that reads as an IP address (IPv4 or IPv6, an IPv4-mapped one read as IPv4) or a CIDR range
+        searches the usage instead: the keys hosts used from that address or range within nss.usage_retention,
+        each with up to 5 of the matching addresses (newest first) and how many matched; address_search then
+        says how q was read. A q shaped like an address or a range that is not a valid one is a 400 naming the
+        problem, never a text search. status, expiring_within (7, 30 or 90 days, active keys only), unused
+        (no lookup in 30 days, never used included) and alerts (a miss rate or key source alert in 7 days)
+        narrow it; an unknown value is dropped. Each key carries its creator, its distinct source addresses
+        in 7 days and its last lookup. Never a secret or a secret's hash. Read only: a key's own page,
+        /api/nss/keys/{id}, keeps every action. Uses cursor-based pagination (not offset).
+      parameters:
+      - description: 'Key id to start after (cursor): the previous page''s next_cursor'
+        in: query
+        name: after
+        schema:
+          type: string
+      - description: Page size (default 25, max 100)
+        example: 25
+        in: query
+        name: limit
+        schema:
+          type: integer
+      - description: Text matched against name, group, creator username and email;
+          or an IP address or CIDR range
+        example: 10.0.4.0/24
+        in: query
+        name: q
+        schema:
+          type: string
+      - description: Status filter; omitted or all returns every status
+        in: query
+        name: status
+        schema:
+          enum:
+          - all
+          - active
+          - expired
+          - revoked
+          type: string
+      - description: Only active keys expiring within this many days
+        in: query
+        name: expiring_within
+        schema:
+          enum:
+          - 7
+          - 30
+          - 90
+          type: integer
+      - description: Only keys with no lookup in the last 30 days
+        in: query
+        name: unused
+        schema:
+          type: boolean
+      - description: Only keys with a miss rate or key source alert in the last 7
+          days
+        in: query
+        name: alerts
+        schema:
+          type: boolean
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.NSSAdminKeysEnvelope'
+          description: One page of keys
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: A q shaped like an address or range that is not one, invalid
+            paging parameters, an after that names no key, or offset
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authenticated
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authorized as auditor
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: 'nss_disabled: nss.enabled is false'
+      security:
+      - sessionCookie: []
+      summary: List every fleet API key (auditor and above)
       tags:
       - admin
   /api/admin/nss/pending-id-changes:

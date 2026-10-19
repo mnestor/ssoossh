@@ -9,6 +9,7 @@ import type {
   NSSKeyStatus,
   NSSNotServedReason,
   NSSRotationBucket,
+  NSSSecretGeneration,
   PosixStatus
 } from './enums';
 
@@ -716,6 +717,116 @@ export interface NSSRotationReportResponse {
 	not_switched: number /* int */;
 	gone: number /* int */;
 	rows: NSSRotationReportRowResponse[];
+}
+/**
+ * NSSAdminKeysResponse is one page of the admin key list, by name then id.
+ */
+export interface NSSAdminKeysResponse {
+	keys: NSSAdminKeyResponse[];
+	/**
+	 * Total counts every key matching the filters, across all pages.
+	 */
+	total: number /* int64 */;
+	/**
+	 * NextCursor is the after for the following page, absent on the last.
+	 */
+	next_cursor?: string;
+	/**
+	 * AddressSearch is q as the server read it when it is an address or a
+	 * range, normalised ("10.0.4.7/24" is "10.0.4.0/24", an IPv4-mapped
+	 * address is written as IPv4); absent for a text search.
+	 */
+	address_search?: string;
+	/**
+	 * UsageRetentionSeconds is nss.usage_retention: how far back an
+	 * address search reaches, since older usage is not kept. 0 keeps
+	 * every row.
+	 */
+	usage_retention_seconds: number /* int */;
+}
+/**
+ * NSSAdminKeyResponse is one key on the admin list. Never a secret or a
+ * secret's hash.
+ */
+export interface NSSAdminKeyResponse {
+	id: string;
+	name: string;
+	group_name: string;
+	/**
+	 * Status is derived from the revocation and expiry.
+	 */
+	status: NSSKeyStatus;
+	current_generation: number /* int */;
+	/**
+	 * ExpiresAt is absent for a key that never expires.
+	 */
+	expires_at?: string;
+	/**
+	 * PreviousExpiresAt is when the previous secret stops being accepted,
+	 * absent when there is none.
+	 */
+	previous_expires_at?: string;
+	/**
+	 * RevokedAt is absent while the key is live.
+	 */
+	revoked_at?: string;
+	created_at: string;
+	creator: NSSKeyCreatorResponse;
+	/**
+	 * Hosts7d counts the distinct source addresses that used the key in
+	 * the last 7 days.
+	 */
+	hosts_7d: number /* int64 */;
+	/**
+	 * LastSeenAt is the last lookup any host made with the key, from the
+	 * retained usage; absent for a key no host has used.
+	 */
+	last_seen_at?: string;
+	/**
+	 * MissRateAlertAt and KeySourceAlertAt are when those alerts last
+	 * fired for the key, absent unless within the last 7 days.
+	 */
+	miss_rate_alert_at?: string;
+	key_source_alert_at?: string;
+	/**
+	 * Matched is, for an address search only, the addresses in the search
+	 * the key was used from.
+	 */
+	matched?: NSSKeyMatchedUseResponse;
+}
+/**
+ * NSSKeyCreatorResponse is who created a key, as the users table has them
+ * now. Exists is false when no account has the id any more; username and
+ * email are then empty, and the id still names who it was.
+ */
+export interface NSSKeyCreatorResponse {
+	user_id: string;
+	username: string;
+	email: string;
+	exists: boolean;
+}
+/**
+ * NSSKeyMatchedUseResponse is what an address search found for one key: up
+ * to 5 addresses, the most recently seen first, and how many in all.
+ */
+export interface NSSKeyMatchedUseResponse {
+	addresses: NSSKeyAddressUseResponse[];
+	total: number /* int64 */;
+}
+/**
+ * NSSKeyAddressUseResponse is one address an address search matched.
+ */
+export interface NSSKeyAddressUseResponse {
+	source_ip: string;
+	/**
+	 * LastSeen is the key's last lookup from the address in the window.
+	 */
+	last_seen: string;
+	generation: number /* int */;
+	/**
+	 * Secret is which of the key's secrets that lookup presented.
+	 */
+	secret: NSSSecretGeneration;
 }
 
 //////////

@@ -75,3 +75,9 @@ type NSSHistoryEnvelope struct {
 	Data  webtypes.AuditEventsResponse `json:"data" validate:"required"`
 	Error *string                      `json:"error"`
 }
+
+// NSSAdminKeysEnvelope is GET /api/admin/nss/keys's body.
+type NSSAdminKeysEnvelope struct {
+	Data  webtypes.NSSAdminKeysResponse `json:"data" validate:"required"`
+	Error *string                       `json:"error"`
+}

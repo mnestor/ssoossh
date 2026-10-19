@@ -247,6 +247,25 @@ export const NSSRotationBucketNotSwitched = "not_switched";
 export const NSSRotationBucketGone = "gone";
 export type NSSRotationBucket = typeof NSSRotationBucketSwitched | typeof NSSRotationBucketNotSwitched | typeof NSSRotationBucketGone;
 /**
+ * NSSSecretGeneration names which of a fleet key's secrets a host
+ * presented, relative to the key's current generation: what the admin key
+ * list's address search says about each address it matched.
+ */
+/**
+ * NSSSecretGenerationCurrent is the key's current secret.
+ */
+export const NSSSecretGenerationCurrent = "current";
+/**
+ * NSSSecretGenerationPrevious is the secret the last rotation replaced.
+ */
+export const NSSSecretGenerationPrevious = "previous";
+/**
+ * NSSSecretGenerationOlder is a secret two or more rotations back,
+ * which no host can still be presenting successfully.
+ */
+export const NSSSecretGenerationOlder = "older";
+export type NSSSecretGeneration = typeof NSSSecretGenerationCurrent | typeof NSSSecretGenerationPrevious | typeof NSSSecretGenerationOlder;
+/**
  * NSSCollisionKind says which unique value an NSSCollision contests, and so
  * which table its HolderID and OtherID name.
  */

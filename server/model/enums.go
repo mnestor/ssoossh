@@ -221,6 +221,21 @@ const (
 	NSSRotationBucketGone NSSRotationBucket = "gone"
 )
 
+// NSSSecretGeneration names which of a fleet key's secrets a host
+// presented, relative to the key's current generation: what the admin key
+// list's address search says about each address it matched.
+type NSSSecretGeneration string
+
+const (
+	// NSSSecretGenerationCurrent is the key's current secret.
+	NSSSecretGenerationCurrent NSSSecretGeneration = "current"
+	// NSSSecretGenerationPrevious is the secret the last rotation replaced.
+	NSSSecretGenerationPrevious NSSSecretGeneration = "previous"
+	// NSSSecretGenerationOlder is a secret two or more rotations back,
+	// which no host can still be presenting successfully.
+	NSSSecretGenerationOlder NSSSecretGeneration = "older"
+)
+
 // NSSCollisionKind says which unique value an NSSCollision contests, and so
 // which table its HolderID and OtherID name.
 type NSSCollisionKind string

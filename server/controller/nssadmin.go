@@ -18,24 +18,27 @@ import (
 // NewNSSAdminController registers the NSS directory's admin routes under
 // /api/admin/nss: the pending uid and gid changes and their acceptance,
 // the collisions report, the early purge of a tombstone, and the
-// read-only directory viewer.
+// read-only directory viewer, and the admin list of every fleet key.
 //
 // Admin only, every route but the viewer's: accepting a changed number
 // re-owns files on every host, and a purge hands a number and a name on.
 // The viewer only reads, so auditors (and so SOC and admins) see it, as
-// they see the user directory. nss and viewer are nil when nss.enabled is
-// off, which every route answers with a 404 naming the setting.
+// they see the user directory, and the fleet key list beside it. nss,
+// viewer and keys are nil when nss.enabled is off, which every route
+// answers with a 404 naming the setting (the key list's as nss_disabled,
+// as the session routes under /api/nss do).
 func NewNSSAdminController(
 	group *gin.RouterGroup,
 	db *gorm.DB,
 	nss service.NSSDirectoryAdmin,
 	viewer service.NSSDirectoryViewer,
+	keys *service.NSSKeyService,
 	sessionAuthMiddleware gin.HandlerFunc,
 	adminAuthMiddleware gin.HandlerFunc,
 	auditorAuthMiddleware gin.HandlerFunc,
 	csrfMiddleware gin.HandlerFunc,
 ) {
-	a := &nssAdminController{db: db, nss: nss, viewer: viewer}
+	a := &nssAdminController{db: db, nss: nss, viewer: viewer, keys: keys}
 
 	// One group: the CSRF middleware exempts safe methods, so the reads
 	// share it with the mutations.
@@ -57,6 +60,7 @@ func NewNSSAdminController(
 	auditorGroup.GET("/groups/:gid/members", a.groupMembersHandler)
 	auditorGroup.GET("/users/:uid/audit", a.accountHistoryHandler)
 	auditorGroup.GET("/groups/:gid/audit", a.groupHistoryHandler)
+	auditorGroup.GET("/keys", a.listKeysHandler)
 }
 
 // nssAdminController handles the NSS directory's admin routes. The
@@ -67,6 +71,7 @@ type nssAdminController struct {
 	db     *gorm.DB
 	nss    service.NSSDirectoryAdmin
 	viewer service.NSSDirectoryViewer
+	keys   *service.NSSKeyService
 }
 
 // enabled answers a 404 and reports false when NSS is disabled.
