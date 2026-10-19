@@ -25,6 +25,7 @@ LDAP is enrichment, never a requirement. If directory data is available a user g
 | [`ldap.schema`](#schema) | string | `empty` |
 | [`ldap.id_attribute`](#id_attribute) | string | `empty` |
 | [`ldap.group_name_attribute`](#group_name_attribute) | string | `empty` |
+| [`ldap.authoritative_role_groups`](#authoritative_role_groups) | bool | `false` |
 | [`ldap.sync.interval`](/ssoossh/reference/config/ldap/sync/#interval) | duration | `15m` |
 | [`ldap.sync.disable_after`](/ssoossh/reference/config/ldap/sync/#disable_after) | duration | `45m` |
 | [`ldap.sync.reenable`](/ssoossh/reference/config/ldap/sync/#reenable) | bool | `true` |
@@ -241,6 +242,31 @@ Names the attribute to read a group's name from when a group search is used. Whe
 ```yaml
 ldap:
   group_name_attribute: ""
+```
+
+## `authoritative_role_groups`
+
+`bool`, default `false`
+
+Lets the directory take a role away between logins. Off by default: roles then come from the OIDC groups claim alone, read at login, and the session lifetime is the revocation window for a role.
+
+With it on, a role group counts for a directory-linked user only while the latest directory read for that user still lists it. The role groups are exactly admin.require_group, admin.soc_group, admin.auditor_group and admin.nss_key_group (fleet key admin). The background sync can therefore remove someone's admin, SOC, auditor or fleet key admin role between logins, effective on their next request; a fresh login is narrowed the same way, and so is who counts as an admin for the admin email.
+
+It narrows only. The directory never grants a role: a group the directory lists but the OIDC claim does not is never added, so a person needs the group in both places to hold the role.
+
+"Linked" means the server has resolved a directory entry for the user (a user_ldap row with a DN or a directory id). A user with no entry, one never matched, or any user while LDAP is off is never narrowed. "The latest directory read" is the LDAP group rows the last successful login lookup or sync pass wrote. A read that failed (the directory unreachable, a search error) rewrites nothing, so an outage never takes a role away. A user the sync finds missing from the directory keeps the rows of their last successful read; ldap.sync.disable_after is what acts on a missing entry.
+
+Names are compared exactly, the way the role checks compare them. Directory groups are stored reduced to their CN (a memberOf DN becomes its first RDN value), so each role group name must be the same string in the identity provider's groups claim and as the directory group's CN. An identity provider that emits full DNs cannot be used with this setting: no stored CN would ever equal the configured DN, and every role would be removed.
+
+Only the role groups are narrowed. Lifetime policy group conditions, cert_options require gates and the groups that manage individual NSS keys are not affected, unless they name a role group itself: removing a role group from the identity removes it for every check that reads the identity's groups, which can only narrow.
+
+A truncated read counts as a successful one. Keep ldap.limits.max_values_per_attribute and ldap.limits.max_entries_per_search above the largest group count a role holder has, or a role group cut off by the cap is removed.
+
+Requires ldap.enabled and a mapped ldap.fields.groups; startup fails otherwise.
+
+```yaml
+ldap:
+  authoritative_role_groups: false
 ```
 
 ## `limits`

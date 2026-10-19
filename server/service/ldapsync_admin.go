@@ -40,6 +40,10 @@ type syncAdmins struct {
 // from the config at the time of the pass, not at the time of the login,
 // means a group that has since stopped granting admin no longer counts.
 //
+// With ldap.authoritative_role_groups on, the login's groups are narrowed
+// by the user's stored directory rows first (NarrowRoleGroups), as a
+// session's are.
+//
 // A failed read is logged and answers false: the disable it accompanies
 // still stands, and an email nobody can justify is not sent.
 func (s *LDAPService) isSyncAdmin(ctx context.Context, admins *syncAdmins, userID string) bool {
@@ -59,7 +63,19 @@ func (s *LDAPService) isSyncAdmin(ctx context.Context, admins *syncAdmins, userI
 		return false
 	}
 	groups, ok := admins.groups[userID]
-	return ok && s.config.Admin.GrantsAdmin(groups)
+	if !ok {
+		return false
+	}
+	// The same narrowing a session gets: with
+	// ldap.authoritative_role_groups on, an admin group the directory had
+	// stopped listing before the entry went missing no longer counts. A
+	// failed read narrows too, and is logged.
+	groups, err := s.NarrowRoleGroups(ctx, userID, groups)
+	if err != nil {
+		s.log.ErrorContext(ctx, "directory sync could not check a disabled user's admin role against the directory, so they are not treated as an admin for the auto-disable email",
+			"user_id", userID, "error", err)
+	}
+	return s.config.Admin.GrantsAdmin(groups)
 }
 
 // latestLoginGroups returns, per user, the groups their most recent

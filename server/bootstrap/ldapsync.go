@@ -103,6 +103,7 @@ func (d *DirectorySync) open(c *config.Config) error {
 		notifications := service.NewNotificationService(db, handler.InlinePublisher(), true,
 			c.LDAP.Enabled, c.CertOptions.Service.AllowUserAccounts)
 		notifications.SetAdminConfig(&c.Admin)
+		notifications.SetRoleNarrower(d.ldap)
 		d.ldap.SetNotifier(notifications)
 		// The NSS full sync mails the admins the id changes it made
 		// pending, inline like the rest.

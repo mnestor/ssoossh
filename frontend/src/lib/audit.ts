@@ -59,6 +59,7 @@ import {
 	AuditNSSUIDCollision,
 	AuditUserAutoDisabled,
 	AuditUserDisableRefused,
+	AuditUserRoleNarrowedByDirectory,
 	AuditUserDisabled,
 	AuditUserEnabled
 } from '#lib/api/generated/auditactions.js';
@@ -137,6 +138,9 @@ export const auditPhrasing: Record<string, string> = {
 	// the phrase has to carry "self" on its own. Worded to match
 	// auth.login_denied, the other refusal on a timeline.
 	[AuditUserDisableRefused]: 'was refused a self-disable',
+	// A system event, so it reads "The server removed a role the directory
+	// no longer lists from alice"; the detail names the groups.
+	[AuditUserRoleNarrowedByDirectory]: 'removed a role the directory no longer lists from',
 	[AuditLDAPSyncTriggered]: 'ran the directory sync',
 	[AuditLDAPProbed]: 'probed the directory',
 	// Worded like ldap.sync_triggered, its neighbour on the admin pages.

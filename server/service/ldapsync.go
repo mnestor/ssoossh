@@ -291,7 +291,7 @@ func (s *LDAPService) readByDN(conn ldapConn, dn string) (*ldap.Entry, error) {
 // DN if the entry moved, a cleared miss counter, and replaced LDAP group
 // rows.
 func (s *LDAPService) persistSync(ctx context.Context, userID string, entry *ldapEntry) error {
-	return s.persist(ctx, userID, entry)
+	return s.persist(ctx, userID, entry, roleNarrowedBySync)
 }
 
 // recordMiss opens or continues the missing window and disables the user

@@ -9,6 +9,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -502,8 +503,9 @@ func TestStoredUserIsAdmin_ShouldFollowTheConfiguredAdminGroup(t *testing.T) {
 			t.Parallel()
 			svc := NewNotificationService(nil, nil, true, true, false)
 			svc.SetAdminConfig(tc.admin)
-			if got := svc.StoredUserIsAdmin(&model.User{}, tc.groups); got != tc.want {
-				t.Errorf("StoredUserIsAdmin(%v) = %v, want %v", tc.groups, got, tc.want)
+			got, err := svc.StoredUserIsAdmin(context.Background(), &model.User{}, tc.groups)
+			if err != nil || got != tc.want {
+				t.Errorf("StoredUserIsAdmin(%v) = %v, %v, want %v and no error", tc.groups, got, err, tc.want)
 			}
 		})
 	}
@@ -558,4 +560,69 @@ func TestAdminRecipients_ShouldFindNobodyWhenNoAdminGroupIsConfigured(t *testing
 	if err != nil || len(got) != 0 {
 		t.Errorf("AdminRecipients() = %v, %v, want nobody and no error", got, err)
 	}
+}
+
+// The admin mail follows the same narrowing as a session: with
+// ldap.authoritative_role_groups on, a linked admin the directory no
+// longer lists drops out of the recipients, and with it off is still
+// mailed.
+func TestAdminRecipients_ShouldDropAnAdminTheDirectoryNoLongerLists(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		authoritative bool
+		want          string
+	}{
+		{name: "should leave out the narrowed admin when the setting is on", authoritative: true, want: "alice"},
+		{name: "should still mail the admin when the setting is off", want: "alice,bob"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg := roleTestConfig(tt.authoritative)
+			directory, db := newLDAPTestService(t, cfg, &fakeDirectory{})
+			svc := NewNotificationService(db, nil, true, true, false)
+			svc.SetAdminConfig(&cfg.Admin)
+			svc.SetRoleNarrower(directory)
+
+			// alice: the directory still lists admin. bob: linked, and
+			// the directory no longer does.
+			alice := addUser(t, db, "alice", "alice@example.com", "", false)
+			addGroupRow(t, db, alice.ID, "ssh-admins", model.GroupSourceOIDC)
+			seedUserLDAP(t, db, alice.ID, nil)
+			addGroupRow(t, db, alice.ID, "ssh-admins", model.GroupSourceLDAP)
+			bob := addUser(t, db, "bob", "bob@example.com", "", false)
+			addGroupRow(t, db, bob.ID, "ssh-admins", model.GroupSourceOIDC)
+			seedUserLDAP(t, db, bob.ID, nil)
+
+			got, err := svc.AdminRecipients(context.Background())
+			if names := strings.Join(usernames(got), ","); err != nil || names != tt.want {
+				t.Errorf("AdminRecipients() = %s, %v, want %s and no error", names, err, tt.want)
+			}
+		})
+	}
+}
+
+// A narrower that cannot read the directory rows answers with an error,
+// and the recipient query reports it rather than mailing a guess.
+func TestStoredUserIsAdmin_ShouldReportAFailedDirectoryCheck(t *testing.T) {
+	t.Parallel()
+
+	svc := NewNotificationService(nil, nil, true, true, false)
+	svc.SetAdminConfig(&config.AdminConfig{RequireGroup: "ssh-admins"})
+	svc.SetRoleNarrower(failingNarrower{})
+
+	got, err := svc.StoredUserIsAdmin(context.Background(), &model.User{ID: "u-1"}, []string{"ssh-admins"})
+	if err == nil || got {
+		t.Errorf("StoredUserIsAdmin() = %v, %v, want false and an error", got, err)
+	}
+}
+
+// failingNarrower is a RoleNarrower whose directory read always fails.
+type failingNarrower struct{}
+
+func (failingNarrower) NarrowRoleGroups(context.Context, string, []string) ([]string, error) {
+	return nil, errors.New("database unavailable")
 }

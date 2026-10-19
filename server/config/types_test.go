@@ -1,6 +1,7 @@
 package config
 
 import (
+	"reflect"
 	"testing"
 	"time"
 )
@@ -698,6 +699,69 @@ func TestAdminConfigIsNSSKeyAdminEnabled_ShouldReportWhetherTheGroupIsSet(t *tes
 			a := AdminConfig{NSSKeyGroup: tt.group}
 			if got := a.IsNSSKeyAdminEnabled(); got != tt.want {
 				t.Errorf("IsNSSKeyAdminEnabled() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// NarrowRoleGroups is the rule behind ldap.authoritative_role_groups: a
+// role group stays only while the directory also lists it, nothing else
+// moves, and nothing the directory lists is ever added.
+func TestAdminConfig_NarrowRoleGroups(t *testing.T) {
+	t.Parallel()
+
+	admin := &AdminConfig{RequireGroup: "ssh-admins", SOCGroup: "soc", AuditorGroup: "auditors", NSSKeyGroup: "key-admins"}
+	tests := []struct {
+		name      string
+		groups    []string
+		directory []string
+		want      []string
+	}{
+		{name: "should keep every role group when the directory lists each", groups: []string{"ssh-admins", "soc", "auditors", "key-admins"}, directory: []string{"ssh-admins", "soc", "auditors", "key-admins"}, want: []string{"ssh-admins", "soc", "auditors", "key-admins"}},
+		{name: "should remove the admin group when the directory does not list it", groups: []string{"ssh-admins", "soc"}, directory: []string{"soc"}, want: []string{"soc"}},
+		{name: "should remove the SOC group when the directory does not list it", groups: []string{"soc"}, directory: []string{"ssh-admins"}, want: []string{}},
+		{name: "should remove the auditor group when the directory does not list it", groups: []string{"auditors", "dev"}, directory: nil, want: []string{"dev"}},
+		{name: "should remove the fleet key admin group when the directory does not list it", groups: []string{"key-admins"}, directory: []string{"auditors"}, want: []string{}},
+		{name: "should never add a role group only the directory lists", groups: []string{"dev"}, directory: []string{"ssh-admins", "soc"}, want: []string{"dev"}},
+		{name: "should keep non-role groups the directory does not list", groups: []string{"dev", "ops"}, directory: nil, want: []string{"dev", "ops"}},
+		{name: "should compare exactly, so a different case does not keep a role", groups: []string{"ssh-admins"}, directory: []string{"SSH-Admins"}, want: []string{}},
+		{name: "should compare exactly, so a full DN does not match a CN", groups: []string{"ssh-admins"}, directory: []string{"cn=ssh-admins,ou=groups,dc=test"}, want: []string{}},
+		{name: "should return nothing for no groups", groups: nil, directory: []string{"ssh-admins"}, want: []string{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := admin.NarrowRoleGroups(tt.groups, tt.directory)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("NarrowRoleGroups(%v, %v) = %v, want %v", tt.groups, tt.directory, got, tt.want)
+			}
+		})
+	}
+}
+
+// IsRoleGroup names exactly the four role groups, and an unconfigured role
+// or an empty name never matches.
+func TestAdminConfig_IsRoleGroup(t *testing.T) {
+	t.Parallel()
+
+	admin := &AdminConfig{RequireGroup: "ssh-admins", SOCGroup: "soc", NSSKeyGroup: "key-admins"}
+	tests := []struct {
+		name  string
+		group string
+		want  bool
+	}{
+		{name: "should match the admin group", group: "ssh-admins", want: true},
+		{name: "should match the SOC group", group: "soc", want: true},
+		{name: "should match the fleet key admin group", group: "key-admins", want: true},
+		{name: "should not match a group no role names", group: "dev"},
+		{name: "should not match an empty name when the auditor role is unconfigured", group: ""},
+		{name: "should not match a case variant", group: "SOC"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := admin.IsRoleGroup(tt.group); got != tt.want {
+				t.Errorf("IsRoleGroup(%q) = %v, want %v", tt.group, got, tt.want)
 			}
 		})
 	}

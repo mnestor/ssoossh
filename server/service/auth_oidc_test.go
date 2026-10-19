@@ -17,6 +17,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -25,6 +26,7 @@ import (
 	"time"
 
 	josejwt "github.com/go-jose/go-jose/v4"
+	"github.com/go-ldap/ldap/v3"
 
 	"golang.org/x/oauth2"
 
@@ -669,5 +671,83 @@ func TestHandleCallback_ShouldSendTheCodeVerifierWhenOneWasIssued(t *testing.T) 
 	}
 	if got := provider.tokenForm.Get("code_verifier"); got != verifier {
 		t.Errorf("token request sent code_verifier=%q, want %q", got, verifier)
+	}
+}
+
+// loginWithDirectory signs alice in with the given groups claim against a
+// directory whose entry lists listed, under ldap.authoritative_role_groups
+// as given. unreachable makes the directory fail, so the login never links
+// her to an entry.
+func loginWithDirectory(t *testing.T, authoritative, unreachable bool, claim []string, listed ...string) (*Identity, *config.Config) {
+	t.Helper()
+
+	provider := newFakeOIDCProvider(t)
+	db := testdb.New(t)
+	cfg := roleTestConfig(authoritative)
+	auth := newTestAuthConfig(provider, "client-1")
+	cfg.AuthConfig, cfg.HTTP.PublicURL = auth.AuthConfig, auth.HTTP.PublicURL
+
+	svc, err := NewAuthService(context.Background(), cfg, db, provider.srv.Client())
+	if err != nil {
+		t.Fatalf("NewAuthService() error = %v", err)
+	}
+	directory, err := NewLDAPService(cfg, db)
+	if err != nil {
+		t.Fatalf("NewLDAPService() error = %v", err)
+	}
+	dir := &fakeDirectory{entries: []*ldap.Entry{entry(aliceDN, memberOf(listed...))}}
+	if unreachable {
+		dir.dialErr = errors.New("connection refused")
+	}
+	directory.dial = dir.dialer()
+	svc.SetLDAP(directory)
+
+	provider.nextID = provider.signIDToken(t, "sub-alice", "client-1", "nonce-1", map[string]any{
+		"preferred_username": "alice",
+		"groups":             claim,
+	})
+	identity, err := svc.HandleCallback(context.Background(), "auth-code", "nonce-1", oauth2.GenerateVerifier())
+	if err != nil {
+		t.Fatalf("HandleCallback() error = %v", err)
+	}
+	return identity, cfg
+}
+
+// A fresh login is narrowed exactly as a live session is: an admin claim
+// the directory does not back does not make the new session an admin.
+func TestHandleCallback_ShouldNarrowRoleGroupsByTheDirectory(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		authoritative bool
+		unreachable   bool
+		listed        []string
+		want          bool
+	}{
+		{name: "should not make the session an admin when the directory does not list the group", authoritative: true, listed: []string{"unrelated"}},
+		{name: "should make the session an admin when the directory lists the group", authoritative: true, listed: []string{"ssh-admins"}, want: true},
+		{name: "should make the session an admin when the setting is off", listed: []string{"unrelated"}, want: true},
+		{name: "should make the session an admin when the login could not link a directory entry", authoritative: true, unreachable: true, want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			identity, cfg := loginWithDirectory(t, tt.authoritative, tt.unreachable, []string{"ssh-admins", "devs"}, tt.listed...)
+			if got := cfg.Admin.GrantsAdmin(identity.Groups); got != tt.want {
+				t.Errorf("login groups %v grant admin = %v, want %v", identity.Groups, got, tt.want)
+			}
+		})
+	}
+}
+
+// The session stores the claim, not the narrowed list, so a later request
+// can give the role back when the directory lists it again.
+func TestHandleCallback_ShouldKeepTheClaimForTheSessionWhenItNarrows(t *testing.T) {
+	t.Parallel()
+
+	identity, _ := loginWithDirectory(t, true, false, []string{"ssh-admins", "devs"}, "unrelated")
+	if got := identity.SessionGroups(); !equalStrings(got, []string{"ssh-admins", "devs"}) {
+		t.Errorf("SessionGroups() = %v, want the claim [ssh-admins devs]", got)
 	}
 }

@@ -106,6 +106,12 @@ type NotificationService struct {
 	// users the admin mail goes to. Nil until attached, which offers the
 	// admin-only kinds to nobody and finds no admin recipients.
 	admin *config.AdminConfig
+
+	// roles narrows a stored admin's groups by the directory when
+	// ldap.authoritative_role_groups is on, the same function a session
+	// goes through. Nil until attached by SetRoleNarrower, which leaves the
+	// stored OIDC groups as the whole answer.
+	roles RoleNarrower
 }
 
 // NewNotificationService constructs the service. enabled comes from
@@ -129,6 +135,16 @@ func NewNotificationService(db *gorm.DB, publisher message.Publisher, enabled, l
 func (s *NotificationService) SetAdminConfig(admin *config.AdminConfig) {
 	if s != nil {
 		s.admin = admin
+	}
+}
+
+// SetRoleNarrower attaches the directory's role narrowing, so the admin
+// mail drops someone the directory has taken admin away from exactly as
+// their session does. Wired at startup; safe with a nil directory service,
+// which narrows nothing.
+func (s *NotificationService) SetRoleNarrower(roles RoleNarrower) {
+	if s != nil && roles != nil {
+		s.roles = roles
 	}
 }
 
@@ -879,20 +895,36 @@ type AdminRecipientResolver interface {
 // the admin mail, from oidcGroups: the OIDC groups the user's last login
 // recorded in user_groups. It is the one place that decision is made, so
 // every admin recipient query goes through it; the rule itself is
-// config.AdminConfig.GrantsAdmin, as for a session.
+// config.AdminConfig.GrantsAdmin, as for a session, after the same
+// narrowing a session gets (LDAPService.NarrowRoleGroups): with
+// ldap.authoritative_role_groups on, a directory-linked user whose latest
+// directory read no longer lists the admin group is not an admin here
+// either.
 //
-// The answer is only as fresh as the last login: someone removed from the
-// admin group at the identity provider still counts until they log in
-// again. It decides who is told, never what anyone may do.
-func (s *NotificationService) StoredUserIsAdmin(_ *model.User, oidcGroups []string) bool {
-	return s.admin != nil && s.admin.GrantsAdmin(oidcGroups)
+// Otherwise the answer is only as fresh as the last login: someone removed
+// from the admin group at the identity provider still counts until they
+// log in again. It decides who is told, never what anyone may do. An error
+// is a failed read of the directory rows, and answers false with it.
+func (s *NotificationService) StoredUserIsAdmin(ctx context.Context, user *model.User, oidcGroups []string) (bool, error) {
+	if s.admin == nil || !s.admin.GrantsAdmin(oidcGroups) {
+		return false, nil
+	}
+	if s.roles == nil || user == nil {
+		return true, nil
+	}
+	groups, err := s.roles.NarrowRoleGroups(ctx, user.ID, oidcGroups)
+	if err != nil {
+		return false, fmt.Errorf("check the admin role of user %s against the directory: %w", user.ID, err)
+	}
+	return s.admin.GrantsAdmin(groups), nil
 }
 
 // AdminRecipients returns every user the admin mail should reach: enabled,
 // with an address, and an admin by StoredUserIsAdmin. Only the OIDC rows
-// of user_groups are read, because only the OIDC groups claim grants a role
-// (see config.AdminConfig.GrantsAdmin); a directory group of the same name
-// grants nothing and must not make anyone a recipient. Ordered by username,
+// of user_groups are read as candidates, because only the OIDC groups claim
+// grants a role (see config.AdminConfig.GrantsAdmin); a directory group of
+// the same name grants nothing and must not make anyone a recipient. The
+// directory rows can only take a candidate away, through StoredUserIsAdmin. Ordered by username,
 // so the sends go out in a stable order.
 func (s *NotificationService) AdminRecipients(ctx context.Context) ([]model.User, error) {
 	if s.admin == nil || !s.admin.IsAdminEnabled() {
@@ -932,7 +964,11 @@ func (s *NotificationService) AdminRecipients(ctx context.Context) ([]model.User
 
 	admins := make([]model.User, 0, len(users))
 	for i := range users {
-		if s.StoredUserIsAdmin(&users[i], groups[users[i].ID]) {
+		admin, err := s.StoredUserIsAdmin(ctx, &users[i], groups[users[i].ID])
+		if err != nil {
+			return nil, fmt.Errorf("find the admin notification recipients: %w", err)
+		}
+		if admin {
 			admins = append(admins, users[i])
 		}
 	}

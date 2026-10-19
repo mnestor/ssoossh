@@ -124,6 +124,9 @@ func (a *app) initServices() (*services, error) {
 	svc.notification = service.NewNotificationService(a.db, a.pubSub.Publisher, a.config.Mail.Enabled, a.config.LDAP.Enabled,
 		a.config.CertOptions.Service.AllowUserAccounts)
 	svc.notification.SetAdminConfig(&a.config.Admin)
+	// Who the admin mail reaches is narrowed by the directory exactly as a
+	// session's roles are (ldap.authoritative_role_groups).
+	svc.notification.SetRoleNarrower(svc.ldap)
 	svc.certRequest.SetNotifier(svc.notification)
 	svc.enrollment.SetNotifier(svc.notification)
 	svc.ldap.SetNotifier(svc.notification)
