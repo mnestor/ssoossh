@@ -210,6 +210,10 @@ func groupAllowlist(c *config.Config) []string {
 	add(c.Admin.RequireGroup)
 	add(c.Admin.SOCGroup)
 	add(c.Admin.AuditorGroup)
+	// Fleet key admin is a role like the three above, and
+	// ldap.authoritative_role_groups narrows it by these rows, so it has to
+	// be stored for the directory to be able to keep it.
+	add(c.Admin.NSSKeyGroup)
 	for _, n := range c.LDAP.Sync.ExtraGroups {
 		add(n)
 	}
@@ -307,7 +311,7 @@ func (s *LDAPService) Enrich(ctx context.Context, identity *Identity, userID str
 
 	applyLDAPValues(identity, entry.Values)
 
-	if err := s.persist(ctx, userID, entry); err != nil {
+	if err := s.persist(ctx, userID, entry, roleNarrowedAtLogin); err != nil {
 		s.log.ErrorContext(ctx, "failed to persist directory enrichment",
 			"subject", identity.Subject, "error", err)
 	}
@@ -601,8 +605,13 @@ func applyLDAPValues(identity *Identity, values map[string][]string) {
 				identity.DisplayName = vals[0]
 			}
 		case config.LDAPFieldGroups:
-			// Persisted, never merged into the session identity: see the
-			// invariant in https://mnestor.github.io/ssoossh/internals/invariants/.
+			// Persisted, never merged into the session identity, so the
+			// directory never grants a group. The one way these rows bear
+			// on the identity is narrowing: with
+			// ldap.authoritative_role_groups on, a role group the latest
+			// read no longer lists is removed from it (see
+			// LDAPService.NarrowRoleGroups and the invariant in
+			// https://mnestor.github.io/ssoossh/internals/invariants/).
 		default:
 			// Any other name is an extra template field, on the same
 			// contract as OAuthFields.Extra.
@@ -695,8 +704,16 @@ func (s *LDAPService) storedValues(ctx context.Context, userID string) (*storedL
 }
 
 // persist writes the sync bookkeeping row and replaces the user's
-// LDAP-sourced group rows.
-func (s *LDAPService) persist(ctx context.Context, userID string, entry *ldapEntry) error {
+// LDAP-sourced group rows. It is reached only with an entry a successful
+// read resolved (Enrich and syncUser both return before it on any failure
+// or miss), which is what lets ldap.authoritative_role_groups treat these
+// rows as the latest directory read.
+//
+// trigger names the read for the user.role_narrowed_by_directory event,
+// written in the same transaction when the new rows take away a role group
+// the user holds through OIDC; a failed audit write fails the persist, so
+// the rows never narrow a role without the record of it.
+func (s *LDAPService) persist(ctx context.Context, userID string, entry *ldapEntry, trigger string) error {
 	encoded, err := json.Marshal(entry.Values)
 	if err != nil {
 		// not covered: Values is a map of string slices, so json.Marshal
@@ -724,7 +741,8 @@ func (s *LDAPService) persist(ctx context.Context, userID string, entry *ldapEnt
 		UpdatedAt:      now,
 	}
 
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	var narrowed *AuditEvent
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "user_id"}},
 			DoUpdates: clause.AssignmentColumns([]string{
@@ -733,8 +751,29 @@ func (s *LDAPService) persist(ctx context.Context, userID string, entry *ldapEnt
 		}).Create(&row).Error; err != nil {
 			return fmt.Errorf("failed to persist directory bookkeeping: %w", err)
 		}
-		return replaceGroups(tx, userID, model.GroupSourceLDAP, s.allowed(entry.Values[config.LDAPFieldGroups]), now)
+		removed, err := replaceGroups(tx, userID, model.GroupSourceLDAP, s.allowed(entry.Values[config.LDAPFieldGroups]), now)
+		if err != nil {
+			return err
+		}
+		event, err := s.roleNarrowedEvent(tx, userID, removed, trigger, now)
+		if err != nil || event == nil || s.auditor == nil {
+			return err
+		}
+		narrowed = event
+		return s.auditor.RecordTx(tx, *event)
 	})
+	if err != nil {
+		return err
+	}
+
+	// After the commit, as autoDisable does, so a rolled back write leaves
+	// no log line claiming a role was taken away.
+	if narrowed != nil {
+		s.auditor.LogOnly(*narrowed)
+		s.log.InfoContext(ctx, "the directory no longer lists a role group the user holds, so it stops counting (ldap.authoritative_role_groups)",
+			"user_id", userID, "groups", narrowed.Detail["groups"], "trigger", trigger)
+	}
+	return nil
 }
 
 // allowed reduces directory group values to comparable names and keeps only
@@ -753,23 +792,29 @@ func (s *LDAPService) allowed(values []string) []string {
 // replaceGroups rewrites one source's group rows for a user: delete then
 // insert, so a membership that disappeared is actually gone rather than
 // lingering. FirstSeenAt is preserved for rows that persist across the
-// replace, since "since when" is the part worth keeping.
-func replaceGroups(tx *gorm.DB, userID string, source model.GroupSource, names []string, now time.Time) error {
+// replace, since "since when" is the part worth keeping. Returns the names
+// the replace dropped, which is how persist sees a directory read take a
+// role group away.
+func replaceGroups(tx *gorm.DB, userID string, source model.GroupSource, names []string, now time.Time) ([]string, error) {
 	var existing []model.UserGroup
 	if err := tx.Where("user_id = ? AND source = ?", userID, source).Find(&existing).Error; err != nil {
-		return fmt.Errorf("failed to read existing group rows: %w", err)
+		return nil, fmt.Errorf("failed to read existing group rows: %w", err)
 	}
 	firstSeen := map[string]time.Time{}
+	var removed []string
 	for _, row := range existing {
 		firstSeen[row.GroupName] = row.FirstSeenAt
+		if !slices.Contains(names, row.GroupName) {
+			removed = append(removed, row.GroupName)
+		}
 	}
 
 	if err := tx.Where("user_id = ? AND source = ?", userID, source).
 		Delete(&model.UserGroup{}).Error; err != nil {
-		return fmt.Errorf("failed to clear existing group rows: %w", err)
+		return nil, fmt.Errorf("failed to clear existing group rows: %w", err)
 	}
 	if len(names) == 0 {
-		return nil
+		return removed, nil
 	}
 
 	rows := make([]model.UserGroup, 0, len(names))
@@ -788,9 +833,9 @@ func replaceGroups(tx *gorm.DB, userID string, source model.GroupSource, names [
 		})
 	}
 	if err := tx.Create(&rows).Error; err != nil {
-		return fmt.Errorf("failed to write group rows: %w", err)
+		return nil, fmt.Errorf("failed to write group rows: %w", err)
 	}
-	return nil
+	return removed, nil
 }
 
 // dedupe removes duplicates while preserving first-seen order.

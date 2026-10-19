@@ -47,9 +47,20 @@ type Identity struct {
 	// input — a display name is not unique and nothing may act on it.
 	DisplayName string
 
+	// Groups is what every role and policy check reads: the OIDC groups
+	// claim, narrowed by the directory when ldap.authoritative_role_groups
+	// is on (see LDAPService.NarrowRoleGroups). Never widened by anything.
 	Groups          []string
 	OtherAccounts   []string
 	ServiceAccounts []string
+
+	// ClaimGroups is the groups claim exactly as a login read it, before
+	// any narrowing. Set only by AuthService.HandleCallback, and only so
+	// the session stores the claim rather than the narrowed list: each
+	// request narrows afresh (IdentityService.RefreshIdentity), so a role
+	// group the directory lists again counts again without another login.
+	// Never an authorization input; read it through SessionGroups.
+	ClaimGroups []string
 
 	// Extra holds the operator-configured extra claim fields (see
 	// config.OAuthFields.Extra), keyed by template name. Populated from ID
@@ -57,6 +68,17 @@ type Identity struct {
 	// approval path re-hydrates it from that row (the session does not
 	// carry it). Consumed by key ID templates as {{.Extra.name}}.
 	Extra map[string]extraValue
+}
+
+// SessionGroups is the group list a login session stores: the claim as the
+// login read it when there is one, otherwise Groups (an identity built
+// some other way). What a request then acts on is that list narrowed
+// again, never this one.
+func (i *Identity) SessionGroups() []string {
+	if i.ClaimGroups != nil {
+		return i.ClaimGroups
+	}
+	return i.Groups
 }
 
 // AuthProvider handles OIDC login. AuthService is the production
@@ -376,8 +398,14 @@ func (s *AuthService) HandleCallback(ctx context.Context, code string, nonce str
 	// input — see https://mnestor.github.io/ssoossh/internals/invariants/.
 	s.captureOIDCGroups(ctx, identity, user.ID)
 
-	// After enrichment, so the default reads the roles this session will
-	// actually hold. Only fills an unset level; see DefaultDetailLevel.
+	// After the capture, which stores the claim as it came, and after
+	// enrichment, which has just rewritten the directory rows this reads.
+	// From here on identity.Groups is what the session acts on.
+	narrowed := s.narrowRoleGroupsAtLogin(ctx, identity, user.ID)
+
+	// After enrichment and narrowing, so the default reads the roles this
+	// session will actually hold. Only fills an unset level; see
+	// DefaultDetailLevel.
 	s.fillDetailLevelsAtLogin(ctx, identity)
 
 	subject := AuditSubjectFromIdentity(identity, user.ID)
@@ -400,10 +428,37 @@ func (s *AuthService) HandleCallback(ctx context.Context, code string, nonce str
 
 	// The groups snapshot is the point: membership is never persisted, so
 	// this is the only durable record of what access the identity carried
-	// on a given day.
-	s.audit(ctx, AuditEvent{Action: AuditAuthLogin, Actor: subject, Target: subject})
+	// on a given day. The snapshot is the narrowed list, the access the
+	// session holds; a role group the directory took away is named in the
+	// detail, so the claim it came from is not lost.
+	login := AuditEvent{Action: AuditAuthLogin, Actor: subject, Target: subject}
+	if len(narrowed) > 0 {
+		login.Detail = map[string]any{"role_groups_removed_by_directory": narrowed}
+	}
+	s.audit(ctx, login)
 
 	return identity, nil
+}
+
+// narrowRoleGroupsAtLogin applies ldap.authoritative_role_groups to a
+// fresh login: a role group the claim carries but the latest directory
+// read for this user no longer lists is removed from identity.Groups, the
+// same rule every later request applies. The claim itself is kept in
+// identity.ClaimGroups for the session. Returns the groups removed.
+//
+// A database error narrows rather than fails the login (see
+// LDAPService.NarrowRoleGroups): the person signs in without the roles
+// that could not be checked, and the next request checks again.
+func (s *AuthService) narrowRoleGroupsAtLogin(ctx context.Context, identity *Identity, userID string) []string {
+	identity.ClaimGroups = identity.Groups
+	groups, err := s.ldap.NarrowRoleGroups(ctx, userID, identity.Groups)
+	if err != nil {
+		slog.WarnContext(ctx, "could not check the role groups against the directory, so this login holds none of them",
+			slog.String("subject", identity.Subject), slog.Any("error", err))
+	}
+	removed := removedGroups(identity.Groups, groups)
+	identity.Groups = groups
+	return removed
 }
 
 // upsertUser creates or updates the model.User row for identity, keyed by
@@ -618,7 +673,8 @@ func (s *AuthService) captureOIDCGroups(ctx context.Context, identity *Identity,
 	}
 
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return replaceGroups(tx, userID, model.GroupSourceOIDC, dedupe(names), time.Now())
+		_, err := replaceGroups(tx, userID, model.GroupSourceOIDC, dedupe(names), time.Now())
+		return err
 	}); err != nil {
 		slog.Warn("failed to capture OIDC group membership",
 			slog.String("subject", identity.Subject), slog.Any("error", err))

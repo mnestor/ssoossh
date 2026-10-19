@@ -150,6 +150,16 @@ export const AuditUserAutoDisabled: AuditAction = "user.auto_disabled";
  */
 export const AuditUserDisableRefused: AuditAction = "user.disable_refused";
 /**
+ * AuditUserRoleNarrowedByDirectory records a successful directory read
+ * that stopped listing a role group the user holds through OIDC, with
+ * ldap.authoritative_role_groups on: from then on that role no longer
+ * counts for them, in a live session from its next request. One event
+ * per read that changes the rows, not one per request. A system action,
+ * so it carries no actor; the detail names the groups and whether a
+ * login or the sync made the read.
+ */
+export const AuditUserRoleNarrowedByDirectory: AuditAction = "user.role_narrowed_by_directory";
+/**
  * Privileged detail views. List views are deliberately not audited:
  * a row per page of the user directory says nothing. If a list query
  * ever needs auditing, record it as one event carrying the search

@@ -131,6 +131,7 @@ ldap.user_filter =
 ldap.fields = 
 ldap.id_attribute = 
 ldap.group_name_attribute = 
+ldap.authoritative_role_groups = false
 ldap.sync.interval = 15m0s
 ldap.sync.disable_after = 45m0s
 ldap.sync.reenable = true

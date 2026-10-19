@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"net/mail"
+	"slices"
 	"time"
 
 	"github.com/mnestor/ssoossh/internal/fipsmode"
@@ -381,6 +382,58 @@ type LDAPConfig struct {
 	// name is what must match the configured group names.
 	GroupNameAttribute string `mapstructure:"group_name_attribute" default:""`
 
+	// AuthoritativeRoleGroups lets the directory take a role away between
+	// logins. Off by default: roles then come from the OIDC groups claim
+	// alone, read at login, and the session lifetime is the revocation
+	// window for a role.
+	//
+	// With it on, a role group counts for a directory-linked user only
+	// while the latest directory read for that user still lists it. The
+	// role groups are exactly admin.require_group, admin.soc_group,
+	// admin.auditor_group and admin.nss_key_group (fleet key admin). The
+	// background sync can therefore remove someone's admin, SOC, auditor
+	// or fleet key admin role between logins, effective on their next
+	// request; a fresh login is narrowed the same way, and so is who
+	// counts as an admin for the admin email.
+	//
+	// It narrows only. The directory never grants a role: a group the
+	// directory lists but the OIDC claim does not is never added, so a
+	// person needs the group in both places to hold the role.
+	//
+	// "Linked" means the server has resolved a directory entry for the
+	// user (a user_ldap row with a DN or a directory id). A user with no
+	// entry, one never matched, or any user while LDAP is off is never
+	// narrowed. "The latest directory read" is the LDAP group rows the
+	// last successful login lookup or sync pass wrote. A read that failed
+	// (the directory unreachable, a search error) rewrites nothing, so an
+	// outage never takes a role away. A user the sync finds missing from
+	// the directory keeps the rows of their last successful read;
+	// ldap.sync.disable_after is what acts on a missing entry.
+	//
+	// Names are compared exactly, the way the role checks compare them.
+	// Directory groups are stored reduced to their CN (a memberOf DN
+	// becomes its first RDN value), so each role group name must be the
+	// same string in the identity provider's groups claim and as the
+	// directory group's CN. An identity provider that emits full DNs
+	// cannot be used with this setting: no stored CN would ever equal the
+	// configured DN, and every role would be removed.
+	//
+	// Only the role groups are narrowed. Lifetime policy group
+	// conditions, cert_options require gates and the groups that manage
+	// individual NSS keys are not affected, unless they name a role group
+	// itself: removing a role group from the identity removes it for
+	// every check that reads the identity's groups, which can only
+	// narrow.
+	//
+	// A truncated read counts as a successful one. Keep
+	// ldap.limits.max_values_per_attribute and
+	// ldap.limits.max_entries_per_search above the largest group count a
+	// role holder has, or a role group cut off by the cap is removed.
+	//
+	// Requires ldap.enabled and a mapped ldap.fields.groups; startup fails
+	// otherwise.
+	AuthoritativeRoleGroups bool `mapstructure:"authoritative_role_groups" default:"false"`
+
 	// Sync configures the background directory sync. See LDAPSync.
 	Sync LDAPSync `mapstructure:"sync"`
 
@@ -417,6 +470,9 @@ type LDAPConfig struct {
 // evaluated from the session identity (Identity.Groups), which means the
 // session lifetime is the admin revocation window: removing someone from an
 // admin group in the identity provider takes effect at their next login.
+// ldap.authoritative_role_groups adds a narrower path for these groups: the
+// directory sync can take one away from a linked user on their next
+// request, and never grant one.
 type AdminConfig struct {
 	// RequireGroup is the OIDC group a caller must belong to in order to
 	// access admin-scoped operations (the effective configuration,
@@ -550,6 +606,37 @@ func (a *AdminConfig) GrantsAuditor(groups []string) bool {
 	return a.IsAuditorEnabled() && containsGroup(groups, a.AuditorGroup)
 }
 
+// IsRoleGroup reports whether name is one of the configured role groups:
+// require_group (admin), soc_group, auditor_group or nss_key_group (fleet
+// key admin). Compared the way the role checks compare, exactly, and an
+// empty name or an unconfigured role never matches.
+func (a *AdminConfig) IsRoleGroup(name string) bool {
+	return containsGroup([]string{a.RequireGroup, a.SOCGroup, a.AuditorGroup, a.NSSKeyGroup}, name)
+}
+
+// HoldsRoleGroup reports whether groups carries any configured role group,
+// which is the only case NarrowRoleGroups can change.
+func (a *AdminConfig) HoldsRoleGroup(groups []string) bool {
+	return slices.ContainsFunc(groups, a.IsRoleGroup)
+}
+
+// NarrowRoleGroups returns groups without each role group that directory
+// does not also list, for ldap.authoritative_role_groups. Every other group
+// is kept, and nothing in directory is ever added, so the result can only
+// be narrower than groups. A nil directory removes every role group, which
+// is the answer for a check that could not read the directory rows.
+// Always a new slice, so a caller can keep the original.
+func (a *AdminConfig) NarrowRoleGroups(groups, directory []string) []string {
+	out := make([]string, 0, len(groups))
+	for _, g := range groups {
+		if a.IsRoleGroup(g) && !containsGroup(directory, g) {
+			continue
+		}
+		out = append(out, g)
+	}
+	return out
+}
+
 // containsGroup reports whether needle is in haystack. An empty needle
 // never matches, so an unconfigured group cannot accidentally authorize a
 // caller.
@@ -558,7 +645,9 @@ func (a *AdminConfig) GrantsAuditor(groups []string) bool {
 // provider emitted, verbatim — see service.AuthService's groups claim
 // handling, which does not rewrite them, and note that LDAP group values
 // never reach this list at all (they are persisted, never merged into the
-// session identity). So a provider that emits bare names has to be
+// session identity; ldap.authoritative_role_groups compares the reduced
+// directory names against a role group with this same function, and can
+// only remove one). So a provider that emits bare names has to be
 // configured with bare names, and one that emits full DNs
 // ("CN=admins,OU=Groups,DC=example,DC=com") has to be configured with the
 // full DN.

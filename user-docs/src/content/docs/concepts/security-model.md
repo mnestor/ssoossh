@@ -141,10 +141,16 @@ process.
 **Group membership never appears in a certificate.** Groups feed the
 lifetime and gating decisions only.
 
-**Persisted group rows are never an authorization input.** Admin, SOC,
-auditor, and the certificate policy gates are all evaluated from the session
+**Persisted group rows never grant anything.** Admin, SOC, auditor, fleet
+key admin, and the certificate policy gates are all evaluated from the session
 identity. The `user_groups` table is a snapshot for notification fan-out and
 display: it answers "who should this reach", never "may this caller do this".
+The one exception narrows and is opt-in: with
+[`ldap.authoritative_role_groups`](/ssoossh/reference/config/ldap/#authoritative_role_groups)
+on, a role group (admin, SOC, auditor, fleet key admin) counts for a
+directory-linked user only while the latest directory read still lists it, so
+the sync can take a role away between logins, effective on the next request.
+The directory never grants a role.
 
 **Session and authorization headers are never captured.** The headers
 recorded on an approval decision are a deliberate allowlist -- `User-Agent`,
@@ -399,7 +405,7 @@ group; never deny by one.
 | A proxy hop spoofs the client address | `X-Forwarded-For` is ignored unless the hop is named; empty by default | [`http.trusted_proxies`](/ssoossh/reference/config/http/#trusted_proxies) |
 | The OIDC redirect is pointed somewhere else | Redirect URI and the CSRF origin check both derive from one setting | [`http.public_url`](/ssoossh/reference/config/http/#public_url) |
 | Brute-forcing a console code | Rate limit keyed on both the submitting session and the source address | [`http.console_code_rate_limit.limit`](/ssoossh/reference/config/http/#console_code_rate_limitlimit) |
-| Group membership goes stale mid-session | Groups are read at login; the session's absolute cap bounds staleness | [`http.cookie_max_age`](/ssoossh/reference/config/http/#cookie_max_age) |
+| Group membership goes stale mid-session | Groups are read at login; the session's absolute cap bounds staleness; with a directory, the sync can take a role group away on the next request | [`http.cookie_max_age`](/ssoossh/reference/config/http/#cookie_max_age), [`ldap.authoritative_role_groups`](/ssoossh/reference/config/ldap/#authoritative_role_groups) |
 | An issued certificate cannot be traced later | Append-only decision records, and `sshd` logs the key ID on every login | [`audit.retention`](/ssoossh/reference/config/audit/#retention), [key ID templates](/ssoossh/operations/key-id-templates/) |
 | A signing job is intercepted on the broker | Per-node identity via mTLS; the payload is not secret and is useless without the client's private key | [multi-instance and NATS](/ssoossh/operations/multi-instance/) |
 | A host is made to believe a name has another uid | Pinned TLS to `ssoosshd`; local names and ids always win; `min_id` keeps system ids out; a uid or gid never moves without an admin's accept; two entries claiming one number or name are both withheld | [NSS directory](/ssoossh/operations/nss/#frozen-uid-and-gid), the host's `nss.yaml` |
@@ -419,7 +425,9 @@ group; never deny by one.
   interactive, so the human is the retry mechanism: a dropped job means a
   terminal still waiting, cancelled and rerun.
 - **Re-checking group claims mid-session.** The session's absolute cap bounds
-  how stale a claim can get.
+  how stale a claim can get. The identity provider is never asked again; the
+  one mid-session change is the opt-in directory narrowing of role groups
+  above, which can only remove.
 - **A dedicated signer config file.** The signer reuses the full server config
   with mode-aware validation today, so secrets it never uses can sit in its
   file. Worth hardening once the split topology is in real use.

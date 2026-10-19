@@ -145,8 +145,13 @@ type LDAPLimits struct {
 // Validate checks the LDAP configuration that can be checked without a
 // directory, failing startup rather than degrading at runtime. Skipped
 // entirely when LDAP is disabled, so a half-written block in a config file
-// costs nothing until it is switched on.
+// costs nothing until it is switched on. The one exception is
+// authoritative_role_groups, which is refused whatever else is set unless
+// the directory can actually supply the groups it narrows by.
 func (c *LDAPConfig) Validate() error {
+	if err := c.validateAuthoritativeRoleGroups(); err != nil {
+		return err
+	}
 	if !c.Enabled {
 		return nil
 	}
@@ -191,6 +196,22 @@ func (c *LDAPConfig) Validate() error {
 	// so it is announced rather than left to be discovered.
 	if c.TLSInsecureSkipVerify {
 		slog.Warn("ldap.tls_insecure_skip_verify is enabled: the directory connection is not authenticated and can be intercepted; do not run this in production")
+	}
+	return nil
+}
+
+// validateAuthoritativeRoleGroups refuses ldap.authoritative_role_groups
+// without a directory that reads groups. With LDAP off nothing would ever
+// narrow, and with no groups field every read would store no groups, so a
+// directory-linked person would lose every role at the first sync: both
+// are configurations that cannot mean what they say.
+func (c *LDAPConfig) validateAuthoritativeRoleGroups() error {
+	if !c.AuthoritativeRoleGroups {
+		return nil
+	}
+	groups, mapped := c.Fields[LDAPFieldGroups]
+	if !c.Enabled || !mapped || groups.IsZero() {
+		return fmt.Errorf("ldap.authoritative_role_groups needs ldap.enabled: true and ldap.fields.groups mapped to the directory's group attribute or a group search: the directory can only take a role away when it is read for groups")
 	}
 	return nil
 }

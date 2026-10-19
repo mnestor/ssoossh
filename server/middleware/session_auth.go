@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -88,6 +89,13 @@ const (
 	// what the absolute session cap is measured against, so sliding must
 	// not touch it.
 	sessionKeyIdentityIssuedAt = "identity_issued_at"
+	// sessionKeyNarrowedRoleGroups holds, as a JSON array, the role groups
+	// the directory has taken away from this session
+	// (ldap.authoritative_role_groups) as of the last request that changed
+	// that set. Bookkeeping for the log only: it is what lets the
+	// middleware log a loss once per change rather than on every request,
+	// and nothing reads it to decide anything.
+	sessionKeyNarrowedRoleGroups = "identity_narrowed_role_groups_json"
 )
 
 // sessionString reads key from sess as a string, returning "" if it's
@@ -275,13 +283,58 @@ func SetIdentitySession(c *gin.Context, identity *service.Identity) error {
 	sess.Set(sessionKeyIdentityUsername, identity.Username)
 	sess.Set(sessionKeyIdentityEmail, identity.Email)
 	sess.Set(sessionKeyIdentityDisplayName, identity.DisplayName)
-	setSessionStringList(sess, sessionKeyIdentityGroups, identity.Groups)
+	// The claim, not the narrowed list: every request narrows afresh, so a
+	// role group the directory lists again counts again without a login.
+	setSessionStringList(sess, sessionKeyIdentityGroups, identity.SessionGroups())
 	setSessionStringList(sess, sessionKeyIdentityOtherAccounts, identity.OtherAccounts)
 	setSessionStringList(sess, sessionKeyIdentityServiceAccounts, identity.ServiceAccounts)
 	now := time.Now().Unix()
 	sess.Set(sessionKeyIdentityIssuedAt, now)
 	sess.Set(sessionKeyIdentityRefreshedAt, now)
 	return sess.Save()
+}
+
+// noteNarrowedRoleGroups logs, once per change, the role groups the
+// refresh took away from this session (ldap.authoritative_role_groups) and
+// any it gives back. The refresh only ever removes groups, so whatever the
+// claim held that the refreshed identity does not is exactly what the
+// directory took. The set is remembered in the session, which is saved
+// only when it changes; a failed save is registered like the sliding
+// expiry's and the request proceeds, at worst logging the change again.
+func noteNarrowedRoleGroups(c *gin.Context, sess sessions.Session, identity *service.Identity, claimed []string) {
+	removed := make([]string, 0)
+	for _, g := range claimed {
+		if !slices.Contains(identity.Groups, g) && !slices.Contains(removed, g) {
+			removed = append(removed, g)
+		}
+	}
+	noted := sessionStringList(sess, sessionKeyNarrowedRoleGroups, "")
+	if slices.Equal(noted, removed) {
+		return
+	}
+
+	ctx := c.Request.Context()
+	for _, g := range removed {
+		if !slices.Contains(noted, g) {
+			slog.InfoContext(ctx, "a role group stops counting for this session: the latest directory read does not list it, or it could not be checked (ldap.authoritative_role_groups)",
+				slog.String("subject", identity.Subject), slog.String("username", identity.Username), slog.String("group", g))
+		}
+	}
+	for _, g := range noted {
+		if !slices.Contains(removed, g) {
+			slog.InfoContext(ctx, "a role group counts again for this session (ldap.authoritative_role_groups)",
+				slog.String("subject", identity.Subject), slog.String("username", identity.Username), slog.String("group", g))
+		}
+	}
+
+	if len(removed) == 0 {
+		sess.Delete(sessionKeyNarrowedRoleGroups)
+	} else {
+		setSessionStringList(sess, sessionKeyNarrowedRoleGroups, removed)
+	}
+	if err := sess.Save(); err != nil {
+		_ = c.Error(err) //nolint:errcheck // c.Error only registers the error for logging; the request proceeds on the still-valid session.
+	}
 }
 
 // ClearIdentitySession logs the current session out.
@@ -405,9 +458,11 @@ func (m *SessionAuthMiddleware) Add() gin.HandlerFunc {
 		// and a directory sync between logins can remove an account from
 		// under it — which, unrefreshed, left a live session still able to
 		// approve a certificate for an account the directory had taken
-		// away. Groups are deliberately not refreshed: roles are read at
-		// login by design, which is what makes the session lifetime the
-		// revocation window.
+		// away. Groups are never refreshed from the database, so nothing
+		// stored can grant a role; the refresh only narrows them, and only
+		// with ldap.authoritative_role_groups on, dropping a role group
+		// the latest directory read no longer lists. With it off the
+		// session lifetime is the revocation window for a role.
 		//
 		// Fails open. A database error leaves the snapshot in place and is
 		// logged rather than 500ing every authenticated request, because
@@ -420,6 +475,7 @@ func (m *SessionAuthMiddleware) Add() gin.HandlerFunc {
 		// 401 sends the browser to sign in again, which a disabled account
 		// cannot.
 		if m.refresher != nil {
+			claimed := identity.Groups
 			if err := m.refresher.RefreshIdentity(c.Request.Context(), identity); err != nil {
 				var disabled *errorresponses.UserDisabledError
 				if errors.As(err, &disabled) {
@@ -435,6 +491,7 @@ func (m *SessionAuthMiddleware) Add() gin.HandlerFunc {
 					"failed to refresh the session identity from the database; using the login-time values",
 					slog.String("subject", subject), slog.Any("error", err))
 			}
+			noteNarrowedRoleGroups(c, sess, identity, claimed)
 		}
 
 		c.Set(IdentityContextKey, identity)

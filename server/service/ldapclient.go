@@ -260,7 +260,9 @@ func (f *filterTemplate) execute(data filterData) (string, error) {
 // config.AdminConfig's group names against the identity's own group list
 // with exact string equality (config.containsGroup), and that list comes
 // from the OIDC claim rather than from here — so nothing reduces a DN on
-// the path that grants access, by design. See containsGroup for why.
+// the path that grants access, by design. See containsGroup for why. The
+// reduced names do feed one decision, ldap.authoritative_role_groups, which
+// can only remove a role group the claim carries.
 func reduceGroupName(value string) string {
 	dn, err := ldap.ParseDN(value)
 	if err != nil || len(dn.RDNs) == 0 || len(dn.RDNs[0].Attributes) == 0 {

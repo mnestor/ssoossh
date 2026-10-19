@@ -58,6 +58,7 @@ var auditActions = []AuditAction{
 	AuditUserEnabled,
 	AuditUserAutoDisabled,
 	AuditUserDisableRefused,
+	AuditUserRoleNarrowedByDirectory,
 	AuditAdminUserViewed,
 	AuditAdminEnrollmentViewed,
 	AuditAdminConfigViewed,
