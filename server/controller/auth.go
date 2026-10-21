@@ -23,8 +23,12 @@ import (
 // the other controllers these are browser-facing redirects, not JSON API
 // calls, so they're expected to be mounted outside the /api group (see
 // bootstrap/router.go).
-func NewAuthController(group *gin.RouterGroup, authService service.AuthProvider, csrfMiddleware gin.HandlerFunc, c *config.Config) {
-	a := &authController{authService: authService}
+//
+// echoCodes records how a bootstrap echo ended on the code it was started
+// from; nil when there is no code store (tests of the login alone), which
+// leaves a bootstrap echo's outcome unrecorded.
+func NewAuthController(group *gin.RouterGroup, authService service.AuthProvider, echoCodes service.IdentityEchoCodes, csrfMiddleware gin.HandlerFunc, c *config.Config) {
+	a := &authController{authService: authService, echoCodes: echoCodes}
 	group.GET("/login", a.loginHandler)
 	group.GET("/callback", a.callbackHandler)
 	group.GET("/disabled", disabledPageHandler(c))
@@ -73,7 +77,27 @@ func (a *authController) logoutHandler(g *gin.Context) {
 // authController handles the OIDC login/callback HTTP routes.
 type authController struct {
 	authService service.AuthProvider
+	echoCodes   service.IdentityEchoCodes
 }
+
+// echoRound says whether the round trip a callback finishes is a claims
+// echo, and for a bootstrap echo, the code it was started from.
+type echoRound struct {
+	echo bool
+	// codeID is the bootstrap echo code's row id, "" for the admin echo.
+	codeID string
+}
+
+// resultPath is the page the echo's result or failure goes to.
+func (e echoRound) resultPath() string {
+	if e.codeID != "" {
+		return bootstrapEchoResultPath
+	}
+	return echoResultPath
+}
+
+// notEcho is a login's round trip.
+var notEcho = echoRound{}
 
 // loginHandler handles GET /auth/login: starts the OIDC flow by redirecting
 // to the provider's authorization URL, with a fresh CSRF state value stored
@@ -152,7 +176,8 @@ const (
 // @Description establishes the session, and redirects to the captured `return_to` (or
 // @Description `/`). A failure redirects to `/login?error=<reason>` (`expired`,
 // @Description `refused`, `session` or `failed`), or for a claims echo to
-// @Description `/admin/identity/echo?error=<reason>`.
+// @Description `/admin/identity/echo?error=<reason>` (`/identity/echo` for a
+// @Description bootstrap echo), with the error itself in the fragment.
 // @Tags        auth
 // @Param       code  query string true "Authorization code from the identity provider"
 // @Param       state query string true "CSRF state value stored at login"
@@ -164,42 +189,54 @@ func (a *authController) callbackHandler(g *gin.Context) {
 
 	expectedState, err := middleware.PopOIDCState(g)
 	if err != nil {
-		a.failSignIn(g, signInFailed, false, err)
-		return
-	}
-	if expectedState == "" || state != expectedState {
-		a.failSignIn(g, signInExpired, false, errors.New("state missing or mismatched"))
-		return
-	}
-
-	nonce, err := middleware.PopOIDCNonce(g)
-	if err != nil {
-		a.failSignIn(g, signInFailed, false, err)
-		// not covered: oversizedSessionSeed breaks only the first Save()
-		// in the chain (PopOIDCState's, which is tested), so the later
-		// ones stay unreached. Covering them needs a sessions.Store fake
-		// that fails on the Nth Save.
-		return
-	}
-
-	pkceVerifier, err := middleware.PopOIDCVerifier(g)
-	if err != nil {
-		a.failSignIn(g, signInFailed, false, err)
-		// not covered: oversizedSessionSeed breaks only the first Save()
-		// in the chain (PopOIDCState's, which is tested), so the later
-		// ones stay unreached. Covering them needs a sessions.Store fake
-		// that fails on the Nth Save.
+		a.failSignIn(g, signInFailed, notEcho, err)
 		return
 	}
 
 	// A claims echo shares this callback because the redirect URI is
 	// registered with the identity provider and a second one is an
 	// operator task in a system the operator may not control. The flag was
-	// set by the echo start endpoint and is consumed here.
+	// set by an echo start (the admin's, or a bootstrap code's redeem) and
+	// is consumed here. Read before the state check, so even an expired
+	// echo is sent back to its own page rather than to the sign-in page.
 	echo, err := middleware.PopOIDCEcho(g)
 	if err != nil {
-		a.failSignIn(g, signInFailed, false, err)
-		// not covered: same as PopOIDCNonce above, further down the same
+		a.failSignIn(g, signInFailed, notEcho, err)
+		// not covered: oversizedSessionSeed breaks only the first Save()
+		// in the chain (PopOIDCState's, which is tested), so the later
+		// ones stay unreached. Covering them needs a sessions.Store fake
+		// that fails on the Nth Save.
+		return
+	}
+	codeID, err := middleware.PopOIDCEchoCode(g)
+	if err != nil {
+		a.failSignIn(g, signInFailed, notEcho, err)
+		// not covered: same as PopOIDCEcho above, further down the same
+		// Save() chain.
+		return
+	}
+	round := echoRound{echo: echo}
+	if echo {
+		round.codeID = codeID
+	}
+
+	if expectedState == "" || state != expectedState {
+		a.failSignIn(g, signInExpired, round, errors.New("state missing or mismatched"))
+		return
+	}
+
+	nonce, err := middleware.PopOIDCNonce(g)
+	if err != nil {
+		a.failSignIn(g, signInFailed, round, err)
+		// not covered: same as PopOIDCEcho above, further down the same
+		// Save() chain.
+		return
+	}
+
+	pkceVerifier, err := middleware.PopOIDCVerifier(g)
+	if err != nil {
+		a.failSignIn(g, signInFailed, round, err)
+		// not covered: same as PopOIDCEcho above, further down the same
 		// Save() chain.
 		return
 	}
@@ -207,14 +244,19 @@ func (a *authController) callbackHandler(g *gin.Context) {
 	// The provider says it did not sign the person in. Checked after the
 	// state, so only a reply to a sign-in this browser started is read as
 	// one, and before the exchange, which would only fail on the missing
-	// code and log it as something worse.
+	// code and log it as something worse. Its own description is passed
+	// on to an echo page, where an operator is the one reading it.
 	if providerErr := g.Query("error"); providerErr != "" {
-		a.failSignIn(g, signInRefused, echo, fmt.Errorf("identity provider returned %q", providerErr))
+		err := fmt.Errorf("identity provider returned %q", providerErr)
+		if description := g.Query("error_description"); description != "" {
+			err = fmt.Errorf("identity provider returned %q: %s", providerErr, description)
+		}
+		a.failSignIn(g, signInRefused, round, err)
 		return
 	}
 
 	if echo {
-		a.echoCallback(g, code, nonce, pkceVerifier)
+		a.echoCallback(g, round, code, nonce, pkceVerifier)
 		return
 	}
 
@@ -226,7 +268,7 @@ func (a *authController) callbackHandler(g *gin.Context) {
 			g.Redirect(http.StatusFound, "/auth/disabled")
 			return
 		}
-		a.failSignIn(g, signInFailed, false, err)
+		a.failSignIn(g, signInFailed, notEcho, err)
 		return
 	}
 
@@ -237,7 +279,7 @@ func (a *authController) callbackHandler(g *gin.Context) {
 		// session could not be saved, never the store's own message.
 		slog.ErrorContext(g.Request.Context(), "failed to save the login session",
 			"error", err, "groups", len(identity.Groups))
-		a.failSignIn(g, signInSession, false, &errorresponses.SessionWriteError{})
+		a.failSignIn(g, signInSession, notEcho, &errorresponses.SessionWriteError{})
 		return
 	}
 
@@ -258,47 +300,68 @@ func (a *authController) callbackHandler(g *gin.Context) {
 // failSignIn logs why a sign-in or claims echo did not complete and sends
 // the browser to the page that explains it: /login for a sign-in, carrying
 // the return_to the login started with so a retry lands where the person
-// was going, or the echo page for an echo.
+// was going, or the echo's own page for an echo, with the error itself in
+// the fragment (see echoFailureURL). A bootstrap echo's code row records
+// the failure too, so the command waiting on it can print it.
 //
 // The return_to is read best effort. When the session cannot be read or
 // saved there is nothing to carry, and a bare /login is still a way back.
-func (a *authController) failSignIn(g *gin.Context, reason signInFailure, echo bool, err error) {
+func (a *authController) failSignIn(g *gin.Context, reason signInFailure, round echoRound, err error) {
 	slog.WarnContext(g.Request.Context(), "sign-in did not complete",
-		"reason", string(reason), "echo", echo, "error", err)
+		"reason", string(reason), "echo", round.echo, "error", err)
 
-	query := url.Values{"error": {string(reason)}}
-	if echo {
-		g.Redirect(http.StatusFound, echoResultPath+"?"+query.Encode())
+	if round.echo {
+		message := ""
+		if reason == signInFailed || reason == signInRefused {
+			message = err.Error()
+		}
+		a.recordEchoOutcome(g, round, string(reason)+": "+err.Error())
+		g.Redirect(http.StatusFound, echoFailureURL(round.resultPath(), reason, message))
 		return
 	}
+
+	query := url.Values{"error": {string(reason)}}
 	if returnTo, popErr := middleware.PopReturnURL(g); popErr == nil && returnTo != "" && isSafeReturnURL(returnTo) {
 		query.Set("return_to", returnTo)
 	}
 	g.Redirect(http.StatusFound, "/login?"+query.Encode())
 }
 
+// recordEchoOutcome stores how a bootstrap echo ended on its code row:
+// empty for verified claims, the error otherwise. Nothing for the admin
+// echo, which has no row.
+func (a *authController) recordEchoOutcome(g *gin.Context, round echoRound, outcome string) {
+	if round.codeID == "" || a.echoCodes == nil {
+		return
+	}
+	a.echoCodes.RecordOutcome(g.Request.Context(), round.codeID, outcome)
+}
+
 // echoCallback finishes a claims echo: verify the token the same way a login
 // does, then render it instead of establishing anything.
 //
-// The caller's existing session is untouched — they were already signed in,
-// and an echo that quietly re-issued their session would make "show me my
-// claims" a way to extend a session past its absolute cap. Nothing is
+// The caller's existing session, if any, is untouched: an admin was
+// already signed in, and an echo that quietly re-issued their session would
+// make "show me my claims" a way to extend a session past its absolute cap;
+// a bootstrap echo's visitor may have no account at all. Nothing is
 // written: no users row, no login event, and the claims travel in the
 // redirect fragment, which never reaches a server or a log.
-func (a *authController) echoCallback(g *gin.Context, code, nonce, pkceVerifier string) {
-	claims, err := a.authService.EchoCallback(g.Request.Context(), code, nonce, pkceVerifier)
+func (a *authController) echoCallback(g *gin.Context, round echoRound, code, nonce, pkceVerifier string) {
+	tokens, err := a.authService.EchoCallback(g.Request.Context(), code, nonce, pkceVerifier)
 	if err != nil {
-		a.failSignIn(g, signInFailed, true, err)
+		a.failSignIn(g, signInFailed, round, err)
 		return
 	}
 
-	redirect, err := echoRedirectURL(claims, a.authService.ClaimMapping(), time.Now())
+	report := service.BuildEchoReport(tokens, a.authService.ClaimMapping())
+	redirect, err := echoRedirectURL(round.resultPath(), report, time.Now())
 	if err != nil {
 		// not covered: the payload is claims already decoded from JSON
 		// plus plain strings, so re-encoding it cannot fail.
 		handleError(g, err)
 		return
 	}
+	a.recordEchoOutcome(g, round, "")
 	g.Redirect(http.StatusFound, redirect)
 }
 

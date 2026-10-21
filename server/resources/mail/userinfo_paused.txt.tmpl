@@ -1,0 +1,21 @@
+{{ if .ServerURL }}{{ .ServerURL }} has{{ else }}The server has{{ end }} stopped calling the identity provider's
+UserInfo endpoint: the last {{ .ConsecutiveFailures }} calls failed.
+
+Logins still work, with the ID token's claims alone. A claim only UserInfo
+sends, such as a groups claim, is missing from every login until the calls
+resume, so a role that depends on it does not count. One login every 15
+minutes retries the call, and the calls resume by themselves once a retry
+succeeds. The admin diagnostics page shows the current state.
+
+  Paused at         {{ datetime .PausedAt }}
+  Next retry after  {{ datetime .NextProbeAt }}
+{{ if .Advanced }}
+DETAILS
+
+  Endpoint          {{ .Endpoint }}
+  Failures in a row {{ .ConsecutiveFailures }}
+  Last error        {{ if .LastError }}{{ .LastError }}{{ else }}not recorded{{ end }}
+{{ end }}
+Sent to every admin. This message is always sent when the server pauses its
+UserInfo calls; it is not a notification preference and cannot be turned
+off.

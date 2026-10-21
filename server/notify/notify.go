@@ -72,6 +72,20 @@ const (
 	// for a disable an operator made by hand.
 	KindAdminAutoDisabled Kind = "admin_auto_disabled"
 
+	// KindUserInfoPaused fires once when the server pauses its calls to the
+	// OIDC UserInfo endpoint after a run of failures (see
+	// config.AuthConfig.UserInfo): logins carry on with the ID token's
+	// claims alone, so a claim only UserInfo sends, groups included, is
+	// missing from every login until it resumes. It goes to every admin and
+	// is always sent: nothing else tells anyone a login is quietly carrying
+	// less than it should.
+	KindUserInfoPaused Kind = "userinfo_paused"
+
+	// KindUserInfoResumed fires once when a probe call succeeds and the
+	// server resumes calling the UserInfo endpoint. Every admin, always
+	// sent, so the pause mail never stands as the last word.
+	KindUserInfoResumed Kind = "userinfo_resumed"
+
 	// KindNSSKeyExpiring fires mail.expiry_reminder_lead before a fleet key
 	// stops being accepted: weekly inside that window, then daily over the
 	// final week. It goes to the key's notification address, not to a user.
@@ -363,6 +377,39 @@ var definitions = []Definition{
 			{"Reenable", "bool", "Whether ldap.sync.reenable is on, in which case the sync clears this disable by itself once the entry is found again."},
 			{"SupportEmail", "string", "Who to ask about this deployment (branding.support_email), or empty if none is configured."},
 			{"ServerURL", "string", "The server's public origin, naming the deployment the account belongs to."},
+			readerField,
+		},
+	},
+
+	{
+		Kind:           KindUserInfoPaused,
+		Title:          "OIDC UserInfo calls paused",
+		Description:    "Sent to every admin when the server stops calling the identity provider's UserInfo endpoint after 10 failed calls in a row. Logins carry on with the ID token's claims alone, and one login every 15 minutes retries the call. Always sent: it cannot be turned off.",
+		DefaultEnabled: true,
+		AlwaysSent:     true,
+		NewPayload:     func() any { return &UserInfoPaused{} },
+		Fields: []Field{
+			{"Endpoint", "string", "The UserInfo endpoint the provider's discovery document names."},
+			{"PausedAt", "time.Time", "When the server paused the calls."},
+			{"ConsecutiveFailures", "int", "How many calls in a row had failed, across every instance."},
+			{"LastError", "string", "The last failed call's error, with the access token removed."},
+			{"NextProbeAt", "time.Time", "When the first retry may run: the first login after this time makes the call."},
+			{"ServerURL", "string", "The server's public origin, naming the deployment."},
+			readerField,
+		},
+	},
+	{
+		Kind:           KindUserInfoResumed,
+		Title:          "OIDC UserInfo calls resumed",
+		Description:    "Sent to every admin when a retry of the identity provider's UserInfo endpoint succeeds after a pause, and logins read its claims again. Always sent: it cannot be turned off.",
+		DefaultEnabled: true,
+		AlwaysSent:     true,
+		NewPayload:     func() any { return &UserInfoResumed{} },
+		Fields: []Field{
+			{"Endpoint", "string", "The UserInfo endpoint the provider's discovery document names."},
+			{"PausedAt", "time.Time", "When the server had paused the calls."},
+			{"ResumedAt", "time.Time", "When the retry succeeded and the calls resumed."},
+			{"ServerURL", "string", "The server's public origin, naming the deployment."},
 			readerField,
 		},
 	},

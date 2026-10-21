@@ -36,6 +36,34 @@ type OAuthConfig struct {
 	// whenever this is set.
 	DisablePKCE bool `mapstructure:"disable_pkce" default:"false"`
 
+	// UserInfo calls the provider's UserInfo endpoint at every login (and
+	// every claims echo), with the access token the code exchange
+	// returned, and fills in the claims the ID token lacks. Many providers
+	// keep the ID token lean and put profile, email or groups claims only
+	// in UserInfo; without this, a fields mapping that names one of them
+	// resolves to nothing.
+	//
+	// The ID token always wins: a claim it carries is never replaced, and
+	// UserInfo only adds the keys it lacks. Its sub must equal the ID
+	// token's exactly (OpenID Connect Core 5.3.2); a mismatch fails the
+	// login. A provider whose discovery document names no
+	// userinfo_endpoint is simply not called.
+	//
+	// A failed call (network, an error status, a body that is not JSON)
+	// never fails a login by itself: it is logged, and the login carries on
+	// with the ID token's claims. After 10 failed calls in a row, counted
+	// across every instance through the database, the server pauses the
+	// calls: logins use the ID token alone, and one login every 15 minutes
+	// (one across the fleet) makes the call as a probe. A probe that
+	// succeeds resumes the calls. Pausing and resuming are each audited
+	// (auth.userinfo_paused, auth.userinfo_resumed) and emailed to every
+	// admin; the admin diagnostics page shows the state.
+	//
+	// Turning this on can add claims the ID token lacked, the configured
+	// groups claim included, so a role group can start counting at the
+	// next login.
+	UserInfo bool `mapstructure:"userinfo" default:"true"`
+
 	Fields OAuthFields `mapstructure:"fields"`
 }
 

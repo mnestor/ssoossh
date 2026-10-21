@@ -45,6 +45,11 @@ type services struct {
 	// detailLevels holds each person's web and email detail levels.
 	detailLevels *service.DetailLevelService
 
+	// echoCodes holds the bootstrap identity echo's one-time codes, and
+	// userInfoHealth the UserInfo endpoint's shared health state.
+	echoCodes      *service.IdentityEchoCodeService
+	userInfoHealth *service.UserInfoHealthService
+
 	// nssLookup answers the NSS directory lookups and the shell
 	// self-service, nssKeys administers and verifies the fleet keys, and
 	// nssUsage aggregates their use and raises the usage alerts. All three
@@ -144,6 +149,17 @@ func (a *app) initServices() (*services, error) {
 	svc.ldap.SetAuditor(svc.audit)
 	svc.nss.SetAuditor(svc.audit)
 	svc.auth.SetLDAP(svc.ldap)
+
+	// The UserInfo call's failure counter and pause live in the database,
+	// so every instance counts toward one pause and every instance honours
+	// it; the pause and resume mail goes to the admins.
+	svc.userInfoHealth = service.NewUserInfoHealthService(a.db, svc.auth.UserInfoEndpoint(), a.config.HTTP.PublicOrigin())
+	svc.userInfoHealth.SetAuditor(svc.audit)
+	svc.userInfoHealth.SetNotifications(svc.notification, svc.notification, a.config.Mail.Enabled)
+	svc.auth.SetUserInfoHealth(svc.userInfoHealth)
+
+	svc.echoCodes = service.NewIdentityEchoCodeService(a.db)
+	svc.echoCodes.SetAuditor(svc.audit)
 	// A login links the person to the POSIX account their entry carries.
 	svc.ldap.SetNSSDirectory(svc.nss)
 

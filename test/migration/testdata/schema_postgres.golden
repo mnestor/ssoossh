@@ -168,6 +168,18 @@ table enrollments
   index idx_enrollments_expiry_reminder CREATE INDEX idx_enrollments_expiry_reminder ON public.enrollments USING btree (expiry_reminder_sent_at, expires_at)
   index idx_enrollments_service_account CREATE INDEX idx_enrollments_service_account ON public.enrollments USING btree (service_account)
   index idx_enrollments_user_id CREATE INDEX idx_enrollments_user_id ON public.enrollments USING btree (user_id)
+table identity_echo_codes
+  column code_hash type=text nullable=false default=<none>
+  column completed_at type=timestamp with time zone nullable=true default=<none>
+  column created_at type=timestamp with time zone nullable=false default=<none>
+  column expires_at type=timestamp with time zone nullable=false default=<none>
+  column id type=text nullable=false default=<none>
+  column outcome type=text nullable=false default=''::text
+  column requested_by type=text nullable=false default=''::text
+  column used_at type=timestamp with time zone nullable=true default=<none>
+  column used_from type=text nullable=false default=''::text
+  index identity_echo_codes_code_hash_key CREATE UNIQUE INDEX identity_echo_codes_code_hash_key ON public.identity_echo_codes USING btree (code_hash)
+  index identity_echo_codes_pkey CREATE UNIQUE INDEX identity_echo_codes_pkey ON public.identity_echo_codes USING btree (id)
 table ldap_sync_runs
   column actor_user_id type=text nullable=true default=<none>
   column disabled type=integer nullable=false default=0
@@ -263,6 +275,16 @@ table nss_keys
   fk created_by -> users.id on_delete=NO ACTION on_update=NO ACTION
   fk revoked_by -> users.id on_delete=NO ACTION on_update=NO ACTION
   index nss_keys_pkey CREATE UNIQUE INDEX nss_keys_pkey ON public.nss_keys USING btree (id)
+table oidc_userinfo_health
+  column consecutive_failures type=integer nullable=false default=0
+  column id type=text nullable=false default=<none>
+  column last_error type=text nullable=false default=''::text
+  column last_failure_at type=timestamp with time zone nullable=true default=<none>
+  column last_success_at type=timestamp with time zone nullable=true default=<none>
+  column next_probe_at type=timestamp with time zone nullable=true default=<none>
+  column paused type=boolean nullable=false default=false
+  column paused_at type=timestamp with time zone nullable=true default=<none>
+  index oidc_userinfo_health_pkey CREATE UNIQUE INDEX oidc_userinfo_health_pkey ON public.oidc_userinfo_health USING btree (id)
 table posix_group_members
   column added_at type=timestamp with time zone nullable=true default=<none>
   column gid type=bigint nullable=false default=<none>

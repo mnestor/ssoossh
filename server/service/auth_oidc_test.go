@@ -22,6 +22,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -46,6 +47,14 @@ type fakeOIDCProvider struct {
 	tokenExchangeFails bool // when true, /token responds with an error status
 	omitIDToken        bool // when true, /token's response has no id_token field at all
 
+	// userInfo, when set before NewAuthService runs discovery, makes the
+	// discovery document name a /userinfo endpoint that answers with it
+	// (or with userInfoStatus, when that is set). userInfoCalls counts the
+	// calls it served.
+	userInfo       map[string]any
+	userInfoStatus int
+	userInfoCalls  atomic.Int32
+
 	// tokenForm is the form the last /token request carried, so a test can
 	// assert on what the exchange actually sent — code_verifier in
 	// particular, which is the only externally visible difference PKCE
@@ -66,12 +75,30 @@ func newFakeOIDCProvider(t *testing.T) *fakeOIDCProvider {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
+		doc := map[string]any{
 			"issuer":                 p.srv.URL,
 			"authorization_endpoint": p.srv.URL + "/authorize",
 			"token_endpoint":         p.srv.URL + "/token",
 			"jwks_uri":               p.srv.URL + "/jwks",
-		})
+		}
+		if p.userInfo != nil {
+			doc["userinfo_endpoint"] = p.srv.URL + "/userinfo"
+		}
+		_ = json.NewEncoder(w).Encode(doc)
+	})
+	mux.HandleFunc("/userinfo", func(w http.ResponseWriter, r *http.Request) {
+		p.userInfoCalls.Add(1)
+		if r.Header.Get("Authorization") != "Bearer test-access-token" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		if p.userInfoStatus != 0 {
+			w.WriteHeader(p.userInfoStatus)
+			_, _ = w.Write([]byte("upstream unavailable"))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(p.userInfo)
 	})
 	mux.HandleFunc("/jwks", func(w http.ResponseWriter, r *http.Request) {
 		jwk := josejwt.JSONWebKey{Key: &priv.PublicKey, KeyID: "test-key", Algorithm: "RS256", Use: "sig"}

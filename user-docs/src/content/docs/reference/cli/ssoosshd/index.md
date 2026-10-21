@@ -23,6 +23,7 @@ ssoosshd [command] [flags]
 
 | Command | Description |
 | --- | --- |
+| [`ssoosshd identity`](/ssoossh/reference/cli/ssoosshd/identity/) | Identity provider tools. |
 | [`ssoosshd ldap`](/ssoossh/reference/cli/ssoosshd/ldap/) | Directory tools. |
 | [`ssoosshd serve`](/ssoossh/reference/cli/ssoosshd/serve/) | Start the ssoosshd server in the specified mode. |
 | [`ssoosshd sign`](/ssoossh/reference/cli/ssoosshd/sign/) | Run the signer process only. |

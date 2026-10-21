@@ -2737,18 +2737,57 @@ export interface ClaimMappingResponse {
  */
 export interface IdentityEchoPayload {
 	/**
-	 * Claims is the decoded ID token, in full.
+	 * Claims is what a login maps: the decoded ID token, in full, with
+	 * the claims the UserInfo endpoint filled in (authentication.userinfo).
 	 */
 	claims: { [key: string]: any};
+	/**
+	 * ClaimSources says where each claim came from: "id_token", or
+	 * "userinfo" for one the ID token lacked. The ID token wins on every
+	 * key it carries.
+	 */
+	claim_sources?: Record<string;
+	/**
+	 * UserInfo is what happened to the UserInfo call: "used", "off",
+	 * "no_endpoint", "paused" or "failed".
+	 */
+	userinfo?: 'used' | 'off' | 'no_endpoint' | 'paused' | 'failed';
 	/**
 	 * Mapping is what the configuration reads out of it.
 	 */
 	mapping: ClaimMappingResponse;
 	/**
-	 * Suggestions are config lines that would capture a claim nothing
-	 * currently reads. Suggestions, not decisions.
+	 * Suggestions are config lines that would put a claim to use:
+	 * candidates for subject, username and groups, and the extra fields
+	 * that would capture a claim nothing currently reads. Suggestions, not
+	 * decisions.
 	 */
 	suggestions?: ClaimSuggestion[];
+	/**
+	 * Fields resolves each configured field against this token, through
+	 * the same readers a login uses.
+	 */
+	fields: ClaimFieldResolution[];
+	/**
+	 * SignIn says whether a login with this token would get past the
+	 * claim mapping.
+	 */
+	sign_in: IdentityEchoSignIn;
+	/**
+	 * AdminGroupCandidates are the groups claim's values, the names
+	 * admin.require_group can take. Empty when groups does not resolve.
+	 */
+	admin_group_candidates?: string[];
+	/**
+	 * NotMappable lists the claims no field can read: nested objects, and
+	 * the access token's claims, which a login never reads.
+	 */
+	not_mappable?: UnmappableClaim[];
+	/**
+	 * ProtocolClaims names the token's JWT and OIDC mechanics no field
+	 * reads, so the page can group them apart from identity.
+	 */
+	protocol_claims?: string[];
 	/**
 	 * IssuedAt is when the echo was produced, so a page left open is
 	 * visibly stale rather than quietly so.
@@ -2756,11 +2795,90 @@ export interface IdentityEchoPayload {
 	issued_at: string;
 }
 /**
+ * ClaimFieldResolution is how one configured authentication.fields entry
+ * resolved against an echoed token.
+ */
+export interface ClaimFieldResolution {
+	/**
+	 * Field is the key under authentication.fields: "subject",
+	 * "username", ..., or "extra.<name>".
+	 */
+	field: string;
+	/**
+	 * Claim is the configured claim name, empty when unconfigured.
+	 */
+	claim?: string;
+	/**
+	 * Required marks subject and username, whose failure fails a login.
+	 */
+	required: boolean;
+	/**
+	 * Status is "resolved", "empty", "missing", "wrong_shape" or
+	 * "unconfigured".
+	 */
+	status: 'resolved' | 'empty' | 'missing' | 'wrong_shape' | 'unconfigured';
+	/**
+	 * List says the field holds a list (Values) rather than a scalar
+	 * (Value).
+	 */
+	list: boolean;
+	value?: string;
+	values?: string[];
+}
+/**
+ * IdentityEchoSignIn is the verdict of a login's claim mapping on an echoed
+ * token. It cannot speak for the rest of a login (a disabled account, the
+ * directory), which an echo does not reach.
+ */
+export interface IdentityEchoSignIn {
+	allowed: boolean;
+	/**
+	 * Reason is the error the login would return, when it would not.
+	 */
+	reason?: string;
+}
+/**
+ * UnmappableClaim is a claim no authentication.fields entry can read.
+ */
+export interface UnmappableClaim {
+	claim: string;
+	/**
+	 * Source is "id_token", or "access_token" for a claim decoded,
+	 * unverified, from a JWT access token, which ssoossh never reads.
+	 */
+	source: 'id_token' | 'access_token';
+	value: any;
+	reason: string;
+}
+/**
+ * IdentityEchoRedeemRequest is the body of the bootstrap echo's redeem
+ * endpoint: the code from the link's fragment.
+ */
+export interface IdentityEchoRedeemRequest {
+	code: string;
+}
+/**
+ * IdentityEchoFailure is why an echo did not produce claims, handed to the
+ * echo page in the redirect fragment alongside ?error=. Message is the
+ * error itself (a refused code exchange, a token that did not verify),
+ * which is what an operator fixing the provider settings needs and what a
+ * generic "sign-in failed" hides.
+ */
+export interface IdentityEchoFailure {
+	message: string;
+}
+/**
  * ClaimSuggestion is the config line that would capture one unmapped claim.
  */
 export interface ClaimSuggestion {
 	/**
-	 * Claim is the claim name nothing currently reads.
+	 * Field is the authentication.fields key the claim would fill:
+	 * "subject", "username", "groups", or "extra" for a claim nothing
+	 * currently reads.
+	 */
+	field: 'subject' | 'username' | 'groups' | 'extra';
+	/**
+	 * Claim is the claim name.
 	 */
 	claim: string;
 	/**

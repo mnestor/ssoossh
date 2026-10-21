@@ -110,6 +110,7 @@ func NewCommand() *Command {
 			newServeCommand(),
 			newSignCommand(),
 			newLDAPCommand(),
+			newIdentityCommand(),
 			newVersionCommand(),
 		},
 	}

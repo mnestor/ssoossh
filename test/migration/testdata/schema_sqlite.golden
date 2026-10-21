@@ -168,6 +168,18 @@ table enrollments
   index idx_enrollments_service_account unique=false columns=service_account
   index idx_enrollments_user_id unique=false columns=user_id
   index sqlite_autoindex_enrollments_1 unique=true columns=id
+table identity_echo_codes
+  column code_hash type=TEXT nullable=false pk=false default=<none>
+  column completed_at type=DATETIME nullable=true pk=false default=<none>
+  column created_at type=DATETIME nullable=false pk=false default=<none>
+  column expires_at type=DATETIME nullable=false pk=false default=<none>
+  column id type=TEXT nullable=false pk=true default=<none>
+  column outcome type=TEXT nullable=false pk=false default=''
+  column requested_by type=TEXT nullable=false pk=false default=''
+  column used_at type=DATETIME nullable=true pk=false default=<none>
+  column used_from type=TEXT nullable=false pk=false default=''
+  index sqlite_autoindex_identity_echo_codes_1 unique=true columns=id
+  index sqlite_autoindex_identity_echo_codes_2 unique=true columns=code_hash
 table ldap_sync_runs
   column actor_user_id type=TEXT nullable=true pk=false default=<none>
   column disabled type=INTEGER nullable=false pk=false default=0
@@ -261,6 +273,16 @@ table nss_keys
   fk created_by -> users.id on_delete=NO ACTION on_update=NO ACTION
   fk revoked_by -> users.id on_delete=NO ACTION on_update=NO ACTION
   index sqlite_autoindex_nss_keys_1 unique=true columns=id
+table oidc_userinfo_health
+  column consecutive_failures type=INTEGER nullable=false pk=false default=0
+  column id type=TEXT nullable=false pk=true default=<none>
+  column last_error type=TEXT nullable=false pk=false default=''
+  column last_failure_at type=DATETIME nullable=true pk=false default=<none>
+  column last_success_at type=DATETIME nullable=true pk=false default=<none>
+  column next_probe_at type=DATETIME nullable=true pk=false default=<none>
+  column paused type=INTEGER nullable=false pk=false default=0
+  column paused_at type=DATETIME nullable=true pk=false default=<none>
+  index sqlite_autoindex_oidc_userinfo_health_1 unique=true columns=id
 table posix_group_members
   column added_at type=DATETIME nullable=true pk=false default=<none>
   column gid type=INTEGER nullable=false pk=true default=<none>

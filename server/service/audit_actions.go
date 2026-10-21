@@ -25,6 +25,29 @@ const (
 	// There is deliberately no logout event: sessions mostly end by expiry,
 	// so an explicit logout carries too little signal to keep.
 	AuditAuthLoginDenied AuditAction = "auth.login_denied"
+	// AuditAuthEchoCodeMinted records `ssoosshd identity echo` minting a
+	// one-time bootstrap echo link on the server host. The actor is the
+	// command line; the detail names the code id, who ran the command and
+	// where, and when the link expires. Never the code itself.
+	AuditAuthEchoCodeMinted AuditAction = "auth.echo_code_minted"
+	// AuditAuthEchoCodeUsed records a browser redeeming a bootstrap echo
+	// link, with the code id, who minted it and the address the server
+	// observed. The sign-in that follows records nothing: an echo
+	// establishes no session, and its claims are never stored or logged.
+	AuditAuthEchoCodeUsed AuditAction = "auth.echo_code_used"
+	// AuditAuthEchoCodeExpired records a bootstrap echo link that ended
+	// unused: it ran out of time, a newer link replaced it, or the command
+	// waiting on it was interrupted (detail.reason says which).
+	AuditAuthEchoCodeExpired AuditAction = "auth.echo_code_expired"
+	// AuditAuthUserInfoPaused records the server pausing its OIDC UserInfo
+	// calls after a run of failures (authentication.userinfo): logins then
+	// carry the ID token's claims alone. System event; the detail names the
+	// endpoint, the failure count, the last error (no token) and when the
+	// first probe may run.
+	AuditAuthUserInfoPaused AuditAction = "auth.userinfo_paused"
+	// AuditAuthUserInfoResumed records a probe call succeeding and the
+	// UserInfo calls resuming. System event.
+	AuditAuthUserInfoResumed AuditAction = "auth.userinfo_resumed"
 
 	AuditCertRequested AuditAction = "cert.requested"
 	AuditCertApproved  AuditAction = "cert.approved"

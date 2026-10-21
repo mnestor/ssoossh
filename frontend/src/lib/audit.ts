@@ -9,8 +9,13 @@ import {
 	AuditAdminDiagnosticsRun,
 	AuditAdminEnrollmentViewed,
 	AuditAdminUserViewed,
+	AuditAuthEchoCodeExpired,
+	AuditAuthEchoCodeMinted,
+	AuditAuthEchoCodeUsed,
 	AuditAuthLogin,
 	AuditAuthLoginDenied,
+	AuditAuthUserInfoPaused,
+	AuditAuthUserInfoResumed,
 	AuditCertApproved,
 	AuditCertClaimed,
 	AuditCertCodeResolved,
@@ -106,6 +111,17 @@ export function visibleAuditEvents(events: AuditEvent[]): AuditEvent[] {
 export const auditPhrasing: Record<string, string> = {
 	[AuditAuthLogin]: 'signed in',
 	[AuditAuthLoginDenied]: 'was refused sign-in',
+	// Minted from the server host, so the actor is local-cli. Opened
+	// before anyone signs in, so like cert.claimed that row reads
+	// "Someone opened ...", with the address in source_ip. Ended by the
+	// server on expiry or replacement, or by the command on interrupt.
+	[AuditAuthEchoCodeMinted]: 'created a one-time identity echo link',
+	[AuditAuthEchoCodeUsed]: 'opened a one-time identity echo link',
+	[AuditAuthEchoCodeExpired]: 'ended an unused identity echo link',
+	// System events: "The server paused ...". The detail names the
+	// endpoint, the failure count and the last error.
+	[AuditAuthUserInfoPaused]: 'paused the OIDC UserInfo calls after repeated failures',
+	[AuditAuthUserInfoResumed]: 'resumed the OIDC UserInfo calls',
 	[AuditCertRequested]: 'requested a certificate',
 	[AuditCertApproved]: 'approved a certificate',
 	[AuditCertDenied]: 'denied a certificate request',

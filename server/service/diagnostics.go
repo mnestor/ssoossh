@@ -88,6 +88,8 @@ type DiagnosticsService struct {
 	cfg    *config.Config
 	app    AppSecurityHeaders
 	client httpDoer
+	// userInfo feeds the UserInfo check; nil leaves it out.
+	userInfo UserInfoDiagnostics
 }
 
 // NewDiagnosticsService builds a DiagnosticsService. app is the set of
@@ -120,15 +122,16 @@ func (s *DiagnosticsService) Run(ctx context.Context, req DiagnosticsRequest) Di
 	// separate round-trips and three separate failure messages.
 	probe := s.probeEdge(ctx, origin)
 
-	return DiagnosticsReport{
-		PublicOrigin: origin,
-		Checks: []DiagnosticCheck{
-			s.checkReachability(origin, probe),
-			s.checkProxyTrust(req),
-			s.checkHeaderHygiene(probe),
-			s.checkCORS(probe),
-		},
+	checks := []DiagnosticCheck{
+		s.checkReachability(origin, probe),
+		s.checkProxyTrust(req),
+		s.checkHeaderHygiene(probe),
+		s.checkCORS(probe),
 	}
+	if s.userInfo != nil {
+		checks = append(checks, s.checkUserInfo(ctx))
+	}
+	return DiagnosticsReport{PublicOrigin: origin, Checks: checks}
 }
 
 // edgeProbe is the result of fetching the public URL back through the edge.

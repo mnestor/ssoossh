@@ -135,6 +135,22 @@ func samplePayload(t *testing.T, kind notify.Kind) any {
 			SupportEmail: "it-help@example.com",
 			ServerURL:    "https://ssoossh.example.com",
 		}
+	case notify.KindUserInfoPaused:
+		return &notify.UserInfoPaused{
+			Endpoint:            "https://idp.example.com/userinfo",
+			PausedAt:            time.Now(),
+			ConsecutiveFailures: 10,
+			LastError:           "502 Bad Gateway: upstream unavailable",
+			NextProbeAt:         time.Now().Add(15 * time.Minute),
+			ServerURL:           "https://ssoossh.example.com",
+		}
+	case notify.KindUserInfoResumed:
+		return &notify.UserInfoResumed{
+			Endpoint:  "https://idp.example.com/userinfo",
+			PausedAt:  time.Now().Add(-time.Hour),
+			ResumedAt: time.Now(),
+			ServerURL: "https://ssoossh.example.com",
+		}
 	case notify.KindNSSKeyExpiring:
 		return &notify.NSSKeyExpiring{
 			KeyID:       "nss_ABCD2345",
@@ -1191,5 +1207,41 @@ func TestRender_shouldCountTheNSSIDChangesThatAreNotListed(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// The pause mail names what to expect and when the retry runs at every
+// level, and keeps the endpoint and the error for the advanced one.
+func TestRender_shouldKeepTheUserInfoPauseDetailsForTheAdvancedLevel(t *testing.T) {
+	r, err := NewRenderer("", "")
+	if err != nil {
+		t.Fatalf("NewRenderer: %v", err)
+	}
+	tests := []struct {
+		name     string
+		advanced bool
+		present  []string
+		absent   []string
+	}{
+		{name: "should say what pausing means at the simplified level", present: []string{"stopped calling", "Next retry after"}, absent: []string{"502 Bad Gateway"}},
+		{name: "should add the error at the advanced level", advanced: true, present: []string{"502 Bad Gateway", "https://idp.example.com/userinfo"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := r.Render(notify.KindUserInfoPaused, samplePayload(t, notify.KindUserInfoPaused), tc.advanced)
+			if err != nil {
+				t.Fatalf("Render: %v", err)
+			}
+			for _, want := range tc.present {
+				if !strings.Contains(out.Text, want) || !strings.Contains(out.HTML, want) {
+					t.Errorf("message does not carry %q", want)
+				}
+			}
+			for _, unwanted := range tc.absent {
+				if strings.Contains(out.Text, unwanted) || strings.Contains(out.HTML, unwanted) {
+					t.Errorf("message carries %q below the advanced level", unwanted)
+				}
+			}
+		})
 	}
 }
