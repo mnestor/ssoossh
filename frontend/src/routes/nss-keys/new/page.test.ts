@@ -437,7 +437,7 @@ describe('New NSS key', () => {
 			expect(goto).toHaveBeenCalledWith('/nss-keys/nss_k7m4qp2x?from=admin');
 		});
 
-		it('should ask again whether the reader holds a key once one is created', async () => {
+		it('should not read the key list again once one is created when the role already shows the entry', async () => {
 			const calls = answers();
 			render(Page);
 			await createNamed();
@@ -445,7 +445,7 @@ describe('New NSS key', () => {
 			await settle();
 
 			expect(calls.some((call) => call.method === 'GET' && call.url === '/api/nss/keys')).toBe(
-				true
+				false
 			);
 		});
 
