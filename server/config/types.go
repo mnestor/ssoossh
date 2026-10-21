@@ -107,9 +107,15 @@ type Config struct {
 	Version VersionConfig `mapstructure:"version"`
 
 	// unknownKeys are the keys the config file set that no field above
-	// declares, found while NewConfig decoded it. Unexported, so the
-	// decoder never fills it from a file. See UnknownKeys.
+	// declares, found while Load decoded it. Unexported, so the decoder
+	// never fills it from a file. See UnknownKeys.
 	unknownKeys []UnknownKey
+
+	// file is the config file Load read, and schema the ldap.schema
+	// preset it layered beneath it: what EffectiveSources needs to say
+	// which layer set each value. Unexported for the same reason.
+	file   string
+	schema string
 }
 
 // BrandingSettings configures optional branding for the login page and web UI.
@@ -300,6 +306,20 @@ type LDAPConfig struct {
 	// and {{.Extra.<name>}}. Values are RFC 4515 escaped during rendering
 	// and the operator cannot opt out, because a preferred_username
 	// containing * or ) is otherwise filter injection.
+	//
+	// The filter must reference at least one of those fields, or the server
+	// refuses to start. A filter with none renders the same for every
+	// login: either it matches several entries and every lookup fails, or
+	// it matches one and links everyone to that entry, handing its
+	// accounts and groups to every login. No ldap.schema preset sets this
+	// key. For lldap, use (&(objectClass=person)(uid={{.Username}})): the
+	// objectClass term matters, because lldap also answers (uid=<name>)
+	// with the group entry cn=<name>,ou=groups.
+	//
+	// The check is static. (|(objectClass=person)(uid={{.Username}}))
+	// passes it and still matches everyone. Login fails closed when more
+	// than one entry matches, and `ssoosshd ldap probe` lists the entries
+	// a filter matched.
 	UserFilter string `mapstructure:"user_filter" default:""`
 
 	// Fields maps destinations to the directory sources that populate them,

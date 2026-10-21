@@ -453,6 +453,67 @@ describe('Directory admin page', () => {
 			await userEvent.click(await screen.findByTestId('ldap-run-probe'));
 			expect(await screen.findByTestId('ldap-probe-result')).toHaveTextContent('too loose');
 		});
+
+		// What a loose filter picked up, and how much of it the list left out.
+		it.each([
+			{
+				name: 'should list every DN when the list holds them all',
+				result: { matched: 2, matched_dns: ['uid=alice,ou=People', 'cn=alice,ou=groups'] },
+				listed: 2,
+				more: null
+			},
+			{
+				name: 'should say how many more when the list is cut',
+				result: { matched: 25, matched_dns: ['uid=a', 'uid=b'] },
+				listed: 2,
+				more: '…and 23 more'
+			},
+			{
+				name: 'should say at least when the count stopped at a limit',
+				result: { matched: 1000, matched_capped: true, matched_dns: ['uid=a', 'uid=b'] },
+				listed: 2,
+				more: '…and at least 998 more'
+			}
+		])('$name', async ({ result, listed, more }) => {
+			signedInAsAdmin();
+			mockApi({ status: enabledStatus(), probe: probeResult(result) });
+			render(Page);
+
+			await userEvent.click(await screen.findByTestId('ldap-run-probe'));
+			const list = await screen.findByTestId('ldap-probe-matches');
+			expect({
+				listed: list.querySelectorAll('li').length,
+				more:
+					screen
+						.queryByTestId('ldap-probe-matches-more')
+						?.textContent?.replace(/\s+/g, ' ')
+						.trim() ?? null
+			}).toEqual({ listed, more });
+		});
+
+		it('should say at least in the count when the count stopped at a limit', async () => {
+			signedInAsAdmin();
+			mockApi({
+				status: enabledStatus(),
+				probe: probeResult({ matched: 1000, matched_capped: true, matched_dns: ['uid=a'] })
+			});
+			render(Page);
+
+			await userEvent.click(await screen.findByTestId('ldap-run-probe'));
+			expect(await screen.findByTestId('ldap-probe-count')).toHaveTextContent(
+				/At least 1000 entries/
+			);
+		});
+
+		it('should show no loose-filter warning when one entry matched', async () => {
+			signedInAsAdmin();
+			mockApi({ status: enabledStatus(), probe: probeResult() });
+			render(Page);
+
+			await userEvent.click(await screen.findByTestId('ldap-run-probe'));
+			await screen.findByTestId('ldap-probe-result');
+			expect(screen.queryByTestId('ldap-probe-loose')).not.toBeInTheDocument();
+		});
 	});
 });
 

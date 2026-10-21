@@ -331,9 +331,15 @@ func TestServeShouldCloseWhenTheReplyCannotBeWritten(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Send a call and close at once: the reply's write fails.
+	defer func() { _ = conn.Close() }()
+	// Shut the read side before sending the call, so the reply's write
+	// fails with EPIPE every time. A full close right after the call races
+	// the reply instead: a reply written first lands unread in the closed
+	// socket, and the server's next read sees ECONNRESET, not a failed write.
+	if err := conn.(*net.UnixConn).CloseRead(); err != nil {
+		t.Fatal(err)
+	}
 	write(t, conn, []byte(`{"method":"io.systemd.UserDatabase.GetUserRecord","parameters":{"userName":"alice","service":"com.github.mnestor.ssoossh"}}`+"\x00"))
-	_ = conn.Close()
 	deadline := time.Now().Add(5 * time.Second)
 	for !strings.Contains(f.logs.String(), "cannot answer a userdb peer") {
 		if time.Now().After(deadline) {

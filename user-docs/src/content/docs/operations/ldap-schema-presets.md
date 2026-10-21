@@ -136,6 +136,34 @@ Sources: sssd's IPA maps (`ipa_user_map` and `ipa_group_map` in
 (`ipaserver/plugins/ldap2.py`, `set_entry_active`) and for the compat tree
 (`install/updates/80-schema_compat.update`).
 
+## What no preset sets
+
+No preset sets [`ldap.user_filter`](/ssoossh/reference/config/ldap/#user_filter).
+It says how one person is found from their login, and that depends on which
+claim your identity provider sends as much as on the directory, so you write
+it yourself. It must reference the identity (`{{.Username}}`, `{{.Email}}`,
+`{{.Subject}}` or `{{.Extra.<name>}}`), or the server refuses to start: a
+filter with none, such as `(objectClass=person)`, renders the same for every
+login. Either it matches several entries and every lookup fails, or it matches
+one and links everyone to that entry, with its accounts and groups.
+
+For lldap:
+
+```yaml
+ldap:
+  schema: lldap
+  user_filter: "(&(objectClass=person)(uid={{.Username}}))"
+```
+
+The `objectClass` term matters: lldap also answers `(uid=<name>)` with the
+group entry `cn=<name>,ou=groups` when a group has the same name, and login
+refuses a lookup that finds more than one entry.
+
+The startup check is static. `(|(objectClass=person)(uid={{.Username}}))`
+references the username, passes, and still matches everyone; login fails
+closed on it, and [the probe](/ssoossh/operations/ldap/#when-the-filter-matches-more-than-one-entry)
+lists the entries it matched.
+
 ## Your file always wins
 
 A preset sits between the built-in defaults and your config file. The order,

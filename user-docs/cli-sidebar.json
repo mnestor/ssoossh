@@ -108,6 +108,19 @@
         "slug": "reference/cli/ssoosshd"
       },
       {
+        "label": "config",
+        "items": [
+          {
+            "label": "Overview",
+            "slug": "reference/cli/ssoosshd/config"
+          },
+          {
+            "label": "check",
+            "slug": "reference/cli/ssoosshd/config-check"
+          }
+        ]
+      },
+      {
         "label": "identity",
         "items": [
           {

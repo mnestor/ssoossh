@@ -907,6 +907,84 @@ describe('NSS key detail', () => {
 			});
 		});
 
+		describe('group suggestions', () => {
+			const keyGroups = envelope({
+				keys: [{ group_name: 'web-admins' }, { group_name: '' }, { group_name: 'db-admins' }],
+				total: 3,
+				usage_retention_seconds: 0
+			});
+
+			/** options is what the Group field's suggestion list offers. */
+			function options(): (string | null)[] {
+				const input = screen.getByTestId('nss-key-input-group');
+				const list = document.getElementById(input.getAttribute('list') ?? '');
+				return [...(list?.querySelectorAll('option') ?? [])].map((o) => o.getAttribute('value'));
+			}
+
+			it('should offer the suggestion list when the group is edited', async () => {
+				session.user = userFixture({ is_nss_key_admin: true, groups: ['web-admins', 'ops', ''] });
+				serve(keyFixture({ permissions: ALL }), { 'GET /api/admin/nss/keys': keyGroups });
+				await loaded();
+				await userEvent.click(screen.getByTestId('nss-key-edit-group'));
+				await settle();
+
+				expect(options()).toEqual(['db-admins', 'ops', 'web-admins']);
+			});
+
+			it('should not read other keys groups when the group edit is not open', async () => {
+				session.user = userFixture({ is_nss_key_admin: true });
+				const calls = serve(keyFixture({ permissions: ALL }), {
+					'GET /api/admin/nss/keys': keyGroups
+				});
+				await loaded();
+				await settle();
+
+				expect(calls.some((call) => call.url.startsWith('/api/admin/nss/keys'))).toBe(false);
+			});
+
+			it('should offer only the reader groups when the reader lacks the fleet key admin role', async () => {
+				session.user = userFixture({ groups: ['ops'] });
+				serve(keyFixture({ permissions: ALL }), { 'GET /api/admin/nss/keys': keyGroups });
+				await loaded();
+				await userEvent.click(screen.getByTestId('nss-key-edit-group'));
+				await settle();
+
+				expect(options()).toEqual(['ops']);
+			});
+
+			it('should describe the group field with what the suggestions are', async () => {
+				session.user = userFixture({ is_nss_key_admin: true });
+				serve(keyFixture({ permissions: ALL }), { 'GET /api/admin/nss/keys': keyGroups });
+				await loaded();
+				await userEvent.click(screen.getByTestId('nss-key-edit-group'));
+
+				expect(screen.getByRole('combobox', { name: 'Group' })).toHaveAccessibleDescription(
+					/Any group name is accepted; the suggestions are the groups other keys use and the groups you are in\./
+				);
+			});
+
+			it('should still save a typed group when the suggestions read fails', async () => {
+				session.user = userFixture({ is_nss_key_admin: true });
+				const calls = serve(keyFixture({ permissions: ALL }), {
+					'GET /api/admin/nss/keys': envelope(null, 500, 'boom'),
+					'PATCH /api/nss/keys/nss_k7m4qp2x': envelope(
+						keyFixture({ permissions: ALL, group_name: 'db-admins' })
+					)
+				});
+				await loaded();
+				await userEvent.click(screen.getByTestId('nss-key-edit-group'));
+				await settle();
+				const input = screen.getByTestId('nss-key-input-group');
+				await userEvent.clear(input);
+				await userEvent.type(input, 'db-admins');
+				await userEvent.click(screen.getByTestId('nss-key-save-group'));
+
+				expect(calls.find((call) => call.method === 'PATCH')?.body).toEqual({
+					group_name: 'db-admins'
+				});
+			});
+		});
+
 		it('should show the server reason beside the field when a save is refused', async () => {
 			serve(keyFixture({ permissions: ALL }), {
 				'PATCH /api/nss/keys/nss_k7m4qp2x': envelope(

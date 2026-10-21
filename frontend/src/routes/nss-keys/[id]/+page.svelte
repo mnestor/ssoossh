@@ -38,6 +38,7 @@
 	import CopyableId from '#lib/components/CopyableId.svelte';
 	import DetailRow from '#lib/components/DetailRow.svelte';
 	import Icon from '#lib/components/Icon.svelte';
+	import KeyGroupSuggestions from '#lib/components/KeyGroupSuggestions.svelte';
 	import KeyStatusBadge from '#lib/components/KeyStatusBadge.svelte';
 	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
 	import LoadMoreFooter from '#lib/components/LoadMoreFooter.svelte';
@@ -152,6 +153,11 @@
 		group: 'Group',
 		email: 'Notification email'
 	};
+
+	// The Group form's suggestion list and hint. One form is open at a
+	// time, so each id is on the page at most once.
+	const groupListId = 'nss-key-edit-groups';
+	const groupHintId = 'nss-key-edit-group-hint';
 
 	/** startEdit opens one field for editing, seeded with its stored value. */
 	function startEdit(field: Field) {
@@ -556,6 +562,9 @@
 				onkeydown={editKeydown}
 				{type}
 				aria-label={fieldNames[field]}
+				list={field === 'group' ? groupListId : undefined}
+				autocomplete={field === 'group' ? 'off' : undefined}
+				aria-describedby={field === 'group' ? groupHintId : undefined}
 				disabled={saving}
 				data-testid="nss-key-input-{field}"
 				class="min-h-target w-full max-w-[420px] rounded-md border border-border-control bg-surface px-3 py-2 text-sm {field ===
@@ -563,6 +572,16 @@
 					? 'font-mono'
 					: ''}"
 			/>
+		{/if}
+		{#if field === 'group'}
+			<!-- Only the group offers suggestions, so only its form mounts
+			     the list, and with it the read of other keys' groups. -->
+			<KeyGroupSuggestions id={groupListId} />
+			<span id={groupHintId} class="text-xs text-ink-muted" data-testid="nss-key-group-hint">
+				Members of this group can rotate, edit and revoke the key without an admin role. Any group
+				name is accepted; the suggestions are the groups other keys use and the groups you are in.
+				Empty leaves the key with no group.
+			</span>
 		{/if}
 		{#if editError}
 			<span role="alert" class="text-xs text-danger" data-testid="nss-key-edit-error"

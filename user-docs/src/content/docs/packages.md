@@ -21,6 +21,7 @@ before choosing them on Debian or Ubuntu.
 | `ssoossh-client` | the `ssoossh` command users run |
 | `ssoosshd` | the server |
 | `ssoosshd-pkcs11` | the server built to load a PKCS#11 module |
+| `ssoosshd-selinux` | SELinux policy that lets `ssoossh-agent.service` run `ssh-agent` (EL 9 and 10) |
 | `pam-ssoossh` | the PAM module, for `sudo`, console login and `sshd` (EL 8, 9 and 10, Debian, Ubuntu) |
 | `pam-ssoossh-selinux` | SELinux policy for the PAM module (EL 8 and 9) |
 | `ssoossh-nss` | the NSS daemon, directory users and groups for a host through systemd userdb (deb and rpm) |
@@ -31,6 +32,13 @@ before choosing them on Debian or Ubuntu.
 same binary path -- so the solver will not let you install both. Most HSM
 deployments want plain `ssoosshd`; see
 [HSM and PKCS#11](/ssoossh/operations/hsm/).
+
+`ssoosshd-selinux` is a noarch rpm, recommended by both server rpms, for
+servers that keep the CA key in an `ssh-agent`. On an enforcing host the
+targeted policy will not let systemd execute `ssh-agent` without it. It
+depends on `policycoreutils` and `selinux-policy-targeted >= 38.1.75`, loads
+its module at priority 200 on install and unloads it on removal. See
+[SELinux on EL hosts](/ssoossh/operations/ssh-agent/#selinux-on-el-hosts).
 
 `pam-ssoossh` is built against OpenSSL 1.1 for EL 8 and OpenSSL 3 for EL 9
 and 10, and carries an `.el8`, `.el9` or `.el10` release tag accordingly. You

@@ -437,6 +437,15 @@ nfpms:
       signature:
         key_file: apk.pem
         key_name: ssoossh
+    # Without the policy package, ssoossh-agent.service cannot exec
+    # ssh-agent on an enforcing host (status=203/EXEC). A weak dependency:
+    # most servers hold their key in config rather than in an agent, and a
+    # host with SELinux disabled can still decline it. rpm only, since
+    # Debian and Alpine have no SELinux policy to load it into.
+    overrides:
+      rpm:
+        recommends:
+          - ssoosshd-selinux
     contents:
       - src: server/config/defaults.yaml
         dst: /etc/ssoossh/ssoosshd.yaml
@@ -492,6 +501,8 @@ nfpms:
       - src: docs/man/ssoosshd-sign*.8
         dst: /usr/share/man/man8/
       - src: docs/man/ssoosshd-ldap*.8
+        dst: /usr/share/man/man8/
+      - src: docs/man/ssoosshd-config*.8
         dst: /usr/share/man/man8/
       - src: docs/man/ssoosshd-identity*.8
         dst: /usr/share/man/man8/
@@ -545,6 +556,12 @@ nfpms:
     deb:
       signature:
         key_file: private.pgp
+    # The same policy package the server package recommends, for the same
+    # reason.
+    overrides:
+      rpm:
+        recommends:
+          - ssoosshd-selinux
     contents:
       - src: server/config/defaults.yaml
         dst: /etc/ssoossh/ssoosshd.yaml
@@ -600,6 +617,8 @@ nfpms:
       - src: docs/man/ssoosshd-sign*.8
         dst: /usr/share/man/man8/
       - src: docs/man/ssoosshd-ldap*.8
+        dst: /usr/share/man/man8/
+      - src: docs/man/ssoosshd-config*.8
         dst: /usr/share/man/man8/
       - src: docs/man/ssoosshd-identity*.8
         dst: /usr/share/man/man8/
@@ -727,9 +746,9 @@ nfpms:
   # rebuilds and Fedora. A meta package because it carries no binary: the
   # payload is a compiled policy module, which is not machine code. That
   # module is not built here. goreleaser's host has no SELinux toolchain, so
-  # `make selinux-nss` builds build/selinux/ssoossh_nss.pp in an AlmaLinux 9
-  # container first (the nss-selinux job in build.yaml), and this entry
-  # fails without it.
+  # `make selinux` builds build/selinux/ssoossh_nss.pp in an AlmaLinux 9
+  # container first (the selinux job in build.yaml), and this entry fails
+  # without it.
   - id: nss-selinux
     package_name: ssoossh-nss-selinux
     file_name_template: 'ssoossh-nss-selinux_{{ .Version }}_noarch'
@@ -752,8 +771,8 @@ nfpms:
       # that than semodule failing in postinstall.
       - selinux-policy-targeted >= 38.1.75
     scripts:
-      postinstall: packaging/selinux/postinstall.sh
-      preremove: packaging/selinux/preremove.sh
+      postinstall: packaging/selinux/nss-postinstall.sh
+      preremove: packaging/selinux/nss-preremove.sh
     contents:
       - src: build/selinux/ssoossh_nss.pp
         dst: /usr/share/selinux/packages/ssoossh-nss/ssoossh_nss.pp
@@ -775,6 +794,55 @@ nfpms:
           mode: 0644
       - src: LICENSE
         dst: /usr/share/doc/ssoossh-nss-selinux/LICENSE
+        file_info:
+          mode: 0644
+
+  # The SELinux policy for ssoossh-agent.service: the one rule that lets
+  # init_t exec ssh-agent (ssh_agent_exec_t), which the targeted policy
+  # refuses, so the agent can start at all. The agent stays in init_t; see
+  # packaging/selinux/ssoossh_agent.te for why it gets no domain of its own.
+  #
+  # Named for the package it serves, as ssoossh-nss-selinux and
+  # pam-ssoossh-selinux are. Recommended by ssoosshd and ssoosshd-pkcs11,
+  # both of which ship the agent's unit. rpm only and a meta package, for
+  # the reasons nss-selinux above gives, and like it the module comes from
+  # `make selinux` (the selinux job in build.yaml): this entry fails
+  # without build/selinux/ssoossh_agent.pp.
+  - id: server-selinux
+    package_name: ssoosshd-selinux
+    file_name_template: 'ssoosshd-selinux_{{ .Version }}_noarch'
+    license: *license
+    maintainer: *maintainer
+    homepage: *website
+    description: "SELinux policy that lets ssoossh-agent.service run ssh-agent for ssoosshd"
+    meta: true
+    formats:
+      - rpm
+    rpm:
+      signature:
+        key_file: private.pgp
+    dependencies:
+      # semodule.
+      - policycoreutils
+      # The policy the module was built and tested against, as for
+      # ssoossh-nss-selinux: AlmaLinux 9.8's 38.1.75 (EL10 ships 42.x).
+      - selinux-policy-targeted >= 38.1.75
+    scripts:
+      postinstall: packaging/selinux/agent-postinstall.sh
+      preremove: packaging/selinux/agent-preremove.sh
+    contents:
+      - src: build/selinux/ssoossh_agent.pp
+        dst: /usr/share/selinux/packages/ssoosshd/ssoossh_agent.pp
+        file_info:
+          mode: 0644
+      # The source travels with the module, so a site that will not load a
+      # compiled blob it cannot read can build the same module itself.
+      - src: packaging/selinux/ssoossh_agent.te
+        dst: /usr/share/doc/ssoosshd-selinux/ssoossh_agent.te
+        file_info:
+          mode: 0644
+      - src: LICENSE
+        dst: /usr/share/doc/ssoosshd-selinux/LICENSE
         file_info:
           mode: 0644
 

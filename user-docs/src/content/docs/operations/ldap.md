@@ -75,6 +75,9 @@ ldap:
   # A Go template over the OIDC identity: {{.Username}}, {{.Email}},
   # {{.Subject}}, {{.Extra.<name>}}. Values are RFC 4515 escaped
   # automatically and the operator cannot opt out.
+  # It must reference at least one of those fields, or the server refuses
+  # to start: a filter with none would resolve every login to the same
+  # entry. No ldap.schema preset sets it.
   user_filter: "(&(objectClass=person)(uid={{.Username}}))"
 
   fields:
@@ -662,6 +665,24 @@ would corrupt it.
 
 Bindings are your own session or values you type. Typed values are what let
 you test someone's entry before that person has ever logged in.
+
+### When the filter matches more than one entry
+
+Login refuses a lookup that finds more than one entry, so nobody is linked to
+the directory through it. The probe says so and lists what the filter
+matched: it counts the matches (up to 1000, or the directory's own size limit,
+and then says "at least"), lists the first 20 DNs, and says how many more there
+were. The web console shows the same list under a "too loose" warning.
+
+The DNs are usually the diagnosis. On lldap, `(uid={{.Username}})` matches the
+person and also the group `cn=<name>,ou=groups` when a group shares the name,
+because lldap answers `uid` on group entries too. Add the object class:
+`(&(objectClass=person)(uid={{.Username}}))`.
+
+The startup check (see [`user_filter`](/ssoossh/reference/config/ldap/#user_filter))
+only refuses a filter that references no identity field. A filter such as
+`(|(objectClass=person)(uid={{.Username}}))` references one, passes, and still
+matches everyone. This report is what catches it.
 
 ### What the probe cannot do
 

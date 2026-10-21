@@ -30,11 +30,16 @@ holding the token reaches the same hardware from the default package. See
 [HSM and PKCS#11](/ssoossh/operations/hsm/) and
 [The CA key in an ssh-agent](/ssoossh/operations/ssh-agent/).
 
+On rpm, both packages recommend `ssoosshd-selinux`, the SELinux policy that
+lets the shipped `ssoossh-agent.service` start `ssh-agent` on an enforcing
+host. A server that reads its key from config does not need it; see
+[SELinux on EL hosts](/ssoossh/operations/ssh-agent/#selinux-on-el-hosts).
+
 | What | Where it lands |
 | --- | --- |
 | the binary | `/usr/sbin/ssoosshd` |
 | the annotated config sample | `/etc/ssoossh/ssoosshd.yaml` |
-| man pages | `ssoosshd(8)` and one page per subcommand (`ssoosshd-serve(8)`, `ssoosshd-serve-api(8)`, `ssoosshd-serve-full(8)`, `ssoosshd-sign(8)`, `ssoosshd-ldap(8)`, `ssoosshd-ldap-probe(8)`, `ssoosshd-version(8)`), and `ssoosshd.yaml(5)` |
+| man pages | `ssoosshd(8)` and one page per subcommand (`ssoosshd-serve(8)`, `ssoosshd-serve-api(8)`, `ssoosshd-serve-full(8)`, `ssoosshd-sign(8)`, `ssoosshd-config(8)`, `ssoosshd-config-check(8)`, `ssoosshd-ldap(8)`, `ssoosshd-ldap-probe(8)`, `ssoosshd-ldap-sync(8)`, `ssoosshd-version(8)`), and `ssoosshd.yaml(5)` |
 | reference mail templates | `/usr/share/ssoossh/mail-templates/` |
 
 The config sample is installed as a no-replace config file, so an upgrade
@@ -44,6 +49,8 @@ which makes it the same content as `ssoosshd.yaml(5)` and the
 A key the server does not recognise, a typo or one from a newer release,
 does nothing, so the server logs a `config key is not recognised` warning at
 startup naming the key, the file, and the closest real key when one is close.
+[`ssoosshd config check`](#checking-the-config-before-a-start) reports the same
+without a start.
 
 There are also container images, `ghcr.io/mnestor/ssoossh-server:<version>`
 (the default, on `distroless/static-debian12`) and
@@ -202,6 +209,62 @@ HTTPS at all, which decides the session cookie's `Secure` attribute.
 More complete starting points, including TLS, PostgreSQL, and multi-instance:
 [Server configuration examples](/ssoossh/examples/server-configs/).
 
+## Checking the config before a start
+
+`ssoosshd config check` loads the configuration exactly as `serve` and `sign`
+do (the same file search or `--config`, `defaults.yaml`, the `ldap.schema`
+preset, then the file) and runs the same validation, but reports every
+problem instead of stopping at the first:
+
+- settings a start refuses, in every section, each tagged with its block
+- keys nothing reads, each with the file it is in and the closest real key
+- the TLS key pair, and the `cert_options` key ID templates, `require`
+  conditions and lifetime policies the certificate service parses at start
+- the warnings a start logs: a non-https `public_url`, a plaintext or
+  unauthenticated mail relay, `ldap.tls_insecure_skip_verify`, and the rest
+
+```bash
+sudo ssoosshd config check                    # the file serve would find
+sudo ssoosshd -c /etc/ssoossh/ssoosshd.yaml config check --strict
+ssoosshd -c ssoosshd.yaml config check --json  # machine-readable
+ssoosshd -c ssoosshd.yaml config check --show-sources
+```
+
+It exits 0 when the configuration is valid, warnings included, and 1 when it
+has any error. Unknown keys are warnings, because a file written for a newer
+release must still load; `--strict` makes them errors. `--show-sources` adds
+every effective setting and the layer it came from (`default`, `preset` or
+`file`), with secrets shown as `[redacted]`, as on the admin configuration
+page. The server reads no configuration keys from the environment, so there is
+no environment layer.
+
+Nothing is contacted: no database, directory, NATS broker, CA key source or
+identity provider. Use [`ldap probe`](/ssoossh/reference/cli/ssoosshd/ldap-probe/)
+and the [diagnostics page](/ssoossh/operations/diagnostics/) for those. Local
+files the configuration names are read, as a start reads them: `ssh_key_file`,
+the TLS pair, the NATS certificates, password files and `mail.template_dir`.
+Run it as the user the service runs as, on a host where those paths exist, or
+expect it to report them missing.
+
+**In CI for a config repository**, where the CA key and certificates are not
+present, point those paths at stand-ins in the job and keep `--strict`, so a
+renamed or misspelt key fails the pipeline rather than the next restart:
+
+```yaml
+- name: Check ssoosshd.yaml
+  run: ssoosshd -c ssoosshd.yaml config check --strict --json > config-check.json
+```
+
+**In a package postinstall**, report a problem but do not fail the install: an
+upgrade that leaves a key the new release no longer reads is something to say,
+not a reason to leave the package half-configured.
+
+```sh
+if ! ssoosshd config check >/dev/null 2>&1; then
+  echo "ssoosshd: the configuration has problems; run 'ssoosshd config check' before restarting" >&2
+fi
+```
+
 ## First start and health check
 
 ```bash
@@ -210,11 +273,14 @@ journalctl -u ssoosshd -f
 ```
 
 `ssoosshd` validates its whole configuration at startup and refuses to run on
-a bad one rather than failing at the first request. A malformed key ID
+a bad one rather than failing at the first request, naming the problem in
+each section that has one. A malformed key ID
 template, an unparseable CIDR in a source policy, a mail template override
 that does not compile, an unreadable SMTP password file, a lifetime policy
 with no `default_duration`, `multi_instance: true` with no `http.cookie_key`
 -- all of these stop the process with a message naming the setting.
+[`ssoosshd config check`](#checking-the-config-before-a-start) finds them
+without a start.
 
 Two liveness endpoints answer without authentication, and both are registered
 ahead of the host-name check so a probe addressing the server by IP still

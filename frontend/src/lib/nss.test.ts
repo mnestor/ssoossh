@@ -203,6 +203,9 @@ describe('collisions', () => {
 
 describe('showNSSKeys', () => {
 	const base = { nss_enabled: true, is_nss_key_admin: false, is_auditor: false };
+	// Every admin holds the fleet key admin role (GrantsNSSKeyAdmin), so the
+	// session of an admin carries is_nss_key_admin as well.
+	const admin = { ...base, is_auditor: true, is_nss_key_admin: true };
 	const cases: {
 		name: string;
 		user: typeof base | null;
@@ -212,18 +215,39 @@ describe('showNSSKeys', () => {
 	}[] = [
 		{ name: 'signed out', user: null, hasKeys: false, show: false, check: false },
 		{
-			name: 'NSS is off, even for a key admin',
+			name: 'an admin with NSS off',
+			user: { ...admin, nss_enabled: false },
+			hasKeys: true,
+			show: false,
+			check: false
+		},
+		{
+			name: 'a fleet key admin with NSS off',
 			user: { ...base, nss_enabled: false, is_nss_key_admin: true },
 			hasKeys: true,
 			show: false,
 			check: false
 		},
 		{
-			name: 'a fleet key admin whose groups manage no key',
+			name: 'a user with a key in their groups and NSS off',
+			user: { ...base, nss_enabled: false },
+			hasKeys: true,
+			show: false,
+			check: false
+		},
+		{
+			name: 'an admin and has no key in their groups',
+			user: admin,
+			hasKeys: false,
+			show: true,
+			check: false
+		},
+		{
+			name: 'a holder of the fleet key admin role alone',
 			user: { ...base, is_nss_key_admin: true },
 			hasKeys: false,
-			show: false,
-			check: true
+			show: true,
+			check: false
 		},
 		{
 			name: 'an auditor whose groups manage no key',
@@ -247,7 +271,7 @@ describe('showNSSKeys', () => {
 			check: true
 		},
 		{
-			name: 'a user with no keys',
+			name: 'holding no key role and has no key in their groups',
 			user: base,
 			hasKeys: false,
 			show: false,
@@ -256,7 +280,7 @@ describe('showNSSKeys', () => {
 	];
 
 	for (const { name, user, hasKeys, show, check } of cases) {
-		it(`should ${show ? 'show' : 'hide'} the rail entry when the viewer is ${name}`, () => {
+		it(`should ${show ? 'show' : 'hide'} the NSS keys entry when the viewer is ${name}`, () => {
 			expect(showNSSKeys(user, hasKeys)).toBe(show);
 		});
 
