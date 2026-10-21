@@ -53,8 +53,8 @@ the matching `lint-*`) and the internal check halves
 | `make server-linux-build-local` | Build ssoosshd for a local `docker build` (see Dockerfile) |
 | `make server-linux-pkcs11-build-local` | Build ssoosshd with PKCS#11 for a local `docker build` (see Dockerfile.pkcs11) |
 | `make frontend-clean` | Remove the built web UI |
-| `make selinux-nss` | Build the ssoossh-nss SELinux module (docker when no selinux-policy-devel) |
-| `make selinux-nss-check` | Build the SELinux module and link it into the EL9 and EL10 policies |
+| `make selinux` | Build the SELinux policy modules (docker when no selinux-policy-devel) |
+| `make selinux-check` | Build the SELinux policy modules and link them into the EL9 and EL10 policies |
 
 ### Test
 

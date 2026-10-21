@@ -1,0 +1,53 @@
+module ssoossh_agent 1.1;
+
+# SELinux policy for ssoossh-agent.service, the ssh-agent that holds
+# ssoosshd's CA key (deploy/ssoossh-agent.service).
+#
+# The unit runs /usr/bin/ssh-agent, which the targeted policy labels
+# ssh_agent_exec_t. The policy defines the agent's domain per user role only
+# (staff_ssh_agent_t, sysadm_ssh_agent_t, user_ssh_agent_t), with no generic
+# ssh_agent_t and no transition from init_t, so an agent systemd starts
+# stays in init_t. init_t may only getattr and relabel that type, so the
+# unit fails in one of two ways under enforcing:
+#
+#   - status=203/EXEC: execve() is refused (no execute, open or read).
+#   - signal=SEGV: execve() got past its point of no return and the kernel
+#     was then refused the mapping of the binary (no map; the conditional
+#     map rule is behind domain_can_mmap_files, off by default). The kernel
+#     can no longer return an error, so it kills the process with SIGSEGV:
+#     no fault address, no "segfault at" line, and no core dump.
+#
+# Both measured on AlmaLinux 9.8 and 10.2, each with its AVC: a denied
+# execute (logged against the faccessat2 systemd makes before it execs),
+# then a denied map.
+#
+# This module grants exactly what that exec needs, and the agent keeps
+# running in init_t. ssh-pkcs11-helper, which ssh-agent execs for
+# `ssh-add -s`, carries the same ssh_agent_exec_t label, so this one rule
+# covers a token behind the agent as well. A dedicated confined domain was
+# left out on purpose: `ssh-add -s` makes the agent dlopen a vendor PKCS#11
+# library, and a confined domain would have to anticipate every vendor's
+# files, devices and sockets, which is why the unit's own sandboxing is
+# deliberately light.
+#
+# Plain module syntax, not refpolicy macros, so it builds both through
+# scripts/build-selinux.sh (the selinux-policy-devel Makefile) and by hand,
+# and the two compile to the same policy:
+#
+#   checkmodule -M -m -o ssoossh_agent.mod ssoossh_agent.te
+#   semodule_package -o ssoossh_agent.pp -m ssoossh_agent.mod
+#   semodule -i ssoossh_agent.pp
+#
+# The version is 1.1, the version of the module first written for this
+# (ssoossh issue #214), so the shipped module and one built by hand from
+# that issue read the same. It is a label only: the policy store does not
+# compare versions (a 1.0 installed over this 1.1 is accepted), and which
+# of two copies is active is decided by priority, see agent-postinstall.sh.
+
+require {
+	type init_t;
+	type ssh_agent_exec_t;
+	class file { execute execute_no_trans open read getattr map };
+}
+
+allow init_t ssh_agent_exec_t:file { execute execute_no_trans open read getattr map };
