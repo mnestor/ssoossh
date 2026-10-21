@@ -176,7 +176,7 @@ func (c *identityEchoCommand) Run(ctx context.Context, cd *simplecobra.Commandee
 
 	w := &probeWriter{out: cd.CobraCommand.OutOrStdout()}
 	w.printf("Open this link in a browser and sign in. It works once, until %s:\n\n", minted.Row.ExpiresAt.Local().Format(time.RFC1123))
-	w.printf("  %s/identity/echo#%s\n\n", origin, minted.Code)
+	w.printf("  %s/identity/echo#code=%s\n\n", origin, minted.Code)
 	w.printf("Waiting for it to be used (Ctrl-C retires it)...\n")
 	if w.err != nil {
 		return w.err

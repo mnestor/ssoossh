@@ -121,7 +121,7 @@ func TestIdentityEchoCommand_ShouldPrintALinkCarryingTheCodeInTheFragment(t *tes
 	store.onGet = browserUses(t, "")
 	got := runEchoCommand(context.Background(), t, echoTestConfig, store, time.Now)
 
-	if !strings.Contains(got.stdout, "https://ssh.example.com/identity/echo#"+store.code+"\n") || !store.closed {
+	if !strings.Contains(got.stdout, "https://ssh.example.com/identity/echo#code="+store.code+"\n") || !store.closed {
 		t.Errorf("stdout lacks the link, or the store was left open:\n%s", got.stdout)
 	}
 }
