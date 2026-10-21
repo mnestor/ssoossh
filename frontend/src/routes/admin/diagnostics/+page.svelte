@@ -102,7 +102,9 @@
 		Runs a set of read-only checks against this deployment: whether the server can reach its own
 		public URL, how the client IP is resolved through
 		<MonoChip>http.trusted_proxies</MonoChip>, whether the edge in front of the app weakens the
-		security headers it sets, and whether the edge adds dangerous CORS headers. The edge checks call
+		security headers it sets, whether the edge adds dangerous CORS headers, and how the identity
+		provider's UserInfo endpoint is doing (<MonoChip>authentication.userinfo</MonoChip>): healthy,
+		failing, or paused with the time of the next retry. The edge checks call
 		<MonoChip>http.public_url</MonoChip> and nothing else; nothing is written.
 	</p>
 

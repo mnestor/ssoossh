@@ -196,8 +196,10 @@ export function accountNav(): NavItem[] {
  *
  * These are the screens a visitor reaches without an identity, or before
  * one is established: a sign-in form, a console code transcribed off a
- * machine that cannot print a link, and the notice that says an approval
- * link is no longer good for anything. A navigation column on any of them
+ * machine that cannot print a link, the notice that says an approval
+ * link is no longer good for anything, and the bootstrap claims echo,
+ * opened from a one-time link at first setup by someone who may have no
+ * account yet. A navigation column on any of them
  * offers destinations the visitor cannot follow.
  *
  * The approval screen itself is deliberately not here any more. It used to
@@ -208,7 +210,7 @@ export function accountNav(): NavItem[] {
  * leaving: the approval link is still there when they come back, and the
  * decision is recorded on the server, not in the page.
  */
-const focusRoutes = ['/login', '/c', '/approval-unavailable'];
+const focusRoutes = ['/login', '/c', '/approval-unavailable', '/identity/echo'];
 
 /**
  * isFocusRoute reports whether pathname is one of the screens that renders

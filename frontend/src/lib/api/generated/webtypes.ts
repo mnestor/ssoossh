@@ -2746,7 +2746,7 @@ export interface IdentityEchoPayload {
 	 * "userinfo" for one the ID token lacked. The ID token wins on every
 	 * key it carries.
 	 */
-	claim_sources?: Record<string;
+	claim_sources?: { [key: string]: 'id_token' | 'userinfo' };
 	/**
 	 * UserInfo is what happened to the UserInfo call: "used", "off",
 	 * "no_endpoint", "paused" or "failed".

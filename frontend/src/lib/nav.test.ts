@@ -38,6 +38,8 @@ describe('isFocusRoute', () => {
 		{ name: 'the sign-in page', pathname: '/login', want: true },
 		{ name: 'a console code', pathname: '/c/ABCD-1234', want: true },
 		{ name: 'the approval-unavailable notice', pathname: '/approval-unavailable', want: true },
+		{ name: 'the bootstrap claims echo', pathname: '/identity/echo', want: true },
+		{ name: 'the admin claims echo', pathname: '/admin/identity/echo', want: false },
 		{ name: 'the dashboard', pathname: '/dashboard', want: false },
 		{ name: 'the admin area', pathname: '/admin/users', want: false },
 		// "/console" starts with "/c" but is a signed-in destination that

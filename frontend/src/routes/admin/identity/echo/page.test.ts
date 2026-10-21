@@ -24,11 +24,14 @@ function echoPayload(overrides: Partial<IdentityEchoPayload> = {}): IdentityEcho
 		},
 		suggestions: [
 			{
+				field: 'extra',
 				claim: 'employee_type',
 				reason: 'unmapped: nothing in the configuration reads this claim',
 				yaml: 'authentication:\n  fields:\n    extra:\n      employee_type: employee_type'
 			}
 		],
+		fields: [],
+		sign_in: { allowed: true },
 		issued_at: '2026-09-06T10:00:00Z',
 		...overrides
 	};
@@ -230,6 +233,16 @@ describe('Claims echo page', () => {
 			expect(await screen.findByTestId('echo-failure')).toHaveTextContent(
 				'Your identity provider did not sign you in'
 			);
+		});
+
+		it('should show the error the provider or the token check gave', async () => {
+			const detail = btoa(JSON.stringify({ message: 'oauth2: "invalid_client"' }))
+				.replace(/\+/g, '-')
+				.replace(/\//g, '_')
+				.replace(/=+$/, '');
+			window.history.replaceState(null, '', '/admin/identity/echo?error=failed#' + detail);
+			render(Page);
+			expect(await screen.findByTestId('echo-failure-detail')).toHaveTextContent('invalid_client');
 		});
 
 		it('should clear the reason from the address bar', async () => {
