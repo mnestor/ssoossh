@@ -26,6 +26,7 @@ import (
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
 
+	"github.com/mnestor/ssoossh/internal/configcheck"
 	"github.com/mnestor/ssoossh/internal/posixname"
 )
 
@@ -224,6 +225,20 @@ func Load(path string) (*Config, error) {
 // load is Load with the effective uid supplied, so a test can exercise the
 // root-only owner check.
 func load(path string, euid int) (*Config, error) {
+	c, err := decode(path, euid)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.Validate(); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return c, nil
+}
+
+// decode is load without the validation: the file checks, the parse and
+// the decode over Defaults. LoadStartup validates on its own, so a
+// configuration that decodes still names its key file when it is invalid.
+func decode(path string, euid int) (*Config, error) {
 	data, err := readPrivateFile(path, euid)
 	if err != nil {
 		return nil, err
@@ -243,10 +258,6 @@ func load(path string, euid int) (*Config, error) {
 		secondsToDurationHook(),
 	))); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
-	}
-
-	if err := c.Validate(); err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	return &c, nil
 }
@@ -325,7 +336,22 @@ func (c *Config) Validate() error {
 	c.validateTimings(add)
 	c.validateIDs(add)
 	c.validatePaths(add)
-	return errors.Join(errs...)
+	// configcheck.Join reads as errors.Join does, and lets `config check`
+	// list each failure on its own.
+	return configcheck.Join(errs...)
+}
+
+// Warnings returns advice about a configuration the daemon runs with but
+// that is weaker than it looks. Logged once at start by upstream.New and
+// reported by `ssoossh-nss config check`.
+func (c *Config) Warnings() []string {
+	var out []string
+	// With a pin as well the pin decides which key may answer, so the
+	// store alone is not the trust.
+	if c.TLSSystemRoots() && len(c.TLSSPKIPin) == 0 {
+		out = append(out, "tls_ca_file is system: every CA in this host's trust store can answer for the server, a TLS-inspection root included")
+	}
+	return out
 }
 
 // validateServer checks where the daemon connects and what it trusts.

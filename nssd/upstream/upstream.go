@@ -195,10 +195,9 @@ func New(opts Options) (*Client, error) {
 	c.key, c.keyStamp = key, stamp
 
 	// Said once, at start: New runs once per daemon, and SIGHUP resets
-	// the client without building a new one. With a pin as well the pin
-	// decides which key may answer, so the store alone is not the trust.
-	if c.cfg.TLSSystemRoots() && len(c.cfg.TLSSPKIPin) == 0 {
-		c.log.Warn("tls_ca_file is system: every CA in this host's trust store can answer for the server, a TLS-inspection root included")
+	// the client without building a new one.
+	for _, w := range c.cfg.Warnings() {
+		c.log.Warn(w)
 	}
 	return c, nil
 }

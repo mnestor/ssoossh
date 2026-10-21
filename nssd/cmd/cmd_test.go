@@ -343,6 +343,24 @@ func TestDaemonShouldRefuseToStart(t *testing.T) {
 			}
 			return []string{"run", "--listen", h.socket, "--cache-file", h.cache}
 		}, wantErr: "fleet key"},
+		{name: "should refuse naming the override file when the key file is bad as well", setup: func(t *testing.T, h *host) []string {
+			if err := os.WriteFile(h.overrides, []byte("alice: [\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(h.key, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			return []string{"run", "--listen", h.socket, "--cache-file", h.cache}
+		}, wantErr: "overrides"},
+		{name: "should refuse naming the key file when the override file is bad as well", setup: func(t *testing.T, h *host) []string {
+			if err := os.WriteFile(h.overrides, []byte("alice: [\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(h.key, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			return []string{"run", "--listen", h.socket, "--cache-file", h.cache}
+		}, wantErr: "fleet key"},
 		{name: "should refuse when neither activated nor given --listen", setup: func(t *testing.T, h *host) []string {
 			return []string{"run", "--cache-file", h.cache}
 		}, wantErr: "not socket-activated and no --listen"},

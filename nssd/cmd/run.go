@@ -98,17 +98,14 @@ func (r *RootCommand) runDaemon(ctx context.Context, flags runFlags) error {
 	if err != nil {
 		return err
 	}
-	cfg, err := config.Load(r.configPath)
+	// nss.yaml, the override file and the fleet key, every problem at
+	// once: the same call `config check` reports from.
+	cfg, err := config.LoadStartup(r.configPath, r.overrides)
 	if err != nil {
 		return err
 	}
-	// A broken override file refuses the start; once running, a later
-	// broken edit keeps the last good overrides instead.
-	if _, err := config.LoadOverrides(r.overrides); err != nil {
-		return err
-	}
-	for _, problem := range server.CheckNSSwitch(r.env.NSSwitch).Problems() {
-		log.Error("nsswitch.conf will not consult this daemon; directory users will look missing", "problem", problem)
+	for _, problem := range r.nsswitchProblems() {
+		log.Error(nsswitchProblemMsg, "problem", problem)
 	}
 
 	store, err := openStore(ctx, cfg, flags.cacheFile)
@@ -163,6 +160,16 @@ func (r *RootCommand) runDaemon(ctx context.Context, flags runFlags) error {
 	err = g.Wait()
 	log.Info("ssoossh-nss stopped")
 	return err
+}
+
+// nsswitchProblemMsg is what the daemon logs for each nsswitch.conf
+// problem, and what `config check` reports.
+const nsswitchProblemMsg = "nsswitch.conf will not consult this daemon; directory users will look missing"
+
+// nsswitchProblems is the nsswitch.conf check the daemon makes at start.
+// Not fatal: the daemon runs, and glibc simply never asks it.
+func (r *RootCommand) nsswitchProblems() []string {
+	return server.CheckNSSwitch(r.env.NSSwitch).Problems()
 }
 
 // openStore opens the configured cache.
