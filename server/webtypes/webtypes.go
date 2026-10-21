@@ -1646,7 +1646,7 @@ type IdentityEchoPayload struct {
 	// ClaimSources says where each claim came from: "id_token", or
 	// "userinfo" for one the ID token lacked. The ID token wins on every
 	// key it carries.
-	ClaimSources map[string]string `json:"claim_sources,omitempty" tstype:"Record<string, 'id_token' | 'userinfo'>"`
+	ClaimSources map[string]string `json:"claim_sources,omitempty" tstype:"{ [key: string]: 'id_token' | 'userinfo' }"`
 
 	// UserInfo is what happened to the UserInfo call: "used", "off",
 	// "no_endpoint", "paused" or "failed".
