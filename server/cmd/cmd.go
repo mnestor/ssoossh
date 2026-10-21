@@ -109,6 +109,7 @@ func NewCommand() *Command {
 		commands: []simplecobra.Commander{
 			newServeCommand(),
 			newSignCommand(),
+			newConfigCommand(),
 			newLDAPCommand(),
 			newVersionCommand(),
 		},
