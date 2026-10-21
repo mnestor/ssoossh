@@ -719,3 +719,41 @@ func auditEventsWithAction(t *testing.T, db *gorm.DB, action string) []model.Aud
 	}
 	return out
 }
+
+// TestNewProbeResponse_ShouldCarryTheMatchReport keeps the count floor and
+// the DN list of a loose filter on the wire, and off it for a single match.
+func TestNewProbeResponse_ShouldCarryTheMatchReport(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		result     service.ProbeResult
+		wantCapped bool
+		wantDNs    int
+	}{
+		{
+			name:   "should omit the list when one entry matched",
+			result: service.ProbeResult{Matched: 1},
+		},
+		{
+			name: "should carry the floor and the DNs when a loose filter matched",
+			result: service.ProbeResult{
+				Matched: 1000, MatchedCapped: true,
+				MatchedDNs: []string{"uid=a,dc=test", "uid=b,dc=test"},
+			},
+			wantCapped: true,
+			wantDNs:    2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := newProbeResponse(&tt.result)
+			if got.Matched != tt.result.Matched || got.MatchedCapped != tt.wantCapped || len(got.MatchedDNs) != tt.wantDNs {
+				t.Errorf("matched = %d capped = %v dns = %v, want %d, %v, %d DNs", got.Matched, got.MatchedCapped, got.MatchedDNs, tt.result.Matched, tt.wantCapped, tt.wantDNs)
+			}
+		})
+	}
+}
