@@ -27,7 +27,7 @@ No new API surface beyond Part 1. All data comes from `/api/nss/keys*`,
 
 | Route | Who sees it | Notes |
 | --- | --- | --- |
-| `/nss-keys` | anyone whose `/api/nss/keys` list is non-empty (changed 2026-10-19 by the owner: the list is the keys whose group is one of the viewer's groups for every role, so no role shows the entry on its own) | top-level nav entry, **not under `/admin`**: `frontend/src/routes/admin/+layout.svelte` gates on admin roles, and key-group members are not admins (README R16) |
+| `/nss-keys` | anyone whose `/api/nss/keys` list is non-empty, and `is_nss_key_admin` (admins inherit it) whenever `nss_enabled` is true (changed 2026-10-19 by the owner: the list is the keys whose group is one of the viewer's groups for every role, so no role shows the entry on its own; reversed 2026-10-20 by the owner: admins and fleet key admins see the entry whenever `nss_enabled` is on, without a key in their groups, and the rail skips the key list read for them; the list itself is unchanged) | top-level nav entry, **not under `/admin`**: `frontend/src/routes/admin/+layout.svelte` gates on admin roles, and key-group members are not admins (README R16) |
 | `/admin/nss/keys` | auditor, SOC, admin, and `is_nss_key_admin` (changed 2026-10-19 by the owner: the only admin page that role opens) | (added 2026-10-19) "NSS keys (all)" in the admin group of the rail (the only entry there for a fleet key admin with no admin area role), beside "NSS directory", only when `nss_enabled` is true. Every key, see "Fleet keys (admin)" below |
 | `/nss-keys/new` | `is_nss_key_admin` (admins inherit it) | |
 | `/nss-keys/[id]` | read roles for that key | detail + usage |

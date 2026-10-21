@@ -4,12 +4,13 @@
 	import { page } from '$app/state';
 
 	import { ApiError } from '#lib/api/client.js';
-	import { createNSSKey, getNSSKeySettings, listAdminNSSKeys } from '#lib/api/endpoints.js';
+	import { createNSSKey, getNSSKeySettings } from '#lib/api/endpoints.js';
 	import type { NSSKeySecret } from '#lib/api/types.js';
 	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
 	import AccessDenied from '#lib/components/AccessDenied.svelte';
 	import Alert from '#lib/components/Alert.svelte';
 	import Button from '#lib/components/Button.svelte';
+	import KeyGroupSuggestions from '#lib/components/KeyGroupSuggestions.svelte';
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import PageSection from '#lib/components/PageSection.svelte';
 	import PageShell from '#lib/components/PageShell.svelte';
@@ -76,31 +77,6 @@
 	// What a screen reader hears once the key exists: the sub line changes
 	// too, but it is not a live region.
 	let liveMessage = $state('');
-
-	// The reader's own groups, offered as suggestions, and the groups other
-	// keys use, from the first page of every key: the fleet key admin role
-	// this form needs also reads that list, whatever other role it holds
-	// (the list of keys a reader's groups manage would add nothing to their
-	// own groups). The server takes any group name here (it is free text,
-	// matched later against each caller's session groups), so the list is
-	// not a limit, and the help under the field says what it holds. A
-	// failed read only loses those suggestions.
-	let knownGroups = $state<string[]>([]);
-	$effect(() => {
-		if (!allowed) return;
-		const controller = new AbortController();
-		listAdminNSSKeys({ limit: 100, signal: controller.signal })
-			.then((result) => {
-				knownGroups = result.keys.map((key) => key.group_name);
-			})
-			.catch(() => {});
-		return () => controller.abort();
-	});
-	const suggestions = $derived(
-		[...new Set([...knownGroups, ...(session.user?.groups ?? [])])]
-			.filter((value) => value !== '')
-			.sort()
-	);
 
 	// The earliest expiry the date field offers: tomorrow, since the server
 	// refuses a time already past.
@@ -305,11 +281,9 @@
 							data-testid="nss-key-group"
 							class="{field} max-w-[420px] font-mono"
 						/>
-						<datalist id="nss-key-groups">
-							{#each suggestions as suggestion (suggestion)}
-								<option value={suggestion}></option>
-							{/each}
-						</datalist>
+						<!-- The groups other keys use and the reader's own: suggestions,
+						     never a limit, since the server takes any group name. -->
+						<KeyGroupSuggestions id="nss-key-groups" />
 						<span class="text-xs text-ink-muted">
 							Members of this group can rotate, edit and revoke the key without an admin role. Any
 							group name is accepted; the suggestions are the groups other keys use and the groups

@@ -25,6 +25,7 @@ import FilterChip from './FilterChip.svelte';
 import FilterGroup from './FilterGroup.svelte';
 import Footer from './Footer.svelte';
 import Icon from './Icon.svelte';
+import KeyGroupSuggestions from './KeyGroupSuggestions.svelte';
 import KeyStatusBadge from './KeyStatusBadge.svelte';
 import ListStatus from './ListStatus.svelte';
 import LoadingBlock from './LoadingBlock.svelte';
@@ -285,6 +286,9 @@ const cases: [string, any, Record<string, unknown>][] = [
 	['Footer', Footer, {}],
 	['Icon (decorative)', Icon, { name: 'certificate' }],
 	['Icon (labelled)', Icon, { name: 'certificate', ariaLabel: 'Certificate' }],
+	// With no signed-in fleet key admin it reads nothing and lists the
+	// session's own groups, which is the state worth sweeping offline.
+	['KeyGroupSuggestions', KeyGroupSuggestions, { id: 'nss-key-groups' }],
 	['KeyStatusBadge (rotating)', KeyStatusBadge, { status: 'rotating' }],
 	['KeyStatusBadge (revoked)', KeyStatusBadge, { status: 'revoked' }],
 	['ListStatus', ListStatus, { message: '12 certificates found.' }],

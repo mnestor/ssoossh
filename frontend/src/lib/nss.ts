@@ -165,24 +165,30 @@ export function collisionLabel(kind: string, value: string): string {
 
 /**
  * showNSSKeys decides whether the rail offers NSS keys: only where the
- * server serves them, and then only to a viewer whose key list is not
- * empty, because the list is the keys their groups manage. That holds for
- * every role: the admin area's roles reach every key from its own NSS
- * keys entry (/admin/nss/keys), and a role alone fills no list here.
+ * server serves them, and then to a viewer who may create keys (the fleet
+ * key admin role, which every admin holds) or whose key list is not empty,
+ * because the list is the keys their groups manage. A key admin with no key
+ * in their groups lands on the page's empty state, which offers New key and
+ * links All NSS keys. Auditors and SOC without that role reach every key
+ * from the admin group's own entry (/admin/nss/keys), so for them only the
+ * list decides.
  */
 export function showNSSKeys(
-	user: Pick<CurrentUser, 'nss_enabled'> | null,
+	user: Pick<CurrentUser, 'nss_enabled' | 'is_nss_key_admin'> | null,
 	hasKeys: boolean
 ): boolean {
-	return !!user?.nss_enabled && hasKeys;
+	return !!user?.nss_enabled && (user.is_nss_key_admin || hasKeys);
 }
 
 /**
  * needsKeyCheck reports whether the rail has to ask the server for keys to
- * decide: wherever NSS is on, since no role decides it.
+ * decide: wherever NSS is on, except for a fleet key admin, whom the role
+ * alone already shows the entry to.
  */
-export function needsKeyCheck(user: Pick<CurrentUser, 'nss_enabled'> | null): boolean {
-	return !!user?.nss_enabled;
+export function needsKeyCheck(
+	user: Pick<CurrentUser, 'nss_enabled' | 'is_nss_key_admin'> | null
+): boolean {
+	return !!user?.nss_enabled && !user.is_nss_key_admin;
 }
 
 /** missRate is misses as a share of lookups, or null with no lookups. */
