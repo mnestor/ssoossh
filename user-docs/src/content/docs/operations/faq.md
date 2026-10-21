@@ -157,8 +157,10 @@ That is by design: the whole configuration is validated at startup rather than
 at first use. Templates are parsed and test-executed, CIDRs are parsed, mail
 template overrides are rendered against an empty payload, and the CA key is
 checked. A notification or a certificate that silently stops working is worse
-than a process that refuses to start.
-[Installing the server](/ssoossh/operations/install/).
+than a process that refuses to start. Run `ssoosshd config check` to see
+every problem at once, unknown keys and start-time warnings included, without
+a restart per fix.
+[Checking the config before a start](/ssoossh/operations/install/#checking-the-config-before-a-start).
 
 ## Why does the database refuse to start after a rollback?
 
