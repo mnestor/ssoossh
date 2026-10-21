@@ -1,6 +1,6 @@
 ---
 title: Deployment diagnostics
-description: "Four read-only checks, run from the admin UI, for the mistakes in front of ssoosshd that fail silently: public URL, proxy trust, security headers, and CORS."
+description: "Five read-only checks, run from the admin UI, for the mistakes in front of ssoosshd that fail silently: public URL, proxy trust, security headers, CORS, and the OIDC UserInfo endpoint."
 sidebar:
   order: 13
 ---
@@ -8,7 +8,7 @@ sidebar:
 Most of what goes wrong around `ssoosshd` goes wrong in front of it: a
 reverse proxy that is not trusted, a public URL the server cannot see, an
 edge that rewrites a header. None of these stop the process, and several of
-them look like success. **Admin → Diagnostics** runs four read-only checks
+them look like success. **Admin → Diagnostics** runs five read-only checks
 against the deployment as it is actually reached, and says which of these
 has happened.
 
@@ -16,7 +16,7 @@ has happened.
 
 <p class="screen-caption">A clean run. Each card carries its findings, and a check that is not clean also carries what to change.</p>
 
-## The four checks
+## The five checks
 
 | Check | What it tests | What a failure means |
 | --- | --- | --- |
@@ -24,6 +24,7 @@ has happened.
 | **Proxy trust and client IP** | How your own request's client IP was resolved: the TCP peer, the `X-Forwarded-For` received, what the server settled on, and what [`http.trusted_proxies`](/ssoossh/reference/config/http/#trusted_proxies) contains | **Critical** if the list trusts every address (`0.0.0.0/0`, `::/0`): any caller can then set `X-Forwarded-For` and be counted as any IP, so per-IP rate limits can be bypassed and the audit log's source addresses cannot be trusted. **Warning** if the list is empty behind a proxy: every request is then the proxy's, and rate limits are shared across all users |
 | **Security header hygiene** | Whether the headers the app sets itself -- HSTS, `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` -- survive the edge unchanged | The edge is overriding or dropping them. Stop it rewriting these headers, and drop any `X-XSS-Protection` it adds |
 | **CORS / edge header attribution** | Whether the edge adds CORS headers the app never sets | **Critical** if it reflects an arbitrary `Origin` *and* allows credentials, which makes a credentialed cross-origin read possible. **Warning** if it adds `Access-Control-Allow-Credentials` on its own. The app's own CORS -- `Access-Control-Allow-Origin: *` on the OIDC paths only, never with credentials -- is already correct |
+| **OIDC UserInfo endpoint** | Whether [`authentication.userinfo`](/ssoossh/reference/config/authentication/#userinfo) is on, whether the provider's discovery names a `userinfo_endpoint`, and the endpoint's health, shared by every instance: the failures in a row, the last error and the last success | **Skipped** when it is off or there is no endpoint. **Warning** while calls are failing, before the pause. **Critical** once the calls are [paused](/ssoossh/operations/identity-provider/#claims-from-userinfo): logins read the ID token alone until a probe succeeds, and the card says since when and when the next probe may run |
 
 Each check reports one of four statuses: **OK**, **Warning**, **Critical**,
 or **Skipped**. Skipped is deliberately not a pass. It says the check could
@@ -36,10 +37,11 @@ not run, and the reachability card says why.
   server that makes outbound requests to addresses an admin types in is a
   different and worse tool.
 - **It writes nothing.** Every check is a read: an outbound request to the
-  server's own public URL, and an inspection of the admin's own request.
+  server's own public URL, an inspection of the admin's own request, and the
+  UserInfo endpoint's stored health.
 - **It is admin-only**, CSRF-guarded, and rate-limited, and each run is
   recorded as `admin.diagnostics_run` in the [audit log](/ssoossh/operations/audit-log/)
-  with the four results.
+  with each check's result.
 
 ## When to run it
 

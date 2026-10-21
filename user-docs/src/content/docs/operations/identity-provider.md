@@ -160,31 +160,87 @@ between logins creates a new account each time.
 
 ## Seeing what your provider actually sends
 
-Writing `fields.extra` is guesswork until you know what is in the token. The
-**Claims echo** (`/admin/identity/echo`, admin-only) removes the guessing: it
-shows an admin their own decoded ID token, with every claim annotated by the
-configured field that consumes it, and the config block that would capture the
-ones nothing reads.
+Writing `authentication.fields` is guesswork until you know what is in the
+token. The **claims echo** removes the guessing: it shows the person who signs
+in their own claims, every claim annotated by the configured field that
+consumes it, and the configuration that would fix or extend the mapping. It
+comes in two forms that show the same result.
 
-It **re-authenticates rather than remembers.** There is no stored copy of your
-claims to show -- the server keeps only what the configuration maps -- so
-starting an echo signs you in again with `prompt=login`, and the callback
+### At first setup: `ssoosshd identity echo`
+
+The admin page below needs a sign-in that already works and an admin role
+that is already detected, which is exactly what is missing on day one. The
+host command needs neither:
+
+```sh
+sudo -u ssoossh ssoosshd identity echo
+```
+
+It prints a one-time link to `/identity/echo` on the server. Open it in a
+browser, press **Sign in to see my claims**, and sign in at your provider.
+No session is created, no account is written, and no role is needed. The
+link works once, for 15 minutes (`--ttl` changes that), and minting another
+replaces it. The code rides in the link's fragment, so no access log or proxy
+sees it, and the database keeps only its hash. Whoever can run the command can
+already read the config and the database, which is the only authority there is
+before the mapping works.
+
+The command waits and prints what happened: when and from which address the
+link was used, and either that the claims were shown or the error that came
+before any claims. That error (a wrong client secret, an unregistered redirect
+URI, a token from the wrong issuer) is also on the page; until now it was only
+in the server log. The command never prints claims. Ctrl-C retires an unused
+link.
+
+The same command is useful after setup: an admin debugging one person's claims
+can mint a link and send it to them, and they see only their own.
+
+### Once admin works: Admin > Claims echo
+
+**Claims echo** (`/admin/identity/echo`, admin-only) does the same from the
+web UI. It **re-authenticates rather than remembers.** There is no stored copy
+of your claims to show -- the server keeps only what the configuration maps --
+so starting an echo signs you in again with `prompt=login`, and the callback
 renders the token instead of establishing a session. Your existing session is
 untouched, no user record is written, and no login is recorded.
 
-The result is a table of every claim the token carried, however many and
-whatever their shape, with the count above it. Each value is shown in the
-shape of its type: a list one item per line, so a group named `eng, ops`
-stays one group; an object as indented JSON; an empty string and a null each
-labelled, so the two are told apart. A list or object longer than ten
-entries shows the first ten and a **Show all** button. The last column names
-the configured field that reads each claim, or says "unmapped".
+### What the result shows
+
+- **Would this sign in.** The login's own claim mapping, run on this token:
+  yes, or the error a login would return (for example the username claim is
+  missing). Whether the account is disabled, and what the directory adds, are
+  decided at login and not shown.
+- **Mapping.** Each `authentication.fields` entry, the claim it reads, and
+  whether that resolves, is missing, is empty or has the wrong shape, with
+  the value it resolves to. The same code a login uses, so what the echo says
+  is what a login concludes.
+- **Suggested configuration.** The mapping with each field that does not
+  resolve replaced by the first candidate, and a picker for
+  [`admin.require_group`](/ssoossh/reference/config/admin/#require_group)
+  filled from your groups claim. **Copy YAML** and **Download result** are
+  built in the browser; the server writes no file.
+- **Your ID token.** Every claim, however many and whatever their shape: a
+  list one item per line, so a group named `eng, ops` stays one group; an
+  object as indented JSON; an empty string and a null each labelled. A list or
+  object longer than ten entries shows the first ten and a **Show all**
+  button. Each claim names its source (the ID token, or
+  [UserInfo](#claims-from-userinfo)) and the field that reads it. Protocol
+  claims nothing reads (`iss`, `aud`, `nonce` and the rest) are listed apart.
+- **Candidates and suggestions.** Claims that could hold the subject (`sub`,
+  or Entra ID's tenant-stable `oid`), the username (`preferred_username`,
+  `upn` and the like), and groups (every list of strings), and the
+  `fields.extra` block that would capture each claim nothing reads.
+- **Not mappable.** Claims no field can read: nested objects, since the
+  mapper reads top-level claims only, and the claims of a JWT access token,
+  decoded unverified. ssoossh reads only the ID token (and UserInfo), so a
+  `groups` claim that appears only there means the provider has to be told to
+  put it in the ID token.
 
 Nothing about the result is stored. It reaches the page in the URL fragment,
 which browsers never send to a server, and the page clears the address bar as
-soon as it has read it. Reload and it is gone. There is no shareable link, on
-purpose: a link would be the thing that turns a non-storing feature into a
-storing one.
+soon as it has read it. Reload and it is gone; download it to keep it. There
+is no shareable link, on purpose: a link would be the thing that turns a
+non-storing feature into a storing one.
 
 Two things it deliberately does not do:
 
@@ -193,14 +249,50 @@ Two things it deliberately does not do:
   "why is this other person missing a group" -- the
   [user detail page](/ssoossh/operations/roles/) and the
   [directory probe](/ssoossh/operations/ldap/) are for that.
-- It shows the token, not the provider's whole user record. A claim your
-  provider only releases under a scope you have not requested will not appear;
-  add the scope to
+- It shows the token and UserInfo, not the provider's whole user record. A
+  claim your provider only releases under a scope you have not requested will
+  not appear; add the scope to
   [`authentication.scopes`](/ssoossh/reference/config/authentication/#scopes)
   and echo again.
 
 Each echo is a real authentication against your provider, so it appears in the
-provider's own sign-in log like any other.
+provider's own sign-in log like any other. The bootstrap form records
+`auth.echo_code_minted`, `auth.echo_code_used` and `auth.echo_code_expired` in
+the [audit log](/ssoossh/operations/audit-log/), never with a claim value.
+
+## Claims from UserInfo
+
+With [`authentication.userinfo`](/ssoossh/reference/config/authentication/#userinfo)
+on (the default), every login and every echo calls the provider's UserInfo
+endpoint with the access token the code exchange returned, and fills in the
+claims the ID token lacks. Many providers keep the ID token lean and put
+profile, email or groups claims only there.
+
+- **The ID token wins.** A claim it carries is never replaced; UserInfo only
+  adds the keys it lacks.
+- **Same subject or no login.** The UserInfo `sub` must equal the ID token's
+  exactly (OpenID Connect Core 5.3.2). A mismatch fails the login, and the
+  echo page shows it.
+- **No endpoint, no call.** A provider whose discovery document names no
+  `userinfo_endpoint` is simply not called.
+- **A failed call is not a failed login.** A network error, an error status or
+  a body that is not JSON is logged, and the login carries on with the ID
+  token's claims. It fails only if the subject or username claim is then
+  missing, as it would without UserInfo.
+- **Pause and probe.** After 10 failed calls in a row, counted across every
+  instance through the database, the server pauses the calls: logins use the
+  ID token alone, and one login every 15 minutes, one across the fleet, makes
+  the call as a probe. A probe that succeeds resumes the calls and resets the
+  count; one that fails keeps the pause and restarts the 15 minutes. Pausing
+  and resuming are each audited (`auth.userinfo_paused`,
+  `auth.userinfo_resumed`) and emailed to every admin, always; the
+  [diagnostics page](/ssoossh/operations/diagnostics/) shows the state.
+
+:::caution[Turning it on can add roles]
+UserInfo can carry claims the ID token lacked, the configured groups claim
+included. A role group that only UserInfo sends starts counting at each
+person's next login.
+:::
 
 ## Total denial belongs to the provider
 

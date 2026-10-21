@@ -40,6 +40,11 @@ const maxAuditReasonLength = 1000
 var auditActions = []AuditAction{
 	AuditAuthLogin,
 	AuditAuthLoginDenied,
+	AuditAuthEchoCodeMinted,
+	AuditAuthEchoCodeUsed,
+	AuditAuthEchoCodeExpired,
+	AuditAuthUserInfoPaused,
+	AuditAuthUserInfoResumed,
 	AuditCertRequested,
 	AuditCertApproved,
 	AuditCertDenied,

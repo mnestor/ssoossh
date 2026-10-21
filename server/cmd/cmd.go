@@ -111,6 +111,7 @@ func NewCommand() *Command {
 			newSignCommand(),
 			newConfigCommand(),
 			newLDAPCommand(),
+			newIdentityCommand(),
 			newVersionCommand(),
 		},
 	}

@@ -504,6 +504,8 @@ nfpms:
         dst: /usr/share/man/man8/
       - src: docs/man/ssoosshd-config*.8
         dst: /usr/share/man/man8/
+      - src: docs/man/ssoosshd-identity*.8
+        dst: /usr/share/man/man8/
       - src: docs/man/ssoosshd-version*.8
         dst: /usr/share/man/man8/
       - src: docs/man/ssoosshd.yaml.5
@@ -617,6 +619,8 @@ nfpms:
       - src: docs/man/ssoosshd-ldap*.8
         dst: /usr/share/man/man8/
       - src: docs/man/ssoosshd-config*.8
+        dst: /usr/share/man/man8/
+      - src: docs/man/ssoosshd-identity*.8
         dst: /usr/share/man/man8/
       - src: docs/man/ssoosshd-version*.8
         dst: /usr/share/man/man8/

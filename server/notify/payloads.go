@@ -539,3 +539,28 @@ type NSSIDChange struct {
 	PendingSince time.Time     `json:"pending_since"`
 	Waiting      time.Duration `json:"waiting"`
 }
+
+// UserInfoPaused is the payload for KindUserInfoPaused: the server stopped
+// calling the OIDC UserInfo endpoint after a run of failures. Never a token
+// or a claim: LastError has the access token scrubbed out.
+type UserInfoPaused struct {
+	Reader
+
+	Endpoint            string    `json:"endpoint"`
+	PausedAt            time.Time `json:"paused_at"`
+	ConsecutiveFailures int       `json:"consecutive_failures"`
+	LastError           string    `json:"last_error,omitempty"`
+	NextProbeAt         time.Time `json:"next_probe_at"`
+	ServerURL           string    `json:"server_url"`
+}
+
+// UserInfoResumed is the payload for KindUserInfoResumed: a retry of the
+// UserInfo endpoint succeeded, and logins read its claims again.
+type UserInfoResumed struct {
+	Reader
+
+	Endpoint  string    `json:"endpoint"`
+	PausedAt  time.Time `json:"paused_at"`
+	ResumedAt time.Time `json:"resumed_at"`
+	ServerURL string    `json:"server_url"`
+}

@@ -2,29 +2,24 @@
 	import { startIdentityEcho } from '#lib/api/endpoints.js';
 	import type { IdentityEchoPayload } from '#lib/api/types.js';
 	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
-	import { formatDateTime } from '#lib/format.js';
+	import { readEchoFragment, readFailureDetail } from '#lib/identityEcho.js';
 	import { describeSignInFailure, type SignInFailure } from '#lib/signin.js';
-	import {
-		COLLAPSE_AFTER,
-		describeClaimValue,
-		lengthOf,
-		type ClaimValue
-	} from '#lib/claimValue.js';
 	import Alert from '#lib/components/Alert.svelte';
 	import Button from '#lib/components/Button.svelte';
-	import MonoChip from '#lib/components/MonoChip.svelte';
+	import EchoResult from '#lib/components/EchoResult.svelte';
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import PageSection from '#lib/components/PageSection.svelte';
 	import PageShell from '#lib/components/PageShell.svelte';
-	import SectionLabel from '#lib/components/SectionLabel.svelte';
 
 	let payload = $state<IdentityEchoPayload | null>(null);
 	let readError = $state<string | null>(null);
 	let starting = $state(false);
 	let startError = $state<string | null>(null);
 	// Why the last echo did not complete, when the callback sent the
-	// browser back here with ?error= instead of a result.
+	// browser back here with ?error= instead of a result, and the error
+	// itself when the callback put one in the fragment.
 	let echoFailure = $state<SignInFailure | null>(null);
+	let failureDetail = $state('');
 
 	// Starting an echo is admin-only on the server (controller/identityecho.go),
 	// and identity/echo/+layout.svelte turns SOC and auditors away before
@@ -32,35 +27,28 @@
 
 	// The result arrives in the URL fragment, which is never sent to a
 	// server. Read it once, then drop it from the address bar and from
-	// history, so the claims live on this page and nowhere else — not in a
+	// history, so the claims live on this page and nowhere else: not in a
 	// database, not in the session, not in an access log, and not in a URL
 	// somebody screenshots.
 	$effect(() => {
 		const failed = new URLSearchParams(window.location.search).get('error');
 		if (failed) {
 			echoFailure = describeSignInFailure(failed);
+			failureDetail = readFailureDetail(window.location.hash);
 			history.replaceState(null, '', window.location.pathname);
 			return;
 		}
-		const fragment = window.location.hash.replace(/^#/, '');
-		if (!fragment) return;
+		const fragment = readEchoFragment(window.location.hash);
+		if (fragment.kind === 'none') return;
 
 		history.replaceState(null, '', window.location.pathname);
 
-		try {
-			payload = JSON.parse(decodeBase64Url(decodeURIComponent(fragment))) as IdentityEchoPayload;
-		} catch {
+		if (fragment.kind === 'payload') {
+			payload = fragment.payload;
+		} else {
 			readError = 'The echoed claims could not be decoded. Run the echo again.';
 		}
 	});
-
-	/** decodeBase64Url decodes the base64url the callback encodes with,
-	 * which has no padding and uses - and _ in place of + and /. */
-	function decodeBase64Url(value: string): string {
-		const padded = value.replace(/-/g, '+').replace(/_/g, '/');
-		const binary = atob(padded + '='.repeat((4 - (padded.length % 4)) % 4));
-		return new TextDecoder().decode(Uint8Array.from(binary, (c) => c.charCodeAt(0)));
-	}
 
 	async function handleStart() {
 		starting = true;
@@ -76,107 +64,9 @@
 			startError = errorMessage(cause);
 		}
 	}
-
-	/** consumers maps each claim name to the configured field that reads it,
-	 * which is what turns a claim dump into a config-authoring tool. */
-	// A plain record rather than a Map: it is rebuilt whole on every change
-	// and never mutated in place, which is what the reactivity rule about
-	// Map is guarding against.
-	const consumers = $derived.by(() => {
-		const byClaim: Record<string, string> = {};
-		if (!payload) return byClaim;
-
-		const m = payload.mapping;
-		const reserved: Array<[string | undefined, string]> = [
-			// Subject first: it is the claim the whole account is keyed by,
-			// and the one an operator most needs to see confirmed.
-			[m.subject, 'fields.subject'],
-			[m.username, 'fields.username'],
-			[m.name, 'fields.name'],
-			[m.groups, 'fields.groups'],
-			[m.other_accounts, 'fields.other_accounts'],
-			[m.service_accounts, 'fields.service_accounts'],
-			[m.email, 'fields.email']
-		];
-		for (const [claim, field] of reserved) {
-			if (claim) byClaim[claim] = field;
-		}
-		for (const [name, claim] of Object.entries(m.extra ?? {})) {
-			byClaim[claim] = `fields.extra.${name}`;
-		}
-		return byClaim;
-	});
-
-	/** claimRows is the token in a stable order: the claims something reads
-	 * first, then the rest. The unread ones are what an operator came for,
-	 * but the read ones are what confirms the config is doing anything. */
-	const claimRows = $derived.by(() => {
-		if (!payload) return [];
-		return Object.entries(payload.claims)
-			.map(([name, value]) => ({
-				name,
-				value: describeClaimValue(value),
-				consumer: consumers[name]
-			}))
-			.sort((a, b) => {
-				if (!!a.consumer !== !!b.consumer) return a.consumer ? -1 : 1;
-				return a.name.localeCompare(b.name);
-			});
-	});
-
-	// Which long values the reader has opened, by claim name. Rebuilt whole
-	// on each change rather than mutated, like `consumers` above.
-	let expanded = $state<Record<string, boolean>>({});
-
-	function toggle(name: string) {
-		expanded = { ...expanded, [name]: !expanded[name] };
-	}
 </script>
 
 <svelte:head><title>Claims echo · ssoossh</title></svelte:head>
-
-<!-- One claim's value in the shape its type calls for. A list is one item
-     per line, so an item containing a comma stays one item; an object is
-     indented JSON; past COLLAPSE_AFTER rows either shows the first ones and
-     a button that opens the rest in place. -->
-{#snippet claimValue(name: string, value: ClaimValue)}
-	{@const open = expanded[name] ?? false}
-	{@const total = lengthOf(value)}
-	{@const shown = open ? total : COLLAPSE_AFTER}
-	{#if value.kind === 'null'}
-		<span class="text-ink-muted">null</span>
-	{:else if value.kind === 'empty-string'}
-		<span class="text-ink-muted">(empty string)</span>
-	{:else if value.kind === 'text'}
-		{value.text}
-	{:else if value.kind === 'list'}
-		{#if total === 0}
-			<span class="text-ink-muted">(empty list)</span>
-		{:else}
-			<ul class="flex flex-col gap-0.5">
-				{#each value.items.slice(0, shown) as entry, i (i)}
-					<li>{entry}</li>
-				{/each}
-			</ul>
-		{/if}
-	{:else}
-		<pre class="font-mono wrap-anywhere whitespace-pre-wrap">{value.lines
-				.slice(0, shown)
-				.join('\n')}</pre>
-	{/if}
-	{#if total > COLLAPSE_AFTER}
-		<div class="mt-1 font-sans">
-			<Button
-				variant="ghost"
-				onclick={() => toggle(name)}
-				expanded={open}
-				testid="echo-expand-{name}"
-			>
-				{open ? 'Show fewer' : `Show all ${total}`}
-			</Button>
-		</div>
-	{/if}
-{/snippet}
 
 <PageShell width="wide">
 	<PageHeading title="Claims echo">
@@ -207,6 +97,11 @@
 				missing a group" — the user detail page and the directory probe are for that.
 			</p>
 
+			<p class="text-ink-muted">
+				Before admin works, <code>ssoosshd identity echo</code> on the server host prints a one-time link
+				to the same result, for whoever opens it and with no role needed.
+			</p>
+
 			<div>
 				<Button testid="echo-start" busy={starting} onclick={handleStart}>
 					{starting ? 'Redirecting…' : 'Show me what my IdP sends'}
@@ -224,6 +119,12 @@
 	{#if echoFailure}
 		<Alert variant="error" title={echoFailure.title} testid="echo-failure">
 			{echoFailure.message}
+			{#if failureDetail}
+				<span
+					class="mt-2 block font-mono text-dense wrap-anywhere"
+					data-testid="echo-failure-detail">{failureDetail}</span
+				>
+			{/if}
 		</Alert>
 	{/if}
 
@@ -234,76 +135,6 @@
 	{/if}
 
 	{#if payload}
-		<PageSection
-			title="Your ID token"
-			description="{claimRows.length} {claimRows.length === 1
-				? 'claim'
-				: 'claims'}, and which configured field reads each one."
-			testid="echo-result"
-		>
-			<div class="flex flex-col gap-4">
-				<p class="text-dense text-ink-muted">
-					Issued {formatDateTime(payload.issued_at)}. Nothing here was stored.
-				</p>
-
-				<!-- The shared table, sized for a token of any shape (DESIGN.md,
-				     "The admin area"). Claim and value wrap only where a word
-				     cannot fit; "Used by" never wraps. The scroll is a fallback
-				     the wrapping should make rare, and the page itself never
-				     scrolls sideways. -->
-				<div class="overflow-x-auto">
-					<table class="data-table">
-						<thead>
-							<tr>
-								<th scope="col">Claim</th>
-								<th scope="col">Value</th>
-								<th scope="col">Used by</th>
-							</tr>
-						</thead>
-						<tbody data-testid="echo-claims">
-							{#each claimRows as row (row.name)}
-								<tr>
-									<td class="align-top font-mono wrap-anywhere">{row.name}</td>
-									<td class="align-top font-mono wrap-anywhere">
-										{@render claimValue(row.name, row.value)}
-									</td>
-									<td class="align-top whitespace-nowrap">
-										{#if row.consumer}
-											{row.consumer}
-										{:else}
-											<span class="text-ink-muted">unmapped</span>
-										{/if}
-									</td>
-								</tr>
-							{/each}
-						</tbody>
-					</table>
-				</div>
-
-				{#if payload.suggestions?.length}
-					<div data-testid="echo-suggestions">
-						<SectionLabel>Config that would capture what is being dropped</SectionLabel>
-						<p class="mb-2 text-dense text-ink-muted">
-							Suggestions, not decisions. Each one names the key the value would land under; review
-							before committing it.
-						</p>
-						{#each payload.suggestions as suggestion (suggestion.claim)}
-							<div class="mb-3 last:mb-0">
-								<p class="flex flex-wrap items-baseline gap-2 text-dense">
-									<MonoChip>{suggestion.claim}</MonoChip>
-									<span class="text-ink-muted">{suggestion.reason}</span>
-								</p>
-								<pre
-									class="mt-1 overflow-x-auto rounded bg-surface-muted p-3 font-mono text-dense">{suggestion.yaml}</pre>
-							</div>
-						{/each}
-					</div>
-				{:else}
-					<p class="text-dense text-ink-muted" data-testid="echo-no-suggestions">
-						Every claim in this token is either read by the configuration or protocol mechanics.
-					</p>
-				{/if}
-			</div>
-		</PageSection>
+		<EchoResult {payload} />
 	{/if}
 </PageShell>

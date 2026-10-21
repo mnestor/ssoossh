@@ -121,6 +121,19 @@
         ]
       },
       {
+        "label": "identity",
+        "items": [
+          {
+            "label": "Overview",
+            "slug": "reference/cli/ssoosshd/identity"
+          },
+          {
+            "label": "echo",
+            "slug": "reference/cli/ssoosshd/identity-echo"
+          }
+        ]
+      },
+      {
         "label": "ldap",
         "items": [
           {

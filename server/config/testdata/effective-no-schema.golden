@@ -114,6 +114,7 @@ authentication.client_secret =
 authentication.provider_url = 
 authentication.scopes = profile email
 authentication.disable_pkce = false
+authentication.userinfo = true
 authentication.fields.subject = sub
 authentication.fields.username = preferred_username
 authentication.fields.name = name

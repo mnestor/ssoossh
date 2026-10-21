@@ -75,7 +75,7 @@ func (f *fakeAuthService) EchoAuthorizationURL(_ context.Context, _ string) (str
 	return f.echoURL, f.nonce, f.pkceVerifier, nil
 }
 
-func (f *fakeAuthService) EchoCallback(_ context.Context, code, nonce, pkceVerifier string) (map[string]any, error) {
+func (f *fakeAuthService) EchoCallback(_ context.Context, code, nonce, pkceVerifier string) (*service.EchoTokens, error) {
 	f.echoHandled = true
 	f.gotCode = code
 	f.gotCallbackNonc = nonce
@@ -83,7 +83,7 @@ func (f *fakeAuthService) EchoCallback(_ context.Context, code, nonce, pkceVerif
 	if f.echoCbErr != nil {
 		return nil, f.echoCbErr
 	}
-	return f.echoClaims, nil
+	return &service.EchoTokens{Claims: f.echoClaims}, nil
 }
 
 func (f *fakeAuthService) ClaimMapping() service.ClaimMapping { return f.mapping }
@@ -95,7 +95,7 @@ func newAuthTestRouter(authSvc service.AuthProvider, csrf gin.HandlerFunc) *gin.
 	r := gin.New()
 	r.Use(middleware.NewErrorHandlerMiddleware().Add())
 	r.Use(sessions.Sessions("ssoossh_session", cookie.NewStore([]byte("test-secret"))))
-	NewAuthController(&r.RouterGroup, authSvc, csrf, &config.Config{})
+	NewAuthController(&r.RouterGroup, authSvc, nil, csrf, &config.Config{})
 	return r
 }
 
@@ -384,7 +384,7 @@ func TestLoginHandler_ShouldSurfaceASessionWriteError(t *testing.T) {
 	r.Use(middleware.NewErrorHandlerMiddleware().Add())
 	r.Use(sessions.Sessions("ssoossh_session", cookie.NewStore([]byte("test-secret"))))
 	r.Use(oversizedSessionSeed)
-	NewAuthController(&r.RouterGroup, svc, passthrough, &config.Config{})
+	NewAuthController(&r.RouterGroup, svc, nil, passthrough, &config.Config{})
 
 	w := doRequest(r, httptest.NewRequest(http.MethodGet, "/login", nil), nil)
 
@@ -402,7 +402,7 @@ func TestCallbackHandler_ShouldSurfaceASessionWriteError(t *testing.T) {
 	r.Use(middleware.NewErrorHandlerMiddleware().Add())
 	r.Use(sessions.Sessions("ssoossh_session", cookie.NewStore([]byte("test-secret"))))
 	r.Use(oversizedSessionSeed)
-	NewAuthController(&r.RouterGroup, svc, passthrough, &config.Config{})
+	NewAuthController(&r.RouterGroup, svc, nil, passthrough, &config.Config{})
 
 	w := doRequest(r, httptest.NewRequest(http.MethodGet, "/callback?code=c&state=s", nil), nil)
 

@@ -455,7 +455,7 @@ func (a *app) registerRoutes(r *gin.Engine) error {
 	// Browser-facing OIDC login/callback, outside /api since these are
 	// redirects rather than JSON API calls.
 	authGroup := r.Group("/auth")
-	controller.NewAuthController(authGroup, a.svc.auth, csrf, a.config)
+	controller.NewAuthController(authGroup, a.svc.auth, a.svc.echoCodes, csrf, a.config)
 
 	// Set up API routes
 	apiGroup := r.Group("/api")
@@ -553,7 +553,7 @@ func (a *app) registerRoutes(r *gin.Engine) error {
 	controller.NewLDAPAdminController(apiGroup, a.config, a.db, ldapDiagnostics, nssSync,
 		sessionAuth, adminAuth, csrf, probeRateLimit, a.svc.audit)
 	controller.NewNSSAdminController(apiGroup, a.db, nssAdmin, a.nssViewer(), a.svc.nssKeys, sessionAuth, adminAuth, auditorAuth, nssKeyListAuth, csrf)
-	controller.NewIdentityEchoController(apiGroup, a.svc.auth, sessionAuth, adminAuth, csrf)
+	controller.NewIdentityEchoController(apiGroup, a.svc.auth, a.svc.echoCodes, sessionAuth, adminAuth, csrf)
 
 	// The diagnostics run makes the server open an outbound connection to
 	// its own public URL, so it is bounded per caller like the directory
@@ -566,6 +566,7 @@ func (a *app) registerRoutes(r *gin.Engine) error {
 			PerKeys(rate.Every(ldapProbeInterval), ldapProbeBurst, diagnosticsRunRateLimitKeys)
 	}
 	diagnostics := service.NewDiagnosticsService(a.config, middleware.AppSecurityHeaders(), nil)
+	diagnostics.SetUserInfo(a.svc.auth)
 	controller.NewDiagnosticsController(apiGroup, diagnostics, a.db, a.svc.audit,
 		sessionAuth, adminAuth, csrf, diagnosticsRateLimit)
 

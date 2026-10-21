@@ -140,6 +140,8 @@ client must render an unknown action rather than assume the list is closed.
 | --- | --- |
 | `auth.login` | Snapshots the groups the identity carried. Since membership is never persisted as authorization, this is the only durable record of what access an identity held on a given day. With [`ldap.authoritative_role_groups`](/ssoossh/reference/config/ldap/#authoritative_role_groups) on, the snapshot is the narrowed list, and `detail.role_groups_removed_by_directory` names any role group the claim carried that the directory no longer lists |
 | `auth.login_denied` | A disabled account attempting to log in, which otherwise vanishes entirely |
+| `auth.echo_code_minted`, `auth.echo_code_used`, `auth.echo_code_expired` | A one-time [bootstrap claims echo](/ssoossh/operations/identity-provider/#at-first-setup-ssoosshd-identity-echo) link: minted by `ssoosshd identity echo` (actor `local-cli`, with the OS account and host), opened by a browser (`source_ip` is the address the server observed), or ended unused (`detail.reason`: `timed_out`, `replaced` or `cancelled`). The code id and who minted it, never the code and never a claim |
+| `auth.userinfo_paused`, `auth.userinfo_resumed` | The server pausing its [UserInfo](/ssoossh/operations/identity-provider/#claims-from-userinfo) calls after 10 failures in a row, and a probe resuming them. System events, with the endpoint, the failure count and the last error (no token) |
 | `cert.requested`, `cert.approved`, `cert.denied` | |
 | `cert.code_resolved` | A console code typed into the web UI and resolved to its request |
 | `cert.claimed` | An approval link bound to the first browser that opened it; a later browser is sent to the "link already opened" page |

@@ -710,6 +710,54 @@ Templates:
 | `.Advanced` | `bool` | True when the recipient chose the advanced email detail level, false for simplified. Set per recipient at delivery; a template that ignores it sends the same message at both levels. |
 
 
+### OIDC UserInfo calls paused
+
+`userinfo_paused`
+
+Sent to every admin when the server stops calling the identity provider's UserInfo endpoint after 10 failed calls in a row. Logins carry on with the ID token's claims alone, and one login every 15 minutes retries the call. Always sent: it cannot be turned off.
+
+Always sent: it is not a preference and cannot be turned off.
+
+Templates:
+
+- `userinfo_paused.subject.tmpl`
+- `userinfo_paused.txt.tmpl`
+- `userinfo_paused.html.tmpl`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `.Endpoint` | `string` | The UserInfo endpoint the provider's discovery document names. |
+| `.PausedAt` | `time.Time` | When the server paused the calls. |
+| `.ConsecutiveFailures` | `int` | How many calls in a row had failed, across every instance. |
+| `.LastError` | `string` | The last failed call's error, with the access token removed. |
+| `.NextProbeAt` | `time.Time` | When the first retry may run: the first login after this time makes the call. |
+| `.ServerURL` | `string` | The server's public origin, naming the deployment. |
+| `.Advanced` | `bool` | True when the recipient chose the advanced email detail level, false for simplified. Set per recipient at delivery; a template that ignores it sends the same message at both levels. |
+
+
+### OIDC UserInfo calls resumed
+
+`userinfo_resumed`
+
+Sent to every admin when a retry of the identity provider's UserInfo endpoint succeeds after a pause, and logins read its claims again. Always sent: it cannot be turned off.
+
+Always sent: it is not a preference and cannot be turned off.
+
+Templates:
+
+- `userinfo_resumed.subject.tmpl`
+- `userinfo_resumed.txt.tmpl`
+- `userinfo_resumed.html.tmpl`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `.Endpoint` | `string` | The UserInfo endpoint the provider's discovery document names. |
+| `.PausedAt` | `time.Time` | When the server had paused the calls. |
+| `.ResumedAt` | `time.Time` | When the retry succeeded and the calls resumed. |
+| `.ServerURL` | `string` | The server's public origin, naming the deployment. |
+| `.Advanced` | `bool` | True when the recipient chose the advanced email detail level, false for simplified. Set per recipient at delivery; a template that ignores it sends the same message at both levels. |
+
+
 ### NSS fleet key expiring
 
 `nss_key_expiring`

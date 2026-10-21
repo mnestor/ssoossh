@@ -31,7 +31,12 @@ const (
 	// echo rather than a login, so the callback renders the token instead
 	// of establishing a session. Set only by the echo start endpoint, and
 	// consumed once.
-	sessionKeyOIDCEcho         = "oidc_echo"
+	sessionKeyOIDCEcho = "oidc_echo"
+	// sessionKeyOIDCEchoCode names the bootstrap echo code (its row id,
+	// never the code) the in-flight echo was started from, so the callback
+	// sends the result to the public echo page and records the outcome on
+	// that row. Absent for the admin echo.
+	sessionKeyOIDCEchoCode     = "oidc_echo_code"
 	sessionKeyReturnURL        = "return_url"
 	sessionKeyIdentitySubject  = "identity_subject"
 	sessionKeyIdentityUsername = "identity_username"
@@ -178,6 +183,10 @@ func SetOIDCLoginState(c *gin.Context, state, nonce, verifier, returnURL string)
 	if returnURL != "" {
 		sess.Set(sessionKeyReturnURL, returnURL)
 	}
+	// A login started after an echo that never came back must not be
+	// taken for that echo by the callback.
+	sess.Delete(sessionKeyOIDCEcho)
+	sess.Delete(sessionKeyOIDCEchoCode)
 	return sess.Save()
 }
 
@@ -194,7 +203,37 @@ func SetOIDCEchoState(c *gin.Context, state, nonce, verifier string) error {
 	sess.Set(sessionKeyOIDCNonce, nonce)
 	sess.Set(sessionKeyOIDCVerifier, verifier)
 	sess.Set(sessionKeyOIDCEcho, true)
+	// An admin echo started after an abandoned bootstrap one must not
+	// report to that one's code.
+	sess.Delete(sessionKeyOIDCEchoCode)
 	return sess.Save()
+}
+
+// SetOIDCBootstrapEchoState is SetOIDCEchoState for a bootstrap echo,
+// started from the one-time code whose row id is codeID rather than from an
+// admin's session.
+//
+// The same session the login flow keeps its pre-login state in: it needs
+// no identity, and an anonymous visitor's session holds nothing but these
+// values until the callback consumes them. Nothing here signs anyone in.
+func SetOIDCBootstrapEchoState(c *gin.Context, state, nonce, verifier, codeID string) error {
+	sess := sessions.Default(c)
+	sess.Set(sessionKeyOIDCState, state)
+	sess.Set(sessionKeyOIDCNonce, nonce)
+	sess.Set(sessionKeyOIDCVerifier, verifier)
+	sess.Set(sessionKeyOIDCEcho, true)
+	sess.Set(sessionKeyOIDCEchoCode, codeID)
+	return sess.Save()
+}
+
+// PopOIDCEchoCode returns the bootstrap echo code id stored by
+// SetOIDCBootstrapEchoState and clears it, or "" for an admin echo or a
+// login.
+func PopOIDCEchoCode(c *gin.Context) (string, error) {
+	sess := sessions.Default(c)
+	codeID := sessionString(sess, sessionKeyOIDCEchoCode)
+	sess.Delete(sessionKeyOIDCEchoCode)
+	return codeID, sess.Save()
 }
 
 // PopOIDCEcho reports whether the in-flight round trip is a claims echo,

@@ -208,21 +208,21 @@ Base unit 4px, Tailwind's spacing scale.
 The only values allowed as bracketed utilities. Anything else bracketed is
 off-system.
 
-| Constant               | Value                                                    | Where                                           |
-| ---------------------- | -------------------------------------------------------- | ----------------------------------------------- |
-| Rail width             | 244px expanded, 60px collapsed                           | `AppRail`                                       |
-| Shell `focus`          | 560px                                                    | sign-in, console code, error page               |
-| Shell `wide`           | 1120px                                                   | every page inside the app (default)             |
-| Shell `full`           | no cap                                                   | admin tables: users, user detail, audit         |
-| Aside column           | 280px above `xl`                                         | `PageShell` `aside`                             |
-| DetailRow label column | 140px (`8.75rem`)                                        | `DetailRow` above `sm`                          |
-| Prose measure          | `70ch`                                                   | paragraphs and form columns inside a wide panel |
-| Sign-in column         | 380px                                                    | `/login`                                        |
-| Dialog panel           | `max-w-md` (ConfirmModal), 520px (ConsentModal)          | dialogs                                         |
-| Field cap              | 420px                                                    | the select and email field in `ApprovalView`    |
-| Row grid               | `minmax(0,1fr) minmax(0,1.1fr) minmax(0,1fr)` above `xl` | `CertRow`, `DeniedRow`                          |
-| Timeline grid          | `auto minmax(0,1fr)`                                     | `AuditTimeline` details                         |
-| Probe attribute grid   | `minmax(9rem,14rem) 1fr`                                 | the directory probe's entry view                |
+| Constant               | Value                                                    | Where                                                                                          |
+| ---------------------- | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Rail width             | 244px expanded, 60px collapsed                           | `AppRail`                                                                                      |
+| Shell `focus`          | 560px                                                    | sign-in, console code, error page                                                              |
+| Shell `wide`           | 1120px                                                   | every page inside the app (default)                                                            |
+| Shell `full`           | no cap                                                   | admin tables: users, user detail, audit                                                        |
+| Aside column           | 280px above `xl`                                         | `PageShell` `aside`                                                                            |
+| DetailRow label column | 140px (`8.75rem`)                                        | `DetailRow` above `sm`                                                                         |
+| Prose measure          | `70ch`                                                   | paragraphs and form columns inside a wide panel                                                |
+| Sign-in column         | 380px                                                    | `/login`                                                                                       |
+| Dialog panel           | `max-w-md` (ConfirmModal), 520px (ConsentModal)          | dialogs                                                                                        |
+| Field cap              | 420px                                                    | the select and email field in `ApprovalView`, the `admin.require_group` select in `EchoResult` |
+| Row grid               | `minmax(0,1fr) minmax(0,1.1fr) minmax(0,1fr)` above `xl` | `CertRow`, `DeniedRow`                                                                         |
+| Timeline grid          | `auto minmax(0,1fr)`                                     | `AuditTimeline` details                                                                        |
+| Probe attribute grid   | `minmax(9rem,14rem) 1fr`                                 | the directory probe's entry view                                                               |
 
 ### Breakpoints
 
@@ -452,8 +452,10 @@ layout.
   only the sections marked `keyAdmin`, which is NSS keys (all). Open by
   default, remembered shut (`ssoossh:rail-admin-open`), forced open on any
   `/admin` route.
-- **Focus routes** render with no rail: `/login`, `/c` (a console code) and
-  `/approval-unavailable`, plus any screen for a signed-out visitor.
+- **Focus routes** render with no rail: `/login`, `/c` (a console code),
+  `/approval-unavailable` and `/identity/echo` (the bootstrap claims echo,
+  opened from a one-time link at first setup), plus any screen for a
+  signed-out visitor.
   `isFocusRoute` in `lib/nav.ts` decides, matching on a path boundary so
   `/console` is not `/c`. The approval page is inside the app: reaching it
   means signing in.
@@ -757,6 +759,10 @@ rounded-md border-border-control bg-surface px-3 text-base`, `text-base`
 - **AccountHoldersPanel**: who else holds a service account.
 - **RedemptionHistory**: the redemption log rows, with the "showing N of
   total" note.
+- **EchoResult**: the claims echo's result, shared by `/admin/identity/echo`
+  and the public `/identity/echo`. See Claims echo under The admin area.
+- **EchoClaimValue**: one claim value in the shape its type calls for, with
+  the "Show all N" expander, used by every table in `EchoResult`.
 
 ### Component classes in `app.css`
 
@@ -1210,6 +1216,26 @@ beneath it.
     status.
   - The table's own `overflow-x-auto` wrapper stays as a fallback; the page
     never scrolls sideways.
+  - A Source column (sans, "ID token" or "UserInfo") appears when the server
+    reports where each claim came from (`authentication.userinfo`). Protocol
+    claims nothing reads (`iss`, `aud`, `nonce` and the rest) sit in a second
+    table under a "Protocol claims" `SectionLabel`, after identity.
+  - The result (`EchoResult`) runs as one read straight down: "Would this
+    sign in" (the login's own verdict, `granted` or `danger` words, and what
+    UserInfo did), Mapping (each `authentication.fields` entry, its claim,
+    its status in words, `granted` resolved, `danger` a required field that
+    does not resolve, `trimmed` an optional one, `ink-muted` not configured,
+    and the resolved value), Suggested configuration (the one primary
+    action, Copy YAML, with Download result as the ghost beside it and the
+    `admin.require_group` select above the YAML), Your ID token, Candidates
+    and suggestions, and Not mappable (an access token claim is labelled
+    "unverified, not read by ssoossh"). Copy and Download are built in the
+    browser and make no request.
+  - The bootstrap page (`/identity/echo`, no session, a focus route) opens
+    from `ssoosshd identity echo`'s link: the code in the fragment is
+    dropped from the address bar at once, and spent only on a press of
+    "Sign in to see my claims". A failed echo, on either page, shows the
+    provider's or the token check's own error in mono under the reason.
 - **Audit log** (`/admin/audit`, `full`): the bounded table copy of the
   audit stream, with Load more. `AuditTimeline` sits in a surface panel and
   needs no frame of its own. Two filters above it, kept in the address

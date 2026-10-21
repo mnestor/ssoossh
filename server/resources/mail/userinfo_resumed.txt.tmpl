@@ -1,0 +1,17 @@
+{{ if .ServerURL }}{{ .ServerURL }} calls{{ else }}The server calls{{ end }} the identity provider's UserInfo
+endpoint again: a retry succeeded.
+
+Logins read the claims UserInfo sends from the next one on. Anyone who
+signed in while the calls were paused holds the claims of that sign-in
+until they sign in again.
+
+  Paused at         {{ datetime .PausedAt }}
+  Resumed at        {{ datetime .ResumedAt }}
+{{ if .Advanced }}
+DETAILS
+
+  Endpoint          {{ .Endpoint }}
+{{ end }}
+Sent to every admin. This message is always sent when the server resumes
+its UserInfo calls after a pause; it is not a notification preference and
+cannot be turned off.

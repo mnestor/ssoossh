@@ -2384,6 +2384,13 @@ components:
       required:
       - reason
       type: object
+    webtypes.IdentityEchoRedeemRequest:
+      properties:
+        code:
+          type: string
+      required:
+      - code
+      type: object
     webtypes.IdentityEchoStartResponse:
       properties:
         authorization_url:
@@ -6977,6 +6984,56 @@ paths:
       summary: The caller's denied certificate requests
       tags:
       - web
+  /api/identity/echo/redeem:
+    post:
+      description: |-
+        Consumes the one-time code a `ssoosshd identity echo` link
+        carries in its fragment and returns the authorization URL
+        for a claims echo, as the admin start does. No session or
+        role is needed, and none is granted: the echo shows whoever
+        signs in their own claims and establishes nothing.
+
+        A code works once. A wrong, used or expired code all get the
+        same 404, so the endpoint tells a guesser nothing.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/webtypes.IdentityEchoRedeemRequest'
+                description: The code from the link
+                summary: request
+        description: The code from the link
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/webtypes.IdentityEchoStartResponse'
+          description: Where to send the browser
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Malformed body
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Cross-origin call
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: The code is wrong, used or expired
+      summary: Redeem a bootstrap echo link
+      tags:
+      - auth
   /api/nss/group/gid/{gid}:
     get:
       description: The same answer as the lookup by name, for a gid. Called by ssoossh-nss
@@ -7872,7 +7929,8 @@ paths:
         establishes the session, and redirects to the captured `return_to` (or
         `/`). A failure redirects to `/login?error=<reason>` (`expired`,
         `refused`, `session` or `failed`), or for a claims echo to
-        `/admin/identity/echo?error=<reason>`.
+        `/admin/identity/echo?error=<reason>` (`/identity/echo` for a
+        bootstrap echo), with the error itself in the fragment.
       parameters:
       - description: Authorization code from the identity provider
         in: query

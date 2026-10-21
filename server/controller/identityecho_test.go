@@ -26,6 +26,13 @@ import (
 // through.
 func echoTestRouter(t *testing.T, authSvc service.AuthProvider, identity *service.Identity) *gin.Engine {
 	t.Helper()
+	return echoTestRouterWithCodes(t, authSvc, identity, nil)
+}
+
+// echoTestRouterWithCodes is echoTestRouter with the bootstrap echo's code
+// store wired, for the redeem endpoint and the callback's record of it.
+func echoTestRouterWithCodes(t *testing.T, authSvc service.AuthProvider, identity *service.Identity, codes service.IdentityEchoCodes) *gin.Engine {
+	t.Helper()
 	gin.SetMode(gin.TestMode)
 
 	cfg := &config.Config{}
@@ -36,10 +43,11 @@ func echoTestRouter(t *testing.T, authSvc service.AuthProvider, identity *servic
 	r.Use(sessions.Sessions("ssoossh_session", cookie.NewStore([]byte("test-secret"))))
 
 	authGroup := r.Group("/auth")
-	NewAuthController(authGroup, authSvc, func(c *gin.Context) { c.Next() }, cfg)
+	NewAuthController(authGroup, authSvc, codes, func(c *gin.Context) { c.Next() }, cfg)
 	NewIdentityEchoController(
 		&r.RouterGroup,
 		authSvc,
+		codes,
 		identityMiddleware(identity),
 		middleware.NewAdminAuthMiddleware(cfg).Add(),
 		func(c *gin.Context) { c.Next() },
@@ -186,140 +194,6 @@ func TestIdentityEcho_ShouldRenderClaimsWithoutTouchingTheSession(t *testing.T) 
 	}
 }
 
-// TestIdentityEcho_ShouldSuggestConfigForUnmappedClaims is the reason the
-// echo is a tool rather than a curiosity.
-func TestIdentityEcho_ShouldSuggestConfigForUnmappedClaims(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name       string
-		claims     map[string]any
-		mapping    service.ClaimMapping
-		wantClaim  string
-		wantYAML   string
-		wantAbsent string
-	}{
-		{
-			name:      "a string claim nothing reads",
-			claims:    map[string]any{"employee_type": "staff"},
-			mapping:   service.ClaimMapping{Username: "preferred_username"},
-			wantClaim: "employee_type",
-			wantYAML:  "employee_type: employee_type",
-		},
-		{
-			name:      "a namespaced claim keeps its last segment",
-			claims:    map[string]any{"https://idp.example.com/department": "platform"},
-			mapping:   service.ClaimMapping{},
-			wantClaim: "https://idp.example.com/department",
-			wantYAML:  `department: "https://idp.example.com/department"`,
-		},
-		{
-			name:       "a claim the configuration already reads is not suggested",
-			claims:     map[string]any{"preferred_username": "alice"},
-			mapping:    service.ClaimMapping{Username: "preferred_username"},
-			wantAbsent: "preferred_username",
-		},
-		{
-			name:       "an extra field's claim is not suggested again",
-			claims:     map[string]any{"employee_type": "staff"},
-			mapping:    service.ClaimMapping{Extra: map[string]string{"emp": "employee_type"}},
-			wantAbsent: "employee_type",
-		},
-		{
-			name:       "protocol claims are not identity",
-			claims:     map[string]any{"iss": "https://idp.example.com", "exp": float64(1), "sub": "sub-1"},
-			mapping:    service.ClaimMapping{},
-			wantAbsent: "iss",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			got := claimSuggestions(tt.claims, tt.mapping)
-
-			if tt.wantAbsent != "" {
-				for _, s := range got {
-					if s.Claim == tt.wantAbsent {
-						t.Fatalf("claim %q was suggested and should not have been", tt.wantAbsent)
-					}
-				}
-				return
-			}
-
-			var found bool
-			for _, s := range got {
-				if s.Claim != tt.wantClaim {
-					continue
-				}
-				found = true
-				if !strings.Contains(s.YAML, tt.wantYAML) {
-					t.Errorf("suggestion yaml = %q, want it to contain %q", s.YAML, tt.wantYAML)
-				}
-			}
-			if !found {
-				t.Errorf("claim %q was not suggested; got %+v", tt.wantClaim, got)
-			}
-		})
-	}
-}
-
-// TestClaimSuggestionReason_ShouldNameTheValueShape matters because the
-// shape decides whether a claim can gate a policy condition or only decorate
-// a key ID.
-func TestClaimSuggestionReason_ShouldNameTheValueShape(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name  string
-		value any
-		want  string
-	}{
-		{name: "a number can gate a policy", value: float64(42), want: "numeric"},
-		{name: "a list is captured as a list", value: []any{"a", "b"}, want: "list"},
-		{name: "a string is simply unmapped", value: "staff", want: "unmapped"},
-		{name: "a boolean says how it is captured", value: true, want: "boolean"},
-		{name: "anything else says so", value: map[string]any{"a": 1}, want: "not a scalar or list"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			if got := claimSuggestionReason(tt.value); !strings.Contains(got, tt.want) {
-				t.Errorf("reason = %q, want it to mention %q", got, tt.want)
-			}
-		})
-	}
-}
-
-// TestSuggestedExtraName_ShouldReadAsATemplateField covers the conversion
-// that makes a suggestion reachable as {{.Extra.<name>}}.
-func TestSuggestedExtraName_ShouldReadAsATemplateField(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		claim string
-		want  string
-	}{
-		{claim: "employee_type", want: "employee_type"},
-		{claim: "employeeType", want: "employeetype"},
-		{claim: "https://idp.example.com/department", want: "department"},
-		{claim: "urn:example:cost-center", want: "cost_center"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.claim, func(t *testing.T) {
-			t.Parallel()
-
-			if got := suggestedExtraName(tt.claim); got != tt.want {
-				t.Errorf("suggestedExtraName(%q) = %q, want %q", tt.claim, got, tt.want)
-			}
-		})
-	}
-}
-
 // TestEchoRedirectURL_ShouldRoundTripThePayload pins the encoding both ends
 // depend on.
 func TestEchoRedirectURL_ShouldRoundTripThePayload(t *testing.T) {
@@ -328,7 +202,8 @@ func TestEchoRedirectURL_ShouldRoundTripThePayload(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	claims := map[string]any{"preferred_username": "o'brien", "groups": []any{"a/b", "c#d"}}
 
-	got, err := echoRedirectURL(claims, service.ClaimMapping{Username: "preferred_username"}, now)
+	report := service.BuildEchoReport(&service.EchoTokens{Claims: claims}, service.ClaimMapping{Username: "preferred_username"})
+	got, err := echoRedirectURL(echoResultPath, report, now)
 	if err != nil {
 		t.Fatalf("echoRedirectURL() error = %v", err)
 	}

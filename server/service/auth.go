@@ -11,7 +11,6 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -101,9 +100,10 @@ type AuthProvider interface {
 	EchoAuthorizationURL(ctx context.Context, state string) (authURL string, nonce string, pkceVerifier string, err error)
 
 	// EchoCallback verifies the callback the same way HandleCallback does
-	// and returns the decoded ID token claims, establishing nothing: no
-	// session, no user row, no login event.
-	EchoCallback(ctx context.Context, code string, nonce string, pkceVerifier string) (map[string]any, error)
+	// and returns the decoded ID token claims (and the access token's,
+	// when it is a JWT), establishing nothing: no session, no user row, no
+	// login event.
+	EchoCallback(ctx context.Context, code string, nonce string, pkceVerifier string) (*EchoTokens, error)
 
 	// ClaimMapping reports which configured field consumes each claim, so
 	// an echo can be annotated against the configuration rather than
@@ -128,6 +128,15 @@ type AuthService struct {
 	// nil in tests that do not exercise auditing.
 	auditor *AuditService
 
+	// httpClient is the client discovery used (nil for the default), for
+	// the UserInfo call, which go-oidc makes through the context.
+	httpClient *http.Client
+
+	// userInfoHealth pauses the UserInfo call when the endpoint keeps
+	// failing, shared across instances. Nil in tests that do not exercise
+	// it, which then call on every login.
+	userInfoHealth *UserInfoHealthService
+
 	// ldap enriches the identity from the directory. Nil when LDAP is
 	// disabled, which is the common case and needs no branch at the call
 	// site beyond the nil check inside Enrich.
@@ -136,6 +145,17 @@ type AuthService struct {
 
 // SetLDAP wires directory enrichment. Called once at startup.
 func (s *AuthService) SetLDAP(l *LDAPService) { s.ldap = l }
+
+// SetUserInfoHealth wires the UserInfo endpoint's shared health state.
+// Called once at startup.
+func (s *AuthService) SetUserInfoHealth(h *UserInfoHealthService) { s.userInfoHealth = h }
+
+// UserInfoEndpoint is the userinfo_endpoint the provider's discovery
+// document names, or "" when it names none.
+func (s *AuthService) UserInfoEndpoint() string { return s.provider.UserInfoEndpoint() }
+
+// UserInfoEnabled reports authentication.userinfo.
+func (s *AuthService) UserInfoEnabled() bool { return s.config.AuthConfig.UserInfo }
 
 // SetAuditor wires the audit recorder. Called once at startup, before any
 // request is served.
@@ -220,10 +240,11 @@ func NewAuthService(ctx context.Context, c *config.Config, db *gorm.DB, httpClie
 	}
 
 	return &AuthService{
-		config:   c,
-		db:       db,
-		provider: provider,
-		verifier: verifier,
+		config:     c,
+		db:         db,
+		httpClient: httpClient,
+		provider:   provider,
+		verifier:   verifier,
 		oauth2Config: &oauth2.Config{
 			ClientID:     authConfig.ClientID,
 			ClientSecret: authConfig.ClientSecret,
@@ -283,96 +304,26 @@ func exchangeOptions(pkceVerifier string) []oauth2.AuthCodeOption {
 // HandleCallback exchanges code for tokens using the PKCE verifier issued at
 // login (none when authentication.disable_pkce is set), verifies
 // the ID token (signature, audience, expiry, and that its nonce claim matches
-// nonce), extracts identity fields per config.OAuthFields, and upserts the
+// nonce), fills in the claims it lacks from UserInfo (authentication.userinfo),
+// extracts identity fields per config.OAuthFields, and upserts the
 // corresponding model.User.
 func (s *AuthService) HandleCallback(ctx context.Context, code string, nonce string, pkceVerifier string) (*Identity, error) {
-	token, err := s.oauth2Config.Exchange(ctx, code, exchangeOptions(pkceVerifier)...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to exchange OIDC authorization code: %w", err)
-	}
-
-	rawIDToken, ok := token.Extra("id_token").(string)
-	if !ok {
-		return nil, errors.New("OIDC token response is missing id_token")
-	}
-
-	idToken, err := s.verifier.Verify(ctx, rawIDToken)
-	if err != nil {
-		return nil, fmt.Errorf("failed to verify OIDC ID token: %w", err)
-	}
-
-	if idToken.Nonce != nonce {
-		return nil, errors.New("OIDC ID token nonce does not match the one issued at login")
-	}
-
-	var claims map[string]any
-	if err := idToken.Claims(&claims); err != nil {
-		// not covered: Verify above already parsed this same payload as
-		// JSON to validate the standard claims, so re-unmarshaling it
-		// here cannot fail.
-		return nil, fmt.Errorf("failed to parse OIDC ID token claims: %w", err)
-	}
-
-	fields := s.config.AuthConfig.Fields
-
-	// The account identifier, from whichever claim the operator named. Not
-	// idToken.Subject: that is always the literal "sub", and "sub" is not
-	// the stable identifier everywhere — Entra ID issues a per-application
-	// one and puts the tenant-stable value in "oid". A login with no
-	// identifier cannot be keyed to a user row at all, so an absent or
-	// empty claim fails the login rather than inventing one.
-	subjectID, ok := scalarClaim(claims, fields.Subject)
-	if !ok || subjectID == "" {
-		return nil, fmt.Errorf("OIDC ID token is missing the configured subject claim %q", fields.Subject)
-	}
-
-	username, ok := claims[fields.Username].(string)
-	if !ok || username == "" {
-		return nil, fmt.Errorf("OIDC ID token is missing the configured username claim %q", fields.Username)
-	}
-
-	// The human-readable name is optional in every direction: an
-	// unconfigured claim, an absent one, or one of the wrong shape all
-	// leave it empty, and nothing downstream requires it. It is display
-	// only.
-	displayName, _ := scalarClaim(claims, fields.Name)
-
-	// not covered (the three error branches below): all three calls pass
-	// required=false, and stringSliceClaim only returns an error when
-	// required is true. Otherwise it warns and returns nil.
-	groups, err := stringSliceClaim(claims, fields.Groups, false)
-	if err != nil {
-		return nil, err
-	}
-	otherAccounts, err := stringSliceClaim(claims, fields.OtherAccounts, false)
-	if err != nil {
-		return nil, err
-	}
-	serviceAccounts, err := stringSliceClaim(claims, fields.ServiceAccounts, false)
+	token, idClaims, err := s.exchangeAndVerify(ctx, code, nonce, pkceVerifier)
 	if err != nil {
 		return nil, err
 	}
 
-	// email falls back to the standard "email" claim opportunistically if
-	// no explicit mapping is configured; either way, absence isn't an error.
-	emailField := fields.Email
-	if emailField == "" {
-		emailField = "email"
-	}
-	var email string
-	if e, ok := claims[emailField].(string); ok {
-		email = e
+	// UserInfo fills what the ID token lacks, before any mapping.
+	merged, err := s.mergeUserInfo(ctx, token, idClaims)
+	if err != nil {
+		return nil, err
 	}
 
-	identity := &Identity{
-		Subject:         subjectID,
-		Username:        username,
-		Email:           email,
-		DisplayName:     displayName,
-		Groups:          groups,
-		OtherAccounts:   otherAccounts,
-		ServiceAccounts: serviceAccounts,
-		Extra:           extraClaims(claims, fields.Extra),
+	// The mapping itself is shared with the claims echo, which reports
+	// what this login would conclude without running the rest of it.
+	identity, err := identityFromClaims(merged.claims, s.ClaimMapping())
+	if err != nil {
+		return nil, err
 	}
 
 	if err := s.upsertUser(ctx, identity); err != nil {
@@ -508,105 +459,6 @@ func (s *AuthService) upsertUser(ctx context.Context, identity *Identity) error 
 			"username", "email", "display_name", "other_accounts", "service_accounts", "extra_fields", "updated_at",
 		}),
 	}).Create(&user).Error
-}
-
-// scalarClaim reads key from claims as a single string, coercing the scalar
-// JSON shapes the way extraClaims does: a string is itself, a bool and a
-// number render as text. An unconfigured key, an absent claim, or a
-// composite value (array, object) reports false.
-//
-// Numbers are accepted because an account identifier is not always a
-// string — a provider fronting a database commonly issues a numeric user
-// id — and encoding/json decodes every JSON number as float64.
-func scalarClaim(claims map[string]any, key string) (string, bool) {
-	if key == "" {
-		return "", false
-	}
-	switch v := claims[key].(type) {
-	case string:
-		return v, true
-	case bool:
-		return strconv.FormatBool(v), true
-	case float64:
-		return strconv.FormatFloat(v, 'f', -1, 64), true
-	default:
-		return "", false
-	}
-}
-
-// stringSliceClaim reads key from claims as a []string, returning nil (not
-// an error) when key is empty (the field is unconfigured). It's an error
-// for a configured key to be present-but-wrong-shaped, or absent entirely,
-// since the operator explicitly asked for it.
-func stringSliceClaim(claims map[string]any, key string, required bool) ([]string, error) {
-	if key == "" {
-		return nil, nil
-	}
-
-	raw, ok := claims[key].([]any)
-	if !ok {
-		if required {
-			return nil, fmt.Errorf("OIDC ID token is missing the configured claim %q", key)
-		}
-		slog.Warn("OIDC ID token is missing the configurged claim", slog.String("claim", key))
-		return nil, nil
-	}
-
-	values := make([]string, 0, len(raw))
-	for _, v := range raw {
-		if s, ok := v.(string); ok {
-			values = append(values, s)
-		}
-	}
-	return values, nil
-}
-
-// extraClaims extracts the operator-configured extra fields (mapping:
-// template name -> claim name, see config.OAuthFields.Extra) from claims.
-// Scalars (string, bool, number) coerce to strings; an array keeps its
-// string elements as a list. A missing, null, or unsupported-shape claim
-// warns and stores empty — the same optional-field posture as
-// stringSliceClaim — which key ID templates later render as MISSING.
-// Returns nil when no extras are configured.
-func extraClaims(claims map[string]any, mapping map[string]string) map[string]extraValue {
-	if len(mapping) == 0 {
-		return nil
-	}
-
-	extras := make(map[string]extraValue, len(mapping))
-	for name, claim := range mapping {
-		raw, ok := claims[claim]
-		if !ok || raw == nil {
-			slog.Warn("OIDC ID token is missing the configured extra claim",
-				slog.String("field", name), slog.String("claim", claim))
-			extras[name] = scalarExtra("")
-			continue
-		}
-
-		switch v := raw.(type) {
-		case string:
-			extras[name] = scalarExtra(v)
-		case bool:
-			extras[name] = scalarExtra(strconv.FormatBool(v))
-		case float64:
-			// encoding/json decodes every JSON number as float64; -1
-			// precision renders integral values without a decimal point.
-			extras[name] = scalarExtra(strconv.FormatFloat(v, 'f', -1, 64))
-		case []any:
-			values := make([]string, 0, len(v))
-			for _, e := range v {
-				if s, ok := e.(string); ok {
-					values = append(values, s)
-				}
-			}
-			extras[name] = listExtra(values)
-		default:
-			slog.Warn("configured extra claim has an unsupported shape",
-				slog.String("field", name), slog.String("claim", claim))
-			extras[name] = scalarExtra("")
-		}
-	}
-	return extras
 }
 
 // checkUserDisabled verifies the user identified by subject is not disabled.
@@ -758,32 +610,77 @@ func (s *AuthService) EchoAuthorizationURL(ctx context.Context, state string) (a
 	return s.oauth2Config.AuthCodeURL(state, opts...), nonce, pkceVerifier, nil
 }
 
+// EchoTokens is what a claims echo hands back: the verified ID token's
+// claims, and the access token's, decoded but never verified.
+type EchoTokens struct {
+	// Claims is what a login maps: the decoded ID token, verified exactly
+	// as a login verifies it, with the claims UserInfo filled in.
+	Claims map[string]any
+
+	// Sources says where each claim came from: ClaimSourceIDToken or
+	// ClaimSourceUserInfo.
+	Sources map[string]string
+
+	// UserInfo is what happened to the UserInfo call.
+	UserInfo UserInfoStatus
+
+	// AccessTokenClaims is the access token's payload when the provider
+	// issues a JWT one, and nil otherwise. Unverified, and never read by a
+	// login: it is here because "groups is in the access token, not the ID
+	// token" is a common provider mistake, and seeing it is how an
+	// operator finds out. The token itself never leaves this function.
+	AccessTokenClaims map[string]any
+}
+
 // EchoCallback verifies the callback exactly as HandleCallback does and
-// returns the decoded ID token claims.
+// returns the decoded ID token claims, with the access token's when it is
+// a JWT.
 //
 // It establishes nothing. No session is set, no users row is written, no
 // login event is recorded, and the claims are returned rather than stored:
 // the server deliberately keeps only what the configuration maps, and an
 // echo that quietly kept the rest would be the thing this feature exists to
 // avoid.
-func (s *AuthService) EchoCallback(ctx context.Context, code string, nonce string, pkceVerifier string) (map[string]any, error) {
+func (s *AuthService) EchoCallback(ctx context.Context, code string, nonce string, pkceVerifier string) (*EchoTokens, error) {
+	token, idClaims, err := s.exchangeAndVerify(ctx, code, nonce, pkceVerifier)
+	if err != nil {
+		return nil, err
+	}
+	merged, err := s.mergeUserInfo(ctx, token, idClaims)
+	if err != nil {
+		return nil, err
+	}
+	return &EchoTokens{
+		Claims:            merged.claims,
+		Sources:           merged.sources,
+		UserInfo:          merged.status,
+		AccessTokenClaims: unverifiedJWTClaims(token.AccessToken),
+	}, nil
+}
+
+// exchangeAndVerify is the half of a callback a login and an echo share:
+// exchange code for tokens using the PKCE verifier issued at the start
+// (none when authentication.disable_pkce is set), then verify the ID token
+// (signature, audience, expiry, and that its nonce claim matches nonce)
+// and decode its claims.
+func (s *AuthService) exchangeAndVerify(ctx context.Context, code, nonce, pkceVerifier string) (*oauth2.Token, map[string]any, error) {
 	token, err := s.oauth2Config.Exchange(ctx, code, exchangeOptions(pkceVerifier)...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to exchange OIDC authorization code: %w", err)
+		return nil, nil, fmt.Errorf("failed to exchange OIDC authorization code: %w", err)
 	}
 
 	rawIDToken, ok := token.Extra("id_token").(string)
 	if !ok {
-		return nil, errors.New("OIDC token response is missing id_token")
+		return nil, nil, errors.New("OIDC token response is missing id_token")
 	}
 
 	idToken, err := s.verifier.Verify(ctx, rawIDToken)
 	if err != nil {
-		return nil, fmt.Errorf("failed to verify OIDC ID token: %w", err)
+		return nil, nil, fmt.Errorf("failed to verify OIDC ID token: %w", err)
 	}
 
 	if idToken.Nonce != nonce {
-		return nil, errors.New("OIDC ID token nonce does not match the one issued at login")
+		return nil, nil, errors.New("OIDC ID token nonce does not match the one issued at login")
 	}
 
 	var claims map[string]any
@@ -791,7 +688,26 @@ func (s *AuthService) EchoCallback(ctx context.Context, code string, nonce strin
 		// not covered: Verify above already parsed this same payload as
 		// JSON to validate the standard claims, so re-unmarshaling it
 		// here cannot fail.
-		return nil, fmt.Errorf("failed to parse OIDC ID token claims: %w", err)
+		return nil, nil, fmt.Errorf("failed to parse OIDC ID token claims: %w", err)
 	}
-	return claims, nil
+	return token, claims, nil
+}
+
+// unverifiedJWTClaims decodes the payload of a JWT without checking its
+// signature, or returns nil for anything that is not one (an opaque access
+// token, most often). Display only: nothing may act on what it returns.
+func unverifiedJWTClaims(raw string) map[string]any {
+	parts := strings.Split(raw, ".")
+	if len(parts) != 3 {
+		return nil
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(parts[1], "="))
+	if err != nil {
+		return nil
+	}
+	var claims map[string]any
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return nil
+	}
+	return claims
 }

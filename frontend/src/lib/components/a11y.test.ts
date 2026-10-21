@@ -3,7 +3,12 @@ import { axe, toHaveNoViolations } from 'jest-axe';
 import { createRawSnippet } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { CertificateRecord, DeniedRequest, ServiceEnrollment } from '#lib/api/types.js';
+import type {
+	CertificateRecord,
+	DeniedRequest,
+	IdentityEchoPayload,
+	ServiceEnrollment
+} from '#lib/api/types.js';
 
 import AccessDenied from './AccessDenied.svelte';
 import AccountHoldersPanel from './AccountHoldersPanel.svelte';
@@ -19,6 +24,8 @@ import CopyableId from './CopyableId.svelte';
 import DeniedRow from './DeniedRow.svelte';
 import DetailRow from './DetailRow.svelte';
 import DetailToggle from './DetailToggle.svelte';
+import EchoClaimValue from './EchoClaimValue.svelte';
+import EchoResult from './EchoResult.svelte';
 import EmptyState from './EmptyState.svelte';
 import ExpireCodeAction from './ExpireCodeAction.svelte';
 import FilterChip from './FilterChip.svelte';
@@ -75,6 +82,37 @@ expect.extend(toHaveNoViolations);
 // when one appears in this directory without an entry above it.
 
 const now = new Date('2026-08-22T12:00:00Z');
+
+/** echoPayload is a claims echo with every section the result can show. */
+const echoPayload: IdentityEchoPayload = {
+	claims: {
+		sub: 's',
+		upn: 'alice@example.com',
+		groups: ['ssh-admins'],
+		iss: 'https://idp.example.com'
+	},
+	claim_sources: { sub: 'id_token', upn: 'id_token', groups: 'userinfo', iss: 'id_token' },
+	userinfo: 'used',
+	mapping: { subject: 'sub', username: 'preferred_username', groups: 'groups' },
+	fields: [
+		{ field: 'subject', claim: 'sub', required: true, status: 'resolved', list: false, value: 's' },
+		{
+			field: 'username',
+			claim: 'preferred_username',
+			required: true,
+			status: 'missing',
+			list: false
+		}
+	],
+	sign_in: { allowed: false, reason: 'missing the configured username claim' },
+	suggestions: [{ field: 'username', claim: 'upn', reason: 'a string', yaml: 'username: upn' }],
+	admin_group_candidates: ['ssh-admins'],
+	not_mappable: [
+		{ claim: 'roles', source: 'access_token', value: ['ops'], reason: 'access token' }
+	],
+	protocol_claims: ['iss'],
+	issued_at: '2026-10-21T09:00:00Z'
+};
 
 /** text is a `children` snippet holding one string, for the wrappers that take one. */
 function text(content: string) {
@@ -238,6 +276,13 @@ const cases: [string, any, Record<string, unknown>][] = [
 	],
 	['CopyableId', CopyableId, { value: 'cert-1', label: 'Request' }],
 	['DetailToggle', DetailToggle, {}],
+	[
+		'EchoClaimValue (list)',
+		EchoClaimValue,
+		{ name: 'groups', value: Array.from({ length: 12 }, (_, i) => `g${i}`) }
+	],
+	['EchoClaimValue (object)', EchoClaimValue, { name: 'realm', value: { roles: ['admin'] } }],
+	['EchoResult', EchoResult, { payload: echoPayload }],
 	['EmptyState', EmptyState, { icon: 'certificate-off', title: 'No certificates yet' }],
 	[
 		'EmptyState (with action)',

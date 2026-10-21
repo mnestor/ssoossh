@@ -24,6 +24,7 @@ import type {
 	EffectiveConfigResponse,
 	EnrollmentRetrievalResponse,
 	EnrollmentRetrievalsResponse,
+	IdentityEchoRedeemRequest,
 	IdentityEchoStartResponse,
 	LDAPProbeRequestBody,
 	LDAPProbeResponse,
@@ -660,6 +661,16 @@ export function runDiagnostics(): Promise<DiagnosticsResponse> {
  */
 export function startIdentityEcho(): Promise<IdentityEchoStartResponse> {
 	return request<IdentityEchoStartResponse>('/admin/identity/echo/start', { method: 'POST' });
+}
+
+/**
+ * POST /api/identity/echo/redeem: trades the one-time code a `ssoosshd
+ * identity echo` link carries for the authorization URL of a claims echo.
+ * Needs no session. A wrong, used or expired code is one 404.
+ */
+export function redeemIdentityEcho(code: string): Promise<IdentityEchoStartResponse> {
+	const body: IdentityEchoRedeemRequest = { code };
+	return request<IdentityEchoStartResponse>('/identity/echo/redeem', { method: 'POST', body });
 }
 
 /** GET /api/nss/key-settings: a new key's default lifetime and a rotation's grace, in seconds. */

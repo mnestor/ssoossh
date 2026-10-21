@@ -14,6 +14,7 @@ See OAuthConfig for details on provider URL, scopes, and field mapping from OIDC
 | [`authentication.provider_url`](#provider_url) | string | `empty` |
 | [`authentication.scopes`](#scopes) | string | `profile email` |
 | [`authentication.disable_pkce`](#disable_pkce) | bool | `false` |
+| [`authentication.userinfo`](#userinfo) | bool | `true` |
 | [`authentication.fields.subject`](#fieldssubject) | string | `sub` |
 | [`authentication.fields.username`](#fieldsusername) | string | `preferred_username` |
 | [`authentication.fields.name`](#fieldsname) | string | `name` |
@@ -82,9 +83,28 @@ authentication:
   disable_pkce: false
 ```
 
+## `userinfo`
+
+`bool`, default `true`
+
+Calls the provider's `userinfo` endpoint at every login (and every claims echo), with the access token the code exchange returned, and fills in the claims the ID token lacks. Many providers keep the ID token lean and put profile, email or groups claims only in `userinfo`; without this, a fields mapping that names one of them resolves to nothing.
+
+The ID token always wins: a claim it carries is never replaced, and `userinfo` only adds the keys it lacks. Its sub must equal the ID token's exactly (OpenID Connect Core 5.3.2); a mismatch fails the login. A provider whose discovery document names no userinfo_endpoint is simply not called.
+
+A failed call (network, an error status, a body that is not JSON) never fails a login by itself: it is logged, and the login carries on with the ID token's claims. After 10 failed calls in a row, counted across every instance through the database, the server pauses the calls: logins use the ID token alone, and one login every 15 minutes (one across the fleet) makes the call as a probe. A probe that succeeds resumes the calls. Pausing and resuming are each audited (auth.userinfo_paused, auth.userinfo_resumed) and emailed to every admin; the admin diagnostics page shows the state.
+
+Turning this on can add claims the ID token lacked, the configured groups claim included, so a role group can start counting at the next login.
+
+```yaml
+authentication:
+  userinfo: true
+```
+
 ## `fields`
 
-Maps ssoossh identity fields to claim names in the OIDC provider's ID token. Username is the only required field; the rest are empty by default, meaning "not populated from OIDC".
+Maps ssoossh identity fields to claim names in the OIDC provider's ID token (and, with userinfo on, the claims the provider's `userinfo` endpoint adds). Username is the only required field; the rest are empty by default, meaning "not populated from OIDC".
+
+To see which claims a provider actually sends before choosing, run `ssoosshd identity echo` on the server host and open the one-time link it prints: it needs no admin role and no working mapping. See https://mnestor.github.io/ssoossh/operations/identity-provider/#seeing-what-your-provider-actually-sends
 
 ## `fields.subject`
 

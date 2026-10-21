@@ -1648,24 +1648,114 @@ type ClaimMappingResponse struct {
 // this is stored: not in the database, not in the session, not in a server
 // log. It exists on the page that rendered it and nowhere else.
 type IdentityEchoPayload struct {
-	// Claims is the decoded ID token, in full.
+	// Claims is what a login maps: the decoded ID token, in full, with
+	// the claims the UserInfo endpoint filled in (authentication.userinfo).
 	Claims map[string]any `json:"claims" validate:"required"`
+
+	// ClaimSources says where each claim came from: "id_token", or
+	// "userinfo" for one the ID token lacked. The ID token wins on every
+	// key it carries.
+	ClaimSources map[string]string `json:"claim_sources,omitempty" tstype:"{ [key: string]: 'id_token' | 'userinfo' }"`
+
+	// UserInfo is what happened to the UserInfo call: "used", "off",
+	// "no_endpoint", "paused" or "failed".
+	UserInfo string `json:"userinfo,omitempty" tstype:"'used' | 'off' | 'no_endpoint' | 'paused' | 'failed'"`
 
 	// Mapping is what the configuration reads out of it.
 	Mapping ClaimMappingResponse `json:"mapping" validate:"required"`
 
-	// Suggestions are config lines that would capture a claim nothing
-	// currently reads. Suggestions, not decisions.
+	// Suggestions are config lines that would put a claim to use:
+	// candidates for subject, username and groups, and the extra fields
+	// that would capture a claim nothing currently reads. Suggestions, not
+	// decisions.
 	Suggestions []ClaimSuggestion `json:"suggestions,omitempty"`
+
+	// Fields resolves each configured field against this token, through
+	// the same readers a login uses.
+	Fields []ClaimFieldResolution `json:"fields" validate:"required"`
+
+	// SignIn says whether a login with this token would get past the
+	// claim mapping.
+	SignIn IdentityEchoSignIn `json:"sign_in" validate:"required"`
+
+	// AdminGroupCandidates are the groups claim's values, the names
+	// admin.require_group can take. Empty when groups does not resolve.
+	AdminGroupCandidates []string `json:"admin_group_candidates,omitempty"`
+
+	// NotMappable lists the claims no field can read: nested objects, and
+	// the access token's claims, which a login never reads.
+	NotMappable []UnmappableClaim `json:"not_mappable,omitempty"`
+
+	// ProtocolClaims names the token's JWT and OIDC mechanics no field
+	// reads, so the page can group them apart from identity.
+	ProtocolClaims []string `json:"protocol_claims,omitempty"`
 
 	// IssuedAt is when the echo was produced, so a page left open is
 	// visibly stale rather than quietly so.
 	IssuedAt time.Time `json:"issued_at" validate:"required"`
 }
 
+// ClaimFieldResolution is how one configured authentication.fields entry
+// resolved against an echoed token.
+type ClaimFieldResolution struct {
+	// Field is the key under authentication.fields: "subject",
+	// "username", ..., or "extra.<name>".
+	Field string `json:"field" validate:"required"`
+	// Claim is the configured claim name, empty when unconfigured.
+	Claim string `json:"claim,omitempty"`
+	// Required marks subject and username, whose failure fails a login.
+	Required bool `json:"required"`
+	// Status is "resolved", "empty", "missing", "wrong_shape" or
+	// "unconfigured".
+	Status string `json:"status" validate:"required" tstype:"'resolved' | 'empty' | 'missing' | 'wrong_shape' | 'unconfigured'"`
+	// List says the field holds a list (Values) rather than a scalar
+	// (Value).
+	List   bool     `json:"list"`
+	Value  string   `json:"value,omitempty"`
+	Values []string `json:"values,omitempty"`
+}
+
+// IdentityEchoSignIn is the verdict of a login's claim mapping on an echoed
+// token. It cannot speak for the rest of a login (a disabled account, the
+// directory), which an echo does not reach.
+type IdentityEchoSignIn struct {
+	Allowed bool `json:"allowed"`
+	// Reason is the error the login would return, when it would not.
+	Reason string `json:"reason,omitempty"`
+}
+
+// UnmappableClaim is a claim no authentication.fields entry can read.
+type UnmappableClaim struct {
+	Claim string `json:"claim" validate:"required"`
+	// Source is "id_token", or "access_token" for a claim decoded,
+	// unverified, from a JWT access token, which ssoossh never reads.
+	Source string `json:"source" validate:"required" tstype:"'id_token' | 'access_token'"`
+	Value  any    `json:"value"`
+	Reason string `json:"reason" validate:"required"`
+}
+
+// IdentityEchoRedeemRequest is the body of the bootstrap echo's redeem
+// endpoint: the code from the link's fragment.
+type IdentityEchoRedeemRequest struct {
+	Code string `json:"code" binding:"required" validate:"required"`
+}
+
+// IdentityEchoFailure is why an echo did not produce claims, handed to the
+// echo page in the redirect fragment alongside ?error=. Message is the
+// error itself (a refused code exchange, a token that did not verify),
+// which is what an operator fixing the provider settings needs and what a
+// generic "sign-in failed" hides.
+type IdentityEchoFailure struct {
+	Message string `json:"message" validate:"required"`
+}
+
 // ClaimSuggestion is the config line that would capture one unmapped claim.
 type ClaimSuggestion struct {
-	// Claim is the claim name nothing currently reads.
+	// Field is the authentication.fields key the claim would fill:
+	// "subject", "username", "groups", or "extra" for a claim nothing
+	// currently reads.
+	Field string `json:"field" validate:"required" tstype:"'subject' | 'username' | 'groups' | 'extra'"`
+	// Claim is the claim name.
 	Claim string `json:"claim" validate:"required"`
 	// Reason says why it is worth naming — a numeric value a policy
 	// condition could gate on, say.
