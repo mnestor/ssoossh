@@ -1,0 +1,86 @@
+[Unit]
+Description=ssoossh NSS daemon (RHEL 8 standalone: self-binds the userdb socket)
+Documentation=man:ssoossh-nss(8) https://github.com/mnestor/ssoossh
+# The RHEL 8 family has systemd 239: no systemd-userdbd, so nothing
+# socket-activates the userdb socket, and stock nss-systemd is too old to
+# speak userdb. The glibc side there is libnss_ssoossh
+# (github.com/mnestor/ssoossh-libnss), and this unit runs the daemon as a
+# long-running service that binds the socket itself (--listen). Use this unit
+# OR the socket-activated pair (ssoossh-nss.socket + ssoossh-nss.service),
+# never both: they bind the same path.
+#
+# nss-user-lookup.target is the point after which user and group lookups are
+# expected to work; ordering before it and pulling it in means a lookup that
+# waits for the target reaches a daemon that is already up.
+Before=nss-user-lookup.target
+Wants=nss-user-lookup.target
+# Pinned rather than inherited from system.conf, so the RestartSec reasoning
+# holds on every host: a 6th start within 60 s is refused.
+StartLimitIntervalSec=60s
+StartLimitBurst=5
+
+[Service]
+# The binary is at /usr/sbin/ssoossh-nss and the configuration at
+# /etc/ssoossh/nss.yaml, the daemon's default.
+#
+# --listen binds /run/systemd/userdb/com.github.mnestor.ssoossh: the same path
+# nss-systemd uses on systemd 245+, so the libnss_ssoossh module's compiled
+# default needs no host configuration. The daemon creates a stale-socket-free
+# bind each start.
+#
+# ExecStartPre creates the socket directory world-traversable (0755) so an
+# unprivileged caller -- sudo, a login shell -- can reach the socket inside it.
+# It runs with "+" (outside this unit's sandbox) because ProtectSystem=strict
+# would otherwise make /run/systemd read-only; the daemon then binds the
+# socket under the ReadWritePaths hole below.
+ExecStartPre=+/usr/bin/mkdir -p -m 0755 /run/systemd/userdb
+ExecStart=/usr/sbin/ssoossh-nss run --listen /run/systemd/userdb/com.github.mnestor.ssoossh
+# Unlike the socket-activated unit, there is no systemd-held socket to queue
+# lookups while the daemon restarts: during the restart window the socket is
+# briefly absent and the module answers "unavailable", which glibc treats as
+# "not found" and falls through to the next nsswitch source. So restart fast.
+Restart=always
+RestartSec=1s
+
+# The daemon must never resolve users through itself; the daemon is built
+# CGO_ENABLED=0 and never calls NSS, and this keeps that true if it ever does.
+Environment=SYSTEMD_BYPASS_USERDB=com.github.mnestor.ssoossh
+
+# --- resource limits ------------------------------------------------------
+# Identical to the socket-activated unit; see ssoossh-nss.service for the
+# sizing. Raise all three together with socket_max_connections.
+LimitNOFILE=8192
+MemoryMax=512M
+Environment=GOMEMLIMIT=400MiB
+TasksMax=4096
+
+# /run/ssoossh-nss holds the admin socket, /var/lib/ssoossh-nss the cache.
+RuntimeDirectory=ssoossh-nss
+RuntimeDirectoryMode=0700
+StateDirectory=ssoossh-nss
+StateDirectoryMode=0700
+UMask=0077
+
+# --- sandboxing -----------------------------------------------------------
+# As ssoossh-nss.service, plus ReadWritePaths for the self-bound socket: under
+# ProtectSystem=strict /run is read-only, so the daemon is granted write to
+# just the userdb directory to create and replace its socket there.
+ReadWritePaths=/run/systemd/userdb
+CapabilityBoundingSet=
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadOnlyPaths=/etc/ssoossh
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

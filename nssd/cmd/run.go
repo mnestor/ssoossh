@@ -35,7 +35,7 @@ type runFlags struct {
 func (f *runFlags) register(cmd *cobra.Command) {
 	flags := cmd.Flags()
 	flags.StringVar(&f.listen, "listen", "",
-		"bind the userdb socket at this path when not socket-activated (development and tests)")
+		"bind the userdb socket at this path when not socket-activated (the RHEL 8 standalone service, where there is no systemd-userdbd to activate it, and development and tests)")
 	flags.StringVar(&f.cacheFile, "cache-file", config.DefaultCachePath, "the persistent cache's SQLite file")
 	flags.StringVar(&f.logLevel, "log-level", "info", "debug, info, warn or error")
 }

@@ -62,7 +62,14 @@ says why.
 - **`systemd` on the `passwd:`, `group:` and `shadow:` lines** of
   `/etc/nsswitch.conf`.
 
-RHEL 8 (systemd 239) and Alpine are out of scope.
+Alpine is out of scope: musl cannot load NSS modules. RHEL 8 and its rebuilds
+(systemd 239) have no userdb, so stock `nss-systemd` cannot reach this daemon
+there; they are served instead by a separate path -- the
+[`libnss_ssoossh`](https://github.com/mnestor/ssoossh-libnss) glibc module and
+the standalone `ssoossh-nss-standalone.service`, which binds the socket itself
+since there is no `systemd-userdbd` to activate it. On those hosts the
+nsswitch token is `ssoossh` rather than `systemd`; see that repository for the
+RHEL 8 setup.
 
 The `shadow:` line is not optional. `nss-systemd` always gives a userdb
 account the password field `x`, so the shadow entry is where the account's
