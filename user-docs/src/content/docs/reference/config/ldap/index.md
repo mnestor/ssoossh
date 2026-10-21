@@ -103,6 +103,10 @@ ldap:
 
 A Go template over the OIDC identity, with the same idiom as key ID templates: {{.Username}}, {{.Email}}, {{.Subject}}, and {{.Extra.&lt;name>}}. Values are RFC 4515 escaped during rendering and the operator cannot opt out, because a preferred_username containing * or ) is otherwise filter injection.
 
+The filter must reference at least one of those fields, or the server refuses to start. A filter with none renders the same for every login: either it matches several entries and every lookup fails, or it matches one and links everyone to that entry, handing its accounts and groups to every login. No ldap.schema preset sets this key. For lldap, use (&amp;(objectClass=person)(uid={{.Username}})): the objectClass term matters, because lldap also answers (uid=&lt;name>) with the group entry cn=&lt;name>,ou=groups.
+
+The check is static. (|(objectClass=person)(uid={{.Username}})) passes it and still matches everyone. Login fails closed when more than one entry matches, and `ssoosshd ldap probe` lists the entries a filter matched.
+
 ```yaml
 ldap:
   user_filter: ""
