@@ -2662,10 +2662,21 @@ export interface LDAPProbeResponse {
 	mode: string;
 	attributes: string[];
 	/**
-	 * Matched is how many entries the filter found, capped by the probe.
-	 * The login path refuses anything but exactly one.
+	 * Matched is how many entries the filter found, counted up to the
+	 * probe's limit. The login path refuses anything but exactly one.
 	 */
 	matched: number /* int */;
+	/**
+	 * MatchedCapped reports that the count stopped at a size limit, the
+	 * probe's or the directory's, so Matched is a floor.
+	 */
+	matched_capped?: boolean;
+	/**
+	 * MatchedDNs lists the matching entries' DNs when more than one
+	 * matched, capped by the probe; Matched minus its length is how many
+	 * were left out. Absent when one entry or none matched.
+	 */
+	matched_dns?: string[];
 	/**
 	 * IDAttribute echoes ldap.id_attribute and DirectoryID is what it
 	 * resolved to on the matched entry — the value that would be stored as

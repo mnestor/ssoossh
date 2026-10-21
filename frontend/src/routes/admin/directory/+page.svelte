@@ -60,6 +60,10 @@
 
 	let probing = $state(false);
 	let probeResult = $state<LDAPProbeResponse | null>(null);
+	// How many matching entries a loose filter's DN list leaves out.
+	const matchedNotListed = $derived(
+		probeResult ? probeResult.matched - (probeResult.matched_dns?.length ?? 0) : 0
+	);
 	let probeError = $state<string | null>(null);
 	let view = $state<'entry' | 'fields' | 'merge'>('entry');
 
@@ -637,14 +641,47 @@
 									Never writes
 								</span>
 							</div>
-							<p class="mt-1 text-dense text-ink-muted">
-								{probeResult.matched} entr{probeResult.matched === 1 ? 'y' : 'ies'} matched in
+							<p class="mt-1 text-dense text-ink-muted" data-testid="ldap-probe-count">
+								{probeResult.matched_capped ? 'At least ' : ''}{probeResult.matched}
+								entr{probeResult.matched === 1 ? 'y' : 'ies'} matched in
 								{probeResult.elapsed_ms} ms of a {Math.round(probeResult.timeout_ms / 1000)}s
 								timeout.
-								{#if probeResult.matched > 1}
-									The login path refuses anything but exactly one, so this filter is too loose.
-								{/if}
 							</p>
+							<!-- A loose filter is the failure login refuses outright, so it
+								     is a warning rather than a muted clause, and it names what
+								     the filter picked up: the DNs are what show why. -->
+							{#if probeResult.matched > 1}
+								<div class="mt-3">
+									<Alert
+										variant="warning"
+										inset
+										title="This filter is too loose"
+										testid="ldap-probe-loose"
+									>
+										<p>
+											Login refuses anything but exactly one match, so a login that sends this
+											filter is not linked to the directory.
+										</p>
+										{#if probeResult.matched_dns?.length}
+											<ul
+												class="mt-2 flex flex-col gap-0.5 font-mono text-dense break-all"
+												aria-label="Matching entries"
+												data-testid="ldap-probe-matches"
+											>
+												{#each probeResult.matched_dns as dn (dn)}
+													<li>{dn}</li>
+												{/each}
+											</ul>
+											{#if matchedNotListed > 0}
+												<p class="mt-1 text-dense" data-testid="ldap-probe-matches-more">
+													…and {probeResult.matched_capped ? 'at least ' : ''}{matchedNotListed}
+													more
+												</p>
+											{/if}
+										{/if}
+									</Alert>
+								</div>
+							{/if}
 							<!-- The re-anchoring identifier, reported next to the filter
 								     because it is the thing that decides whether this entry
 								     can still be found after the filter stops matching it. -->
