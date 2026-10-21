@@ -102,7 +102,9 @@ authentication:
 
 ## `fields`
 
-Maps ssoossh identity fields to claim names in the OIDC provider's ID token. Username is the only required field; the rest are empty by default, meaning "not populated from OIDC".
+Maps ssoossh identity fields to claim names in the OIDC provider's ID token (and, with userinfo on, the claims the provider's `userinfo` endpoint adds). Username is the only required field; the rest are empty by default, meaning "not populated from OIDC".
+
+To see which claims a provider actually sends before choosing, run `ssoosshd identity echo` on the server host and open the one-time link it prints: it needs no admin role and no working mapping. See https://mnestor.github.io/ssoossh/operations/identity-provider/#seeing-what-your-provider-actually-sends
 
 ## `fields.subject`
 

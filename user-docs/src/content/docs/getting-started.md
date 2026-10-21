@@ -174,6 +174,14 @@ Running the server itself:
 - [Installing the server](/ssoossh/operations/install/) -- CA key and systemd.
 - [Identity provider](/ssoossh/operations/identity-provider/) -- OIDC client and
   redirect URI.
+- **Find out what your provider sends.** Before the first real login, run
+  `sudo -u ssoossh ssoosshd identity echo` on the server host and open the
+  link it prints. You sign in once and see your own claims, which
+  [`authentication.fields`](/ssoossh/reference/config/authentication/#fields)
+  entry reads each one, whether the sign-in would succeed, and YAML to copy,
+  including a group for `admin.require_group`. No admin role and no working
+  mapping are needed. See
+  [Seeing what your provider actually sends](/ssoossh/operations/identity-provider/#seeing-what-your-provider-actually-sends).
 - [TLS and reverse proxies](/ssoossh/operations/tls-and-proxy/) -- the two
   settings that fail silently until someone tries to log in.
 - [Configuration reference](/ssoossh/reference/config/) -- every server key,

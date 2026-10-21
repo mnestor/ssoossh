@@ -68,8 +68,15 @@ type OAuthConfig struct {
 }
 
 // OAuthFields maps ssoossh identity fields to claim names in the OIDC
-// provider's ID token. Username is the only required field; the rest are
-// empty by default, meaning "not populated from OIDC".
+// provider's ID token (and, with userinfo on, the claims the provider's
+// UserInfo endpoint adds).
+// Username is the only required field; the rest are empty by default,
+// meaning "not populated from OIDC".
+//
+// To see which claims a provider actually sends before choosing, run
+// `ssoosshd identity echo` on the server host and open the one-time link it
+// prints: it needs no admin role and no working mapping. See
+// https://mnestor.github.io/ssoossh/operations/identity-provider/#seeing-what-your-provider-actually-sends
 type OAuthFields struct {
 	// Subject names the claim holding the unique, immutable account
 	// identifier — the value users.subject is keyed by, and the only thing
