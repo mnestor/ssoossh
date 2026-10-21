@@ -33,7 +33,7 @@ func newStatusCommand(root *RootCommand) *leaf {
 			"group name collisions (a directory group with a local group's name and another gid, which is not " +
 			"resolved on this host) and refused groups (outside min_id..max_id) met since the start or the last " +
 			"SIGHUP; then " +
-			"whether nsswitch.conf lists systemd on its passwd, group and shadow lines, and whether nscd " +
+			"whether nsswitch.conf lists a userdb client (systemd, or ssoossh on the RHEL 8 family) on its passwd, group and shadow lines, and whether nscd " +
 			"or unscd is running, which would cache a slow lookup's \"not found\". Exits non-zero when the " +
 			"daemon does not answer or a check fails.",
 		args: cobra.NoArgs,
@@ -51,7 +51,7 @@ func newStatusCommand(root *RootCommand) *leaf {
 
 			report := server.CheckNSSwitch(root.env.NSSwitch)
 			if report.OK() {
-				fmt.Fprintf(out, "nsswitch.conf: ok (systemd on passwd, group and shadow)\n")
+				fmt.Fprintf(out, "nsswitch.conf: ok (systemd or ssoossh on passwd, group and shadow)\n")
 			} else {
 				failed = true
 				fmt.Fprintf(out, "nsswitch.conf: FAILED\n")

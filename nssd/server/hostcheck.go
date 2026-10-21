@@ -25,6 +25,11 @@ type NSSwitchLine struct {
 	// Systemd is true when the token systemd itself is listed. compat,
 	// which Leap 15.6 ships, does not imply it.
 	Systemd bool `json:"systemd"`
+	// Ssoossh is true when the token ssoossh is listed: the libnss_ssoossh
+	// module (github.com/mnestor/ssoossh-libnss), the userdb client for the
+	// RHEL 8 family, where the stock nss-systemd is too old to speak userdb.
+	// Either token names a client that consults this daemon.
+	Ssoossh bool `json:"ssoossh"`
 }
 
 // NSSwitchReport is the nsswitch.conf check (README U2).
@@ -37,9 +42,15 @@ type NSSwitchReport struct {
 	Error string `json:"error,omitempty"`
 }
 
-// OK reports whether every line lists systemd.
+// consulted reports whether the line names a userdb client that queries this
+// daemon: systemd (nss-systemd, 245+) or ssoossh (the RHEL 8 module).
+func (l NSSwitchLine) consulted() bool {
+	return l.Systemd || l.Ssoossh
+}
+
+// OK reports whether every line names a userdb client (systemd or ssoossh).
 func (r NSSwitchReport) OK() bool {
-	return r.Error == "" && !slices.ContainsFunc(r.Lines, func(l NSSwitchLine) bool { return !l.Systemd })
+	return r.Error == "" && !slices.ContainsFunc(r.Lines, func(l NSSwitchLine) bool { return !l.consulted() })
 }
 
 // Problems describes each failing line, for the log and for status.
@@ -51,17 +62,17 @@ func (r NSSwitchReport) Problems() []string {
 	for _, l := range r.Lines {
 		switch {
 		case !l.Present:
-			out = append(out, fmt.Sprintf("%s has no %s: line, so systemd is not consulted for %s", r.Path, l.Database, l.Database))
-		case !l.Systemd:
-			out = append(out, fmt.Sprintf("the %s: line %q in %s lacks systemd", l.Database, l.Value, r.Path))
+			out = append(out, fmt.Sprintf("%s has no %s: line, so neither systemd nor ssoossh is consulted for %s", r.Path, l.Database, l.Database))
+		case !l.consulted():
+			out = append(out, fmt.Sprintf("the %s: line %q in %s lists neither systemd nor ssoossh", l.Database, l.Value, r.Path))
 		}
 	}
 	return out
 }
 
 // CheckNSSwitch reads nsswitch.conf at path and reports, for passwd, group
-// and shadow, whether the systemd source is listed. A missing entry would
-// otherwise look like missing users.
+// and shadow, whether a userdb client (the systemd or the ssoossh source) is
+// listed. A missing entry would otherwise look like missing users.
 func CheckNSSwitch(path string) NSSwitchReport {
 	r := NSSwitchReport{Path: path}
 	data, err := os.ReadFile(filepath.Clean(path))
@@ -90,6 +101,7 @@ func CheckNSSwitch(path string) NSSwitchReport {
 			Value:    value,
 			Present:  present,
 			Systemd:  slices.Contains(strings.Fields(value), "systemd"),
+			Ssoossh:  slices.Contains(strings.Fields(value), "ssoossh"),
 		})
 	}
 	return r

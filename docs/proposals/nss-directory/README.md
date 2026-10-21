@@ -228,7 +228,8 @@ Taken 2026-10-11:
   is the glibc side; the module part was removed (U1).
 - Platform floor: systemd 245+, glibc, `systemd` on the `passwd:` and
   `group:` lines. RHEL 8 (systemd 239, maintenance ends 2029-05-31) and
-  musl are out of scope (U2).
+  musl are out of scope (U2). (RHEL 8 brought back into scope 2026-10-21 via
+  the standalone self-binding service and the `libnss_ssoossh` module; see U2.)
 - Service name `com.github.mnestor.ssoossh`, reverse-DNS as the userdb API
   recommends, matching the client's Windows policy key namespace.
 - Socket activation: systemd owns the listening socket so lookups queue
@@ -343,7 +344,7 @@ systemd `main` source unless marked otherwise.
 | # | Change | Resolution | Part |
 | --- | --- | --- | --- |
 | U1 | No NSS module of our own | `ssoossh-nss` implements `io.systemd.UserDatabase`; `nss-systemd` does the glibc side. The module part was removed; no `ssoossh-nss` repo, no zig module build, no socket protocol doc. `nss-systemd` sets `USERDB_EXCLUDE_SERVER_NSS` by default (`src/nss-systemd/userdb-glue.c:16-30`; split out of `USERDB_EXCLUDE_NSS` on 2026-10-15 with no functional change), which skips the `io.systemd.Multiplexer` relay (`src/shared/userdb.c:690`), so user and membership lookups arrive from the calling process and R5's sshd check works; U13 covers the environment override | 3 |
-| U2 | Platform floor | systemd 245+ (userdb arrived in 245, systemd `NEWS`), glibc, `systemd` in `nsswitch.conf`. The daemon checks the `passwd:`/`group:` lines at start and reports a missing entry in `status`. RHEL 8 and musl out of scope; a musl route, if ever needed, is an nscd v2 listener in the same daemon | 3 |
+| U2 | Platform floor | systemd 245+ (userdb arrived in 245, systemd `NEWS`), glibc, `systemd` in `nsswitch.conf`. The daemon checks the `passwd:`/`group:` lines at start and reports a missing entry in `status`. RHEL 8 and musl out of scope; a musl route, if ever needed, is an nscd v2 listener in the same daemon. **Amended 2026-10-21 (#217):** the RHEL 8 family (systemd 239) is in scope after all, via a standalone service (`deploy/ssoossh-nss-standalone.service`, `run --listen`) that self-binds the socket since there is no systemd-userdbd to activate it, with the separate `libnss_ssoossh` glibc module (github.com/mnestor/ssoossh-libnss) as its client; `CheckNSSwitch` now accepts the `ssoossh` token beside `systemd`. musl stays out of scope. | 3 |
 | U3 | "Unavailable" reaches callers as "not found" | Accepted. `nss-systemd` queries every service in parallel and a `NoRecordFound` from any of them wins over other errors (`src/shared/userdb.c:440-448`); systemd's own services always answer `NoRecordFound` for our users. Mitigated by socket activation (lookups wait through restarts) and the persistent cache | 3 |
 | U4 | Caller timeout is systemd's, not ours | varlink's default is 45 s (`src/libsystemd/sd-varlink/sd-varlink.c:47`) and userdb sets no shorter one. The daemon answers every call within `socket_answer_deadline` and never leaves a connection unaccepted; over the concurrency cap it answers `ServiceNotAvailable` at once | 3 |
 | U5 | No "try again" status | A cold miss with a slow upstream answers `ServiceNotAvailable` (seen as not found) while the fetch completes into the cache. A user's first login on a host while the server is slow can fail once | 3 |

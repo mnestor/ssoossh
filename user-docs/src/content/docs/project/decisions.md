@@ -141,6 +141,17 @@ result with no code of ours in callers. The price is the platform floor
 (systemd 245, glibc) and that "service not available" reaches callers as
 "not found".
 
+Reopened for RHEL 8 (2026-10-21, issue #217): that price -- the systemd 245
+floor -- shut out the RHEL 8 family, which has no userdb at all and runs to
+2029. There, narrowly, a module of our own does ship:
+[`libnss_ssoossh`](https://github.com/mnestor/ssoossh-libnss). It is not the
+declined design above: no private protocol (it speaks systemd's own stable
+`io.systemd.UserDatabase` varlink, the same the daemon already serves), and
+the daemon it talks to runs standalone and binds the socket itself since
+there is no `systemd-userdbd` to activate it. The decline still stands for
+systemd 245+, where stock `nss-systemd` is that client and no module of ours
+belongs in callers.
+
 ### Declined: HTTP inside an NSS module
 
 A module that calls the server itself, as some cloud OS-login modules do.

@@ -15,7 +15,7 @@
   - `verify-required` is never used. `no-touch-required` is only for enrolled `sk-` keys on the service path.
   - Policy uses the source address the server observed, never one the client supplied. Audit records never capture `Cookie` or `Authorization`. No log line, audit record or API response carries a fleet key secret, except the one-time display at create and rotate.
   - `client/` and `server/` never import each other. `internal/apitypes` and `internal/principalsmap` are a cross-repo wire contract with pam_ssoossh, gated by `docs/wire-contract.json`.
-  - NSS answers which POSIX identity a name has, never whether anyone may log in: login authorization stays with certificates. The host side is a systemd userdb service; there is no NSS module of our own. The login shell comes from the directory and host policy only; nobody picks their own.
+  - NSS answers which POSIX identity a name has, never whether anyone may log in: login authorization stays with certificates. The host side is a systemd userdb service, with no NSS module of our own on systemd 245+ (stock nss-systemd is the glibc side); the one exception is the RHEL 8 family (systemd 239), which has no userdb, where a separate glibc module, `libnss_ssoossh`, is the client. The login shell comes from the directory and host policy only; nobody picks their own.
 
   ### Certificate types (each has its own `cert_options.<type>` block: `valid_duration` and `extensions` ceilings, `key_id_template`, `require`/`require_group`, `lifetime_policy`)
   - User: interactive SSH, started from `ssh_config` (`Match exec "ssoossh ssh login"` or ProxyCommand). A valid certificate is reused until it expires.
@@ -65,7 +65,7 @@
   - This is a guardrail, not a security boundary, but the shipped client must honour it.
 
   ### ssoossh-nss (host daemon, Linux)
-  - A systemd userdb service on /run/systemd/userdb/com.github.mnestor.ssoossh, socket-activated; nss-systemd is the glibc side. Floor: systemd 245+, glibc, `systemd` on the passwd, group and shadow lines.
+  - A systemd userdb service on /run/systemd/userdb/com.github.mnestor.ssoossh. On systemd 245+ it is socket-activated and nss-systemd is the glibc side. On the RHEL 8 family (systemd 239), which has no systemd-userdbd to activate it and whose nss-systemd cannot speak userdb, a standalone service (`ssoossh-nss-standalone.service`, `run --listen`) binds the socket itself and the glibc side is the separate `libnss_ssoossh` module (github.com/mnestor/ssoossh-libnss). Floor: glibc, and a userdb client on the passwd, group and shadow lines -- `systemd` on 245+, `ssoossh` on RHEL 8.
   - Local accounts and groups always win: a directory membership is matched to a local group by gid, never by name, and out-of-range ids and name collisions are refused and listed in `ssoossh-nss status`.
   - TLS trust named explicitly: a CA file, an SPKI digest, or the host's system store as `tls_ca_file: system`, never by default; fleet key in a root-only file, a persistent cache whose user and group entries correct each other, a fresh read for an sshd login once an entry is older than `login_soft_ttl` (sshd recognised by uid 0 and its cgroup), a connection cap with a share kept for uid 0, an empty capability bounding set.
   - Packages `ssoossh-nss` (deb, rpm) and `ssoossh-nss-selinux` (rpm).
@@ -86,4 +86,4 @@
   readiness and of the lifetime policy rework.
 
   ### Declined on purpose (see the Decisions page)
-  - Host certificates, a database-stored admin role, runtime policy that can loosen, pinning user certificates to a source address (may be revisited), JetStream, sticky sessions, `client_timeout: 0`, API versioning, i18n, an NSS module of our own, HTTP inside an NSS module, the sssd proxy provider, on-demand-only directory reads, a login shell users pick themselves.
+  - Host certificates, a database-stored admin role, runtime policy that can loosen, pinning user certificates to a source address (may be revisited), JetStream, sticky sessions, `client_timeout: 0`, API versioning, i18n, an NSS module of our own on systemd 245+ (the RHEL 8 family, which lacks userdb, is the one place a module, `libnss_ssoossh`, ships), HTTP inside an NSS module, the sssd proxy provider, on-demand-only directory reads, a login shell users pick themselves.

@@ -23,7 +23,7 @@ Runs the userdb service. Under systemd the userdb socket comes from ssoossh-nss.
 
 .PP
 \fB--listen\fP=""
-	bind the userdb socket at this path when not socket-activated (development and tests)
+	bind the userdb socket at this path when not socket-activated (the RHEL 8 standalone service, where there is no systemd-userdbd to activate it, and development and tests)
 
 .PP
 \fB--log-level\fP="info"

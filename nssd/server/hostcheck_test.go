@@ -29,6 +29,12 @@ func TestCheckNSSwitch(t *testing.T) {
 			content: "passwd: files # systemd\ngroup: files systemd\nshadow: files systemd\n"},
 		{name: "should not mistake a longer token when it only contains systemd", wantProblem: "passwd:",
 			content: "passwd: files systemd-foo\ngroup: files systemd\nshadow: files systemd\n"},
+		{name: "should pass when every line lists ssoossh, the RHEL 8 module", wantOK: true,
+			content: "passwd: files ssoossh\ngroup:  files ssoossh\nshadow: files ssoossh\n"},
+		{name: "should pass a mix of systemd and ssoossh across the lines", wantOK: true,
+			content: "passwd: files ssoossh\ngroup:  files systemd\nshadow: files ssoossh\n"},
+		{name: "should not mistake a longer token for ssoossh", wantProblem: "passwd:",
+			content: "passwd: files ssoosshd\ngroup: files systemd\nshadow: files systemd\n"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
