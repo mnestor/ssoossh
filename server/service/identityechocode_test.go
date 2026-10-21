@@ -7,6 +7,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"gorm.io/gorm"
 
@@ -171,6 +172,24 @@ func TestIdentityEchoCodes_ShouldKeepOnlyTheFirstOutcome(t *testing.T) {
 	}
 	if row.CompletedAt == nil || len(row.Outcome) != maxEchoOutcomeLength {
 		t.Errorf("got completed %v and an outcome of %d bytes, want the first, capped", row.CompletedAt, len(row.Outcome))
+	}
+}
+
+func TestIdentityEchoCodes_ShouldStoreValidUTF8WhenTheCapSplitsACharacter(t *testing.T) {
+	t.Parallel()
+
+	s, _ := newEchoCodeService(t)
+	ctx := context.Background()
+	minted, _ := s.Mint(ctx, MintRequest{})
+	// One ASCII byte ahead of two-byte characters puts the cap inside one.
+	s.RecordOutcome(ctx, minted.Row.ID, "x"+strings.Repeat("\u00e9", maxEchoOutcomeLength))
+
+	row, err := s.Get(ctx, minted.Row.ID)
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if !utf8.ValidString(row.Outcome) || len(row.Outcome) != maxEchoOutcomeLength-1 {
+		t.Errorf("got an outcome of %d bytes, valid UTF-8 %t, want %d valid bytes", len(row.Outcome), utf8.ValidString(row.Outcome), maxEchoOutcomeLength-1)
 	}
 }
 

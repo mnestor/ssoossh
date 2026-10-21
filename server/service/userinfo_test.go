@@ -7,6 +7,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"golang.org/x/oauth2"
 	"gorm.io/gorm"
@@ -206,6 +207,15 @@ func TestScrubUserInfoError_ShouldCutTheAccessTokenAndCap(t *testing.T) {
 	got := scrubUserInfoError("401 for tok-123: "+strings.Repeat("x", 2*userInfoErrorLength), "tok-123")
 	if strings.Contains(got, "tok-123") || len(got) != userInfoErrorLength {
 		t.Errorf("got %d bytes containing the token: %t", len(got), strings.Contains(got, "tok-123"))
+	}
+}
+
+func TestScrubUserInfoError_ShouldKeepValidUTF8WhenTheCapSplitsACharacter(t *testing.T) {
+	t.Parallel()
+
+	got := scrubUserInfoError("x"+strings.Repeat("\u00e9", userInfoErrorLength), "")
+	if !utf8.ValidString(got) || len(got) != userInfoErrorLength-1 {
+		t.Errorf("got %d bytes, valid UTF-8 %t, want %d valid bytes", len(got), utf8.ValidString(got), userInfoErrorLength-1)
 	}
 }
 

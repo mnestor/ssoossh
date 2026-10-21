@@ -396,8 +396,5 @@ func scrubUserInfoError(text, accessToken string) string {
 	if accessToken != "" {
 		text = strings.ReplaceAll(text, accessToken, "[access token]")
 	}
-	if len(text) > userInfoErrorLength {
-		text = text[:userInfoErrorLength]
-	}
-	return text
+	return clipUTF8(text, userInfoErrorLength)
 }

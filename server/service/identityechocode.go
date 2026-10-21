@@ -219,9 +219,7 @@ func (s *IdentityEchoCodeService) Redeem(ctx context.Context, code, sourceIP str
 // RecordOutcome implements IdentityEchoCodes. Only the first outcome
 // counts: a code starts one echo.
 func (s *IdentityEchoCodeService) RecordOutcome(ctx context.Context, id, outcome string) {
-	if len(outcome) > maxEchoOutcomeLength {
-		outcome = outcome[:maxEchoOutcomeLength]
-	}
+	outcome = clipUTF8(outcome, maxEchoOutcomeLength)
 	err := s.db.WithContext(ctx).Model(&model.IdentityEchoCode{}).
 		Where("id = ? AND completed_at IS NULL", id).
 		Updates(map[string]any{"completed_at": s.now().UTC(), "outcome": outcome}).Error
