@@ -4,11 +4,12 @@ import { needsKeyCheck } from '#lib/nss.js';
 
 /**
  * NSSAccess answers whether the signed-in viewer holds any fleet key through
- * a key's group, which is what decides the rail's NSS keys entry for every
- * viewer (see showNSSKeys in #lib/nss).
+ * a key's group, which decides the rail's NSS keys entry for every viewer
+ * without the fleet key admin role (see showNSSKeys in #lib/nss).
  *
  * The session does not carry it, so the rail asks /api/nss/keys once per
- * identity wherever NSS is on, and again after a key is created (refresh).
+ * identity wherever NSS is on and the role does not already decide it
+ * (needsKeyCheck), and again after a key is created (refresh).
  * A failed read hides the entry: the page is still reachable by its
  * address, and a rail entry that can only show an error is worse than none.
  */

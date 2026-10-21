@@ -1176,10 +1176,12 @@ beneath it.
     `http.trusted_proxies`), with Clear filters; error with Try again; Load
     more; the NSS off notice.
   - **The keys a viewer manages** (`/nss-keys`, outside the admin area): the
-    keys whose group is one of the viewer's groups, for every role, so its
-    top-level rail entry shows only when that list is not empty. Its empty
-    state, "No NSS keys in your groups", links auditors and fleet key admins
-    to All NSS keys and keeps New key for the fleet key admin role.
+    keys whose group is one of the viewer's groups, for every role. Its
+    top-level rail entry shows when that list is not empty, and always to
+    the fleet key admin role (every admin holds it), who may create keys.
+    Its empty state, "No NSS keys in your groups", links auditors and
+    fleet key admins to All NSS keys and keeps New key for the fleet key
+    admin role.
   - **Admin-only references:** the Probe, Sync, Pending id changes and
     Collisions live on the admin-only Directory, so `NSSDirectoryRef` links
     to them for admins and says "An admin can ..." to everyone else.
