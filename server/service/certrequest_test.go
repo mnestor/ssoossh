@@ -3890,3 +3890,40 @@ func TestApprove_ShouldBoundTheApproversExtensionSelectionByTheCeiling(t *testin
 		})
 	}
 }
+
+// TestCheckCertificateOptions_ShouldRefuseWhatTheServiceRefuses covers the
+// parse `ssoosshd config check` runs: the same one NewCertRequestService
+// starts with, without a database or a broker.
+func TestCheckCertificateOptions_ShouldRefuseWhatTheServiceRefuses(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		opts    config.CertificateOptions
+		wantErr bool
+	}{
+		{name: "should pass when cert_options is empty", opts: config.CertificateOptions{}},
+		{name: "should fail when a key ID template does not parse", opts: config.CertificateOptions{User: config.CertOptionsUser{KeyIDTemplate: "{{.Username"}}, wantErr: true},
+		{
+			name: "should fail when a lifetime policy has no default duration",
+			opts: config.CertificateOptions{User: config.CertOptionsUser{LifetimePolicy: config.LifetimePolicy{
+				Tiers: []config.LifetimePolicyTier{{When: config.PolicyCondition{Group: "admins"}, MaxDuration: time.Hour}},
+			}}},
+			wantErr: true,
+		},
+		{
+			name:    "should fail when a require condition names an undeclared claim",
+			opts:    config.CertificateOptions{User: config.CertOptionsUser{Require: &config.PolicyCondition{Claim: "nope", Equals: new("x")}}},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := CheckCertificateOptions(&config.Config{CertOptions: tt.opts})
+			if (err != nil) != tt.wantErr {
+				t.Errorf("CheckCertificateOptions() error = %v, want error %v", err, tt.wantErr)
+			}
+		})
+	}
+}

@@ -264,17 +264,7 @@ type CertRequestService struct {
 // template fails startup. publisher/subscriber back the wake-topic broker
 // (see certmsg.WaitTopic) — the gochannel-based pair from server/pubsub.
 func NewCertRequestService(c *config.Config, db *gorm.DB, publisher message.Publisher, subscriber message.Subscriber) (*CertRequestService, error) {
-	keyIDTmpls, err := newKeyIDTemplates(c.CertOptions)
-	if err != nil {
-		return nil, err
-	}
-
-	engine, err := newLifetimePolicyEngine(c.CertOptions, c.AuthConfig.Fields.Extra)
-	if err != nil {
-		return nil, err
-	}
-
-	policies, err := newCertTypePolicies(c.CertOptions, keyIDTmpls, c.AuthConfig.Fields.Extra)
+	engine, policies, err := compileCertOptions(c)
 	if err != nil {
 		return nil, err
 	}
@@ -290,6 +280,36 @@ func NewCertRequestService(c *config.Config, db *gorm.DB, publisher message.Publ
 		notifier:     discardNotifications{},
 		mintUserCode: newUserCode,
 	}, nil
+}
+
+// compileCertOptions parses cert_options into what the service decides
+// with: the key ID templates, the lifetime policies and each type's
+// require and network rules. Pure: it reads nothing but c.
+func compileCertOptions(c *config.Config) (*lifetimePolicyEngine, map[model.CertificateType]*certTypePolicy, error) {
+	keyIDTmpls, err := newKeyIDTemplates(c.CertOptions)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	engine, err := newLifetimePolicyEngine(c.CertOptions, c.AuthConfig.Fields.Extra)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	policies, err := newCertTypePolicies(c.CertOptions, keyIDTmpls, c.AuthConfig.Fields.Extra)
+	if err != nil {
+		return nil, nil, err
+	}
+	return engine, policies, nil
+}
+
+// CheckCertificateOptions parses cert_options exactly as
+// NewCertRequestService does at startup and discards the result, so
+// `ssoosshd config check` refuses the templates and policies a start would
+// refuse without building the service or opening a database.
+func CheckCertificateOptions(c *config.Config) error {
+	_, _, err := compileCertOptions(c)
+	return err
 }
 
 // SetNotifier attaches the notification publisher. Called from bootstrap

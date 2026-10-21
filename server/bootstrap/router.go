@@ -330,9 +330,11 @@ func sessionCookieOptions(c *config.Config) (sessions.Options, error) {
 		return sessions.Options{}, err
 	}
 
+	// The warning text lives with the config, so `ssoosshd config check`
+	// reports the same advice this logs.
 	secure := resolvedCookieSecure(c)
-	if !secure {
-		slog.Warn("session cookie is not marked Secure, so browsers will send it over plain HTTP; give http.public_url an https:// scheme once TLS terminates in front of this server")
+	for _, w := range c.HTTP.Warnings() {
+		slog.Warn(w.Msg, w.Attrs...)
 	}
 
 	// MaxAge must always be set to something positive. Leaving it zero does

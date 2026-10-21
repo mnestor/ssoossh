@@ -312,6 +312,19 @@ type ConsoleCodeRateLimitSettings struct {
 	Burst int `mapstructure:"burst" default:"5"`
 }
 
+// Warnings returns advice about an http block that is valid but weaker than
+// it should be: today, a public_url that is not https, which leaves the
+// session cookie without its Secure flag. Logged by bootstrap when it builds
+// the session cookie, and reported by `ssoosshd config check`.
+func (h *HTTPSettings) Warnings() []Warning {
+	if h.IsTLS() {
+		return nil
+	}
+	return []Warning{{
+		Msg: "session cookie is not marked Secure, so browsers will send it over plain HTTP; give http.public_url an https:// scheme once TLS terminates in front of this server",
+	}}
+}
+
 // Validate reports configuration that would fail later, at a point where the
 // failure is harder to read. Called once at startup by NewConfig.
 //
