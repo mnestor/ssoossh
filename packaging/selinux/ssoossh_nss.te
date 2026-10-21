@@ -27,7 +27,7 @@ policy_module(ssoossh_nss, 1.0.0)
 # checkmodule on a plain .te as pam_ssoossh's is: a daemon with its own
 # domain and file contexts needs the refpolicy interfaces and an .fc file.
 # One module serves EL9 and EL10. It is compiled once, against EL9's
-# headers (`make selinux-nss`), and every rule naming a type that exists
+# headers (`make selinux`), and every rule naming a type that exists
 # on only one of them sits in an optional_policy block, which is enabled
 # where its types exist and skipped where they do not.
 #

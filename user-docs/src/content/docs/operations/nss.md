@@ -401,9 +401,11 @@ endpoints.
 Two lists, for two questions.
 
 - **NSS keys** (`/nss-keys`, a top-level rail entry) is the keys you manage:
-  those whose group is one of your groups. It is the same for every role, an
-  admin's included, and the rail shows it only when the list is not empty.
-  A key with no group is on neither person's list.
+  those whose group is one of your groups. The list is the same for every
+  role, an admin's included. The rail shows the entry when the list is not
+  empty, and always to admins and fleet key admins (`admin.nss_key_group`),
+  who may create keys: with no key in their groups, the page offers New key
+  and links All NSS keys. A key with no group is on neither person's list.
 - **All NSS keys** (`/admin/nss/keys`, "NSS keys (all)" in the rail's admin
   group) is every key, whoever manages it, for auditors, SOC and admins and
   for fleet key admins (`admin.nss_key_group`). A fleet key admin with no

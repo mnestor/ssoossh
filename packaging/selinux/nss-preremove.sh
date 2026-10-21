@@ -16,7 +16,8 @@ esac
 command -v semodule >/dev/null 2>&1 || exit 0
 
 # Not loaded is not worth failing a removal over: SELinux may be disabled,
-# or an operator may have removed it by hand. -X 200 matches postinstall.sh.
+# or an operator may have removed it by hand. -X 200 matches
+# nss-postinstall.sh.
 semodule -X 200 -r ssoossh_nss >/dev/null 2>&1 || true
 
 # Back to the default labels, so nothing keeps a type the policy no longer

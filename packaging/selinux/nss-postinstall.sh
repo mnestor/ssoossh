@@ -19,7 +19,7 @@ fi
 
 # Priority 200 is the vendor slot the EL %selinux_modules_install macro
 # uses, so a site's own module of the same name at the default 400 still
-# wins. preremove.sh must name the same priority to find it.
+# wins. nss-preremove.sh must name the same priority to find it.
 if ! semodule -X 200 -i "$PP"; then
 	echo "ssoossh-nss-selinux: failed to load $PP" >&2
 	echo "  confined callers such as sshd will still be denied the userdb socket" >&2

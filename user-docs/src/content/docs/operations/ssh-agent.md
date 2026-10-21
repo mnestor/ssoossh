@@ -287,6 +287,154 @@ client that has never talked to it, or whose certificate expired during the
 window, has to wait for the key to be loaded.
 :::
 
+## SELinux on EL hosts
+
+On an enforcing RHEL, Alma, Rocky or Fedora host, `ssoossh-agent.service`
+does not start without help from the policy. `/usr/bin/ssh-agent` is labelled
+`ssh_agent_exec_t`, and the targeted policy gives ssh-agent a domain only for
+a logged-in user's role (`staff_ssh_agent_t`, `user_ssh_agent_t` and so on),
+with nothing for a system service to transition into. The agent therefore
+runs in `init_t`, the domain systemd starts it in, and `init_t` may not
+execute that file.
+
+`ssoosshd-selinux` adds the one rule that lets it:
+
+```text
+allow init_t ssh_agent_exec_t:file { execute execute_no_trans open read getattr map };
+```
+
+```bash
+sudo dnf install ssoosshd-selinux
+```
+
+dnf installs it along with `ssoosshd` or `ssoosshd-pkcs11` on its own, since
+both recommend it, unless weak dependencies are turned off. It is a noarch
+rpm for EL 9 and 10 that needs `policycoreutils` and
+`selinux-policy-targeted` 38.1.75 or later. It loads the module
+`ssoossh_agent` at priority 200 on install and unloads it on removal. It
+never restarts the agent, which would come back without its key; a unit
+that already failed picks the policy up at its next `systemctl start`. The
+source ships as `/usr/share/doc/ssoosshd-selinux/ssoossh_agent.te`.
+
+The agent stays in `init_t`, a broadly privileged domain, so SELinux does
+not confine it; the unit's own settings (`User=ssoossh`,
+`ProtectSystem=strict` and the rest) are what limit it. That is deliberate.
+`ssh-add -s` makes the agent load a vendor PKCS#11 library, and a confined
+domain would have to anticipate the files, devices and sockets of every
+vendor's token. `ssh-pkcs11-helper`, which the agent runs for `ssh-add -s`,
+carries the same label, so the same rule covers it.
+
+### Without the package
+
+Where the package is not available, build the same module by hand. It needs
+`checkpolicy` and `policycoreutils`. Write `ssoossh_agent.te`:
+
+```text
+module ssoossh_agent 1.1;
+
+require {
+    type init_t;
+    type ssh_agent_exec_t;
+    class file { execute execute_no_trans open read getattr map };
+}
+
+allow init_t ssh_agent_exec_t:file { execute execute_no_trans open read getattr map };
+```
+
+```bash
+checkmodule -M -m -o ssoossh_agent.mod ssoossh_agent.te
+semodule_package -o ssoossh_agent.pp -m ssoossh_agent.mod
+sudo semodule -i ssoossh_agent.pp
+```
+
+`semodule -i` installs at priority 400. If you later install
+`ssoosshd-selinux`, both copies stay installed and the higher priority one,
+yours, is the active one. They grant the same rule, so nothing changes, and
+the package's install says so. Remove yours when convenient; the package's
+copy takes over:
+
+```bash
+sudo semodule -X 400 -r ssoossh_agent
+```
+
+Removing the package never touches a copy at another priority.
+
+### Symptoms
+
+Neither failure mentions SELinux:
+
+```text
+Process: ExecStart=/usr/bin/ssh-agent -D -a /run/ssoossh/agent.sock (code=exited, status=203/EXEC)
+```
+
+`execve()` is refused outright. The journal adds `Failed at step EXEC
+spawning /usr/bin/ssh-agent: Permission denied`, and the audit log has
+`avc: denied { execute }` for `scontext=system_u:system_r:init_t:s0
+tcontext=system_u:object_r:ssh_agent_exec_t:s0`.
+
+```text
+Process: ExecStart=/usr/bin/ssh-agent -D -a /run/ssoossh/agent.sock (code=killed, signal=SEGV)
+```
+
+This one comes from a module that grants `execute` but not `map`, such as
+one put together a denial at a time. The kernel checks `map` while it maps
+the binary into the new process, which happens after `execve()` has passed
+its point of no return, so it can no longer return an error and kills the
+process with `SIGSEGV` instead. Nothing crashed: there is no fault address,
+no `segfault at` line in `dmesg` and no core dump, only
+`avc: denied { map }` in the audit log. Add `map` to the module rather than
+turning on the `domain_can_mmap_files` boolean, which grants `map` on every
+file to every domain.
+
+Both were measured on AlmaLinux 9.8 and 10.2. With `setenforce 0` the unit
+starts normally.
+
+### Verifying
+
+```bash
+getenforce                                # Enforcing
+sudo semodule -lfull | grep ssoossh_agent # 200 ssoossh_agent pp
+sudo systemctl start ssoossh-agent
+systemctl is-active ssoossh-agent         # active
+ps -eZ | grep ssh-agent
+```
+
+```text
+system_u:system_r:init_t:s0       21511 ?        00:00:00 ssh-agent
+```
+
+Use `start`, not `restart`, once a key is loaded: a restarted agent is empty.
+Any remaining denial is in the audit log:
+
+```bash
+sudo ausearch -m AVC -ts recent | grep ssh_agent_exec_t
+```
+
+`ausearch` reads standard input instead of the log when standard input is
+not a terminal; from a script or over `ssh host '...'`, add `--input-logs`.
+
+:::caution[Denials you cannot see]
+An audit rule such as
+
+```text
+-a always,exclude -F msgtype=AVC
+```
+
+discards every SELinux denial in the kernel, before anything can log it.
+`ausearch`, `dmesg`, the journal and `semodule -DB` then all show nothing,
+and the two symptoms above look like anything but SELinux. Before ruling
+SELinux out, check:
+
+```bash
+sudo auditctl -l | grep -i avc
+```
+
+If `auditctl -s` reports `enabled 2`, the rules are immutable until the next
+reboot. On EL 10, `auditctl` is in the `audit-rules` package. A test that
+needs no log at all: if `sudo setenforce 0` lets the unit start and
+`sudo setenforce 1` stops the next start, the cause is SELinux.
+:::
+
 ## Supported CA key types
 
 The same algorithm policy as everywhere else, plus Ed25519:
@@ -313,3 +461,5 @@ on a PKCS#11 token remains unavailable regardless of the agent.
 | `ssh-agent holds N keys and ... key_fingerprint is not set` | name the CA key |
 | `no key in the ssh-agent matches ...` | the fingerprint is wrong; the message lists what the agent does hold |
 | `hsm is configured but this build has no PKCS#11 support` | the default build; use this page's approach, or an `hsm`-tagged build |
+| `ssoossh-agent.service`: `status=203/EXEC` | SELinux refuses the exec; see [SELinux on EL hosts](#selinux-on-el-hosts) |
+| `ssoossh-agent.service`: `signal=SEGV` | a policy module that grants `execute` but not `map`; see [Symptoms](#symptoms) |

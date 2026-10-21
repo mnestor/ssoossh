@@ -30,6 +30,11 @@ holding the token reaches the same hardware from the default package. See
 [HSM and PKCS#11](/ssoossh/operations/hsm/) and
 [The CA key in an ssh-agent](/ssoossh/operations/ssh-agent/).
 
+On rpm, both packages recommend `ssoosshd-selinux`, the SELinux policy that
+lets the shipped `ssoossh-agent.service` start `ssh-agent` on an enforcing
+host. A server that reads its key from config does not need it; see
+[SELinux on EL hosts](/ssoossh/operations/ssh-agent/#selinux-on-el-hosts).
+
 | What | Where it lands |
 | --- | --- |
 | the binary | `/usr/sbin/ssoosshd` |

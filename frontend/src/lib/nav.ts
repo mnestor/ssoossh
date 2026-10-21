@@ -77,8 +77,8 @@ export function primaryNav(): NavItem[] {
  * nssKeysNav is the destination for the fleet keys a viewer's groups
  * manage. Top level rather than in the admin group: a key's own group
  * manages it without an admin role, so the entry is shown by showNSSKeys in
- * #lib/nss, not by the admin gate. Every key is the admin group's own NSS
- * keys entry.
+ * #lib/nss (to those members and to the fleet key admin role), not by the
+ * admin gate. Every key is the admin group's own NSS keys entry.
  */
 export function nssKeysNav(): NavItem {
 	return { href: resolve('/nss-keys'), label: 'NSS keys', icon: 'server-2' };

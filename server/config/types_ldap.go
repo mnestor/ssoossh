@@ -165,6 +165,11 @@ func (c *LDAPConfig) Validate() error {
 	if c.UserFilter == "" {
 		return fmt.Errorf("ldap.user_filter is required when ldap.enabled is true: it is how a person is found in the directory")
 	}
+	// Checked here rather than when the service is built, so config check
+	// reports it without a directory and startup reaches it the same way.
+	if err := validateLDAPUserFilter(c.UserFilter); err != nil {
+		return err
+	}
 
 	for name, field := range c.Fields {
 		if err := validateLDAPField(name, field); err != nil {

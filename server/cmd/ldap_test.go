@@ -205,6 +205,81 @@ func TestWriteProbeResult_ShouldWarnAboutALooseFilter(t *testing.T) {
 	}
 }
 
+// TestWriteProbeResult_ShouldListTheEntriesALooseFilterMatched names what
+// the filter picked up, and how many more the list left out, so an operator
+// can see why it is too loose.
+func TestWriteProbeResult_ShouldListTheEntriesALooseFilterMatched(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		matched int
+		capped  bool
+		dns     []string
+		want    []string
+		notWant []string
+	}{
+		{
+			name:    "should list every DN when the list holds them all",
+			matched: 2,
+			dns:     []string{"uid=alice,dc=example,dc=net", "cn=alice,ou=groups,dc=example,dc=net"},
+			want:    []string{"matched   2 entries", "matching entries", "  uid=alice,dc=example,dc=net\n", "  cn=alice,ou=groups,dc=example,dc=net\n"},
+			notWant: []string{"more"},
+		},
+		{
+			name:    "should say how many more when the list is cut",
+			matched: 25,
+			dns:     []string{"uid=a,dc=example,dc=net", "uid=b,dc=example,dc=net"},
+			want:    []string{"matched   25 entries", "...and 23 more"},
+		},
+		{
+			name:    "should report a floor when the count was capped",
+			matched: 1000,
+			capped:  true,
+			dns:     []string{"uid=a,dc=example,dc=net", "uid=b,dc=example,dc=net"},
+			want:    []string{"matched   at least 1000 entries", "...and at least 998 more"},
+		},
+		{
+			name:    "should print no list when one entry matched",
+			matched: 1,
+			want:    []string{"matched   1 entry"},
+			notWant: []string{"matching entries", "too loose"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var out bytes.Buffer
+			err := writeProbeResult(&out, &service.ProbeResult{
+				BaseDN:        "dc=example,dc=net",
+				FilterSent:    "(uid=alice)",
+				Mode:          service.ProbeFilterTemplate,
+				Attributes:    []string{"*"},
+				Matched:       tt.matched,
+				MatchedCapped: tt.capped,
+				MatchedDNs:    tt.dns,
+				Entry:         &service.ProbeEntry{DN: "uid=alice,dc=example,dc=net"},
+			})
+			if err != nil {
+				t.Fatalf("writeProbeResult() error = %v", err)
+			}
+			report := out.String()
+			for _, w := range tt.want {
+				if !strings.Contains(report, w) {
+					t.Errorf("report lacks %q:\n%s", w, report)
+				}
+			}
+			for _, w := range tt.notWant {
+				if strings.Contains(report, w) {
+					t.Errorf("report has %q:\n%s", w, report)
+				}
+			}
+		})
+	}
+}
+
 // TestOrDash_ShouldMakeAnEmptyFieldVisible keeps an empty resolution from
 // rendering as a blank line that reads like a formatting bug.
 func TestOrDash_ShouldMakeAnEmptyFieldVisible(t *testing.T) {

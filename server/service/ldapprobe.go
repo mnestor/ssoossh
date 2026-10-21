@@ -17,10 +17,21 @@ import (
 // entry, so it needs bounds of its own rather than the config's — those cap
 // what reaches the database, and a probe writes nothing to the database.
 const (
-	// probeMaxEntries is how many matches a probe reports. The login path
-	// refuses anything but one; more than that is reported so an operator
-	// can see the filter is too loose rather than only that it failed.
-	probeMaxEntries = 5
+	// probeEntrySearchLimit is the size limit of the search that reads
+	// the first match in full. Two is enough: the login path refuses
+	// anything but one, and a second match only says to count the rest
+	// with probeMatchCountLimit.
+	probeEntrySearchLimit = 2
+
+	// probeMatchCountLimit bounds the DN-only search that counts the
+	// matches once there is more than one, so an operator sees how loose
+	// the filter is rather than only that it failed. Past it the count is
+	// reported as a floor.
+	probeMatchCountLimit = 1000
+
+	// probeMaxListedDNs is how many matching DNs a probe lists; the rest
+	// are reported as a number.
+	probeMaxListedDNs = 20
 
 	// probeMaxValuesPerAttribute caps the values rendered for one
 	// attribute. A group-heavy entry can carry thousands of memberOf
@@ -117,9 +128,21 @@ type ProbeResult struct {
 	// happens in one of them.
 	Mode ProbeFilterMode
 
-	// Matched is how many entries the filter found, capped at
-	// probeMaxEntries. The login path refuses anything but exactly one.
+	// Matched is how many entries the filter found, counted up to
+	// probeMatchCountLimit. The login path refuses anything but exactly
+	// one.
 	Matched int
+
+	// MatchedCapped reports that the count stopped at a size limit, the
+	// probe's or the directory's own, so Matched is a floor rather than
+	// the total.
+	MatchedCapped bool
+
+	// MatchedDNs lists the matching entries' DNs when more than one
+	// matched, at most probeMaxListedDNs of them, so an operator can see
+	// what a loose filter is picking up. Matched minus its length is how
+	// many were left out. Empty when one entry or none matched.
+	MatchedDNs []string
 
 	// Entry is the first match, with every attribute the directory
 	// returned. Nil when nothing matched.
@@ -294,7 +317,7 @@ func (s *LDAPService) Probe(ctx context.Context, req ProbeRequest) (*ProbeResult
 		}
 	}()
 
-	search, err := s.search(conn, s.config.LDAP.BaseDN, filter, attrs, probeMaxEntries)
+	search, err := s.search(conn, s.config.LDAP.BaseDN, filter, attrs, probeEntrySearchLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -302,6 +325,13 @@ func (s *LDAPService) Probe(ctx context.Context, req ProbeRequest) (*ProbeResult
 	if result.Matched == 0 {
 		result.Elapsed = time.Since(started)
 		return result, nil
+	}
+	// More than one match is the failure the login path refuses, so the
+	// probe counts and names them instead of reporting only the first.
+	if result.Matched > 1 {
+		if err := s.probeMatches(conn, filter, result); err != nil {
+			return nil, err
+		}
 	}
 
 	entry := search.Entries[0]
@@ -313,6 +343,49 @@ func (s *LDAPService) Probe(ctx context.Context, req ProbeRequest) (*ProbeResult
 	result.Suggestions = s.probeSuggestions(result)
 	result.Elapsed = time.Since(started)
 	return result, nil
+}
+
+// probeMatches counts the entries filter matches and lists the first
+// probeMaxListedDNs of their DNs. It asks for no attributes ("1.1"), so a
+// loose filter costs a list of DNs rather than every entry in full.
+//
+// It searches directly rather than through search, because a size-limit
+// hit is the answer here, not a truncation to warn about: it is what makes
+// the count a floor.
+func (s *LDAPService) probeMatches(conn ldapConn, filter string, result *ProbeResult) error {
+	req := ldap.NewSearchRequest(
+		s.config.LDAP.BaseDN,
+		ldap.ScopeWholeSubtree, ldap.NeverDerefAliases,
+		probeMatchCountLimit, int(s.config.LDAP.Timeout.Seconds()), false,
+		filter, []string{"1.1"}, nil,
+	)
+	found, err := conn.Search(req)
+	capped := false
+	if err != nil {
+		if !ldap.IsErrorWithCode(err, ldap.LDAPResultSizeLimitExceeded) || found == nil {
+			return fmt.Errorf("directory search failed: %w", err)
+		}
+		capped = true
+	}
+	// A directory that ignores the requested limit is clamped to it, so
+	// the report stays bounded whatever it sends.
+	entries := found.Entries
+	if len(entries) > probeMatchCountLimit {
+		entries = entries[:probeMatchCountLimit]
+		capped = true
+	}
+	// The directory changed between the two searches. The first search's
+	// count stands; there is no longer a list to give.
+	if len(entries) < 2 {
+		return nil
+	}
+	result.Matched = len(entries)
+	result.MatchedCapped = capped
+	result.MatchedDNs = make([]string, 0, min(len(entries), probeMaxListedDNs))
+	for _, e := range entries[:min(len(entries), probeMaxListedDNs)] {
+		result.MatchedDNs = append(result.MatchedDNs, e.DN)
+	}
+	return nil
 }
 
 // probeFilter produces the exact string to send. Template mode renders

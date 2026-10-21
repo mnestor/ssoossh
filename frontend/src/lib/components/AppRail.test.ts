@@ -353,38 +353,51 @@ describe('app rail', () => {
 	});
 
 	describe('NSS keys entry', () => {
+		const admin = { is_admin: true, is_soc: true, is_auditor: true, is_nss_key_admin: true };
 		const cases: {
 			name: string;
 			user: Parameters<typeof userFixture>[0];
 			keys: number;
 			shown: boolean;
 		}[] = [
-			// The entry is the keys the viewer's groups manage, so no role
-			// shows it on its own: every key is the admin group's entry.
+			// The fleet key admin role (every admin holds it) shows the entry
+			// on its own; for everyone else it is the keys their groups manage.
 			{
-				name: 'a fleet key admin no key names',
-				user: { is_nss_key_admin: true },
+				name: 'an admin and has no key in their groups',
+				user: admin,
 				keys: 0,
-				shown: false
-			},
-			{ name: 'an auditor no key names', user: { is_auditor: true }, keys: 0, shown: false },
-			{
-				name: 'an admin no key names',
-				user: { is_admin: true, is_soc: true, is_auditor: true, is_nss_key_admin: true },
-				keys: 0,
-				shown: false
-			},
-			{
-				name: 'an admin whose group manages a key',
-				user: { is_admin: true, is_soc: true, is_auditor: true, is_nss_key_admin: true },
-				keys: 1,
 				shown: true
 			},
+			{
+				name: 'a holder of the fleet key admin role alone',
+				user: { is_nss_key_admin: true },
+				keys: 0,
+				shown: true
+			},
+			{ name: 'an admin whose group manages a key', user: admin, keys: 1, shown: true },
+			{ name: 'an auditor no key names', user: { is_auditor: true }, keys: 0, shown: false },
 			{ name: 'a member of a key group', user: {}, keys: 1, shown: true },
-			{ name: 'someone no key names', user: {}, keys: 0, shown: false },
+			{
+				name: 'holding no key role and has no key in their groups',
+				user: {},
+				keys: 0,
+				shown: false
+			},
+			{
+				name: 'an admin while NSS is off',
+				user: { ...admin, nss_enabled: false },
+				keys: 1,
+				shown: false
+			},
 			{
 				name: 'a fleet key admin while NSS is off',
 				user: { is_nss_key_admin: true, nss_enabled: false },
+				keys: 1,
+				shown: false
+			},
+			{
+				name: 'a member of a key group while NSS is off',
+				user: { nss_enabled: false },
 				keys: 1,
 				shown: false
 			}
@@ -407,6 +420,17 @@ describe('app rail', () => {
 				expect(railHrefs().includes('/nss-keys')).toBe(shown);
 			});
 		}
+
+		it('should not ask for the key list when the viewer holds the fleet key admin role', async () => {
+			const calls = routeFetch({});
+			session.user = userFixture({ is_nss_key_admin: true });
+			session.resolved = true;
+
+			render(AppRail, { onsignout: () => {} });
+			await settle();
+
+			expect(calls).toHaveLength(0);
+		});
 
 		it('should not ask for the key list when NSS is off', async () => {
 			const calls = routeFetch({});
