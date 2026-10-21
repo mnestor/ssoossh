@@ -107,9 +107,15 @@ type Config struct {
 	Version VersionConfig `mapstructure:"version"`
 
 	// unknownKeys are the keys the config file set that no field above
-	// declares, found while NewConfig decoded it. Unexported, so the
-	// decoder never fills it from a file. See UnknownKeys.
+	// declares, found while Load decoded it. Unexported, so the decoder
+	// never fills it from a file. See UnknownKeys.
 	unknownKeys []UnknownKey
+
+	// file is the config file Load read, and schema the ldap.schema
+	// preset it layered beneath it: what EffectiveSources needs to say
+	// which layer set each value. Unexported for the same reason.
+	file   string
+	schema string
 }
 
 // BrandingSettings configures optional branding for the login page and web UI.

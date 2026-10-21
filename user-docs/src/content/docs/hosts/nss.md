@@ -131,7 +131,7 @@ dependencies.
 
 ## Configure
 
-Four steps, the same on every host. In an image, do them once in the image.
+Five steps, the same on every host. In an image, do them once in the image.
 
 **1. Get a fleet key.** Someone who administers fleet keys creates one on the
 server (see [fleet keys](/ssoossh/operations/nss/#fleet-keys)); the secret is
@@ -313,7 +313,32 @@ distribution updates the store.
 put several `ssoosshd` servers behind a load balancer and set `server` to its
 URL.
 
-**4. Enable the socket, not the service.**
+**4. Check the files.** `ssoossh-nss config check` reads `nss.yaml`, the
+override file and the key file through the same code the daemon starts with,
+mode and owner checks included, and lists every problem at once rather than
+the first. It contacts nothing, not the server and not a running daemon, and
+never prints the secret. Run it as root, as the daemon runs, or the owner
+checks are skipped:
+
+```bash
+sudo ssoossh-nss config check          # exit 0: the daemon would start
+sudo ssoossh-nss config check --json   # the same report, for a script
+```
+
+A warning (a `system` trust store with no pin, an `nsswitch.conf` line
+without `systemd`) does not fail the check, because the daemon starts anyway.
+In an image build or a configuration management run, a non-zero exit is the
+place to stop. In a package `postinst` or `%post`, report it and carry on,
+since the install itself should not fail over a file the admin has yet to
+write:
+
+```sh
+if ! ssoossh-nss config check >/dev/null 2>&1; then
+  echo "ssoossh-nss: run 'ssoossh-nss config check' before enabling the socket" >&2
+fi
+```
+
+**5. Enable the socket, not the service.**
 
 ```bash
 sudo systemctl enable --now ssoossh-nss.socket
@@ -694,12 +719,13 @@ in use (`max_id: 524287` keeps the whole range out). An id outside
 | `ssoossh-nss lookup user NAME` | asks the userdb socket exactly as `nss-systemd` does and prints the JSON reply; `group NAME` and `memberships NAME` likewise |
 | `ssoossh-nss cache -u NAME` | marks cached entries stale, like `sss_cache`: `-u`/`-g` one user or group, `-U`/`-G` every user or group, `-E` everything. Nothing is deleted, and a stale entry is still served while the server is unreachable |
 | `ssoossh-nss override list\|set\|unset` | the host overrides, above |
+| `ssoossh-nss config check` | reads `nss.yaml`, the override file and the key file as a start does, with the same mode and owner checks, and lists every problem and every start-time warning without contacting anything. `--json` for scripts. Exits non-zero when the daemon would refuse to start |
 | `ssoossh-nss run` | the daemon itself, which the service unit starts |
 
 `status`, `cache` and `override set`/`unset` talk to the running daemon over
 its admin socket, `/run/ssoossh-nss/admin.sock`, which only root may use.
-The daemon reads `nss.yaml` once, at start: restart the service after
-editing it. A SIGHUP (`sudo systemctl kill -s HUP ssoossh-nss.service`)
+The daemon reads `nss.yaml` once, at start: run `ssoossh-nss config check`,
+then restart the service after editing it. A SIGHUP (`sudo systemctl kill -s HUP ssoossh-nss.service`)
 re-reads the host files and the fleet key and clears the offline backoff,
 the unauthorized latch and the collisions and refused groups that `status`
 lists; replacing the key file clears the latch on its own.
@@ -710,6 +736,7 @@ The daemon logs JSON lines to the journal (`journalctl -u ssoossh-nss`).
 Work from the host outwards:
 
 ```bash
+sudo ssoossh-nss config check           # would the daemon start with these files?
 sudo ssoossh-nss status                 # is the daemon up, online, and consulted?
 sudo ssoossh-nss lookup user alice      # what does the daemon itself answer?
 userdbctl user alice                     # what does systemd's userdb see?
@@ -733,7 +760,7 @@ it. `ssoossh-nss lookup` asks the same socket and is always there.
 | A directory user lacks a directory group on one host, or files show a bare gid | a local group with the same name: `status` lists it under `collisions`, and the journal has the warning. Rename one of the two ([memberships match on gid](#what-to-expect)) |
 | A directory user lacks a group whose gid is below `min_id` | expected: `status` lists it under `refused`; such a gid is never served |
 | A removed group still works for someone already logged in | expected: see [what to expect](#what-to-expect) |
-| Lookups hang for 45 s | the daemon is failing to start; `systemctl status ssoossh-nss` |
+| Lookups hang for 45 s | the daemon is failing to start; `sudo ssoossh-nss config check` names every reason, `systemctl status ssoossh-nss` the one it stopped on |
 | Directory users are intermittently not found, and the journal has `userdb connections over socket_max_connections refused` | something holds many connections open: the line's `last_uid` names the uid. If it is legitimate load, raise `socket_max_connections`, and the unit's limits with it |
 
 The server side of a refused lookup (a revoked key, an address outside the

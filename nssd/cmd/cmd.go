@@ -1,6 +1,6 @@
 // Package cmd is ssoossh-nss's command tree, built with bep/simplecobra
 // as server/cmd builds ssoosshd's: run (the default), cache, override,
-// status and lookup. Part 3 of docs/proposals/nss-directory ("Admin
+// status, lookup and config. Part 3 of docs/proposals/nss-directory ("Admin
 // interface and CLI").
 package cmd
 
@@ -125,6 +125,7 @@ func NewCommand(env Environment) (*Command, error) {
 		newOverrideCommand(root),
 		newStatusCommand(root),
 		newLookupCommand(root),
+		newConfigCommand(root),
 	}
 	exec, err := simplecobra.New(root)
 	if err != nil {
