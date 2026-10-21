@@ -206,12 +206,36 @@ func writeProbeSummary(w *probeWriter, result *service.ProbeResult) {
 		w.printf("   (sent verbatim)")
 	}
 	w.printf("\nrequested %s\n", strings.Join(result.Attributes, ", "))
-	w.printf("matched   %d entr%s in %s\n", result.Matched, plural(result.Matched, "y", "ies"), result.Elapsed.Round(1e6))
+	atLeast := ""
+	if result.MatchedCapped {
+		atLeast = "at least "
+	}
+	w.printf("matched   %s%d entr%s in %s\n", atLeast, result.Matched, plural(result.Matched, "y", "ies"), result.Elapsed.Round(1e6))
 	if result.TLSInsecureSkipVerify {
 		w.printf("warning   the directory certificate was not verified (ldap.tls_insecure_skip_verify)\n")
 	}
 	if result.Matched > 1 {
 		w.printf("warning   the login path refuses anything but exactly one match; this filter is too loose\n")
+		writeProbeMatches(w, result)
+	}
+}
+
+// writeProbeMatches lists the DNs a too-loose filter matched, and how many
+// more were left out of the list.
+func writeProbeMatches(w *probeWriter, result *service.ProbeResult) {
+	if len(result.MatchedDNs) == 0 {
+		return
+	}
+	w.printf("\nmatching entries\n")
+	for _, dn := range result.MatchedDNs {
+		w.printf("  %s\n", dn)
+	}
+	if more := result.Matched - len(result.MatchedDNs); more > 0 {
+		atLeast := ""
+		if result.MatchedCapped {
+			atLeast = "at least "
+		}
+		w.printf("  ...and %s%d more\n", atLeast, more)
 	}
 }
 

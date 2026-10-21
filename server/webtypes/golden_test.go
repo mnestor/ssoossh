@@ -448,13 +448,17 @@ func fullFixtures() map[string]any {
 			NextCursor: &viewerMemberCursor,
 		},
 		"ldap_probe": webtypes.LDAPProbeResponse{
-			BaseDN:      "dc=example,dc=net",
-			FilterSent:  "(&(objectClass=person)(uid=alice))",
-			Mode:        "template",
-			Attributes:  []string{"*", "entryUUID"},
-			Matched:     1,
-			IDAttribute: "entryUUID",
-			DirectoryID: "8f14e45f-ea8f-4f2d-9c1b-3a7b5d2e6c40",
+			BaseDN:     "dc=example,dc=net",
+			FilterSent: "(&(objectClass=person)(uid=alice))",
+			Mode:       "template",
+			Attributes: []string{"*", "entryUUID"},
+			Matched:    1000,
+			// A loose filter: the count stopped at the probe's limit and
+			// the first DNs are listed.
+			MatchedCapped: true,
+			MatchedDNs:    []string{"uid=alice,ou=People,dc=example,dc=net", "cn=alice,ou=Groups,dc=example,dc=net"},
+			IDAttribute:   "entryUUID",
+			DirectoryID:   "8f14e45f-ea8f-4f2d-9c1b-3a7b5d2e6c40",
 			Entry: &webtypes.LDAPProbeEntry{
 				DN: "uid=alice,ou=People,dc=example,dc=net",
 				Attributes: []webtypes.LDAPProbeAttribute{{

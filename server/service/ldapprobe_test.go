@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -294,16 +295,141 @@ func TestProbe_ShouldReportNoMatchAsAnAnswer(t *testing.T) {
 	}
 }
 
+// numberedEntries builds n entries with distinct DNs, uid=user000 upward.
+func numberedEntries(n int) []*ldap.Entry {
+	out := make([]*ldap.Entry, 0, n)
+	for i := range n {
+		uid := fmt.Sprintf("user%03d", i)
+		out = append(out, entry("uid="+uid+",ou=people,dc=test", map[string][]string{"uid": {uid}}))
+	}
+	return out
+}
+
+// sizeLimitedSearch answers every subtree search with entries, honouring the
+// request's size limit the way a directory does: the first sizeLimit entries
+// come back with a sizeLimitExceeded error. serverLimit, when non-zero, is
+// the directory's own administrative limit, applied whatever was asked;
+// ignoreLimit makes it return everything, as a directory that disregards
+// the requested limit would.
+func sizeLimitedSearch(entries []*ldap.Entry, serverLimit int, ignoreLimit bool) func(*ldap.SearchRequest) (*ldap.SearchResult, error) {
+	return func(req *ldap.SearchRequest) (*ldap.SearchResult, error) {
+		limit := req.SizeLimit
+		if ignoreLimit {
+			limit = 0
+		}
+		if serverLimit > 0 && (limit == 0 || serverLimit < limit) {
+			limit = serverLimit
+		}
+		if limit == 0 || len(entries) <= limit {
+			return &ldap.SearchResult{Entries: entries}, nil
+		}
+		return &ldap.SearchResult{Entries: entries[:limit]},
+			ldap.NewError(ldap.LDAPResultSizeLimitExceeded, errors.New("size limit exceeded"))
+	}
+}
+
 // TestProbe_ShouldReportMoreThanOneMatch surfaces a filter that is too
-// loose. The login path refuses anything but exactly one, so the count is
-// the diagnosis.
+// loose. The login path refuses anything but exactly one, so the count and
+// the DNs it matched are the diagnosis.
 func TestProbe_ShouldReportMoreThanOneMatch(t *testing.T) {
 	t.Parallel()
 
+	tests := []struct {
+		name        string
+		entries     int
+		serverLimit int
+		ignoreLimit bool
+		wantMatched int
+		wantCapped  bool
+		wantDNs     int
+	}{
+		{name: "should report a single match as one entry with no list when one entry matches", entries: 1, wantMatched: 1},
+		{name: "should list both DNs when two entries match", entries: 2, wantMatched: 2, wantDNs: 2},
+		{name: "should list the first twenty DNs when more than twenty match", entries: 25, wantMatched: 25, wantDNs: probeMaxListedDNs},
+		{name: "should report a floor when more entries match than the probe counts", entries: probeMatchCountLimit + 50, wantMatched: probeMatchCountLimit, wantCapped: true, wantDNs: probeMaxListedDNs},
+		{name: "should report a floor when the directory's own size limit stops the count", entries: 400, serverLimit: 300, wantMatched: 300, wantCapped: true, wantDNs: probeMaxListedDNs},
+		{name: "should clamp the count when the directory ignores the requested limit", entries: probeMatchCountLimit + 50, ignoreLimit: true, wantMatched: probeMatchCountLimit, wantCapped: true, wantDNs: probeMaxListedDNs},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			svc, dir, _ := newProbeService(t)
+			entries := numberedEntries(tt.entries)
+			var countAttrs [][]string
+			answer := sizeLimitedSearch(entries, tt.serverLimit, tt.ignoreLimit)
+			dir.searchFn = func(req *ldap.SearchRequest) (*ldap.SearchResult, error) {
+				if req.SizeLimit == probeMatchCountLimit {
+					countAttrs = append(countAttrs, req.Attributes)
+				}
+				return answer(req)
+			}
+
+			got, err := svc.Probe(context.Background(), ProbeRequest{
+				Mode:     ProbeFilterTemplate,
+				Bindings: ProbeBindings{Username: "alice"},
+			})
+			if err != nil {
+				t.Fatalf("Probe() error = %v", err)
+			}
+
+			gotDNs := got.MatchedDNs
+			wantDNs := make([]string, 0, tt.wantDNs)
+			for _, e := range entries[:tt.wantDNs] {
+				wantDNs = append(wantDNs, e.DN)
+			}
+			if got.Matched != tt.wantMatched || got.MatchedCapped != tt.wantCapped || strings.Join(gotDNs, ";") != strings.Join(wantDNs, ";") {
+				t.Errorf("matched = %d capped = %v dns = %v, want %d, %v, %v", got.Matched, got.MatchedCapped, gotDNs, tt.wantMatched, tt.wantCapped, wantDNs)
+			}
+			// The count asks for no attributes, and only runs when there
+			// is something to count.
+			wantCountSearches := 0
+			if tt.entries > 1 {
+				wantCountSearches = 1
+			}
+			if len(countAttrs) != wantCountSearches || (wantCountSearches == 1 && strings.Join(countAttrs[0], ",") != "1.1") {
+				t.Errorf("count searches = %v, want %d asking for 1.1 only", countAttrs, wantCountSearches)
+			}
+		})
+	}
+}
+
+// TestProbe_ShouldFailWhenTheCountSearchFails keeps a directory error on
+// the count from reading as a clean report of two matches.
+func TestProbe_ShouldFailWhenTheCountSearchFails(t *testing.T) {
+	t.Parallel()
+
 	svc, dir, _ := newProbeService(t)
-	dir.entries = []*ldap.Entry{
-		entry("uid=alice,ou=people,dc=test", map[string][]string{"uid": {"alice"}}),
-		entry("uid=alice2,ou=people,dc=test", map[string][]string{"uid": {"alice2"}}),
+	entries := numberedEntries(3)
+	dir.searchFn = func(req *ldap.SearchRequest) (*ldap.SearchResult, error) {
+		if req.SizeLimit == probeMatchCountLimit {
+			return nil, ldap.NewError(ldap.LDAPResultBusy, errors.New("busy"))
+		}
+		return &ldap.SearchResult{Entries: entries[:req.SizeLimit]}, nil
+	}
+
+	if _, err := svc.Probe(context.Background(), ProbeRequest{
+		Mode:     ProbeFilterTemplate,
+		Bindings: ProbeBindings{Username: "alice"},
+	}); err == nil {
+		t.Fatal("Probe() error = nil, want the count search's failure")
+	}
+}
+
+// TestProbe_ShouldKeepTheFirstCountWhenTheDirectoryChanges covers the
+// count search finding fewer than two entries after the first search found
+// two: the first count stands and there is no list to give.
+func TestProbe_ShouldKeepTheFirstCountWhenTheDirectoryChanges(t *testing.T) {
+	t.Parallel()
+
+	svc, dir, _ := newProbeService(t)
+	entries := numberedEntries(2)
+	dir.searchFn = func(req *ldap.SearchRequest) (*ldap.SearchResult, error) {
+		if req.SizeLimit == probeMatchCountLimit {
+			return &ldap.SearchResult{Entries: entries[:1]}, nil
+		}
+		return &ldap.SearchResult{Entries: entries}, nil
 	}
 
 	got, err := svc.Probe(context.Background(), ProbeRequest{
@@ -313,8 +439,8 @@ func TestProbe_ShouldReportMoreThanOneMatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Probe() error = %v", err)
 	}
-	if got.Matched != 2 {
-		t.Errorf("matched = %d, want 2 so the operator can see the filter is too loose", got.Matched)
+	if got.Matched != 2 || len(got.MatchedDNs) != 0 {
+		t.Errorf("matched = %d dns = %v, want 2 and no list", got.Matched, got.MatchedDNs)
 	}
 }
 
