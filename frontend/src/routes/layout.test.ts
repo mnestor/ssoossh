@@ -3,9 +3,10 @@ import userEvent from '@testing-library/user-event';
 import { createRawSnippet } from 'svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { detail } from '#lib/detail.svelte.js';
 import { rail } from '#lib/rail.svelte.js';
 import { session } from '#lib/session.svelte.js';
-import { resetFakePage } from '#lib/testing/page.svelte.js';
+import { fakeNavigate, resetFakePage } from '#lib/testing/page.svelte.js';
 import Layout from './+layout.svelte';
 
 // Test methodology: render the root layout around a marker child with fetch
@@ -21,6 +22,11 @@ import Layout from './+layout.svelte';
 vi.mock('$app/state', async () => {
 	const { fakePage } = await import('#lib/testing/page.svelte.js');
 	return { page: fakePage };
+});
+
+vi.mock('$app/navigation', async () => {
+	const { fakeAfterNavigate } = await import('#lib/testing/page.svelte.js');
+	return { afterNavigate: fakeAfterNavigate };
 });
 
 const children = createRawSnippet(() => ({
@@ -99,6 +105,19 @@ beforeEach(() => {
 });
 
 describe('root layout', () => {
+	// A "Not saved" line answers a press on the page that made it; on the
+	// next page it would describe a toggle already showing the stored level.
+	it("should clear a detail level's save error when the reader navigates", async () => {
+		stubAppFetch(alice);
+		render(Layout, { children });
+		await screen.findByTestId('app-rail');
+		detail.saveError = 'database is down';
+
+		fakeNavigate('/preferences');
+
+		expect(detail.saveError).toBeNull();
+	});
+
 	it('should give a signed-in identity the rail', async () => {
 		stubAppFetch(alice);
 

@@ -9,9 +9,10 @@ import Page from './+page.svelte';
 // Test methodology: render the page against a stubbed fetch answering one
 // call at a time. What matters: every setting is live (no Save button), a
 // switch saves only its own kind, a failed save puts that switch back and
-// says so beside it, a second press waits for the first, the kinds are
-// shown under the server's groups, and the pages' level survives a failed
-// load of the notification settings.
+// says why beside it, a second press waits for the first, the kinds are
+// shown under the server's groups, and the pages' level comes first,
+// survives a failed load of the notification settings, and is announced
+// when saved.
 
 /** alicePreferences is a fully populated payload, overridable per test. */
 function alicePreferences(
@@ -93,6 +94,10 @@ function createdSwitch() {
 
 afterEach(() => {
 	vi.unstubAllGlobals();
+	detail.level = 'simplified';
+	detail.saveError = null;
+	detail.saving = false;
+	detail.lastSaved = null;
 });
 
 describe('Preferences page', () => {
@@ -239,6 +244,17 @@ describe('Preferences page', () => {
 			).toHaveTextContent('Not saved');
 		});
 
+		it('should say beside the switch why the save failed', async () => {
+			mockFetch(ok(alicePreferences()), failure(500, 'the relay is on fire'));
+			render(Page);
+
+			await userEvent.click(await createdSwitch());
+
+			expect(
+				await screen.findByTestId('notification-service_enrollment_created-error')
+			).toHaveTextContent('the relay is on fire');
+		});
+
 		it('should ignore a second press while the first is saving', async () => {
 			const fetchMock = vi.fn();
 			fetchMock.mockResolvedValueOnce(ok(alicePreferences()));
@@ -266,9 +282,57 @@ describe('Preferences page', () => {
 });
 
 describe('the Display section', () => {
-	afterEach(() => {
-		detail.level = 'simplified';
-		detail.saveError = null;
+	// Display paints at once and the notification settings arrive later;
+	// below them it would be pushed down under a press.
+	it('should come before the email notifications', async () => {
+		mockFetch(ok(alicePreferences()));
+		render(Page);
+		const email = await screen.findByTestId('email-detail');
+
+		const display = screen.getByTestId('display-preferences');
+
+		expect(display.compareDocumentPosition(email) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+	});
+
+	it('should show the name its toggle is known by', () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(() => new Promise(() => undefined))
+		);
+		render(Page);
+
+		const display = screen.getByTestId('display-preferences');
+
+		expect(within(display).getByText('Page detail')).toBeVisible();
+	});
+
+	it('should announce a saved level for a screen reader', async () => {
+		const fetchMock = vi.fn();
+		fetchMock.mockRejectedValueOnce(new Error('network down'));
+		fetchMock.mockResolvedValueOnce(ok({ detail_level: 'advanced' }));
+		vi.stubGlobal('fetch', fetchMock);
+		vi.stubGlobal('localStorage', { getItem: () => null, setItem: () => undefined });
+		render(Page);
+		await screen.findByTestId('preferences-error');
+
+		await userEvent.click(screen.getByTestId('display-detail-advanced'));
+
+		await waitFor(() =>
+			expect(screen.getByTestId('preferences-status')).toHaveTextContent(
+				'Page detail advanced. Saved.'
+			)
+		);
+	});
+
+	it('should not announce a save made before the page opened', () => {
+		detail.lastSaved = { level: 'advanced' };
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(() => new Promise(() => undefined))
+		);
+		render(Page);
+
+		expect(screen.getByTestId('preferences-status')).toHaveTextContent('');
 	});
 
 	// The level arrives with the session, not with the notification
@@ -366,6 +430,43 @@ describe('the email detail level', () => {
 		await userEvent.click(await screen.findByTestId('email-detail-toggle-advanced'));
 
 		expect(await screen.findByTestId('email-detail-error')).toHaveTextContent('Not saved');
+	});
+
+	it('should say why the save failed', async () => {
+		mockFetch(ok(alicePreferences()), failure(500, 'database is down'));
+		render(Page);
+
+		await userEvent.click(await screen.findByTestId('email-detail-toggle-advanced'));
+
+		expect(await screen.findByTestId('email-detail-error')).toHaveTextContent('database is down');
+	});
+
+	it('should ignore a second press while the first is saving', async () => {
+		const fetchMock = vi.fn();
+		fetchMock.mockResolvedValueOnce(ok(alicePreferences()));
+		// The save never answers, so the level stays in flight.
+		fetchMock.mockReturnValueOnce(new Promise(() => undefined));
+		vi.stubGlobal('fetch', fetchMock);
+		render(Page);
+
+		await userEvent.click(await screen.findByTestId('email-detail-toggle-advanced'));
+		await userEvent.click(screen.getByTestId('email-detail-toggle-simplified'));
+
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+	});
+
+	// The same choice is explained in the same shape as the pages' level.
+	it('should explain each level as a term and its meaning', async () => {
+		mockFetch(ok(alicePreferences()));
+		render(Page);
+
+		const email = await screen.findByTestId('email-detail');
+
+		expect(
+			within(email)
+				.getAllByRole('term')
+				.map((term) => term.textContent)
+		).toEqual(['Simplified', 'Advanced']);
 	});
 
 	it('should not touch the pages level', async () => {

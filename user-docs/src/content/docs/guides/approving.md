@@ -230,10 +230,22 @@ returns a code: it exists on the wire exactly once, in the output of the
 ## Preferences
 
 **Preferences**, in the drop-up behind your identity in the rail, holds two
-sections: which notification emails you receive and how much they carry, and
-how much detail the approval and detail pages show. There is no Save button:
-every setting saves the moment you change it. If a save fails, the setting
-switches back and says "Not saved. Try again." beside it.
+sections: how much detail the approval and detail pages show, and which
+notification emails you receive and how much they carry. There is no Save
+button: every setting saves the moment you change it, and a setting that is
+still saving is dimmed. If a save fails, the setting switches back and says
+"Not saved:" and the reason beside it. If your session has expired, you are
+sent to sign in instead.
+
+### Display
+
+The **Display** section sets the level the approval page and the
+certificate and service code pages open at: **Simplified** or **Advanced**
+(see [Simplified and Advanced](/ssoossh/guides/web-ui/#simplified-and-advanced)).
+It takes effect at once and is saved to your account, so it follows you to any
+browser. The switch in each of those pages' headings is the
+same setting. Your first sign-in picks it: Advanced for SOC and admin,
+Simplified for everyone else.
 
 ### Email notifications
 
@@ -264,7 +276,7 @@ drowning in the rest. Nothing turns them on for you.
 need to recognise the event and act: what happened, when it stops being valid,
 where it was requested and approved from, and a link to the page where you can
 act on it. Advanced adds a Details section with key IDs, serials and
-certificate options. It is separate from the Display level below. Your first
+certificate options. It is separate from the Display level. Your first
 sign-in sets it the same way: Advanced
 for SOC and admin, Simplified for everyone else. A service code's own
 notification address has no account behind it and always gets Simplified.
@@ -278,16 +290,6 @@ being disabled server-side, and an identity whose provider releases no email
 address.
 
 The enrollment code is in no message and must not be added to one.
-
-### Display
-
-The **Display** section sets the level the approval page and the
-certificate and service code pages open at: **Simplified** or **Advanced**
-(see [Simplified and Advanced](/ssoossh/guides/web-ui/#simplified-and-advanced)).
-It takes effect at once and is saved to your account, so it follows you to any
-browser. The switch in each of those pages' headings is the
-same setting. Your first sign-in picks it: Advanced for SOC and admin,
-Simplified for everyone else.
 
 ## What administrators can do to your account
 
