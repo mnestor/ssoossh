@@ -10,8 +10,8 @@
 # Builds ssoosshd (without the web UI), ssoossh-nss and the test helper
 # for linux/amd64 into build/nss-e2e/, builds the image
 # ssoossh-nss-e2e:debian12 from test/nss/e2e/Dockerfile, and runs three
-# --rm containers on the network ssoossh-nss-e2e-<pid>. The containers and
-# the network are removed when the job ends, pass or fail. The image is
+# containers on the network ssoossh-nss-e2e-<pid>. The containers and the
+# network are removed when the job ends, pass or fail. The image is
 # left for the next run; `docker rmi ssoossh-nss-e2e:debian12` removes it.
 set -eu
 
@@ -48,31 +48,47 @@ else
 fi
 docker build -q -t "$image" test/nss/e2e >/dev/null
 
-# cleanup stops the three containers (--rm removes them) and the network.
+# The containers run without --rm, so a container that exits early keeps
+# its logs and exit code until cleanup; with --rm a crash took both with it.
+# cleanup stops and removes the three containers, then the network.
 cleanup() {
 	for c in "$host" "$server" "$ldap"; do
 		docker stop -t 5 "$c" >/dev/null 2>&1 || true
+		docker rm -f "$c" >/dev/null 2>&1 || true
 	done
 	docker network rm "$net" >/dev/null 2>&1 || true
+}
+
+# report prints each container's state, exit code and log tail.
+report() {
+	for c in "$ldap" "$server" "$host"; do
+		echo "--- $c: $(docker inspect -f '{{.State.Status}} exit={{.State.ExitCode}} {{.State.Error}}' "$c" 2>&1)"
+		docker logs "$c" 2>&1 | tail -40
+	done
+}
+
+# running reports whether container $1 is still up.
+running() {
+	[ "$(docker inspect -f '{{.State.Running}}' "$1" 2>/dev/null)" = true ]
 }
 trap cleanup EXIT
 docker network create "$net" >/dev/null
 
 mounts="-v $PWD/test/nss/e2e:/e2e/sh:ro -v $PWD/test/nss/integration:/e2e/it:ro -v $PWD/$bin:/e2e/bin:ro"
 # shellcheck disable=SC2086 # $mounts is several words on purpose.
-docker run -d --rm --name "$ldap" --network "$net" --network-alias ldap $mounts "$image" /e2e/sh/ldap.sh >/dev/null
+docker run -d --name "$ldap" --network "$net" --network-alias ldap $mounts "$image" /e2e/sh/ldap.sh >/dev/null
 # shellcheck disable=SC2086
-docker run -d --rm --name "$server" --hostname server --network "$net" --network-alias server $mounts "$image" /e2e/sh/server.sh start >/dev/null
+docker run -d --name "$server" --hostname server --network "$net" --network-alias server $mounts "$image" /e2e/sh/server.sh start >/dev/null
 # shellcheck disable=SC2086
-docker run -d --rm --name "$host" --hostname host --network "$net" $mounts "$image" /e2e/sh/host.sh daemon >/dev/null
+docker run -d --name "$host" --hostname host --network "$net" $mounts "$image" /e2e/sh/host.sh daemon >/dev/null
 
 # The server comes up, seeds the key, syncs once and restarts: 90 s at most.
 i=0
 until docker exec "$server" test -f /run/e2e/ready 2>/dev/null; do
 	i=$((i + 1))
-	if [ "$i" -gt 900 ] || ! docker inspect "$server" >/dev/null 2>&1; then
+	if [ "$i" -gt 900 ] || ! running "$server"; then
 		echo "FAIL the server did not get ready"
-		docker logs "$server" 2>&1 | tail -40
+		report
 		docker exec "$server" /e2e/sh/server.sh dumplog 2>/dev/null || true
 		exit 1
 	fi
@@ -109,6 +125,7 @@ if [ "$status" != 0 ] || [ "$failed" != 0 ]; then
 	docker exec "$server" /e2e/sh/server.sh dumplog || true
 	echo "--- daemon log"
 	docker exec "$host" /e2e/sh/host.sh dumplog || true
+	report
 	echo "nss-e2e: FAIL ($passed passed, $failed failed)"
 	exit 1
 fi

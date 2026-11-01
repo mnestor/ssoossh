@@ -22,6 +22,10 @@ ARG RCODESIGN_VERSION=0.29.0
 # "x-amz-acl: private" on every upload and R2 answers 501 NotImplemented.
 # Current rclone omits the header entirely when the provider is Cloudflare.
 ARG RCLONE_VERSION=1.75.1
+# quill signs the macOS binaries. Pinned and fetched by its release URL: the
+# old "latest" lookup went through the unauthenticated GitHub API, and a
+# rate-limited answer with no assets broke the image build.
+ARG QUILL_VERSION=0.7.1
 # Tools baked in so CI steps don't fetch them on every run. Each is pinned,
 # and each pin is the one the workflow that used to install it asked for:
 #   golangci-lint  was golangci/golangci-lint-action's `version:` in lint.yaml
@@ -101,7 +105,8 @@ RUN echo "deb [trusted=yes] https://repo.goreleaser.com/apt/ /" > /etc/apt/sourc
   && unzip -q -j /tmp/rclone.zip "rclone-v${RCLONE_VERSION}-linux-amd64/rclone" -d /usr/local/bin \
   && chmod 0755 /usr/local/bin/rclone \
   && rm -f /tmp/rclone.zip \
-  && curl -sL -o /tmp/quill.deb $(curl -s https://api.github.com/repos/anchore/quill/releases/latest | jq -r '.assets[] |select(.name|match("linux_amd64.deb$")) | .browser_download_url') \
+  && curl -fsSL -o /tmp/quill.deb \
+       https://github.com/anchore/quill/releases/download/v${QUILL_VERSION}/quill_${QUILL_VERSION}_linux_amd64.deb \
   && dpkg -i /tmp/quill.deb \
   # mkbom, which writes the flat package's BOM. Pinned to a commit and not
   # to a tag deliberately: upstream's newest tag is 0.2, from 2014, and the
