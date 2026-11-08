@@ -6,7 +6,8 @@ import { detail, DETAIL_STORAGE_KEY } from './detail.svelte';
 // fetch stubbed per case. What matters: simplified is the default until
 // something says otherwise, the browser cache paints first, the server's
 // level wins and is cached, a choice is saved to the account, a failed save
-// puts the old level back and says so, and a browser refusing site data
+// puts the old level back and says why, an expired session goes to sign-in
+// rather than failing, saves never overlap, and a browser refusing site data
 // leaves a working page.
 
 /** stubStorage installs a working localStorage seeded with `seed`. */
@@ -46,14 +47,14 @@ function stubSave(level: string) {
 	return fetchMock;
 }
 
-/** stubSaveFailure answers the save with a server error. */
-function stubSaveFailure() {
+/** stubSaveFailure answers the save with an error, a 500 unless told. */
+function stubSaveFailure(status = 500, message = 'database is down') {
 	vi.stubGlobal(
 		'fetch',
 		vi.fn(() =>
 			Promise.resolve(
-				new Response(JSON.stringify({ data: null, error: 'database is down' }), {
-					status: 500,
+				new Response(JSON.stringify({ data: null, error: message }), {
+					status,
 					headers: { 'Content-Type': 'application/json' }
 				})
 			)
@@ -61,10 +62,19 @@ function stubSaveFailure() {
 	);
 }
 
+/** stubPendingSave answers the save never, so it stays in flight. */
+function stubPendingSave() {
+	const fetchMock = vi.fn(() => new Promise<Response>(() => undefined));
+	vi.stubGlobal('fetch', fetchMock);
+	return fetchMock;
+}
+
 beforeEach(() => {
 	vi.unstubAllGlobals();
 	detail.level = 'simplified';
 	detail.saveError = null;
+	detail.saving = false;
+	detail.lastSaved = null;
 });
 
 describe('detail level', () => {
@@ -146,6 +156,73 @@ describe('detail level', () => {
 		await detail.set('advanced');
 
 		expect(detail.saveError).not.toBeNull();
+	});
+
+	it('should say why the save failed', async () => {
+		stubStorage();
+		stubSaveFailure();
+
+		await detail.set('advanced');
+
+		expect(detail.saveError).toBe('database is down');
+	});
+
+	// Trying again can never succeed once the session has expired, so the
+	// reader is sent to sign in instead of being told to retry.
+	it('should not report a failure when the session has expired', async () => {
+		stubStorage();
+		stubSaveFailure(401, 'not authenticated');
+
+		await detail.set('advanced');
+
+		expect(detail.saveError).toBeNull();
+	});
+
+	it('should ignore a press while a save is in flight', () => {
+		stubStorage();
+		const fetchMock = stubPendingSave();
+
+		void detail.set('advanced');
+		void detail.set('simplified');
+
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
+	it('should report a save in flight', () => {
+		stubStorage();
+		stubPendingSave();
+
+		void detail.set('advanced');
+
+		expect(detail.saving).toBe(true);
+	});
+
+	it('should send nothing when the level shown is chosen again', async () => {
+		stubStorage();
+		const fetchMock = stubSave('simplified');
+
+		await detail.set('simplified');
+
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	it('should record the level the server confirmed', async () => {
+		stubStorage();
+		stubSave('advanced');
+
+		await detail.set('advanced');
+
+		expect(detail.lastSaved).toEqual({ level: 'advanced' });
+	});
+
+	it('should forget the last outcome on clearStatus', async () => {
+		stubStorage();
+		stubSaveFailure();
+		await detail.set('advanced');
+
+		detail.clearStatus();
+
+		expect(detail.saveError).toBeNull();
 	});
 
 	it('should keep the default when site data is blocked', () => {

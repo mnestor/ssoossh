@@ -11,7 +11,9 @@
 	// A group of toggles rather than tabs or a select: two mutually
 	// exclusive views, each a press away (DESIGN.md, "Accessibility").
 	// Selected is an ink fill with the check glyph and aria-pressed, never
-	// cobalt, which stays the primary action's.
+	// cobalt, which stays the primary action's. While a save is in flight the
+	// group is aria-busy and dimmed, and presses are ignored, so a slow save
+	// never looks finished before it is.
 	interface Props {
 		/** Stable selector for the e2e browser tier — see test/e2e/README.md. */
 		testid?: string;
@@ -21,9 +23,18 @@
 		onselect?: (level: DetailLevel) => void;
 		/** The group's accessible name. */
 		label?: string;
+		/** True while the controlled level is saving. Omitted: the web UI
+		 * level's own saving state. */
+		busy?: boolean;
 	}
 
-	let { testid = 'detail-toggle', value, onselect, label = 'Detail level' }: Props = $props();
+	let {
+		testid = 'detail-toggle',
+		value,
+		onselect,
+		label = 'Detail level',
+		busy = false
+	}: Props = $props();
 
 	const levels: { value: DetailLevel; label: string }[] = [
 		{ value: 'simplified', label: 'Simplified' },
@@ -33,8 +44,13 @@
 	// Bound to the store unless the caller supplies both halves.
 	const controlled = $derived(value !== undefined && onselect !== undefined);
 	const current = $derived(controlled ? value : detail.level);
+	const saving = $derived(controlled ? busy : detail.saving);
 
+	// The level already shown, or a press during a save, sends nothing.
 	function choose(level: DetailLevel) {
+		if (level === current || saving) {
+			return;
+		}
 		if (controlled) {
 			onselect?.(level);
 			return;
@@ -48,6 +64,7 @@
 		class="inline-flex overflow-hidden rounded-md border border-border-control"
 		role="group"
 		aria-label={label}
+		aria-busy={saving}
 		data-testid={testid}
 	>
 		{#each levels as level (level.value)}
@@ -59,7 +76,7 @@
 				onclick={() => choose(level.value)}
 				class="inline-flex min-h-target items-center gap-1.5 px-3 text-xs font-medium transition focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent {pressed
 					? 'bg-ink text-surface'
-					: 'text-ink-muted hover:bg-surface-muted'}"
+					: 'text-ink-muted hover:bg-surface-muted'} {saving ? 'cursor-progress opacity-60' : ''}"
 			>
 				{#if pressed}<Icon name="check" size="xs" />{/if}
 				{level.label}
@@ -69,7 +86,7 @@
 	{#if !controlled && detail.saveError}
 		<!-- The selection has already snapped back; this says why. -->
 		<span role="alert" class="text-xs text-danger" data-testid="{testid}-error">
-			Not saved. Try again.
+			Not saved: {detail.saveError}
 		</span>
 	{/if}
 </div>

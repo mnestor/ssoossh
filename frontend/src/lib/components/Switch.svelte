@@ -12,7 +12,8 @@
 	// On is the "Selected" treatment (DESIGN.md): ink fill, the check glyph,
 	// never cobalt. Off is the edge of an operable control, border-control.
 	// The knob's side says the state as well, so colour is never the only
-	// signal.
+	// signal. While busy the track dims and the cursor says so, so a slow
+	// save never looks finished before it is.
 	interface Props {
 		/** Whether the setting is on. */
 		checked: boolean;
@@ -49,13 +50,15 @@
 	aria-busy={busy}
 	data-testid={testid}
 	onclick={press}
-	class="flex min-h-target w-full cursor-pointer items-start gap-3 rounded-md text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+	class="flex min-h-target w-full items-start {busy
+		? 'cursor-progress'
+		: 'cursor-pointer'} gap-3 rounded-md text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 >
 	<span
 		aria-hidden="true"
 		class="mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-md border p-0.5 transition {checked
 			? 'border-ink bg-ink'
-			: 'border-border-control bg-surface'}"
+			: 'border-border-control bg-surface'} {busy ? 'opacity-60' : ''}"
 	>
 		<span
 			class="inline-flex size-3.5 items-center justify-center rounded-sm transition {checked
