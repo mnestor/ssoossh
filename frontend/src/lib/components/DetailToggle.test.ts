@@ -8,8 +8,8 @@ import DetailToggle from './DetailToggle.svelte';
 // Test methodology: render the toggle over the real detail store with
 // storage and the save stubbed out. What matters is the pressed state a
 // screen reader reads, that a press changes the one shared preference, that
-// a failed save says so, and that a controlled toggle leaves the store
-// alone.
+// a failed save says why, that a save in flight shows and blocks a second
+// press, and that a controlled toggle leaves the store alone.
 
 /** stubSave answers PUT /api/users/me/display, or fails it. */
 function stubSave(ok: boolean) {
@@ -34,6 +34,7 @@ beforeEach(() => {
 	vi.stubGlobal('localStorage', { getItem: () => null, setItem: () => undefined });
 	detail.level = 'advanced';
 	detail.saveError = null;
+	detail.saving = false;
 });
 
 afterEach(() => {
@@ -75,6 +76,46 @@ describe('DetailToggle', () => {
 		await userEvent.click(screen.getByRole('button', { name: 'Simplified' }));
 
 		expect(await screen.findByRole('alert')).toHaveTextContent('Not saved');
+	});
+
+	it('should say why the change could not be saved', async () => {
+		stubSave(false);
+		render(DetailToggle);
+
+		await userEvent.click(screen.getByRole('button', { name: 'Simplified' }));
+
+		expect(await screen.findByRole('alert')).toHaveTextContent('database is down');
+	});
+
+	it('should mark the group busy while the level saves', () => {
+		detail.saving = true;
+		render(DetailToggle);
+
+		expect(screen.getByRole('group')).toHaveAttribute('aria-busy', 'true');
+	});
+
+	it('should mark the group busy while a controlled level saves', () => {
+		render(DetailToggle, { value: 'advanced', onselect: () => undefined, busy: true });
+
+		expect(screen.getByRole('group')).toHaveAttribute('aria-busy', 'true');
+	});
+
+	it('should ignore a press while a controlled level saves', async () => {
+		const onselect = vi.fn();
+		render(DetailToggle, { value: 'advanced', onselect, busy: true });
+
+		await userEvent.click(screen.getByRole('button', { name: 'Simplified' }));
+
+		expect(onselect).not.toHaveBeenCalled();
+	});
+
+	it('should not hand on a press of the level already selected', async () => {
+		const onselect = vi.fn();
+		render(DetailToggle, { value: 'advanced', onselect });
+
+		await userEvent.click(screen.getByRole('button', { name: 'Advanced' }));
+
+		expect(onselect).not.toHaveBeenCalled();
 	});
 
 	it('should report the given value when controlled', () => {
