@@ -3,6 +3,7 @@ import { getContext, setContext } from 'svelte';
 
 import { updateDisplayPreferences } from '#lib/api/endpoints.js';
 import type { DetailLevel } from '#lib/api/types.js';
+import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
 
 export type { DetailLevel };
 
@@ -32,8 +33,18 @@ class Detail {
 	/** The current level. */
 	level = $state<DetailLevel>('simplified');
 
-	/** Set when the last change could not be saved, cleared by the next. */
+	/** Why the last change could not be saved. Cleared by the next change
+	 * and by navigation (see clearStatus), so it never outlives the page
+	 * whose press it answers. */
 	saveError = $state<string | null>(null);
+
+	/** True while a change is being saved. A press meanwhile is ignored, so
+	 * two saves can never land on the server out of order. */
+	saving = $state(false);
+
+	/** The last change the server confirmed. A fresh object per save, so a
+	 * page can tell a new save from one it has already announced. */
+	lastSaved = $state.raw<{ level: DetailLevel } | null>(null);
 
 	/** True when the simplified pages are showing, for the many readers. */
 	get simplified(): boolean {
@@ -73,23 +84,44 @@ class Detail {
 
 	/**
 	 * set changes the level at once and saves it to the account. A failed
-	 * save puts the previous level back and says so in saveError, rather
-	 * than leaving a page showing a choice the next load will not.
+	 * save puts the previous level back and says why in saveError, rather
+	 * than leaving a page showing a choice the next load will not. Choosing
+	 * the level already shown, or pressing while a save is in flight, does
+	 * nothing. An expired session goes to sign-in instead: trying again could
+	 * never succeed.
 	 */
 	async set(level: DetailLevel): Promise<void> {
+		if (this.saving || level === this.level) {
+			return;
+		}
 		const previous = this.level;
 		this.level = level;
 		this.saveError = null;
+		this.saving = true;
 		try {
 			const stored = await updateDisplayPreferences(level);
 			this.adopt(stored.detail_level);
+			this.lastSaved = { level: stored.detail_level };
 		} catch (cause) {
-			// Only undo when nothing newer has replaced this choice.
+			if (redirectIfUnauthenticated(cause)) {
+				return;
+			}
+			// Only undo when nothing newer (the session's level) has
+			// replaced this choice.
 			if (this.level === level) {
 				this.level = previous;
 			}
-			this.saveError = cause instanceof Error ? cause.message : 'the server did not answer';
+			this.saveError = errorMessage(cause);
+		} finally {
+			this.saving = false;
 		}
+	}
+
+	/** clearStatus forgets the last save's outcome. Called by the root layout
+	 * on every navigation. */
+	clearStatus(): void {
+		this.saveError = null;
+		this.lastSaved = null;
 	}
 
 	/** cache remembers level for the next first paint in this browser. */

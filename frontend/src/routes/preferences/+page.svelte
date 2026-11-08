@@ -1,9 +1,10 @@
 <script lang="ts">
-	import { SvelteSet } from 'svelte/reactivity';
+	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 
 	import { getNotificationPreferences, updateNotificationPreferences } from '#lib/api/endpoints.js';
 	import type { DetailLevel, NotificationPreferences } from '#lib/api/types.js';
 	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
+	import { detail } from '#lib/detail.svelte.js';
 	import Alert from '#lib/components/Alert.svelte';
 	import DetailToggle from '#lib/components/DetailToggle.svelte';
 	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
@@ -30,20 +31,31 @@
 
 	// Per kind: the value shown while its save is in flight, the kinds whose
 	// save is in flight (a second press waits for the first to answer, so
-	// two saves of one kind can never land out of order), and the kinds
-	// whose last save failed.
+	// two saves of one kind can never land out of order), and why the last
+	// save of a kind failed.
 	let shown = $state<Record<string, boolean>>({});
 	const inFlight = new SvelteSet<string>();
-	const failed = new SvelteSet<string>();
+	const failed = new SvelteMap<string, string>();
 
-	// The email detail level, held the same way.
+	// The email detail level, held the same way: the choice shown while its
+	// save is in flight, and why the last save failed.
 	let emailLevelChoice = $state<DetailLevel | null>(null);
-	let emailLevelError = $state(false);
+	let emailLevelError = $state<string | null>(null);
 	const emailLevel = $derived(emailLevelChoice ?? preferences?.detail_level ?? 'simplified');
 
 	// What a screen reader hears after a save lands. The switch's own state
 	// change is the visible confirmation.
 	let liveMessage = $state('');
+
+	// A Display save is made by the shared store, so it is announced from
+	// there. A save confirmed before this page opened is not news here.
+	const savedBeforeMount = detail.lastSaved;
+	$effect(() => {
+		const saved = detail.lastSaved;
+		if (saved && saved !== savedBeforeMount) {
+			liveMessage = `Page detail ${saved.level}. Saved.`;
+		}
+	});
 
 	// The way out of a failed load: back to the loading shape, then the
 	// same request again.
@@ -101,7 +113,7 @@
 			if (redirectIfUnauthenticated(cause)) {
 				return;
 			}
-			failed.add(kind);
+			failed.set(kind, errorMessage(cause));
 		} finally {
 			const rest = { ...shown };
 			delete rest[kind];
@@ -110,13 +122,17 @@
 		}
 	}
 
-	/** chooseEmailLevel saves the email detail level the moment it is pressed. */
+	/**
+	 * chooseEmailLevel saves the email detail level the moment it is pressed.
+	 * A press while a save is in flight is ignored, as for a kind, so two
+	 * saves can never land out of order.
+	 */
 	async function chooseEmailLevel(level: DetailLevel) {
-		if (!preferences || level === emailLevel) {
+		if (!preferences || emailLevelChoice !== null || level === emailLevel) {
 			return;
 		}
 		emailLevelChoice = level;
-		emailLevelError = false;
+		emailLevelError = null;
 		try {
 			// An empty kinds map changes no kind.
 			const stored = await updateNotificationPreferences({}, level);
@@ -128,16 +144,27 @@
 			if (redirectIfUnauthenticated(cause)) {
 				return;
 			}
-			emailLevelError = true;
+			emailLevelError = errorMessage(cause);
 		} finally {
-			// Back to what the server holds, unless a newer press replaced
-			// this one while it was in flight.
-			if (emailLevelChoice === level) {
-				emailLevelChoice = null;
-			}
+			// Back to what the server holds.
+			emailLevelChoice = null;
 		}
 	}
 </script>
+
+<!-- What each level means, in one shape for the web UI and for email. -->
+{#snippet levelMeanings(simplified: string, advanced: string)}
+	<dl class="flex flex-col gap-1 text-dense">
+		<div>
+			<dt class="inline font-medium text-ink">Simplified</dt>
+			<dd class="inline text-ink-muted">{simplified}</dd>
+		</div>
+		<div>
+			<dt class="inline font-medium text-ink">Advanced</dt>
+			<dd class="inline text-ink-muted">{advanced}</dd>
+		</div>
+	</dl>
+{/snippet}
 
 <svelte:head><title>Preferences · ssoossh</title></svelte:head>
 
@@ -149,6 +176,25 @@
 	<div aria-live="polite" aria-atomic="true" class="sr-only" data-testid="preferences-status">
 		{liveMessage}
 	</div>
+
+	<!-- First, and outside the notification load: the pages' level arrives
+	     with the session, so a failed read of the notification settings must
+	     not take it with it, and nothing loading above it can push it down
+	     under a press. Live like everything else on the page. -->
+	<PageSection
+		title="Display"
+		description="How much the approval, certificate and service code pages show. Changes save as you make them, and apply in every browser you sign in to."
+		testid="display-preferences"
+	>
+		<div class="flex max-w-[70ch] flex-col gap-2">
+			<span class="text-sm font-medium text-ink">Page detail</span>
+			<DetailToggle testid="display-detail" label="Page detail" />
+			{@render levelMeanings(
+				'keeps what you need to decide or to understand the result.',
+				'adds the ids, fingerprints and policy detail an expert compares.'
+			)}
+		</div>
+	</PageSection>
 
 	{#if loadError}
 		<Alert
@@ -204,18 +250,19 @@
 							label="Email detail"
 							value={emailLevel}
 							onselect={chooseEmailLevel}
+							busy={emailLevelChoice !== null}
 						/>
 						{#if emailLevelError}
 							<!-- The selection has already snapped back; this says why. -->
 							<span role="alert" class="text-xs text-danger" data-testid="email-detail-error">
-								Not saved. Try again.
+								Not saved: {emailLevelError}
 							</span>
 						{/if}
 					</div>
-					<p class="text-dense text-ink-muted">
-						Simplified sends what you need to recognise the event and act. Advanced adds key IDs,
-						serials and certificate options.
-					</p>
+					{@render levelMeanings(
+						'sends what you need to recognise the event and act.',
+						'adds key IDs, serials and certificate options.'
+					)}
 				</div>
 
 				{#each preferences.groups as group (group.group)}
@@ -250,7 +297,7 @@
 											class="pl-12 text-xs text-danger"
 											data-testid={`notification-${kind.kind}-error`}
 										>
-											Not saved. Try again.
+											Not saved: {failed.get(kind.kind)}
 										</span>
 									{/if}
 								</div>
@@ -265,31 +312,4 @@
 			</div>
 		</PageSection>
 	{/if}
-
-	<!-- Outside the notification load: the pages' level arrives with the
-	     session, so a failed read of the notification settings must not take
-	     it with it. Live like everything else on the page. -->
-	<PageSection
-		title="Display"
-		description="How much the approval, certificate and service code pages show. Changes save as you make them, and apply in every browser you sign in to."
-		testid="display-preferences"
-	>
-		<div class="flex max-w-[70ch] flex-col gap-3">
-			<DetailToggle testid="display-detail" label="Page detail" />
-			<dl class="flex flex-col gap-1 text-dense">
-				<div>
-					<dt class="inline font-medium text-ink">Simplified</dt>
-					<dd class="inline text-ink-muted">
-						keeps what you need to decide or to understand the result.
-					</dd>
-				</div>
-				<div>
-					<dt class="inline font-medium text-ink">Advanced</dt>
-					<dd class="inline text-ink-muted">
-						adds the ids, fingerprints and policy detail an expert compares.
-					</dd>
-				</div>
-			</dl>
-		</div>
-	</PageSection>
 </PageShell>
