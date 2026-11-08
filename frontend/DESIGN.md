@@ -730,12 +730,16 @@ rounded-md border-border-control bg-surface px-3 text-base`, `text-base`
   `border-control` edge with an `ink-muted` knob left. The whole row (track,
   title, sentence) is one `min-h-target` button, named by the title alone
   (`aria-labelledby`) and described by the sentence (`aria-describedby`).
-  `busy` sets `aria-busy` and ignores presses while a save is in flight.
+  `busy` sets `aria-busy`, dims the track to `opacity-60` with
+  `cursor-progress`, and ignores presses while a save is in flight.
   Never a checkbox for a live setting: a checkbox waits for a Save button.
 - **DetailToggle**: a two-segment control, "Simplified" and "Advanced", in
   the heading row of each covered page. Selected segment per Colour; writes
   the same preference as `/preferences`. Given `value` and `onselect` it is
-  a plain controlled control instead (the email level).
+  a plain controlled control instead (the email level), with `busy` for its
+  save. While a save is in flight the group is `aria-busy`, the segments dim
+  to `opacity-60` with `cursor-progress`, and presses are ignored; a press on
+  the selected segment does nothing.
 
 ### Composites
 
@@ -927,7 +931,7 @@ off, and confirms through a reasonless `ConfirmModal`.
   live throughout, because the Pages level is live in every covered page's
   heading.
 - **A live setting** shows its new state at once, saves only itself, puts
-  itself back with "Not saved. Try again." beside it if the save fails, and
+  itself back with "Not saved: <reason>" beside it if the save fails, and
   ignores a second press until the first answers. A polite live region
   announces each save for a screen reader.
 
@@ -949,8 +953,11 @@ the result and drops the diagnostic detail an expert compares.
   address, read `simplified`.
 - **Store:** `src/lib/detail.svelte.ts`. The level arrives with `/users/me`
   (`detail_level`) and the root layout adopts it; a change is shown at once
-  and saved with `PUT /users/me/display`, and a failed save puts the old
-  level back with a "Not saved. Try again." line beside the toggle.
+  and saved with `PUT /users/me/display`, one save at a time (a press while
+  one is in flight, or on the level already shown, sends nothing). A failed
+  save puts the old level back with a "Not saved: <reason>" line beside the
+  toggle, which the root layout clears on navigation; a 401 goes to sign-in
+  instead. A confirmed save sets `lastSaved`, which `/preferences` announces.
   localStorage `ssoossh:detail` caches the last level the server reported,
   for first paint only. Before anything is known the store reads
   `simplified`.
@@ -1037,8 +1044,11 @@ the result and drops the diagnostic detail an expert compares.
   viewer's groups manage, and every key is the admin group's NSS keys (all),
   which the fleet key admin role opens too. Admin, SOC and auditor powers sit behind
   admin mode (`docs/proposals/admin-elevation.md`).
-- **`/preferences` order:** Email notifications, Login shell (the NSS login
-  shell setting), Display.
+- **`/preferences` order:** Display, then Email notifications. Display comes
+  first because it never waits on the notification load, so nothing loading
+  above it can push it down under a press. Both levels carry a visible name
+  ("Page detail", "Email detail") and explain Simplified and Advanced in the
+  same term-and-meaning list.
 
 ## 13. The admin area
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { afterNavigate } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { fade, fly } from 'svelte/transition';
 	import { easeEnter, easeExit, enterMs, exitMs } from '#lib/motion.js';
@@ -57,6 +58,9 @@
 	// this browser's cache first, then the account's stored level once the
 	// session loads, which is the one that counts.
 	$effect(() => detail.start());
+	// A level save's outcome belongs to the page whose press made it: a
+	// "Not saved" line must not follow the reader onto the next page.
+	afterNavigate(() => detail.clearStatus());
 	$effect(() => {
 		if (session.user) {
 			detail.adopt(session.user.detail_level);
