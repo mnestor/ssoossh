@@ -86,7 +86,10 @@ services:
     # liveness from the host instead: curl -f http://localhost:8080/healthz
 
   postgres:
-    image: postgres:17-alpine
+    # Major version pinned: a new major cannot read the old one's data
+    # directory, so moving 17 -> 18 (or 18 -> 19) is a dump and restore, not
+    # a tag change. See the Database page in the docs, "Upgrading PostgreSQL".
+    image: postgres:18-alpine
     profiles:
       - postgres
     restart: unless-stopped
@@ -97,7 +100,9 @@ services:
       POSTGRES_USER: ssoossh
       POSTGRES_PASSWORD: change-me
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      # 18+ images keep data in /var/lib/postgresql/18/docker and refuse to
+      # start with a volume at the old /var/lib/postgresql/data path.
+      - postgres-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ssoossh"]
       interval: 10s

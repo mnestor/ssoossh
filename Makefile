@@ -355,7 +355,7 @@ test-load: $(FRONTEND_DIST) ## Load, soak, and concurrency suite (slow)
 # devcontainer talking to the host's daemon) a published port lands on the
 # host, not here, so postgres joins this container's network namespace on a
 # fixed port instead.
-PG_IMAGE ?= postgres:17-alpine
+PG_IMAGE ?= postgres:18-alpine
 PKGS ?= ./...
 ARGS ?=
 # Durability off: the container is thrown away, and it is the slow part.
