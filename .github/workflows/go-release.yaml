@@ -1,0 +1,47 @@
+# Opens an issue when the Go toolchain pinned in the CI images is behind the
+# stable releases go.dev publishes.
+#
+# The pin is `ARG GO_VERSION=` in .github/docker/Dockerfile.runner and
+# Dockerfile.devcontainer, and it is the toolchain the release build runs.
+# Dependabot does not see it, so nothing else reports a Go patch release,
+# security fixes included (#254, #256). scripts/check-go-release.sh holds the
+# comparison and says what it reports.
+#
+# It files an issue rather than a pull request on purpose: a pull request
+# opened with GITHUB_TOKEN does not start other workflows, so its required
+# checks would never report, and a Go bump can need a golangci-lint bump
+# alongside it anyway.
+name: go-release
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * *" # 06:00 UTC daily; the script files one issue per release
+
+permissions:
+  contents: read
+
+# A manual run next to the scheduled one could both find no open issue and
+# file two.
+concurrency:
+  group: go-release
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: check the Go pin
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      # gh issue list, gh issue create.
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Compare the pin with go.dev
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/check-go-release.sh --file-issue
