@@ -33,7 +33,7 @@ func StartPostgres(t *testing.T) {
 	// calls Run with "postgres:16-alpine" hardcoded. Naming the image here
 	// makes the version the suite tests against visible and pinnable rather
 	// than an upstream default that can move under us.
-	pgContainer, err := postgresModule.Run(ctx, "postgres:16-alpine",
+	pgContainer, err := postgresModule.Run(ctx, "postgres:18-alpine",
 		postgresModule.WithDatabase("ssoossh"),
 		postgresModule.WithUsername("ssoossh"),
 		postgresModule.WithPassword("testpassword"),

@@ -167,3 +167,32 @@ is out of service until it comes back -- and login is fail-closed, so a
 transient database error during a disabled-user check denies rather than
 admits. In a multi-instance deployment the database is the single thing that
 has to be highly available; replication and failover are yours to arrange.
+
+## Upgrading PostgreSQL
+
+The example deployment (`deploy/docker-compose.yml`) and CI run PostgreSQL 18.
+A minor upgrade (18.1 to 18.2) is an image pull and a restart. A major one
+(17 to 18) is not: the new server cannot read the old one's data directory,
+so changing the image tag alone leaves PostgreSQL refusing to start. Move the
+data with a dump and restore instead -- `ssoosshd` uses no extensions, so a
+plain `pg_dump` carries everything:
+
+1. Stop every `ssoosshd` instance (web tier and signers), so nothing writes
+   during the copy.
+2. Dump with the old server still running:
+   `pg_dump -Fc -U ssoossh -d ssoossh > ssoossh.dump`. The dump holds
+   sessions, enrollment codes and the generated cookie key, so keep it as
+   private as the database.
+3. Stop the old server, keep its data directory as the way back, and start
+   the new major on an **empty** one with the same `POSTGRES_USER`,
+   `POSTGRES_PASSWORD` and `POSTGRES_DB`.
+4. Restore into the empty database:
+   `pg_restore --exit-on-error -U ssoossh -d ssoossh < ssoossh.dump`,
+   then `vacuumdb --analyze-only -U ssoossh -d ssoossh`.
+5. Start `ssoosshd`. It finds its migrations already applied. `GET /api/ca`
+   answering with your CA key is a quick check that the data came across.
+
+With the official `postgres` image from 18 on, mount the volume at
+`/var/lib/postgresql`, not `/var/lib/postgresql/data` (the data now lives in
+`18/docker` below it), and a bind-mounted directory must be owned by the
+container's postgres user (uid 70 on `-alpine`, 999 on the Debian images).

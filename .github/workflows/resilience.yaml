@@ -160,7 +160,7 @@ jobs:
       image: ghcr.io/mnestor/ssoossh-build:latest
     services:
       postgres:
-        image: postgres:17-alpine
+        image: postgres:18-alpine
         env:
           POSTGRES_PASSWORD: test
         options: >-
