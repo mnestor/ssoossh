@@ -1,5 +1,5 @@
-# Opens an issue when the Go toolchain pinned in the CI images is behind the
-# stable releases go.dev publishes.
+# When the Go toolchain pinned in the CI images is behind the stable releases
+# go.dev publishes: opens an issue and pushes a branch that carries the bump.
 #
 # The pin is `ARG GO_VERSION=` in .github/docker/Dockerfile.runner and
 # Dockerfile.devcontainer, and it is the toolchain the release build runs.
@@ -7,22 +7,23 @@
 # security fixes included (#254, #256). scripts/check-go-release.sh holds the
 # comparison and says what it reports.
 #
-# It files an issue rather than a pull request on purpose: a pull request
-# opened with GITHUB_TOKEN does not start other workflows, so its required
-# checks would never report, and a Go bump can need a golangci-lint bump
-# alongside it anyway.
+# It pushes a branch and stops short of the pull request on purpose: a pull
+# request opened with GITHUB_TOKEN does not start other workflows, so its
+# required checks would never report. A person opens it from the link the
+# issue carries, and the checks run as usual. A Go bump can also need a
+# golangci-lint bump alongside it, which goes on the same branch.
 name: go-release
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 6 * * *" # 06:00 UTC daily; the script files one issue per release
+    - cron: "0 6 * * *" # 06:00 UTC daily; one issue and one branch per release
 
 permissions:
   contents: read
 
-# A manual run next to the scheduled one could both find no open issue and
-# file two.
+# A manual run next to the scheduled one could both find no issue and file
+# two.
 concurrency:
   group: go-release
   cancel-in-progress: false
@@ -33,13 +34,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
-      contents: read
-      # gh issue list, gh issue create.
+      # git push of the chore/<issue>-go-<version> branch. The ruleset on
+      # the default branch still refuses a direct push to it.
+      contents: write
+      # gh issue list, gh issue create, gh issue comment.
       issues: write
     steps:
+      # The script pushes with the token this leaves in the checkout.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          persist-credentials: false
+          persist-credentials: true
 
       - name: Compare the pin with go.dev
         env:
