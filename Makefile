@@ -164,8 +164,8 @@ server-linux-build-local: $(FRONTEND_DIST) ## Build ssoosshd for a local `docker
 # deploy/hsm-sim -- whose compose files configure `hsm:` and would otherwise
 # be refused at startup by a default build. Needs cgo, so it links against
 # the host's glibc rather than the 2.28 floor the release pins with zig;
-# that is fine against distroless/cc-debian12 only if this host's glibc is
-# no newer than Debian 12's, which is exactly the skew the sim's tools image
+# that is fine against distroless/cc-debian13 only if this host's glibc is
+# no newer than Debian 13's (2.41), which is exactly the skew the sim's tools image
 # exists to avoid for the module itself.
 .PHONY: server-linux-pkcs11-build-local
 server-linux-pkcs11-build-local: $(FRONTEND_DIST) ## Build ssoosshd with PKCS#11 for a local `docker build` (see Dockerfile.pkcs11)

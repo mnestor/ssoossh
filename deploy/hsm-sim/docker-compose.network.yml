@@ -134,7 +134,7 @@ services:
     environment:
       # Where p11-kit-client.so looks for the socket the bridge presents.
       P11_KIT_SERVER_ADDRESS: unix:path=/run/p11/p11.sock
-      # Needed only because distroless/cc-debian12 has no libffi.so.8, which
+      # Needed only because distroless/cc-debian13 has no libffi.so.8, which
       # p11-kit-client.so links against. libsofthsm2.so needs no such thing.
       # If the server image gains libffi, delete this line -- pointing
       # LD_LIBRARY_PATH at a directory is a bigger lever than it looks.

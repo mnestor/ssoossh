@@ -5,7 +5,7 @@
 # socket to the hsm service.
 #
 # Unlike libsofthsm2.so, p11-kit-client.so needs libffi.so.8, which
-# distroless/cc-debian12 does not ship. Until the server image carries it,
+# distroless/cc-debian13 does not ship. Until the server image carries it,
 # the signer needs LD_LIBRARY_PATH pointing at LIB_DIR -- which is why that
 # directory is mounted read-only there. See
 # ../../docs/proposals/hsm-cloud-readiness.md, "Tier 1".

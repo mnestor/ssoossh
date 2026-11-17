@@ -5,27 +5,26 @@
 # for the default static image and the full explanation this only
 # summarizes.
 #
-# cc-debian12, not base-debian12, and this is the point of the file. A
+# cc-debian13, not base-debian13, and this is the point of the file. A
 # PKCS#11 module is dlopen()'d at runtime, and every module worth loading is
-# C++: SoftHSM2, the CloudHSM client, Luna. base-debian12 ships glibc and
+# C++: SoftHSM2, the CloudHSM client, Luna. base-debian13 ships glibc and
 # OpenSSL but no libstdc++ or libgcc_s, so mounting a module into it fails
 # with:
 #
 #   libstdc++.so.6: cannot open shared object file: No such file or directory
 #
 # That is why the previously documented "mount the module" recipe could not
-# work on either of the old image variants. cc-debian12 resolves the whole
-# dependency set, for 2.9MB over base.
+# work on either of the old image variants. cc-debian13 resolves the whole
+# dependency set, for 3.3MB over base.
 #
 # Mount your module and its token store in, and point hsm.module at it:
 #   docker run -v /usr/lib/softhsm/libsofthsm2.so:/usr/lib/softhsm/libsofthsm2.so:ro \
 #              -v /var/lib/softhsm/tokens/:/var/lib/softhsm/tokens/:rw ...
 #
 # The module must be built against glibc, and against a glibc no newer than
-# Debian 12's -- versioned symbols skew in both directions, and a module
-# built on a newer distribution fails at startup naming the module rather
-# than the toolchain. deploy/hsm-sim/ stages one out of a debian:12-slim
-# image for exactly that reason.
+# Debian 13's (2.41) -- a module built on a newer distribution fails at
+# startup naming the module rather than the toolchain. deploy/hsm-sim/
+# stages one out of a debian:13-slim image for exactly that reason.
 #
 # There is no musl counterpart. Mounting a musl-built module would need an
 # Alpine image carrying libstdc++, which the old Dockerfile.musl never did.
@@ -37,8 +36,8 @@
 # https://mnestor.github.io/ssoossh/operations/ssh-agent/.
 #
 # Pinned by digest and bumped by Dependabot, for the reason given in
-# Dockerfile.
-FROM gcr.io/distroless/cc-debian12:nonroot@sha256:9dac0a79194e45a7da0158a9c6da57b217585af0786db3845d1f0ec1a0dd182f
+# Dockerfile, which also says why this is Debian 13 rather than 12.
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:cb87acc574abe719b6e5c547384defa2f7b1f24af9605d3f618cf852495d8be2
 ARG TARGETARCH
 COPY linux/$TARGETARCH/ssoosshd /usr/local/sbin/ssoosshd
 # See Dockerfile for why this reference copy exists.

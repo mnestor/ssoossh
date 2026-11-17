@@ -432,10 +432,10 @@ Everything on this page needs the **`-pkcs11` image**. The default image has
 no PKCS#11 support at all.
 
 - `ghcr.io/mnestor/ssoossh-server:<version>` -- the default. Statically
-  linked, built on `distroless/static-debian12` (2.11MB base), no libc, no
+  linked, built on `distroless/static-debian13` (2.37MB base), no libc, no
   `dlopen`. Configuring `hsm` here fails at startup.
 - `ghcr.io/mnestor/ssoossh-server:<version>-pkcs11` -- built on
-  `distroless/cc-debian12`, which carries `libstdc++` and `libgcc_s`. This
+  `distroless/cc-debian13`, which carries `libstdc++` and `libgcc_s`. This
   is the one that can load a module.
 
 The old `-musl` tag is gone. It existed so a musl-built module could be
@@ -453,10 +453,11 @@ docker run -v /usr/lib/softhsm/libsofthsm2.so:/usr/lib/softhsm/libsofthsm2.so:ro
 ```
 
 The module must be built against glibc, and against a glibc no newer than
-Debian 12's. Versioned symbols skew in both directions, and a module built
-on a newer distribution fails at startup naming the module rather than the
-toolchain. `deploy/hsm-sim/` stages one out of a `debian:12-slim` image for
-exactly that reason.
+Debian 13's (2.41). A module built on a newer distribution fails at startup
+naming the module rather than the toolchain. `deploy/hsm-sim/` stages one
+out of a `debian:13-slim` image for exactly that reason. Earlier images
+were built on Debian 12 (glibc 2.36); a module that loaded there loads here
+too.
 
 :::tip
 Option 0, which is not on this page: put the token behind an `ssh-agent`
@@ -512,4 +513,4 @@ remain statically linked and cross-platform.
 
 Choose by whether you need the module in-process, not by your host's libc:
 the default build has no libc to match, and for the `-pkcs11` image it is the
-mounted module's libc that has to match Debian 12's, not the host's.
+mounted module's libc that has to match Debian 13's, not the host's.

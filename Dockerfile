@@ -4,15 +4,20 @@
 # already compiled and version-stamped (internal/version) -- there is no
 # compile step here, and no ARG to override the stamp with.
 #
-# base-static, not base-debian12: the default server build is
+# static, not base: the default server build is
 # CGO_ENABLED=0 and statically linked, so it needs no libc at all. That is
 # what removed the glibc/musl image split this project used to carry --
 # there is no Dockerfile.musl any more, because a static binary runs on
-# Alpine as readily as anywhere else. This base is 2.11MB against
-# base-debian12's 20.8MB, and it has no shell, no package manager and no
+# Alpine as readily as anywhere else. This base is 2.37MB against
+# base-debian13's 24.4MB, and it has no shell, no package manager and no
 # libc for anything to link against.
 #
-# static-debian12 still carries what ssoosshd actually needs:
+# Debian 13, not 12: in November 2026 the current distroless debian12 images
+# still carried tzdata 2026b and ca-certificates 20250419~deb12u1, months
+# after Debian LTS had fixed both (DLA-4867-1, DLA-4845-1), while debian13
+# carried the fixed versions.
+#
+# static-debian13 still carries what ssoosshd actually needs:
 # /etc/ssl/certs/ca-certificates.crt for HTTPS to an OIDC provider,
 # /etc/passwd for the nonroot user, and zoneinfo.
 #
@@ -36,7 +41,7 @@
 # so a base image change is a reviewed commit and the release that follows
 # it carries the fix. Keep the tag in the line: Dependabot resolves the new
 # digest from it.
-FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:aafe993665bf6200db38a02c11a9351e782a84b6a45e7f33b6695638c88e3931
 ARG TARGETARCH
 COPY linux/$TARGETARCH/ssoosshd /usr/local/sbin/ssoosshd
 # Reference copies of the mail notification templates the binary embeds, so
