@@ -27,7 +27,16 @@
 # its build context) placed a binary there first. For a local dev build,
 # `make server-linux-build-local` (Makefile) does that, then
 # `docker compose build` in deploy/ picks it up.
-FROM gcr.io/distroless/static-debian12:nonroot
+#
+# Pinned by digest, not just by tag: `nonroot` is republished whenever
+# Debian ships a fix (tzdata, ca-certificates), and a floating tag left each
+# image carrying whatever distroless had on its build day, with nothing to
+# say when that went stale. Dependabot's docker ecosystem
+# (.github/dependabot.yml) opens a PR when the tag moves to a new digest,
+# so a base image change is a reviewed commit and the release that follows
+# it carries the fix. Keep the tag in the line: Dependabot resolves the new
+# digest from it.
+FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
 ARG TARGETARCH
 COPY linux/$TARGETARCH/ssoosshd /usr/local/sbin/ssoosshd
 # Reference copies of the mail notification templates the binary embeds, so

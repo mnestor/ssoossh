@@ -35,7 +35,10 @@
 # static image, with the vendor's C++ library in the agent's address space
 # instead of the one running the certificate pipeline. See
 # https://mnestor.github.io/ssoossh/operations/ssh-agent/.
-FROM gcr.io/distroless/cc-debian12:nonroot
+#
+# Pinned by digest and bumped by Dependabot, for the reason given in
+# Dockerfile.
+FROM gcr.io/distroless/cc-debian12:nonroot@sha256:9dac0a79194e45a7da0158a9c6da57b217585af0786db3845d1f0ec1a0dd182f
 ARG TARGETARCH
 COPY linux/$TARGETARCH/ssoosshd /usr/local/sbin/ssoosshd
 # See Dockerfile for why this reference copy exists.
