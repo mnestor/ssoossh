@@ -19,7 +19,7 @@ real HSM. The reasoning is in
 
 These compose files configure `hsm:`, which the default (cgo-free) server
 build refuses at startup. They build the image from the repo's
-`Dockerfile.pkcs11` (`distroless/cc-debian12`), so the binary has to carry
+`Dockerfile.pkcs11` (`distroless/cc-debian13`), so the binary has to carry
 `-tags=hsm`:
 
 ```bash
@@ -163,7 +163,7 @@ announced key active, that accumulates CAs rather than failing loudly.
 
 | Path | Purpose |
 | --- | --- |
-| `Dockerfile.hsm-tools` | `debian:12-slim` plus softhsm2, opensc, p11-kit, socat. Matches `Dockerfile.pkcs11`'s Debian base so staged modules are ABI-correct |
+| `Dockerfile.hsm-tools` | `debian:13-slim` plus softhsm2, opensc, p11-kit, socat. Matches `Dockerfile.pkcs11`'s Debian base so staged modules are ABI-correct |
 | `scripts/provision-token.sh` | idempotent token and CA key creation; stages `libsofthsm2.so` |
 | `scripts/stage-client.sh` | stages `p11-kit-client.so` and `libffi` for the network topology |
 | `scripts/gen-certs.sh` | throwaway CA and mTLS keypairs for the tunnel |

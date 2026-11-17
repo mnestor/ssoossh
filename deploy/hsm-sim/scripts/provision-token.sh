@@ -15,7 +15,7 @@ set -eu
 : "${KEY_ID:=01}"
 : "${KEY_TYPE:=EC:prime384v1}"
 : "${STAGE_MODULE:=1}"
-# distroless/*-debian12:nonroot runs as 65532; the signer must be able to
+# distroless/*-debian13:nonroot runs as 65532; the signer must be able to
 # write the token directory (SoftHSM2 takes lock files there even to sign).
 : "${RUN_AS_UID:=65532}"
 : "${RUN_AS_GID:=65532}"
@@ -40,9 +40,9 @@ slots.mechanisms = ALL
 library.reset_on_fork = false
 EOF
 
-# Stage the module itself. Debian 12's libsofthsm2.so resolves every one of
-# its dependencies (libcrypto, libstdc++, libgcc_s, libm, libc) against
-# distroless/cc-debian12 with no LD_LIBRARY_PATH, which is why hsm.module
+# Stage the module itself. Debian 13's libsofthsm2.so resolves every one of
+# its dependencies (libcrypto, libstdc++, libgcc_s, libc) against
+# distroless/cc-debian13 with no LD_LIBRARY_PATH, which is why hsm.module
 # can just name an absolute path in the signer's config.
 stage_module() {
 	[ "$STAGE_MODULE" = "1" ] || return 0

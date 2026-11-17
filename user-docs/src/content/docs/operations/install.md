@@ -53,9 +53,9 @@ startup naming the key, the file, and the closest real key when one is close.
 without a start.
 
 There are also container images, `ghcr.io/mnestor/ssoossh-server:<version>`
-(the default, on `distroless/static-debian12`) and
+(the default, on `distroless/static-debian13`) and
 `ghcr.io/mnestor/ssoossh-server:<version>-pkcs11` (on
-`distroless/cc-debian12`, the one that can load a module).
+`distroless/cc-debian13`, the one that can load a module).
 
 :::caution[If you pin a `-musl` tag, move off it]
 The `-musl` images are no longer built. Nothing deletes the tags already in

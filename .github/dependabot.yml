@@ -67,6 +67,28 @@ updates:
       - dependency-name: "mermaid"
         update-types: ["version-update:semver-major"]
 
+  # The runtime images' distroless bases (Dockerfile, Dockerfile.pkcs11),
+  # pinned as tag@sha256. The file fetcher matches /dockerfile|containerfile/i
+  # in this directory, so it finds Dockerfile.pkcs11 as well. The tag
+  # (`nonroot`) never changes; what arrives is a digest-only PR when
+  # distroless republishes it, which is how Debian fixes (tzdata,
+  # ca-certificates) reach the image. The CI images under .github/docker are
+  # not covered here; their Go pin has its own watch.
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    groups:
+      docker:
+        patterns:
+          - "*"
+      docker-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
