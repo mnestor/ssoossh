@@ -305,10 +305,11 @@ func TestSSHKeypair_SignedBy(t *testing.T) {
 		t.Parallel()
 		signed := &SSHKeypair{privateKey: leaf.Private(), publicKey: leaf.publicKey}
 		cert := &ssh.Certificate{
-			Key:         leaf.Public(),
-			CertType:    ssh.UserCert,
-			ValidAfter:  uint64(time.Now().Add(-time.Hour).Unix()), //nolint:gosec // test fixture, always a real date
-			ValidBefore: uint64(time.Now().Add(time.Hour).Unix()),  //nolint:gosec // test fixture, always a real date
+			Key:             leaf.Public(),
+			CertType:        ssh.UserCert,
+			ValidPrincipals: []string{"alice"},
+			ValidAfter:      uint64(time.Now().Add(-time.Hour).Unix()), //nolint:gosec // test fixture, always a real date
+			ValidBefore:     uint64(time.Now().Add(time.Hour).Unix()),  //nolint:gosec // test fixture, always a real date
 		}
 		if err := cert.SignCert(rand.Reader, caSigner); err != nil {
 			t.Fatalf("SignCert() error = %v", err)
@@ -330,10 +331,11 @@ func TestSSHKeypair_SignedBy(t *testing.T) {
 		// as SignatureKey without re-signing — the Signature bytes were
 		// never produced by ca's private key.
 		cert := &ssh.Certificate{
-			Key:         leaf.Public(),
-			CertType:    ssh.UserCert,
-			ValidAfter:  uint64(time.Now().Add(-time.Hour).Unix()), //nolint:gosec // test fixture, always a real date
-			ValidBefore: uint64(time.Now().Add(time.Hour).Unix()),  //nolint:gosec // test fixture, always a real date
+			Key:             leaf.Public(),
+			CertType:        ssh.UserCert,
+			ValidPrincipals: []string{"alice"},
+			ValidAfter:      uint64(time.Now().Add(-time.Hour).Unix()), //nolint:gosec // test fixture, always a real date
+			ValidBefore:     uint64(time.Now().Add(time.Hour).Unix()),  //nolint:gosec // test fixture, always a real date
 		}
 		otherSigner, err := ssh.NewSignerFromKey(other.Private())
 		if err != nil {
@@ -369,10 +371,11 @@ func TestVerifyCertSignature_RejectsTamperedSignature(t *testing.T) {
 	}
 
 	cert := &ssh.Certificate{
-		Key:         leaf.Public(),
-		CertType:    ssh.UserCert,
-		ValidAfter:  uint64(time.Now().Add(-time.Hour).Unix()), //nolint:gosec // test fixture, always a real date
-		ValidBefore: uint64(time.Now().Add(time.Hour).Unix()),  //nolint:gosec // test fixture, always a real date
+		Key:             leaf.Public(),
+		CertType:        ssh.UserCert,
+		ValidPrincipals: []string{"alice"},
+		ValidAfter:      uint64(time.Now().Add(-time.Hour).Unix()), //nolint:gosec // test fixture, always a real date
+		ValidBefore:     uint64(time.Now().Add(time.Hour).Unix()),  //nolint:gosec // test fixture, always a real date
 	}
 	if err := cert.SignCert(rand.Reader, caSigner); err != nil {
 		t.Fatalf("SignCert() error = %v", err)
@@ -465,7 +468,7 @@ func mustSignCert(t *testing.T, pub ssh.PublicKey, signerKP *SSHKeypair) *ssh.Ce
 	if err != nil {
 		t.Fatalf("NewSignerFromKey() error = %v", err)
 	}
-	cert := &ssh.Certificate{Key: pub, CertType: ssh.UserCert}
+	cert := &ssh.Certificate{Key: pub, CertType: ssh.UserCert, ValidPrincipals: []string{"alice"}}
 	if err := cert.SignCert(rand.Reader, signer); err != nil {
 		t.Fatalf("SignCert() error = %v", err)
 	}

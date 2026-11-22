@@ -150,10 +150,11 @@ func TestSshAgent_Agent(t *testing.T) {
 func newTestCert(t *testing.T, pub ssh.PublicKey, caSigner ssh.Signer) *ssh.Certificate {
 	t.Helper()
 	cert := &ssh.Certificate{
-		Key:         pub,
-		CertType:    ssh.UserCert,
-		ValidAfter:  uint64(time.Now().Add(-time.Hour).Unix()), //nolint:gosec // test fixture, always a real date
-		ValidBefore: uint64(time.Now().Add(time.Hour).Unix()),  //nolint:gosec // test fixture, always a real date
+		Key:             pub,
+		CertType:        ssh.UserCert,
+		ValidPrincipals: []string{"alice"},
+		ValidAfter:      uint64(time.Now().Add(-time.Hour).Unix()), //nolint:gosec // test fixture, always a real date
+		ValidBefore:     uint64(time.Now().Add(time.Hour).Unix()),  //nolint:gosec // test fixture, always a real date
 	}
 	if err := cert.SignCert(rand.Reader, caSigner); err != nil {
 		t.Fatalf("SignCert() error = %v", err)

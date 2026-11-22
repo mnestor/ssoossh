@@ -712,11 +712,12 @@ func TestPruneSuperseded_ShouldNotDeleteTheCertificateItJustInstalled(t *testing
 	}
 
 	cert := &xssh.Certificate{
-		Key:         leaf.Public(),
-		CertType:    xssh.UserCert,
-		KeyId:       "mnestor",
-		ValidAfter:  uint64(time.Now().Add(-time.Hour).Unix()),    //nolint:gosec // a Unix timestamp is positive for any real date
-		ValidBefore: uint64(time.Now().Add(8 * time.Hour).Unix()), //nolint:gosec // a Unix timestamp is positive for any real date
+		Key:             leaf.Public(),
+		CertType:        xssh.UserCert,
+		ValidPrincipals: []string{"alice"},
+		KeyId:           "mnestor",
+		ValidAfter:      uint64(time.Now().Add(-time.Hour).Unix()),    //nolint:gosec // a Unix timestamp is positive for any real date
+		ValidBefore:     uint64(time.Now().Add(8 * time.Hour).Unix()), //nolint:gosec // a Unix timestamp is positive for any real date
 	}
 	if err := cert.SignCert(rand.Reader, caSigner); err != nil {
 		t.Fatalf("SignCert() error = %v", err)

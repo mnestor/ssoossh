@@ -128,10 +128,11 @@ func TestCertificateValid(t *testing.T) {
 	sign := func(t *testing.T, validAfter, validBefore uint64) *ssh.Certificate {
 		t.Helper()
 		cert := &ssh.Certificate{
-			Key:         leaf.Public(),
-			CertType:    ssh.UserCert,
-			ValidAfter:  validAfter,
-			ValidBefore: validBefore,
+			Key:             leaf.Public(),
+			CertType:        ssh.UserCert,
+			ValidPrincipals: []string{"alice"},
+			ValidAfter:      validAfter,
+			ValidBefore:     validBefore,
 		}
 		if err := cert.SignCert(rand.Reader, trustedSigner); err != nil {
 			t.Fatalf("SignCert() error = %v", err)
@@ -210,10 +211,11 @@ func TestCertificateValid(t *testing.T) {
 					t.Fatalf("NewSignerFromKey() error = %v", err)
 				}
 				cert := &ssh.Certificate{
-					Key:         leaf.Public(),
-					CertType:    ssh.UserCert,
-					ValidAfter:  now - 3600,
-					ValidBefore: now + 3600,
+					Key:             leaf.Public(),
+					CertType:        ssh.UserCert,
+					ValidPrincipals: []string{"alice"},
+					ValidAfter:      now - 3600,
+					ValidBefore:     now + 3600,
 				}
 				if err := cert.SignCert(rand.Reader, untrustedSigner); err != nil {
 					t.Fatalf("SignCert() error = %v", err)

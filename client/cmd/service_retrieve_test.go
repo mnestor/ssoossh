@@ -47,10 +47,11 @@ func TestReusableCertificateFile(t *testing.T) {
 			name: "should return a certificate valid beyond the grace period",
 			setupCert: func() string {
 				cert := &ssh.Certificate{
-					Key:         leaf.Public(),
-					CertType:    ssh.UserCert,
-					ValidAfter:  uint64(time.Now().Add(-time.Hour).Unix()),    //nolint:gosec
-					ValidBefore: uint64(time.Now().Add(2 * time.Hour).Unix()), //nolint:gosec
+					Key:             leaf.Public(),
+					CertType:        ssh.UserCert,
+					ValidPrincipals: []string{"alice"},
+					ValidAfter:      uint64(time.Now().Add(-time.Hour).Unix()),    //nolint:gosec
+					ValidBefore:     uint64(time.Now().Add(2 * time.Hour).Unix()), //nolint:gosec
 				}
 				if err := cert.SignCert(rand.Reader, caSigner); err != nil {
 					t.Fatalf("SignCert() error = %v", err)
@@ -70,10 +71,11 @@ func TestReusableCertificateFile(t *testing.T) {
 			name: "should return nil when certificate is expired",
 			setupCert: func() string {
 				cert := &ssh.Certificate{
-					Key:         leaf.Public(),
-					CertType:    ssh.UserCert,
-					ValidAfter:  uint64(time.Now().Add(-2 * time.Hour).Unix()), //nolint:gosec
-					ValidBefore: uint64(time.Now().Add(-time.Hour).Unix()),     //nolint:gosec
+					Key:             leaf.Public(),
+					CertType:        ssh.UserCert,
+					ValidPrincipals: []string{"alice"},
+					ValidAfter:      uint64(time.Now().Add(-2 * time.Hour).Unix()), //nolint:gosec
+					ValidBefore:     uint64(time.Now().Add(-time.Hour).Unix()),     //nolint:gosec
 				}
 				if err := cert.SignCert(rand.Reader, caSigner); err != nil {
 					t.Fatalf("SignCert() error = %v", err)
@@ -93,10 +95,11 @@ func TestReusableCertificateFile(t *testing.T) {
 			name: "should return nil when certificate expires within the grace period",
 			setupCert: func() string {
 				cert := &ssh.Certificate{
-					Key:         leaf.Public(),
-					CertType:    ssh.UserCert,
-					ValidAfter:  uint64(time.Now().Add(-time.Hour).Unix()),       //nolint:gosec
-					ValidBefore: uint64(time.Now().Add(30 * time.Second).Unix()), //nolint:gosec
+					Key:             leaf.Public(),
+					CertType:        ssh.UserCert,
+					ValidPrincipals: []string{"alice"},
+					ValidAfter:      uint64(time.Now().Add(-time.Hour).Unix()),       //nolint:gosec
+					ValidBefore:     uint64(time.Now().Add(30 * time.Second).Unix()), //nolint:gosec
 				}
 				if err := cert.SignCert(rand.Reader, caSigner); err != nil {
 					t.Fatalf("SignCert() error = %v", err)
@@ -205,11 +208,12 @@ func signedCertText(t *testing.T, validUntil time.Time) string {
 		t.Fatalf("NewEd25519KeyPair() error = %v", err)
 	}
 	cert := &ssh.Certificate{
-		Key:         leaf.Public(),
-		CertType:    ssh.UserCert,
-		KeyId:       "svc",
-		ValidAfter:  uint64(time.Now().Add(-time.Hour).Unix()), //nolint:gosec // a Unix timestamp is positive for any real date
-		ValidBefore: uint64(validUntil.Unix()),                 //nolint:gosec // a Unix timestamp is positive for any real date
+		Key:             leaf.Public(),
+		CertType:        ssh.UserCert,
+		ValidPrincipals: []string{"alice"},
+		KeyId:           "svc",
+		ValidAfter:      uint64(time.Now().Add(-time.Hour).Unix()), //nolint:gosec // a Unix timestamp is positive for any real date
+		ValidBefore:     uint64(validUntil.Unix()),                 //nolint:gosec // a Unix timestamp is positive for any real date
 	}
 	if err := cert.SignCert(rand.Reader, caSigner); err != nil {
 		t.Fatalf("SignCert() error = %v", err)
