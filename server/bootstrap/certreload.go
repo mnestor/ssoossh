@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"syscall"
 	"time"
 )
 
@@ -23,15 +22,13 @@ import (
 // replaces a directory symlink rather than rewriting the files in place, so
 // a filesystem watch on the configured paths would never fire.
 //
-// Note this registers its own signal channel rather than asking
-// signals.SignalContext for another context: that helper closes a
-// package-level channel to enforce one handler per process and panics on a
-// second call.
-func (s *Server) watchCertificate(ctx context.Context) {
+// sighup is the channel startAppServer registered for SIGHUP before the
+// server started serving; the watcher owns it from here and unregisters it
+// on return. It is a plain signal channel rather than another context from
+// signals.SignalContext: that helper closes a package-level channel to
+// enforce one handler per process and panics on a second call.
+func (s *Server) watchCertificate(ctx context.Context, sighup chan os.Signal) {
 	defer s.wg.Done()
-
-	sighup := make(chan os.Signal, 1)
-	signal.Notify(sighup, syscall.SIGHUP)
 	defer signal.Stop(sighup)
 
 	var tick <-chan time.Time
