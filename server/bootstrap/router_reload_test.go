@@ -18,6 +18,7 @@ import (
 	"math/big"
 	"net"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"syscall"
 	"testing"
@@ -173,6 +174,61 @@ func TestServerRun_ShouldPresentTheReplacementCertificateAfterSIGHUP(t *testing.
 	}
 
 	waitForCommonName(t, addr, "after-sighup")
+}
+
+func TestStartAppServer_ShouldHoldSIGHUPByTheTimeItReturns(t *testing.T) {
+	// Deliberately not parallel: this signals its own process.
+	//
+	// startAppServer is what tells systemd the service is ready, so a reload
+	// may arrive the moment it returns. It is called directly rather than
+	// through Run so that no watcher drains reloadSignals and the signal
+	// must land on the channel this test reads. When the handler was
+	// installed later, on the watcher's own goroutine, a SIGHUP sent at this
+	// point could end the process (issue #268).
+	dir := t.TempDir()
+	certFile, keyFile := writeCertPair(t, dir, "ready")
+
+	c := &config.Config{}
+	c.HTTP.Address = "127.0.0.1"
+	c.HTTP.TLS.CertificateFile = certFile
+	c.HTTP.TLS.PrivateKeyFile = keyFile
+	c.HTTP.TLS.TLSMinVersion = "TLS1.3"
+
+	a := newTestApp(t, c)
+	srv, err := a.initRouter()
+	if err != nil {
+		t.Fatalf("initRouter: %v", err)
+	}
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	srv.appListener = ln
+
+	if err := srv.startAppServer(t.Context()); err != nil {
+		t.Fatalf("startAppServer: %v", err)
+	}
+	t.Cleanup(func() {
+		signal.Stop(srv.reloadSignals)
+		_ = srv.appSrv.Close()
+	})
+
+	// Checked before signalling: with no channel registered, the SIGHUP
+	// below would end the test binary instead of failing this test.
+	if srv.reloadSignals == nil {
+		t.Fatal("expected startAppServer to register for SIGHUP when a certificate is configured")
+	}
+
+	if err := syscall.Kill(syscall.Getpid(), syscall.SIGHUP); err != nil {
+		t.Fatalf("send SIGHUP: %v", err)
+	}
+
+	select {
+	case <-srv.reloadSignals:
+	case <-time.After(5 * time.Second):
+		t.Error("SIGHUP sent after startAppServer returned never reached reloadSignals")
+	}
 }
 
 func TestServerRun_ShouldPresentTheReplacementCertificateAfterTheReloadInterval(t *testing.T) {

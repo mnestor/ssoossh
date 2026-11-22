@@ -9,10 +9,12 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -72,6 +74,12 @@ type Server struct {
 	// a reload swaps. nil when no certificate is configured, which is also
 	// how Run decides whether to start the reload watcher at all.
 	certSource *tlsutils.CertSource
+
+	// reloadSignals receives SIGHUP for the reload watcher. startAppServer
+	// registers it before the server serves or tells systemd it is ready,
+	// so a reload can never arrive with no handler installed (SIGHUP's
+	// default action ends the process). nil when certSource is nil.
+	reloadSignals chan os.Signal
 }
 
 // initRouter builds the Gin engine and middleware chain using a.config and
@@ -757,7 +765,7 @@ func (s *Server) Run(ctx context.Context) error {
 		defer stopWatch()
 
 		s.wg.Add(1)
-		go s.watchCertificate(watchCtx)
+		go s.watchCertificate(watchCtx, s.reloadSignals)
 	}
 
 	s.wg.Add(1)
@@ -813,6 +821,16 @@ func (s *Server) startAppServer(ctx context.Context) error {
 			return err
 		}
 		s.appListener = listener
+	}
+
+	// Claim SIGHUP before serving and before READY=1 below. Registering it
+	// later, on the watcher's own goroutine, left a window in which systemd
+	// already considered the service ready and a reload (systemctl reload,
+	// a certbot deploy hook) killed the process instead. Nothing after this
+	// point can fail, so the registration never outlives a failed start.
+	if s.certSource != nil {
+		s.reloadSignals = make(chan os.Signal, 1)
+		signal.Notify(s.reloadSignals, syscall.SIGHUP)
 	}
 
 	// Start the HTTP(S) server in a background goroutine

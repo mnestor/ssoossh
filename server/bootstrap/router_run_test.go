@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"testing"
 	"time"
@@ -443,7 +444,12 @@ func TestStartAppServer_ShouldLoadCertificateFromFiles(t *testing.T) {
 	if err := srv.startAppServer(context.Background()); err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	t.Cleanup(func() { _ = srv.appSrv.Close() })
+	t.Cleanup(func() {
+		// Called without Run, so no watcher takes over the SIGHUP
+		// registration startAppServer makes for a TLS server.
+		signal.Stop(srv.reloadSignals)
+		_ = srv.appSrv.Close()
+	})
 
 	if !srv.useTLS {
 		t.Error("expected useTLS to remain true when certificate files are configured")
